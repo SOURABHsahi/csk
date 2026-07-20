@@ -1,0 +1,36 @@
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Knome.API.DTOs.Interactions;
+
+namespace Knome.API.Interfaces;
+
+public interface IContentInteractionService
+{
+    // Security & Screening
+    Task<ContentValidationResultDto> ValidateContentSecurityAsync(string? text, string? url = null);
+
+    // Comments
+    Task<List<CommentDto>> GetContentCommentsAsync(string contentType, long contentId);
+    Task<CommentDto> AddCommentAsync(string contentType, long contentId, int userId, CreateCommentDto dto);
+    Task<CommentDto> UpdateCommentAsync(long commentId, int userId, UpdateCommentDto dto);
+    Task DeleteCommentAsync(long commentId, int userId, bool isAdmin = false);
+
+    // Reactions
+    Task<(ReactionSummaryDto Summary, bool IsCreated)> ToggleReactionAsync(string contentType, long contentId, int userId, ToggleReactionDto dto);
+    Task<ReactionSummaryDto> GetReactionsSummaryAsync(string contentType, long contentId, int currentUserId);
+
+    // Shares
+    Task<ShareDto> ShareContentAsync(string contentType, long contentId, int userId, CreateShareDto dto);
+
+    // Bookmarks
+    Task<bool> ToggleBookmarkAsync(string contentType, long contentId, int userId);
+    Task<List<BookmarkDto>> GetMyBookmarksAsync(int userId);
+
+    // Polymorphic Content Engagement Summary
+    Task<ContentSummaryDto> GetContentSummaryAsync(string contentType, long contentId, int currentUserId);
+
+    // Moderation & Governance
+    Task<ModerationReportDto> ReportContentAsync(string contentType, long contentId, int reporterUserId, CreateReportDto dto);
+    Task<List<ModerationReportDto>> GetPendingReportsAsync(int pageNumber, int pageSize);
+    Task<ModerationReportDto> ResolveReportAsync(long reportId, int moderatorUserId, ResolveReportDto dto);
+}

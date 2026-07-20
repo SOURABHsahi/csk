@@ -1,0 +1,166 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using AutoMapper;
+using Knome.API.Constants;
+using Knome.API.Data;
+using Knome.API.DTOs.Posts;
+using Knome.API.Exceptions;
+using Knome.API.Interfaces;
+using Knome.API.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace Knome.API.Services;
+
+public class PostService : IPostService
+{
+    private readonly IPostRepository _repo;
+    private readonly IContentInteractionService _interactionService;
+    private readonly IKarmaService _karmaService;
+    private readonly KnomeDbContext _db;
+    private readonly IMapper _mapper;
+    private readonly ISuspensionGuard _suspensionGuard;
+    private readonly INotificationService _notificationService;
+
+    public PostService(IPostRepository repo, IContentInteractionService interactionService, IKarmaService karmaService, KnomeDbContext db, IMapper mapper, ISuspensionGuard suspensionGuard, INotificationService notificationService)
+    {
+        _repo = repo;
+        _interactionService = interactionService;
+        _karmaService = karmaService;
+        _db = db;
+        _mapper = mapper;
+        _suspensionGuard = suspensionGuard;
+        _notificationService = notificationService;
+    }
+
+    private async Task CheckIsAuthorOrAdminAsync(Post post, int currentUserId)
+    {
+        if (post.AuthorUserId == currentUserId) return;
+
+        var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
+        if (user == null || !user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.HRAdmin))
+        {
+            throw new UnauthorizedException("You must be the author of this post or an Administrator to modify/delete it.");
+        }
+    }
+
+    public async Task<PostDto> GetPostAsync(long postId, int currentUserId)
+    {
+        var post = await _repo.GetPostByIdAsync(postId);
+        if (post == null)
+            throw new NotFoundException($"Post ID {postId} not found.");
+
+        var dto = _mapper.Map<PostDto>(post);
+        dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Post, postId, currentUserId);
+        return dto;
+    }
+
+    public async Task<List<PostDto>> GetPostsAsync(string? audienceType, string? search, int pageNumber, int pageSize, int currentUserId)
+    {
+        var posts = await _repo.GetPostsAsync(audienceType, search, pageNumber, pageSize);
+        var dtos = new List<PostDto>();
+
+        foreach (var p in posts)
+        {
+            var dto = _mapper.Map<PostDto>(p);
+            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Post, p.PostId, currentUserId);
+            dtos.Add(dto);
+        }
+
+        return dtos;
+    }
+
+    public async Task<List<PostDto>> GetMyPostsAsync(int currentUserId, int pageNumber = 1, int pageSize = 20)
+    {
+        var posts = await _repo.GetMyPostsAsync(currentUserId, pageNumber, pageSize);
+        var dtos = new List<PostDto>();
+
+        foreach (var p in posts)
+        {
+            var dto = _mapper.Map<PostDto>(p);
+            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Post, p.PostId, currentUserId);
+            dtos.Add(dto);
+        }
+
+        return dtos;
+    }
+
+    public async Task<PostDto> CreatePostAsync(int currentUserId, CreatePostDto dto)
+    {
+        await _suspensionGuard.EnsureNotSuspendedAsync(currentUserId);
+
+        // Security screening (FR-SM-01)
+        var secCheck = await _interactionService.ValidateContentSecurityAsync(dto.ContentText, dto.AttachmentUrls.FirstOrDefault());
+        if (!secCheck.IsValid)
+            throw new BadRequestException("Post content or attachments contain blocked URLs or restricted keywords.");
+
+        var post = new Post
+        {
+            AuthorUserId = currentUserId,
+            ContentText = dto.ContentText,
+            AudienceType = dto.AudienceType,
+            Status = dto.Status,
+            PublishedDate = dto.Status == PostStatuses.Published ? DateTime.UtcNow : null,
+            CreatedDate = DateTime.UtcNow
+        };
+
+        var savedPost = await _repo.AddPostAsync(post, dto.AttachmentUrls, dto.AttachmentTypes, dto.MentionedUserIds);
+        await _karmaService.AwardKarmaAsync(currentUserId, KarmaActivityTypes.CreatePost, KarmaPoints.CreatePostPoints, ContentTypes.Post, savedPost.PostId);
+
+        // FR-NT-01: notify mentioned users (producer -> generic engine)
+        if (dto.MentionedUserIds.Any())
+        {
+            var authorName = (await _db.Users.FindAsync(currentUserId))?.FullName ?? "Someone";
+            foreach (var mentionedUserId in dto.MentionedUserIds.Where(id => id != currentUserId))
+            {
+                await _notificationService.PublishAsync(
+                    mentionedUserId,
+                    NotificationTypes.Mention,
+                    $"You were mentioned in a post by {authorName}.",
+                    relatedContentType: ContentTypes.Post,
+                    relatedContentId: savedPost.PostId);
+            }
+        }
+
+        var resDto = _mapper.Map<PostDto>(savedPost);
+        resDto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Post, savedPost.PostId, currentUserId);
+        return resDto;
+    }
+
+    public async Task<PostDto> UpdatePostAsync(long postId, int currentUserId, UpdatePostDto dto)
+    {
+        var post = await _repo.GetPostByIdAsync(postId);
+        if (post == null)
+            throw new NotFoundException($"Post ID {postId} not found.");
+
+        await CheckIsAuthorOrAdminAsync(post, currentUserId);
+
+        var secCheck = await _interactionService.ValidateContentSecurityAsync(dto.ContentText, dto.AttachmentUrls.FirstOrDefault());
+        if (!secCheck.IsValid)
+            throw new BadRequestException("Updated post content or attachments contain blocked URLs or restricted keywords.");
+
+        post.ContentText = dto.ContentText;
+        post.AudienceType = dto.AudienceType;
+        post.Status = dto.Status;
+        if (dto.Status == PostStatuses.Published && post.PublishedDate == null)
+            post.PublishedDate = DateTime.UtcNow;
+        
+        await _repo.UpdatePostAsync(post, dto.AttachmentUrls, dto.AttachmentTypes, dto.MentionedUserIds);
+
+        var updated = await _repo.GetPostByIdAsync(postId);
+        var resDto = _mapper.Map<PostDto>(updated!);
+        resDto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Post, postId, currentUserId);
+        return resDto;
+    }
+
+    public async Task DeletePostAsync(long postId, int currentUserId)
+    {
+        var post = await _repo.GetPostByIdAsync(postId);
+        if (post == null)
+            throw new NotFoundException($"Post ID {postId} not found.");
+
+        await CheckIsAuthorOrAdminAsync(post, currentUserId);
+        await _repo.DeletePostAsync(post);
+    }
+}

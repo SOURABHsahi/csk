@@ -1,0 +1,72 @@
+using System.Security.Claims;
+using System.Threading.Tasks;
+using Knome.API.DTOs.Articles;
+using Knome.API.Exceptions;
+using Knome.API.Interfaces;
+using Knome.API.Responses;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+
+namespace Knome.API.Controllers;
+
+[Authorize]
+[ApiController]
+[Route("api/articles")]
+public class ArticleController : KnomeControllerBase
+{
+    private readonly IArticleService _articleService;
+
+    public ArticleController(IArticleService articleService)
+    {
+        _articleService = articleService;
+    }
+
+    [HttpGet]
+    [ProducesResponseType(typeof(ApiResponse<List<ArticleDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetArticles([FromQuery] int? categoryId, [FromQuery] string? tag, [FromQuery] string? status, [FromQuery] string? search, [FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 20)
+    {
+        var articles = await _articleService.GetArticlesAsync(categoryId, tag, status, search, pageNumber, pageSize, GetCurrentUserId());
+        return Ok(ApiResponse<List<ArticleDto>>.SuccessResponse(200, "Articles retrieved successfully.", articles));
+    }
+
+    [HttpGet("my")]
+    [ProducesResponseType(typeof(ApiResponse<List<ArticleDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetMyArticles([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 20)
+    {
+        var articles = await _articleService.GetMyArticlesAsync(GetCurrentUserId(), pageNumber, pageSize);
+        return Ok(ApiResponse<List<ArticleDto>>.SuccessResponse(200, "User articles retrieved successfully.", articles));
+    }
+
+    [HttpGet("{articleId}")]
+    [ProducesResponseType(typeof(ApiResponse<ArticleDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetArticle(long articleId)
+    {
+        var article = await _articleService.GetArticleAsync(articleId, GetCurrentUserId());
+        return Ok(ApiResponse<ArticleDto>.SuccessResponse(200, "Article retrieved successfully.", article));
+    }
+
+    [HttpPost]
+    [ProducesResponseType(typeof(ApiResponse<ArticleDto>), StatusCodes.Status201Created)]
+    public async Task<IActionResult> CreateArticle([FromBody] CreateArticleDto dto)
+    {
+        var result = await _articleService.CreateArticleAsync(GetCurrentUserId(), dto);
+        return CreatedAtAction(nameof(GetArticle), new { articleId = result.ArticleId }, ApiResponse<ArticleDto>.SuccessResponse(201, "Article created successfully.", result));
+    }
+
+    [HttpPut("{articleId}")]
+    [ProducesResponseType(typeof(ApiResponse<ArticleDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateArticle(long articleId, [FromBody] UpdateArticleDto dto)
+    {
+        var result = await _articleService.UpdateArticleAsync(articleId, GetCurrentUserId(), dto);
+        return Ok(ApiResponse<ArticleDto>.SuccessResponse(200, "Article updated successfully.", result));
+    }
+
+    [HttpDelete("{articleId}")]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DeleteArticle(long articleId)
+    {
+        await _articleService.DeleteArticleAsync(articleId, GetCurrentUserId());
+        return Ok(ApiResponse.SuccessResponse(200, "Article deleted successfully."));
+    }
+}
