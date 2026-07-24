@@ -244,7 +244,12 @@ export const interactionsApi = {
     shareContent: (type, id, sharedToType, sharedToId = null) => apiClient.post(`/interactions/${type}/${id}/share`, { sharedToType, sharedToId }),
     reportContent: (type, id, data) => apiClient.post(`/interactions/${type}/${id}/report`, data),
     getPendingReports: (pageNumber = 1, pageSize = 20) => apiClient.get(`/interactions/reports/pending?pageNumber=${pageNumber}&pageSize=${pageSize}`),
-    resolveReport: (reportId, action, notes = '') => apiClient.put(`/interactions/reports/${reportId}/resolve`, { action, notes }),
+    resolveReport: (reportId, action, notes = '') => {
+        const isDismiss = action === 'Ignore' || action === 'Dismiss';
+        const status = isDismiss ? 'Dismissed' : 'Resolved';
+        const actionTaken = action === 'Ignore' ? 'Dismissed' : (action || 'Action Taken');
+        return apiClient.put(`/interactions/reports/${reportId}/resolve`, { status, actionTaken });
+    },
 };
 
 
