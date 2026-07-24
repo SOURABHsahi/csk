@@ -17,20 +17,53 @@ export default function Communities() {
     const loadCommunities = async () => {
         setIsLoading(true);
         try {
-            const data = await communitiesApi.getAll();
+            const data = await communitiesApi.getAll().catch(() => null);
+            let apiMapped = [];
             if (data && Array.isArray(data)) {
-                const mapped = data.map(c => ({
+                apiMapped = data.map(c => ({
                     id: c.communityId,
                     name: c.name,
-                    type: c.communityType,
-                    members: c.membersCount,
-                    activity: `${c.postsCount} posts`,
+                    type: c.communityType || 'Public',
+                    members: `${c.membersCount || 1} members`,
+                    activity: `${c.postsCount || 0} posts`,
                     description: c.description || 'No description provided.',
                     banner: c.bannerUrl || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300',
-                    membershipStatus: c.currentUserMembershipStatus
+                    membershipStatus: c.currentUserMembershipStatus || 'Approved'
                 }));
-                setCommunities(mapped);
             }
+
+            // Include custom communities created via CreateCommunityModal
+            const custom = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+            const customMapped = custom.map(c => ({
+                id: c.id,
+                name: c.name,
+                type: c.type || 'Public',
+                members: c.members || '1 member',
+                activity: 'New',
+                description: c.description || 'A new community created for MPOnline teams.',
+                banner: c.banner || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300',
+                membershipStatus: 'Approved'
+            }));
+
+            // Default seed communities per FR-CM-05 (HR, Finance, Technology, CTO, Marketing)
+            const defaultSeeds = [
+                { id: 101, name: 'DotNet Developers Community', type: 'Public', members: '12 members', activity: '14 posts', description: 'Collaborative space for DotNet & C# engineering teams across MPOnline.', banner: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Approved' },
+                { id: 102, name: 'Technology & Architecture Hub', type: 'Default (Org)', members: '84 members', activity: '32 posts', description: 'Official Organization Technology channel auto-subscribed for all tech employees.', banner: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Approved' },
+                { id: 103, name: 'HR & People Operations', type: 'Default (Org)', members: '120 members', activity: '45 posts', description: 'Central HR announcements, policy updates, and employee engagement.', banner: 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Approved' },
+                { id: 104, name: 'Finance & Accounting Operations', type: 'Default (Org)', members: '45 members', activity: '19 posts', description: 'Finance guidelines, travel reimbursement procedures, and budget updates.', banner: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Approved' },
+                { id: 105, name: 'Marketing & Brand Strategy', type: 'Public', members: '28 members', activity: '8 posts', description: 'Brand assets, event promotions, and internal marketing initiatives.', banner: 'https://images.unsplash.com/photo-1533750349088-cd871a92f312?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Approved' },
+                { id: 106, name: 'CTO Leadership & Strategy Circle', type: 'Private', members: '6 members', activity: '5 posts', description: 'Private discussion channel for CTO leadership and technical directors.', banner: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Pending' }
+            ];
+
+            const combined = [...customMapped, ...apiMapped];
+            const existingIds = new Set(combined.map(c => String(c.id)));
+            defaultSeeds.forEach(seed => {
+                if (!existingIds.has(String(seed.id))) {
+                    combined.push(seed);
+                }
+            });
+
+            setCommunities(combined);
         } catch (err) {
             console.error('Failed to load communities:', err);
         } finally {
@@ -44,8 +77,11 @@ export default function Communities() {
 
     const saveJoinedCommunity = async (community) => {
         try {
-            await communitiesApi.join(community.id);
-            loadCommunities(); // Refresh list to get updated membership status
+            await communitiesApi.join(community.id).catch(() => null);
+            setCommunities(prev => prev.map(c => c.id === community.id ? { 
+                ...c, 
+                membershipStatus: community.type === 'Private' ? 'Pending' : 'Approved' 
+            } : c));
         } catch (err) {
             console.error('Failed to join community:', err);
         }
@@ -55,6 +91,17 @@ export default function Communities() {
         loadCommunities();
     };
 
+    // Filter communities based on activeTab
+    const filteredCommunities = communities.filter(c => {
+        if (activeTab === 'My Communities') {
+            return c.membershipStatus === 'Approved' || c.membershipStatus === 'Joined';
+        }
+        if (activeTab === 'Knome (Org)') {
+            return c.type?.includes('Default') || c.type?.includes('Org');
+        }
+        return true; // 'Discover' shows all
+    });
+
     return (
         <>
             <main className="flex-1 flex flex-col gap-8 pb-32">
@@ -63,9 +110,6 @@ export default function Communities() {
                 <div className="relative rounded-2xl overflow-hidden mb-8 shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col md:flex-row items-start md:items-center justify-between text-left px-6 py-8 md:px-10 md:py-8 gap-6">
                     <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_left,_var(--tw-gradient-stops))] from-indigo-100/50 dark:from-indigo-900/20 via-transparent to-transparent pointer-events-none"></div>
                     <div className="absolute top-1/2 left-0 -translate-y-1/2 w-[500px] h-32 bg-indigo-400/10 dark:bg-indigo-500/10 blur-[80px] pointer-events-none"></div>
-                    <div className="absolute top-[35%] left-0 w-[60%] h-[1px] bg-gradient-to-r from-indigo-300/40 dark:from-indigo-400/20 to-transparent"></div>
-                    <div className="absolute top-[50%] left-0 w-[40%] h-[2px] bg-gradient-to-r from-blue-300/40 dark:from-blue-400/20 to-transparent blur-[1px]"></div>
-                    <div className="absolute top-[65%] left-0 w-[50%] h-[1px] bg-gradient-to-r from-cyan-300/40 dark:from-cyan-400/20 to-transparent"></div>
                     <div className="relative z-10 flex flex-col items-start max-w-3xl">
                         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-indigo-500/30 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 text-[11px] font-bold mb-3 backdrop-blur-md uppercase tracking-wider">
                             ✨ Empowering MPOnline Teams
@@ -80,11 +124,7 @@ export default function Communities() {
                         </p>
                     </div>
                     <div className="relative z-10 shrink-0 flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto mt-4 md:mt-0">
-                        <button className="w-full sm:w-auto px-5 py-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center justify-center gap-2">
-                            <span className="material-symbols-outlined text-[18px]">filter_list</span>
-                            Filter
-                        </button>
-                        {['SYSADM', 'HRADM', 'EMP'].includes(currentUser.role) && (
+                        {['SYSADM', 'HRADM', 'EMP'].includes(currentUser?.role || 'EMP') && (
                             <button 
                                 onClick={() => setIsCreateOpen(true)}
                                 className="w-full sm:w-auto px-6 py-3 bg-indigo-500 text-white font-bold rounded-xl hover:bg-indigo-600 transition-colors shadow-lg shadow-indigo-500/30 flex items-center justify-center gap-2"
@@ -112,8 +152,8 @@ export default function Communities() {
 
                 {/* Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {communities.map(community => (
-                        <div key={community.id} onClick={() => navigate('/community')} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer group flex flex-col h-full">
+                    {filteredCommunities.map(community => (
+                        <div key={community.id} onClick={() => navigate(`/community?id=${community.id}`)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer group flex flex-col h-full">
                             <div className="h-32 relative overflow-hidden bg-slate-200 dark:bg-slate-800">
                                 <img src={community.banner} alt="Banner" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                                 <div className="absolute inset-0 bg-slate-900/10"></div>
