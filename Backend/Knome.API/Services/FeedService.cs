@@ -1,0 +1,248 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Knome.API.Constants;
+using Knome.API.Data;
+using Knome.API.DTOs.Feed;
+using Knome.API.Interfaces;
+using Knome.API.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace Knome.API.Services;
+
+public class FeedService : IFeedService
+{
+    private readonly IFeedRepository _repo;
+    private readonly IContentInteractionService _interactionService;
+    private readonly IKarmaService _karmaService;
+    private readonly KnomeDbContext _db;
+
+    public FeedService(IFeedRepository repo, IContentInteractionService interactionService, IKarmaService karmaService, KnomeDbContext db)
+    {
+        _repo = repo;
+        _interactionService = interactionService;
+        _karmaService = karmaService;
+        _db = db;
+    }
+
+    public async Task<List<FeedItemDto>> GetPersonalizedFeedAsync(int currentUserId, string? contentTypeFilter, int pageNumber, int pageSize)
+    {
+        if (pageNumber < 1) pageNumber = 1;
+        if (pageSize < 1 || pageSize > 50) pageSize = 20;
+
+        var followedUserIds = await _repo.GetFollowedUserIdsAsync(currentUserId);
+        var myCommunityIds = await _repo.GetMyCommunityIdsAsync(currentUserId);
+
+        var candidateItems = new List<FeedItemDto>();
+
+        if (string.IsNullOrEmpty(contentTypeFilter) || contentTypeFilter.Equals(ContentTypes.Post, StringComparison.OrdinalIgnoreCase))
+        {
+            var posts = await _repo.GetCandidatePostsAsync(followedUserIds, myCommunityIds, currentUserId, 50);
+            foreach (var p in posts)
+            {
+                var item = new FeedItemDto
+                {
+                    ContentType = ContentTypes.Post,
+                    ContentId = p.PostId,
+                    Title = string.Empty,
+                    TextSummary = p.ContentText.Length > 200 ? p.ContentText.Substring(0, 197) + "..." : p.ContentText,
+                    AttachmentUrl = p.PostAttachments.FirstOrDefault()?.FileUrl,
+                    AuthorUserId = p.AuthorUserId,
+                    AuthorEmployeeId = p.AuthorUser?.EmployeeId ?? string.Empty,
+                    AuthorFullName = p.AuthorUser?.FullName ?? "Unknown",
+                    AuthorDesignation = p.AuthorUser?.Designation,
+                    AuthorProfilePhotoUrl = p.AuthorUser?.ProfilePhotoUrl,
+                    PublishedDate = p.CreatedDate,
+                    AudienceType = p.AudienceType
+                };
+                item.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Post, p.PostId, currentUserId);
+                item.HotScore = ComputeHotScore(item.EngagementSummary.EngagementScore, p.CreatedDate);
+                candidateItems.Add(item);
+            }
+        }
+
+        if (string.IsNullOrEmpty(contentTypeFilter) || contentTypeFilter.Equals(ContentTypes.Article, StringComparison.OrdinalIgnoreCase))
+        {
+            var articles = await _repo.GetCandidateArticlesAsync(followedUserIds, currentUserId, 50);
+            foreach (var a in articles)
+            {
+                var item = new FeedItemDto
+                {
+                    ContentType = ContentTypes.Article,
+                    ContentId = a.ArticleId,
+                    Title = a.Title,
+                    TextSummary = a.Description ?? string.Empty,
+                    AttachmentUrl = a.ArticleAttachments.FirstOrDefault()?.FileUrl,
+                    AuthorUserId = a.AuthorUserId,
+                    AuthorEmployeeId = a.AuthorUser?.EmployeeId ?? string.Empty,
+                    AuthorFullName = a.AuthorUser?.FullName ?? "Unknown",
+                    AuthorDesignation = a.AuthorUser?.Designation,
+                    AuthorProfilePhotoUrl = a.AuthorUser?.ProfilePhotoUrl,
+                    PublishedDate = a.PublishedDate ?? a.CreatedDate,
+                    AudienceType = AudienceTypes.Everyone
+                };
+                item.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Article, a.ArticleId, currentUserId);
+                item.HotScore = ComputeHotScore(item.EngagementSummary.EngagementScore, item.PublishedDate);
+                candidateItems.Add(item);
+            }
+        }
+
+        if (string.IsNullOrEmpty(contentTypeFilter) || contentTypeFilter.Equals(ContentTypes.Video, StringComparison.OrdinalIgnoreCase))
+        {
+            var videos = await _repo.GetCandidateVideosAsync(followedUserIds, currentUserId, 30);
+            foreach (var v in videos)
+            {
+                var item = new FeedItemDto
+                {
+                    ContentType = ContentTypes.Video,
+                    ContentId = v.VideoId,
+                    Title = v.Title,
+                    TextSummary = v.Description ?? string.Empty,
+                    AttachmentUrl = v.ThumbnailUrl,
+                    AuthorUserId = v.UploaderUserId,
+                    AuthorEmployeeId = v.UploaderUser?.EmployeeId ?? string.Empty,
+                    AuthorFullName = v.UploaderUser?.FullName ?? "Unknown",
+                    AuthorDesignation = v.UploaderUser?.Designation,
+                    AuthorProfilePhotoUrl = v.UploaderUser?.ProfilePhotoUrl,
+                    PublishedDate = v.UploadedDate,
+                    AudienceType = AudienceTypes.Everyone
+                };
+                item.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Video, v.VideoId, currentUserId);
+                item.HotScore = ComputeHotScore(item.EngagementSummary.EngagementScore, v.UploadedDate);
+                candidateItems.Add(item);
+            }
+        }
+
+        if (string.IsNullOrEmpty(contentTypeFilter) || contentTypeFilter.Equals(ContentTypes.Podcast, StringComparison.OrdinalIgnoreCase))
+        {
+            var podcasts = await _repo.GetCandidatePodcastsAsync(followedUserIds, currentUserId, 30);
+            foreach (var p in podcasts)
+            {
+                var item = new FeedItemDto
+                {
+                    ContentType = ContentTypes.Podcast,
+                    ContentId = p.PodcastId,
+                    Title = p.Title,
+                    TextSummary = p.Description ?? string.Empty,
+                    AttachmentUrl = p.CoverImageUrl,
+                    AuthorUserId = p.UploaderUserId,
+                    AuthorEmployeeId = p.UploaderUser?.EmployeeId ?? string.Empty,
+                    AuthorFullName = p.UploaderUser?.FullName ?? "Unknown",
+                    AuthorDesignation = p.UploaderUser?.Designation,
+                    AuthorProfilePhotoUrl = p.UploaderUser?.ProfilePhotoUrl,
+                    PublishedDate = p.UploadedDate,
+                    AudienceType = AudienceTypes.Everyone
+                };
+                item.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Podcast, p.PodcastId, currentUserId);
+                item.HotScore = ComputeHotScore(item.EngagementSummary.EngagementScore, p.UploadedDate);
+                candidateItems.Add(item);
+            }
+        }
+
+        var paged = candidateItems
+            .OrderByDescending(x => x.PublishedDate)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return paged;
+    }
+
+    public async Task<List<FeedItemDto>> GetHotFeedAsync(int currentUserId, string window, int top = 10)
+    {
+        if (!FeedWindows.IsValid(window)) window = FeedWindows.Daily;
+        if (top <= 0 || top > 50) top = 10;
+
+        int windowHours = FeedWindows.GetHours(window);
+        var cutoff = DateTime.UtcNow.AddHours(-windowHours);
+
+        var allRecentItems = new List<FeedItemDto>();
+
+        // Fetch recent posts
+        var posts = await _db.Posts.Include(p => p.AuthorUser).Include(p => p.PostAttachments).Where(p => p.CreatedDate >= cutoff && p.AudienceType == AudienceTypes.Everyone).Take(50).ToListAsync();
+        foreach (var p in posts)
+        {
+            var summary = await _interactionService.GetContentSummaryAsync(ContentTypes.Post, p.PostId, currentUserId);
+            var score = ComputeHotScore(summary.EngagementScore, p.CreatedDate);
+            await _repo.UpdateOrAddHotScoreCacheAsync(new HotPostsScoreCache { ContentType = ContentTypes.Post, ContentId = p.PostId, Window = window, Score = score, CalculatedAt = DateTime.UtcNow });
+
+            allRecentItems.Add(new FeedItemDto
+            {
+                ContentType = ContentTypes.Post,
+                ContentId = p.PostId,
+                Title = string.Empty,
+                TextSummary = p.ContentText.Length > 200 ? p.ContentText.Substring(0, 197) + "..." : p.ContentText,
+                AttachmentUrl = p.PostAttachments.FirstOrDefault()?.FileUrl,
+                AuthorUserId = p.AuthorUserId,
+                AuthorEmployeeId = p.AuthorUser?.EmployeeId ?? string.Empty,
+                AuthorFullName = p.AuthorUser?.FullName ?? "Unknown",
+                AuthorDesignation = p.AuthorUser?.Designation,
+                AuthorProfilePhotoUrl = p.AuthorUser?.ProfilePhotoUrl,
+                PublishedDate = p.CreatedDate,
+                AudienceType = p.AudienceType,
+                EngagementSummary = summary,
+                HotScore = score
+            });
+        }
+
+        // Fetch recent articles
+        var articles = await _db.Articles.Include(a => a.AuthorUser).Include(a => a.ArticleAttachments).Where(a => (a.PublishedDate ?? a.CreatedDate) >= cutoff && a.Status == ArticleStatuses.Published).Take(50).ToListAsync();
+        foreach (var a in articles)
+        {
+            var summary = await _interactionService.GetContentSummaryAsync(ContentTypes.Article, a.ArticleId, currentUserId);
+            var pubDate = a.PublishedDate ?? a.CreatedDate;
+            var score = ComputeHotScore(summary.EngagementScore, pubDate);
+            await _repo.UpdateOrAddHotScoreCacheAsync(new HotPostsScoreCache { ContentType = ContentTypes.Article, ContentId = a.ArticleId, Window = window, Score = score, CalculatedAt = DateTime.UtcNow });
+
+            allRecentItems.Add(new FeedItemDto
+            {
+                ContentType = ContentTypes.Article,
+                ContentId = a.ArticleId,
+                Title = a.Title,
+                TextSummary = a.Description ?? string.Empty,
+                AttachmentUrl = a.ArticleAttachments.FirstOrDefault()?.FileUrl,
+                AuthorUserId = a.AuthorUserId,
+                AuthorEmployeeId = a.AuthorUser?.EmployeeId ?? string.Empty,
+                AuthorFullName = a.AuthorUser?.FullName ?? "Unknown",
+                AuthorDesignation = a.AuthorUser?.Designation,
+                AuthorProfilePhotoUrl = a.AuthorUser?.ProfilePhotoUrl,
+                PublishedDate = pubDate,
+                AudienceType = AudienceTypes.Everyone,
+                EngagementSummary = summary,
+                HotScore = score
+            });
+        }
+
+        return allRecentItems
+            .OrderByDescending(x => x.HotScore)
+            .Take(top)
+            .ToList();
+    }
+
+    public async Task<DashboardSummaryDto> GetDashboardSummaryAsync(int currentUserId)
+    {
+        var karma = await _karmaService.GetMyBalanceAsync(currentUserId);
+        var unreadNotifs = await _db.Notifications.CountAsync(n => n.UserId == currentUserId && !n.IsRead);
+        var personalized = await GetPersonalizedFeedAsync(currentUserId, null, 1, 10);
+        var hot = await GetHotFeedAsync(currentUserId, FeedWindows.Daily, 5);
+
+        return new DashboardSummaryDto
+        {
+            CurrentUserKarma = karma,
+            UnreadNotificationsCount = unreadNotifs,
+            PersonalizedFeed = personalized,
+            TopHotPosts = hot
+        };
+    }
+
+    private decimal ComputeHotScore(long engagementScore, DateTime publishedDate)
+    {
+        double ageInHours = (DateTime.UtcNow - publishedDate).TotalHours;
+        if (ageInHours < 0) ageInHours = 0;
+        double denominator = Math.Pow(ageInHours + 2.0, 1.5);
+        if (denominator == 0) denominator = 1.0;
+        double score = engagementScore / denominator;
+        return (decimal)Math.Round(score, 2);
+    }
+}

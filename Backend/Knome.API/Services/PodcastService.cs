@@ -1,0 +1,264 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using AutoMapper;
+using Knome.API.Constants;
+using Knome.API.Data;
+using Knome.API.DTOs.Podcasts;
+using Knome.API.Exceptions;
+using Knome.API.Interfaces;
+using Knome.API.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace Knome.API.Services;
+
+public class PodcastService : IPodcastService
+{
+    private readonly IPodcastRepository _repo;
+    private readonly IContentInteractionService _interactionService;
+    private readonly IKarmaService _karmaService;
+    private readonly KnomeDbContext _db;
+    private readonly IMapper _mapper;
+    private readonly ISuspensionGuard _suspensionGuard;
+
+    public PodcastService(IPodcastRepository repo, IContentInteractionService interactionService, IKarmaService karmaService, KnomeDbContext db, IMapper mapper, ISuspensionGuard suspensionGuard)
+    {
+        _repo = repo;
+        _interactionService = interactionService;
+        _karmaService = karmaService;
+        _db = db;
+        _mapper = mapper;
+        _suspensionGuard = suspensionGuard;
+    }
+
+    private async Task CheckIsAdminAsync(int currentUserId)
+    {
+        var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
+        if (user == null || !user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.CommunityAdmin))
+        {
+            throw new UnauthorizedException("You must be an Administrator to create/modify podcast series definitions.");
+        }
+    }
+
+    private async Task CheckIsUploaderOrAdminAsync(Podcast podcast, int currentUserId)
+    {
+        if (podcast.UploaderUserId == currentUserId) return;
+
+        var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
+        if (user == null || !user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.CommunityAdmin))
+        {
+            throw new UnauthorizedException("You must be the uploader of this podcast episode or an Administrator to modify/delete it.");
+        }
+    }
+
+    // --- Series ---
+    public async Task<PodcastSeriesDto> GetSeriesByIdAsync(int seriesId)
+    {
+        var series = await _repo.GetSeriesByIdAsync(seriesId);
+        if (series == null)
+            throw new NotFoundException($"Podcast Series ID {seriesId} not found.");
+
+        return _mapper.Map<PodcastSeriesDto>(series);
+    }
+
+    public async Task<List<PodcastSeriesDto>> GetAllSeriesAsync()
+    {
+        var list = await _repo.GetAllSeriesAsync();
+        return _mapper.Map<List<PodcastSeriesDto>>(list);
+    }
+
+    public async Task<PodcastSeriesDto> CreateSeriesAsync(int currentUserId, CreatePodcastSeriesDto dto)
+    {
+        await CheckIsAdminAsync(currentUserId);
+
+        var secCheck = await _interactionService.ValidateContentSecurityAsync($"{dto.Title} {dto.Description}");
+        if (!secCheck.IsValid)
+            throw new BadRequestException("Podcast series title or description contain blocked terms per FR-SM-01.");
+
+        var series = new PodcastSeries
+        {
+            Title = dto.Title,
+            Description = dto.Description
+        };
+
+        var saved = await _repo.AddSeriesAsync(series);
+        return _mapper.Map<PodcastSeriesDto>(saved);
+    }
+
+    public async Task<PodcastSeriesDto> UpdateSeriesAsync(int seriesId, int currentUserId, UpdatePodcastSeriesDto dto)
+    {
+        await CheckIsAdminAsync(currentUserId);
+
+        var series = await _repo.GetSeriesByIdAsync(seriesId);
+        if (series == null)
+            throw new NotFoundException($"Podcast Series ID {seriesId} not found.");
+
+        var secCheck = await _interactionService.ValidateContentSecurityAsync($"{dto.Title} {dto.Description}");
+        if (!secCheck.IsValid)
+            throw new BadRequestException("Updated podcast series terms contain blocked words per FR-SM-01.");
+
+        series.Title = dto.Title;
+        series.Description = dto.Description;
+
+        await _repo.UpdateSeriesAsync(series);
+        return _mapper.Map<PodcastSeriesDto>(series);
+    }
+
+    public async Task DeleteSeriesAsync(int seriesId, int currentUserId)
+    {
+        await CheckIsAdminAsync(currentUserId);
+
+        var series = await _repo.GetSeriesByIdAsync(seriesId);
+        if (series == null)
+            throw new NotFoundException($"Podcast Series ID {seriesId} not found.");
+
+        await _repo.DeleteSeriesAsync(series);
+    }
+
+    // --- Episodes ---
+    public async Task<PodcastDto> GetPodcastAsync(long podcastId, int currentUserId)
+    {
+        var podcast = await _repo.GetPodcastByIdAsync(podcastId);
+        if (podcast == null)
+            throw new NotFoundException($"Podcast ID {podcastId} not found.");
+
+        var dto = _mapper.Map<PodcastDto>(podcast);
+        dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Podcast, podcastId, currentUserId);
+        return dto;
+    }
+
+    public async Task<List<PodcastDto>> GetPodcastsAsync(int? seriesId, int? categoryId, string? search, int pageNumber, int pageSize, int currentUserId)
+    {
+        var podcasts = await _repo.GetPodcastsAsync(seriesId, categoryId, search, pageNumber, pageSize);
+        var dtos = new List<PodcastDto>();
+
+        foreach (var p in podcasts)
+        {
+            var dto = _mapper.Map<PodcastDto>(p);
+            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Podcast, p.PodcastId, currentUserId);
+            dtos.Add(dto);
+        }
+
+        return dtos;
+    }
+
+    public async Task<List<PodcastDto>> GetMyPodcastsAsync(int currentUserId, int pageNumber = 1, int pageSize = 20)
+    {
+        var podcasts = await _repo.GetMyPodcastsAsync(currentUserId, pageNumber, pageSize);
+        var dtos = new List<PodcastDto>();
+
+        foreach (var p in podcasts)
+        {
+            var dto = _mapper.Map<PodcastDto>(p);
+            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Podcast, p.PodcastId, currentUserId);
+            dtos.Add(dto);
+        }
+
+        return dtos;
+    }
+
+    public async Task<PodcastDto> CreatePodcastAsync(int currentUserId, CreatePodcastDto dto)
+    {
+        await _suspensionGuard.EnsureNotSuspendedAsync(currentUserId);
+
+        if (dto.SeriesId.HasValue)
+        {
+            var series = await _repo.GetSeriesByIdAsync(dto.SeriesId.Value);
+            if (series == null)
+                throw new BadRequestException($"Podcast Series ID {dto.SeriesId.Value} does not exist.");
+        }
+
+        // FK existence validation (GBV-001) — CategoryId
+        if (dto.CategoryId.HasValue)
+        {
+            var categoryExists = await _db.Categories.AnyAsync(c => c.CategoryId == dto.CategoryId.Value);
+            if (!categoryExists)
+                throw new BadRequestException($"Category ID {dto.CategoryId.Value} does not exist.");
+        }
+
+        if (dto.FileSizeMb.HasValue && dto.FileSizeMb.Value > MediaSizeLimits.MaxPodcastSizeMb)
+            throw new BadRequestException($"Podcast file size ({dto.FileSizeMb} MB) exceeds maximum permitted size of {MediaSizeLimits.MaxPodcastSizeMb} MB per FR-PD-02.");
+
+        var secCheck = await _interactionService.ValidateContentSecurityAsync($"{dto.Title} {dto.Description}", dto.CoverImageUrl);
+        if (!secCheck.IsValid)
+            throw new BadRequestException("Podcast content or URLs contain blocked domains or restricted keywords per FR-SM-01.");
+
+        var podcast = new Podcast
+        {
+            UploaderUserId = currentUserId,
+            Title = dto.Title,
+            Description = dto.Description,
+            CoverImageUrl = dto.CoverImageUrl,
+            AudioUrl = dto.AudioUrl,
+            DurationSeconds = dto.DurationSeconds,
+            CategoryId = dto.CategoryId,
+            SeriesId = dto.SeriesId,
+            FileSizeMb = dto.FileSizeMb,
+            UploadedDate = DateTime.UtcNow
+        };
+
+        var saved = await _repo.AddPodcastAsync(podcast);
+        await _karmaService.AwardKarmaAsync(currentUserId, KarmaActivityTypes.CreatePodcast, KarmaPoints.CreatePodcastPoints, ContentTypes.Podcast, saved.PodcastId, KarmaCaps.CreatePodcastDailyCap);
+
+        var resDto = _mapper.Map<PodcastDto>(saved);
+        resDto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Podcast, saved.PodcastId, currentUserId);
+        return resDto;
+    }
+
+    public async Task<PodcastDto> UpdatePodcastAsync(long podcastId, int currentUserId, UpdatePodcastDto dto)
+    {
+        var podcast = await _repo.GetPodcastByIdAsync(podcastId);
+        if (podcast == null)
+            throw new NotFoundException($"Podcast ID {podcastId} not found.");
+
+        await CheckIsUploaderOrAdminAsync(podcast, currentUserId);
+
+        if (dto.FileSizeMb.HasValue && dto.FileSizeMb.Value > MediaSizeLimits.MaxPodcastSizeMb)
+            throw new BadRequestException($"Podcast file size ({dto.FileSizeMb} MB) exceeds maximum permitted size of {MediaSizeLimits.MaxPodcastSizeMb} MB per FR-PD-02.");
+
+        var secCheck = await _interactionService.ValidateContentSecurityAsync($"{dto.Title} {dto.Description}", dto.CoverImageUrl);
+        if (!secCheck.IsValid)
+            throw new BadRequestException("Updated podcast content or URLs contain blocked domains or restricted keywords per FR-SM-01.");
+
+        // FK existence validation (GBV-001)
+        if (dto.CategoryId.HasValue)
+        {
+            var categoryExists = await _db.Categories.AnyAsync(c => c.CategoryId == dto.CategoryId.Value);
+            if (!categoryExists)
+                throw new BadRequestException($"Category ID {dto.CategoryId.Value} does not exist.");
+        }
+        if (dto.SeriesId.HasValue)
+        {
+            var seriesExists = await _repo.GetSeriesByIdAsync(dto.SeriesId.Value);
+            if (seriesExists == null)
+                throw new BadRequestException($"Podcast Series ID {dto.SeriesId.Value} does not exist.");
+        }
+
+        if (dto.Title != null) podcast.Title = dto.Title;
+        if (dto.Description != null) podcast.Description = dto.Description;
+        if (dto.CoverImageUrl != null) podcast.CoverImageUrl = dto.CoverImageUrl;
+        if (dto.AudioUrl != null) podcast.AudioUrl = dto.AudioUrl;
+        if (dto.DurationSeconds.HasValue) podcast.DurationSeconds = dto.DurationSeconds.Value;
+        if (dto.CategoryId.HasValue) podcast.CategoryId = dto.CategoryId.Value;
+        if (dto.SeriesId.HasValue) podcast.SeriesId = dto.SeriesId.Value;
+        if (dto.FileSizeMb.HasValue) podcast.FileSizeMb = dto.FileSizeMb.Value;
+
+        await _repo.UpdatePodcastAsync(podcast);
+
+        var updated = await _repo.GetPodcastByIdAsync(podcastId);
+        var resDto = _mapper.Map<PodcastDto>(updated!);
+        resDto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Podcast, podcastId, currentUserId);
+        return resDto;
+    }
+
+    public async Task DeletePodcastAsync(long podcastId, int currentUserId)
+    {
+        var podcast = await _repo.GetPodcastByIdAsync(podcastId);
+        if (podcast == null)
+            throw new NotFoundException($"Podcast ID {podcastId} not found.");
+
+        await CheckIsUploaderOrAdminAsync(podcast, currentUserId);
+        await _repo.DeletePodcastAsync(podcast);
+    }
+}
