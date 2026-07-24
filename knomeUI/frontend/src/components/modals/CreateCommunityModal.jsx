@@ -39,64 +39,62 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
         }
         setIsSubmitting(true);
 
-        setTimeout(() => {
-            const communityId = Date.now();
-            const newCommunity = {
-                id: communityId,
-                name: name.trim(),
-                type: type === 'default' ? 'Default (Org)' : type.charAt(0).toUpperCase() + type.slice(1),
-                members: `1 (You)`,
-                activity: 'New',
-                description: description.trim() || 'A new community created for MPOnline teams.',
-                banner: banner || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300',
-                avatar: avatar || null,
-                createdBy: currentUser?.name || 'Employee'
+        const communityId = Date.now();
+        const newCommunity = {
+            id: communityId,
+            name: name.trim(),
+            type: type === 'default' ? 'Default (Org)' : type.charAt(0).toUpperCase() + type.slice(1),
+            members: `1 (You)`,
+            activity: 'New',
+            description: description.trim() || 'A new community created for MPOnline teams.',
+            banner: banner || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300',
+            avatar: avatar || null,
+            createdBy: currentUser?.name || 'Employee'
+        };
+        
+        // Save Community Notifications for invited members
+        const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+        const newInviteNotifs = invitedUserIds.map(targetId => {
+            const targetUser = users.find(u => u.id === targetId);
+            return {
+                id: Date.now() + Math.random(),
+                targetUserId: targetId,
+                type: 'invite',
+                text: `${currentUser?.name || 'An employee'} invited you to join the community "${newCommunity.name}".`,
+                time: 'Just now',
+                unread: true,
+                icon: 'group_add',
+                color: 'text-indigo-400',
+                bg: 'bg-indigo-500/10',
+                communityName: newCommunity.name,
+                communityId: newCommunity.id,
+                actionLink: '/community'
             };
-            
-            // Save Community Notifications for invited members
-            const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
-            const newInviteNotifs = invitedUserIds.map(targetId => {
-                const targetUser = users.find(u => u.id === targetId);
-                return {
-                    id: Date.now() + Math.random(),
-                    targetUserId: targetId,
-                    type: 'invite',
-                    text: `${currentUser?.name || 'An employee'} invited you to join the community "${newCommunity.name}".`,
-                    time: 'Just now',
-                    unread: true,
-                    icon: 'group_add',
-                    color: 'text-indigo-400',
-                    bg: 'bg-indigo-500/10',
-                    communityName: newCommunity.name,
-                    communityId: newCommunity.id,
-                    actionLink: '/community'
-                };
-            });
+        });
 
-            localStorage.setItem('knome_notifications', JSON.stringify([...newInviteNotifs, ...existingNotifs]));
+        localStorage.setItem('knome_notifications', JSON.stringify([...newInviteNotifs, ...existingNotifs]));
 
-            // Save newly created community globally in custom communities & user joined list
-            const customCommunities = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
-            localStorage.setItem('knome_custom_communities', JSON.stringify([newCommunity, ...customCommunities]));
+        // Save newly created community globally in custom communities & user joined list
+        const customCommunities = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+        localStorage.setItem('knome_custom_communities', JSON.stringify([newCommunity, ...customCommunities]));
 
-            const userKey = `knome_joined_communities_${currentUser?.id || 'guest'}`;
-            const userJoined = JSON.parse(localStorage.getItem(userKey) || '[]');
-            localStorage.setItem(userKey, JSON.stringify([newCommunity, ...userJoined]));
+        const userKey = `knome_joined_communities_${currentUser?.id || 'guest'}`;
+        const userJoined = JSON.parse(localStorage.getItem(userKey) || '[]');
+        localStorage.setItem(userKey, JSON.stringify([newCommunity, ...userJoined]));
 
-            // Dispatch global events for instant update across widgets
-            window.dispatchEvent(new CustomEvent('community-joined-change'));
-            window.dispatchEvent(new CustomEvent('community-invite-sent', {
-                detail: { invitedUserIds, communityName: newCommunity.name, senderName: currentUser?.name }
-            }));
+        // Dispatch global events for instant update across widgets
+        window.dispatchEvent(new CustomEvent('community-joined-change'));
+        window.dispatchEvent(new CustomEvent('community-invite-sent', {
+            detail: { invitedUserIds, communityName: newCommunity.name, senderName: currentUser?.name }
+        }));
 
-            if (onCommunityCreated) onCommunityCreated(newCommunity);
-            
-            setIsSubmitting(false);
+        if (onCommunityCreated) onCommunityCreated(newCommunity);
+        
+        setIsSubmitting(false);
 
-            // Generate direct link
-            const generatedLink = `${window.location.origin}/community?id=${communityId}`;
-            setCreatedCommunityLink(generatedLink);
-        }, 1000);
+        // Generate direct link
+        const generatedLink = `${window.location.origin}/community?id=${communityId}`;
+        setCreatedCommunityLink(generatedLink);
     };
 
     const handleCopyLink = () => {

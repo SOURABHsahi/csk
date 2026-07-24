@@ -4,23 +4,44 @@ import { useUser } from '../components/contexts/UserContext';
 import CreateCommunityModal from '../components/modals/CreateCommunityModal';
 import { communitiesApi } from '../utils/apiService';
 
+const defaultSeeds = [
+    { id: 101, name: 'DotNet Developers Community', type: 'Public', members: '12 members', activity: '14 posts', description: 'Collaborative space for DotNet & C# engineering teams across MPOnline.', banner: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Approved' },
+    { id: 102, name: 'Technology & Architecture Hub', type: 'Default (Org)', members: '84 members', activity: '32 posts', description: 'Official Organization Technology channel auto-subscribed for all tech employees.', banner: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200&h=400', membershipStatus: 'Approved' },
+    { id: 103, name: 'HR & People Operations', type: 'Default (Org)', members: '120 members', activity: '45 posts', description: 'Central HR announcements, policy updates, and employee engagement.', banner: 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Approved' },
+    { id: 104, name: 'Finance & Accounting Operations', type: 'Default (Org)', members: '45 members', activity: '19 posts', description: 'Finance guidelines, travel reimbursement procedures, and budget updates.', banner: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Approved' },
+    { id: 105, name: 'Marketing & Brand Strategy', type: 'Public', members: '28 members', activity: '8 posts', description: 'Brand assets, event promotions, and internal marketing initiatives.', banner: 'https://images.unsplash.com/photo-1533750349088-cd871a92f312?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Approved' },
+    { id: 106, name: 'CTO Leadership & Strategy Circle', type: 'Private', members: '6 members', activity: '5 posts', description: 'Private discussion channel for CTO leadership and technical directors.', banner: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Pending' }
+];
+
+const getInitialCommunities = () => {
+    const custom = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+    const customMapped = custom.map(c => ({
+        id: c.id,
+        name: c.name,
+        type: c.type || 'Public',
+        members: c.members || '1 member',
+        activity: 'New',
+        description: c.description || 'A new community created for MPOnline teams.',
+        banner: c.banner || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300',
+        membershipStatus: 'Approved'
+    }));
+    return [...customMapped, ...defaultSeeds];
+};
+
 export default function Communities() {
     const { currentUser } = useUser();
     const navigate = useNavigate();
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [activeTab, setActiveTab] = useState('Discover');
-    const [joinedStatus, setJoinedStatus] = useState({});
 
-    const [communities, setCommunities] = useState([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const [communities, setCommunities] = useState(getInitialCommunities);
+    const [isLoading, setIsLoading] = useState(false);
 
     const loadCommunities = async () => {
-        setIsLoading(true);
         try {
             const data = await communitiesApi.getAll().catch(() => null);
-            let apiMapped = [];
-            if (data && Array.isArray(data)) {
-                apiMapped = data.map(c => ({
+            if (data && Array.isArray(data) && data.length > 0) {
+                const apiMapped = data.map(c => ({
                     id: c.communityId,
                     name: c.name,
                     type: c.communityType || 'Public',
@@ -30,44 +51,26 @@ export default function Communities() {
                     banner: c.bannerUrl || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300',
                     membershipStatus: c.currentUserMembershipStatus || 'Approved'
                 }));
+                const existingIds = new Set(apiMapped.map(c => String(c.id)));
+                const custom = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+                custom.forEach(c => {
+                    if (!existingIds.has(String(c.id))) {
+                        apiMapped.unshift({
+                            id: c.id,
+                            name: c.name,
+                            type: c.type || 'Public',
+                            members: c.members || '1 member',
+                            activity: 'New',
+                            description: c.description || 'A new community created for MPOnline teams.',
+                            banner: c.banner || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300',
+                            membershipStatus: 'Approved'
+                        });
+                    }
+                });
+                setCommunities(apiMapped);
             }
-
-            // Include custom communities created via CreateCommunityModal
-            const custom = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
-            const customMapped = custom.map(c => ({
-                id: c.id,
-                name: c.name,
-                type: c.type || 'Public',
-                members: c.members || '1 member',
-                activity: 'New',
-                description: c.description || 'A new community created for MPOnline teams.',
-                banner: c.banner || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300',
-                membershipStatus: 'Approved'
-            }));
-
-            // Default seed communities per FR-CM-05 (HR, Finance, Technology, CTO, Marketing)
-            const defaultSeeds = [
-                { id: 101, name: 'DotNet Developers Community', type: 'Public', members: '12 members', activity: '14 posts', description: 'Collaborative space for DotNet & C# engineering teams across MPOnline.', banner: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Approved' },
-                { id: 102, name: 'Technology & Architecture Hub', type: 'Default (Org)', members: '84 members', activity: '32 posts', description: 'Official Organization Technology channel auto-subscribed for all tech employees.', banner: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Approved' },
-                { id: 103, name: 'HR & People Operations', type: 'Default (Org)', members: '120 members', activity: '45 posts', description: 'Central HR announcements, policy updates, and employee engagement.', banner: 'https://images.unsplash.com/photo-1556761175-5973dc0f32e7?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Approved' },
-                { id: 104, name: 'Finance & Accounting Operations', type: 'Default (Org)', members: '45 members', activity: '19 posts', description: 'Finance guidelines, travel reimbursement procedures, and budget updates.', banner: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Approved' },
-                { id: 105, name: 'Marketing & Brand Strategy', type: 'Public', members: '28 members', activity: '8 posts', description: 'Brand assets, event promotions, and internal marketing initiatives.', banner: 'https://images.unsplash.com/photo-1533750349088-cd871a92f312?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Approved' },
-                { id: 106, name: 'CTO Leadership & Strategy Circle', type: 'Private', members: '6 members', activity: '5 posts', description: 'Private discussion channel for CTO leadership and technical directors.', banner: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'Pending' }
-            ];
-
-            const combined = [...customMapped, ...apiMapped];
-            const existingIds = new Set(combined.map(c => String(c.id)));
-            defaultSeeds.forEach(seed => {
-                if (!existingIds.has(String(seed.id))) {
-                    combined.push(seed);
-                }
-            });
-
-            setCommunities(combined);
         } catch (err) {
             console.error('Failed to load communities:', err);
-        } finally {
-            setIsLoading(false);
         }
     };
 
