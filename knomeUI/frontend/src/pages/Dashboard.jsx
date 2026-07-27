@@ -7,6 +7,8 @@ import MyCommunitiesWidget from '../components/widgets/MyCommunitiesWidget';
 import TrendingTagsWidget from '../components/widgets/TrendingTagsWidget';
 import PeopleYouMayKnowWidget from '../components/widgets/PeopleYouMayKnowWidget';
 import TextScramble from '../components/ui/TextScramble';
+import ScrollExpandMedia from '../components/ui/scroll-expansion-hero';
+import { BackgroundPaths } from '../components/ui/background-paths';
 import { dashboardApi, mapFeedItem } from '../utils/apiService';
 
 export default function Dashboard() {
@@ -15,6 +17,8 @@ export default function Dashboard() {
     const [posts, setPosts] = useState([]);
     const [greeting, setGreeting] = useState('');
     const [isLoading, setIsLoading] = useState(true);
+
+    const [showHero, setShowHero] = useState(false);
 
     useEffect(() => {
         const hour = new Date().getHours();
@@ -66,63 +70,50 @@ export default function Dashboard() {
                                 ]} 
                             />
                         </div>
-                        <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold"
-                            style={{background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)'}}>
-                            <span className="material-symbols-outlined text-[16px] text-amber-500" style={{fontVariationSettings:"'FILL' 1"}}>military_tech</span>
-                            1,250 Karma Points
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setShowHero(!showHero)}
+                                className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-indigo-600/10 text-indigo-500 hover:bg-indigo-600/20 border border-indigo-500/20">
+                                <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
+                                {showHero ? 'Close Hero' : 'Explore Hero'}
+                            </button>
+                            <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold"
+                                style={{background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)'}}>
+                                <span className="material-symbols-outlined text-[16px] text-amber-500" style={{fontVariationSettings:"'FILL' 1"}}>military_tech</span>
+                                1,250 Karma Points
+                            </div>
                         </div>
                     </div>
 
-                    {/* Premium Org Announcement Banner */}
-                    <div className="relative w-full rounded-2xl overflow-hidden"
-                        style={{
-                            background: 'linear-gradient(135deg, #4338ca 0%, #7c3aed 45%, #db2777 100%)',
-                            boxShadow: '0 8px 32px rgba(99, 102, 241, 0.25), 0 0 0 1px rgba(255,255,255,0.1)'
-                        }}>
-                        {/* Animated orb effects */}
-                        <div className="absolute -top-16 right-4 w-56 h-56 rounded-full opacity-20 pointer-events-none animate-pulse"
-                            style={{background: 'radial-gradient(circle, #f43f5e, transparent 70%)'}}></div>
-                        <div className="absolute -bottom-10 left-0 w-40 h-40 rounded-full opacity-15 pointer-events-none"
-                            style={{background: 'radial-gradient(circle, #06b6d4, transparent 70%)'}}></div>
-                        <div className="absolute top-0 left-0 right-0 h-px" style={{background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)'}}></div>
-
-                        <div className="relative z-10 p-6 sm:p-8 flex flex-col md:flex-row gap-6 items-center">
-                            {/* Icon */}
-                            <div className="hidden md:flex w-16 h-16 rounded-2xl items-center justify-center shrink-0"
-                                style={{background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.2)', backdropFilter: 'blur(10px)'}}>
-                                <span className="material-symbols-outlined text-white text-[32px]" style={{fontVariationSettings:"'FILL' 1"}}>event</span>
-                            </div>
-
-                            <div className="text-center md:text-left flex-1">
-                                <div className="flex items-center justify-center md:justify-start gap-2 mb-2">
-                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest"
-                                        style={{background: 'rgba(255,255,255,0.2)', color: '#fce7f3', backdropFilter: 'blur(4px)'}}>
-                                        📢 Announcement
-                                    </span>
-                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest text-emerald-300"
-                                        style={{background: 'rgba(16,185,129,0.2)', border: '1px solid rgba(16,185,129,0.3)'}}>
-                                        Registration Open
-                                    </span>
+                    {/* Interactive Background Paths Hero Showcase */}
+                    {showHero && (
+                        <div className="flex flex-col gap-4">
+                            <BackgroundPaths 
+                                title="Discover Excellence" 
+                                subtitle="Welcome to Knome — the enterprise knowledge & collaboration hub for MPOnline Limited"
+                                buttonText="Create New Post"
+                                onButtonClick={() => setIsCreatePostOpen(true)}
+                            />
+                            <ScrollExpandMedia
+                                mediaType="image"
+                                mediaSrc="https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?q=80&w=1280&auto=format&fit=crop"
+                                bgImageSrc="https://images.unsplash.com/photo-1522071820081-009f0129c71c?q=80&w=1920&auto=format&fit=crop"
+                                title="Knome Knowledge Hub"
+                                date="MPOnline Enterprise Platform"
+                                scrollToExpand="Scroll to Expand Interactive View"
+                                textBlend={true}
+                            >
+                                <div className="max-w-4xl mx-auto text-white">
+                                    <h3 className="text-2xl font-bold mb-3 text-indigo-200">Enterprise Innovation & Knowledge Exchange</h3>
+                                    <p className="text-slate-200 leading-relaxed font-medium text-sm sm:text-base">
+                                        Connect with team members, publish technical articles, participate in community discussions, and explore curated media channels.
+                                    </p>
                                 </div>
-                                <h2 className="text-xl sm:text-2xl font-black text-white mb-1.5 tracking-tight">Annual Tech Symposium 2026</h2>
-                                <p className="font-medium text-sm max-w-xl leading-relaxed text-indigo-100">
-                                    Join us for our flagship internal engineering event. 3 days of workshops, talks, and innovation.
-                                </p>
-                            </div>
-                            <div className="flex gap-3 w-full md:w-auto shrink-0">
-                                {['SYSADM', 'HRADM'].includes(currentUser.role) && (
-                                    <button className="flex-1 md:flex-none px-4 py-2.5 font-bold rounded-xl transition-all whitespace-nowrap text-xs text-white hover:bg-white/20"
-                                        style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.3)' }}>
-                                        Manage
-                                    </button>
-                                )}
-                                <button className="flex-1 md:flex-none px-6 py-2.5 font-black rounded-xl transition-all whitespace-nowrap hover:-translate-y-0.5 hover:shadow-lg text-sm text-indigo-700 bg-white"
-                                    style={{boxShadow: '0 4px 14px rgba(255,255,255,0.25)'}}>
-                                    Register Now →
-                                </button>
-                            </div>
+                            </ScrollExpandMedia>
                         </div>
-                    </div>
+                    )}
+
+
 
                     {/* Create Post Composer */}
                     {currentUser.role !== 'SYSADM' && (

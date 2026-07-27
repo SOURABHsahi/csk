@@ -3,6 +3,8 @@ import { useUser } from '../components/contexts/UserContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { getArticles, saveArticle } from '../utils/articleService';
 import { savedContentApi } from '../utils/apiService';
+import { apiClient } from '../utils/apiClient';
+import { checkRestrictedContent } from '../utils/restrictedWords';
 
 export default function Articles() {
     const { currentUser } = useUser();
@@ -110,7 +112,6 @@ export default function Articles() {
             setIsUploadingMedia(true);
         
             try {
-                const { apiClient } = await import('../utils/apiClient.js');
                 const result = await apiClient.uploadFile('/Media/upload', file, currentUploadType);
 
                 setAttachments(prev => prev.map(att =>
@@ -170,7 +171,6 @@ export default function Articles() {
         const editorHtml = editorRef.current ? editorRef.current.innerHTML : '';
         const fullContent = `${title} ${description} ${editorText}`;
         
-        const { checkRestrictedContent } = await import('../utils/restrictedWords.js');
         const foundKeyword = checkRestrictedContent(fullContent);
         if (foundKeyword) {
             alert(`Security Alert: Please don't use this word - "${foundKeyword}". It is restricted and your article cannot be published.`);
