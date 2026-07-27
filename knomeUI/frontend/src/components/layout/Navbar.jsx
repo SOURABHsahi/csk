@@ -161,13 +161,19 @@ export default function Navbar() {
         const isReaction = type.includes('reaction') || type.includes('like');
         const isComment = type.includes('comment');
         const isMention = type.includes('mention');
+        const isCommunityInvite = type.includes('community') || type.includes('invite');
 
         let icon = 'notifications';
         let color = 'text-slate-400';
         let bg = 'bg-slate-500/10';
         let category = 'System';
 
-        if (isFollow || isConnectionReq) {
+        if (isCommunityInvite) {
+            icon = 'group_add';
+            color = 'text-indigo-500';
+            bg = 'bg-indigo-500/10';
+            category = 'Connections';
+        } else if (isFollow || isConnectionReq) {
             icon = isConnectionReq ? 'connect_without_contact' : 'person_add';
             color = 'text-indigo-500';
             bg = 'bg-indigo-500/10';
@@ -192,14 +198,16 @@ export default function Navbar() {
         const senderName = n.senderName || n.actorName || 'System';
         const senderAvatar = resolveMediaUrl(n.senderAvatar) || (senderName ? `https://ui-avatars.com/api/?name=${encodeURIComponent(senderName)}&background=6366f1&color=fff` : null);
         const dateVal = n.createdAt || n.createdDate;
+        const targetCommunityId = n.referenceId || n.relatedContentId;
+        const resolvedTargetUrl = n.targetUrl || (isCommunityInvite && targetCommunityId ? `/community/view?id=${targetCommunityId}` : null);
 
         return {
             id: n.notificationId || n.id,
             category,
-            type: isConnectionReq ? 'follow_request' : (isFollow ? 'follow' : type),
-            title: n.title || (isFollow ? 'New Follower' : (isConnectionReq ? 'Connection Request' : 'Notification')),
+            type: isCommunityInvite ? 'community_invite' : (isConnectionReq ? 'follow_request' : (isFollow ? 'follow' : type)),
+            title: n.title || (isCommunityInvite ? 'Community Invitation' : (isFollow ? 'New Follower' : (isConnectionReq ? 'Connection Request' : 'Notification'))),
             text: n.message,
-            targetUrl: n.targetUrl,
+            targetUrl: resolvedTargetUrl,
             createdDate: dateVal,
             time: formatRelativeTime(dateVal),
             unread: !n.isRead,

@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useUser } from '../contexts/UserContext';
+import { communitiesApi, notificationsApi } from '../../utils/apiService';
 
 export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreated }) {
     const { currentUser, users } = useUser();
@@ -31,7 +32,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
         );
     };
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         if (!name.trim()) {
             alert('Please enter a Community Name');
             setStep(1);
@@ -39,11 +40,41 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
         }
         setIsSubmitting(true);
 
-        const communityId = Date.now();
-        const newCommunity = {
-            id: communityId,
+        const communityTypeFormatted = type === 'default' ? 'Default' : type.charAt(0).toUpperCase() + type.slice(1);
+        const categoryMap = {
+            'Technology': 7,
+            'Product & Design': 8,
+            'Culture & HR': 9,
+            'Operations': 10
+        };
+        const categoryId = categoryMap[category] || 7;
+
+        const createDto = {
             name: name.trim(),
-            type: type === 'default' ? 'Default (Org)' : type.charAt(0).toUpperCase() + type.slice(1),
+            description: description.trim() || 'A new community created for MPOnline teams.',
+            bannerUrl: banner || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300',
+            thumbnailUrl: avatar || null,
+            categoryId: categoryId,
+            rules: rules || '1. Be respectful and constructive.\n2. Share knowledge.\n3. Follow company policy.',
+            faq: faq || JSON.stringify([{ q: 'Who can join?', a: 'All MPOnline employees.' }]),
+            communityType: communityTypeFormatted
+        };
+
+        let createdCommunityId = Date.now();
+
+        try {
+            const result = await communitiesApi.create(createDto);
+            if (result) {
+                createdCommunityId = result.communityId || result.id || createdCommunityId;
+            }
+        } catch (err) {
+            console.error('API create community failed, proceeding with local fallback:', err);
+        }
+
+        const newCommunity = {
+            id: createdCommunityId,
+            name: name.trim(),
+            type: communityTypeFormatted,
             members: `1 (You)`,
             activity: 'New',
             description: description.trim() || 'A new community created for MPOnline teams.',
@@ -51,49 +82,36 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
             avatar: avatar || null,
             createdBy: currentUser?.name || 'Employee'
         };
-        
-        // Save Community Notifications for invited members
-        const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
-        const newInviteNotifs = invitedUserIds.map(targetId => {
-            const targetUser = users.find(u => u.id === targetId);
-            return {
-                id: Date.now() + Math.random(),
-                targetUserId: targetId,
-                type: 'invite',
-                text: `${currentUser?.name || 'An employee'} invited you to join the community "${newCommunity.name}".`,
-                time: 'Just now',
-                unread: true,
-                icon: 'group_add',
-                color: 'text-indigo-400',
-                bg: 'bg-indigo-500/10',
-                communityName: newCommunity.name,
-                communityId: newCommunity.id,
-                actionLink: '/community'
-            };
-        });
 
-        localStorage.setItem('knome_notifications', JSON.stringify([...newInviteNotifs, ...existingNotifs]));
+        // Send notifications via API to all invited employees
+        if (invitedUserIds.length > 0) {
+            await Promise.all(invitedUserIds.map(async (targetId) => {
+                try {
+                    await notificationsApi.create({
+                        recipientUserId: targetId,
+                        notificationType: 'CommunityInvite',
+                        message: `${currentUser?.name || 'An employee'} invited you to join the community "${newCommunity.name}".`,
+                        relatedContentType: 'Community',
+                        referenceId: createdCommunityId
+                    });
+                } catch (e) {
+                    console.error(`Failed to send invitation notification to user ${targetId}:`, e);
+                }
+            }));
+        }
 
         // Save newly created community globally in custom communities & user joined list
         const customCommunities = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
         localStorage.setItem('knome_custom_communities', JSON.stringify([newCommunity, ...customCommunities]));
 
-        const userKey = `knome_joined_communities_${currentUser?.id || 'guest'}`;
-        const userJoined = JSON.parse(localStorage.getItem(userKey) || '[]');
-        localStorage.setItem(userKey, JSON.stringify([newCommunity, ...userJoined]));
-
-        // Dispatch global events for instant update across widgets
         window.dispatchEvent(new CustomEvent('community-joined-change'));
-        window.dispatchEvent(new CustomEvent('community-invite-sent', {
-            detail: { invitedUserIds, communityName: newCommunity.name, senderName: currentUser?.name }
-        }));
 
         if (onCommunityCreated) onCommunityCreated(newCommunity);
         
         setIsSubmitting(false);
 
         // Generate direct link
-        const generatedLink = `${window.location.origin}/community?id=${communityId}`;
+        const generatedLink = `${window.location.origin}/community/view?id=${createdCommunityId}`;
         setCreatedCommunityLink(generatedLink);
     };
 

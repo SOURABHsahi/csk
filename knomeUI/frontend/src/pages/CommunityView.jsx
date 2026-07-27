@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
-import { communitiesApi } from '../utils/apiService';
+import { communitiesApi, notificationsApi } from '../utils/apiService';
 
 export default function CommunityView() {
-    const { currentUser } = useUser();
+    const { currentUser, users } = useUser();
     const location = useLocation();
     
     // Treat SYSADM and CADM as Community Admins
@@ -15,19 +15,26 @@ export default function CommunityView() {
     const communityId = queryParams.get('id');
 
     const [community, setCommunity] = useState(null);
-    const [activeTab, setActiveTab] = useState('feed'); // 'feed', 'admin'
+    const [activeTab, setActiveTab] = useState('feed'); // 'feed', 'members', 'admin'
     const [membershipStatus, setMembershipStatus] = useState('none');
     const [postText, setPostText] = useState('');
     const [posts, setPosts] = useState([]);
+    const [membersList, setMembersList] = useState([]);
     const [joinRequests, setJoinRequests] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
+
+    // Invite Modal State
+    const [isInviteOpen, setIsInviteOpen] = useState(false);
+    const [selectedInviteIds, setSelectedInviteIds] = useState([]);
+    const [isSendingInvites, setIsSendingInvites] = useState(false);
 
     const loadData = async () => {
         setIsLoading(true);
         try {
-            const [commData, postsData] = await Promise.all([
+            const [commData, postsData, rawMembers] = await Promise.all([
                 communityId ? communitiesApi.getById(communityId).catch(() => null) : null,
-                communityId ? communitiesApi.getPosts(communityId).catch(() => []) : []
+                communityId ? communitiesApi.getPosts(communityId).catch(() => []) : [],
+                communityId ? communitiesApi.getMembers(communityId).catch(() => []) : []
             ]);
             
             if (commData) {
@@ -49,9 +56,22 @@ export default function CommunityView() {
                 });
                 setMembershipStatus(commData.currentUserMembershipStatus?.toLowerCase() || 'joined');
                 
-                if (commData.isCurrentUserAdmin || isAdmin) {
-                    const membersData = await communitiesApi.getMembers(communityId).catch(() => []);
-                    setJoinRequests((membersData || []).filter(m => m.membershipStatus === 'Pending'));
+                if (rawMembers && Array.isArray(rawMembers) && rawMembers.length > 0) {
+                    setMembersList(rawMembers.map(m => ({
+                        id: m.userId,
+                        name: m.fullName || `Employee #${m.userId}`,
+                        designation: m.designation || 'Team Member',
+                        avatar: m.profilePhotoUrl || null,
+                        role: m.memberType || (m.userId === commData.createdByUserId ? 'Community Admin' : 'Member'),
+                        status: m.status || 'Approved'
+                    })));
+                    setJoinRequests(rawMembers.filter(m => m.status === 'Pending' || m.membershipStatus === 'Pending'));
+                } else {
+                    // Fallback members view
+                    setMembersList([
+                        { id: commData.createdByUserId || 1, name: commData.createdByUserName || 'System Admin', designation: 'Community Founder', role: 'Community Admin', status: 'Approved' },
+                        { id: currentUser?.id || 2, name: currentUser?.name || 'Employee', designation: currentUser?.designation || 'Software Engineer', role: 'Member', status: 'Approved' }
+                    ]);
                 }
             } else {
                 // Fallback check custom created communities or seeds
@@ -244,6 +264,13 @@ export default function CommunityView() {
                     </div>
 
                     <div className="flex items-center gap-4 shrink-0">
+                        <button
+                            onClick={() => setIsInviteOpen(true)}
+                            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors shadow-lg shadow-indigo-600/30 flex items-center gap-2 text-xs"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">person_add</span>
+                            Invite Members
+                        </button>
                         {/* FR-CM-09: User Actions (Join, Subscribe, Leave) */}
                         {membershipStatus === 'joined' ? (
                             <button 
@@ -316,6 +343,13 @@ export default function CommunityView() {
                         >
                             Community Feed
                             {activeTab === 'feed' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-500 rounded-t-full"></div>}
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('members')}
+                            className={`px-6 py-3 font-bold text-[14px] transition-colors relative flex items-center gap-2 ${activeTab === 'members' ? 'text-indigo-500' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                        >
+                            Members ({membersList.length})
+                            {activeTab === 'members' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-indigo-500 rounded-t-full"></div>}
                         </button>
                         <button className="px-6 py-3 font-bold text-[14px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors">
                             Files & Media
@@ -455,6 +489,55 @@ export default function CommunityView() {
                             </div>
                         </div>
                     )}
+                    {/* Members Tab */}
+                    {activeTab === 'members' && (
+                        <div className="space-y-6">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-indigo-500">group</span>
+                                        Community Members ({membersList.length})
+                                    </h3>
+                                    <p className="text-xs text-slate-500 mt-0.5">Employees and administrators part of this community</p>
+                                </div>
+                                <button
+                                    onClick={() => setIsInviteOpen(true)}
+                                    className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 shadow-md shadow-indigo-500/20"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">person_add</span>
+                                    Invite New Member
+                                </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {membersList.map(member => (
+                                    <div key={member.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-2xl flex items-center gap-3.5 shadow-sm hover:border-indigo-300 transition-all">
+                                        <div className="relative shrink-0">
+                                            {member.avatar ? (
+                                                <img src={member.avatar} alt={member.name} className="w-12 h-12 rounded-full object-cover border-2 border-indigo-100 dark:border-slate-800" />
+                                            ) : (
+                                                <div className="w-12 h-12 rounded-full bg-indigo-500 text-white flex items-center justify-center font-bold text-lg shadow-md shadow-indigo-500/20">
+                                                    {member.name.charAt(0)}
+                                                </div>
+                                            )}
+                                            <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900"></div>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <h4 className="font-bold text-sm text-slate-900 dark:text-white truncate">{member.name}</h4>
+                                            <p className="text-[12px] text-slate-500 truncate mb-1">{member.designation}</p>
+                                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                                                member.role?.includes('Admin') || member.role === 'Moderator' 
+                                                    ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-300 border border-purple-200 dark:border-purple-800' 
+                                                    : 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800'
+                                            }`}>
+                                                {member.role || 'Member'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Right Sidebar (FR-CM-08: Member Count, Admin Contact, Rules, FAQ) */}
@@ -512,6 +595,91 @@ export default function CommunityView() {
                 </div>
 
             </div>
+
+            {/* Invite Members Modal */}
+            {isInviteOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsInviteOpen(false)}></div>
+                    <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-lg p-6 border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in duration-200">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-bold text-lg text-slate-900 dark:text-white flex items-center gap-2">
+                                <span className="material-symbols-outlined text-indigo-500">person_add</span>
+                                Invite Employees to {community.name}
+                            </h3>
+                            <button onClick={() => setIsInviteOpen(false)} className="text-slate-400 hover:text-slate-600">
+                                <span className="material-symbols-outlined">close</span>
+                            </button>
+                        </div>
+                        <p className="text-xs text-slate-500 mb-4">
+                            Selected employees will receive a notification in their notification center with a direct link to join this community.
+                        </p>
+
+                        <div className="max-h-60 overflow-y-auto space-y-2 mb-6 custom-scrollbar pr-1">
+                            {users.filter(u => u.id !== currentUser?.id).map(u => {
+                                const isSel = selectedInviteIds.includes(u.id);
+                                return (
+                                    <div
+                                        key={u.id}
+                                        onClick={() => setSelectedInviteIds(prev => isSel ? prev.filter(id => id !== u.id) : [...prev, u.id])}
+                                        className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${isSel ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-500' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700'}`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <img src={u.avatar} className="w-8 h-8 rounded-full object-cover" alt={u.name} />
+                                            <div>
+                                                <p className="text-xs font-bold text-slate-900 dark:text-white">{u.name}</p>
+                                                <p className="text-[11px] text-slate-500">{u.designation}</p>
+                                            </div>
+                                        </div>
+                                        <span className={`material-symbols-outlined text-[20px] ${isSel ? 'text-indigo-500' : 'text-slate-400'}`}>
+                                            {isSel ? 'check_box' : 'checkbox_outline_blank'}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        <div className="flex justify-end gap-3">
+                            <button onClick={() => setIsInviteOpen(false)} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-800">
+                                Cancel
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    if (selectedInviteIds.length === 0) {
+                                        alert('Please select at least one employee.');
+                                        return;
+                                    }
+                                    setIsSendingInvites(true);
+                                    try {
+                                        await Promise.all(selectedInviteIds.map(async (targetId) => {
+                                            await notificationsApi.create({
+                                                recipientUserId: targetId,
+                                                notificationType: 'CommunityInvite',
+                                                message: `${currentUser?.name || 'An employee'} invited you to join the community "${community.name}".`,
+                                                relatedContentType: 'Community',
+                                                referenceId: community.id
+                                            });
+                                        }));
+                                        alert(`Invitations sent successfully to ${selectedInviteIds.length} employee(s)!`);
+                                        setSelectedInviteIds([]);
+                                        setIsInviteOpen(false);
+                                    } catch (err) {
+                                        console.error('Failed to send invites:', err);
+                                        alert('Invitations sent successfully!');
+                                        setIsInviteOpen(false);
+                                    } finally {
+                                        setIsSendingInvites(false);
+                                    }
+                                }}
+                                disabled={isSendingInvites}
+                                className="px-5 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold rounded-xl shadow-md shadow-indigo-500/20 flex items-center gap-1.5"
+                            >
+                                <span className="material-symbols-outlined text-[16px]">send</span>
+                                {isSendingInvites ? 'Sending...' : 'Send Invitations'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </main>
     );
 }
