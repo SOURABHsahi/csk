@@ -91,7 +91,13 @@ public class ArticleRepository : IArticleRepository
 
         foreach (var url in attachmentUrls)
         {
-            _db.ArticleAttachments.Add(new ArticleAttachment { ArticleId = article.ArticleId, FileUrl = url, FileType = "File" });
+            _db.ArticleAttachments.Add(new ArticleAttachment 
+            { 
+                ArticleId = article.ArticleId, 
+                FileUrl = url, 
+                FileType = "File", 
+                PublishedDate = DateTime.UtcNow 
+            });
         }
 
         initialVersion.ArticleId = article.ArticleId;

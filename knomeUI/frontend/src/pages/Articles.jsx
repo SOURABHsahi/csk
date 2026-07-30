@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useUser } from '../components/contexts/UserContext';
 import { Link, useNavigate } from 'react-router-dom';
-import { getArticles, saveArticle } from '../utils/articleService';
-import { savedContentApi } from '../utils/apiService';
+import { getArticles, saveArticle, deleteArticle } from '../utils/articleService';
+import { savedContentApi, getPersonalizedRecommendations } from '../utils/apiService';
 import { apiClient } from '../utils/apiClient';
 import { checkRestrictedContent } from '../utils/restrictedWords';
+import ReportModal from '../components/modals/ReportModal';
 
 export default function Articles() {
     const { currentUser } = useUser();
@@ -16,6 +17,7 @@ export default function Articles() {
     const [allArticles, setAllArticles] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [savedMap, setSavedMap] = useState({});
+    const [reportingArticle, setReportingArticle] = useState(null);
 
     const loadData = async () => {
         setIsLoading(true);
@@ -223,33 +225,26 @@ export default function Articles() {
         }
     };
 
-    // Role-based access check
-    if (currentUser.role === 'SYSADM') {
-        return (
-            <main className="flex-1 px-8 py-8 flex flex-col items-center justify-center text-center">
-                <div className="w-20 h-20 bg-red-100 dark:bg-red-900/30 rounded-2xl flex items-center justify-center mb-6 border-2 border-red-500">
-                    <span className="material-symbols-outlined text-[40px] text-red-500">lock</span>
-                </div>
-                <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white mb-2 tracking-tight">Access Denied</h1>
-                <p className="text-slate-500 font-medium">System Administrators do not have content publishing privileges.</p>
-            </main>
-        );
-    }
+
 
 
     
     // Filter articles
-    const filteredArticles = allArticles.filter(art => {
-        const matchesCategory = selectedCategory === 'All' || art.category.toLowerCase() === selectedCategory.toLowerCase();
+    const rawFiltered = allArticles.filter(art => {
+        const matchesCategory = selectedCategory === 'All' || selectedCategory === '✨ Recommended' || art.category.toLowerCase() === selectedCategory.toLowerCase();
         const query = searchQuery.toLowerCase();
-        const matchesSearch = art.title.toLowerCase().includes(query) || 
+        const matchesSearch = !query || art.title.toLowerCase().includes(query) || 
                               art.subtitle.toLowerCase().includes(query) ||
                               art.author.name.toLowerCase().includes(query) ||
                               art.tags.some(tag => tag.toLowerCase().includes(query));
         return matchesCategory && matchesSearch;
     });
 
-    const categories = ['All', 'Design', 'Product Management', 'Engineering', 'Company Culture'];
+    const filteredArticles = selectedCategory === '✨ Recommended' 
+        ? getPersonalizedRecommendations(rawFiltered, currentUser)
+        : rawFiltered;
+
+    const categories = ['All', '✨ Recommended', 'Design', 'Product Management', 'Engineering', 'Company Culture'];
 
     return (
         <>
@@ -374,41 +369,72 @@ export default function Articles() {
                                         boxShadow: 'var(--shadow-premium)'
                                     }}
                                 >
-                                    {/* Cover Image */}
-                                    <div className="h-44 w-full relative overflow-hidden bg-slate-100 dark:bg-slate-950">
-                                        <img 
-                                            src={art.image} 
-                                            alt={art.title} 
-                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                                        />
-                                        <div className="absolute top-4 left-4 bg-slate-900/80 backdrop-blur-sm text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
-                                            {art.category}
+                                    {/* Cover Image or Header Bar */}
+                                    {art.image ? (
+                                        <div className="h-44 w-full relative overflow-hidden bg-slate-100 dark:bg-slate-950">
+                                            <img 
+                                                src={art.image} 
+                                                alt={art.title} 
+                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                            />
+                                            <div className="absolute top-4 left-4 bg-slate-900/80 backdrop-blur-sm text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
+                                                {art.category}
+                                            </div>
+                                            {/* Save Bookmark Button */}
+                                            <button
+                                                onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    const articleId = art.id;
+                                                    const currentlySaved = !!savedMap[articleId];
+                                                    setSavedMap(prev => ({ ...prev, [articleId]: !currentlySaved }));
+                                                    try {
+                                                        await savedContentApi.toggleBookmark('Article', articleId);
+                                                    } catch (err) {
+                                                        setSavedMap(prev => ({ ...prev, [articleId]: currentlySaved }));
+                                                    }
+                                                }}
+                                                className={`absolute top-4 right-4 p-2 rounded-xl backdrop-blur-md transition-all active:scale-95 shadow-md ${
+                                                    savedMap[art.id]
+                                                        ? 'bg-amber-500 text-slate-950 font-bold'
+                                                        : 'bg-slate-900/60 text-white hover:bg-amber-500 hover:text-slate-950'
+                                                }`}
+                                                title={savedMap[art.id] ? "Saved in Personal Library" : "Save Article"}
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: savedMap[art.id] ? "'FILL' 1" : "'FILL' 0" }}>
+                                                    bookmark
+                                                </span>
+                                            </button>
                                         </div>
-                                        {/* Save Bookmark Button */}
-                                        <button
-                                            onClick={async (e) => {
-                                                e.stopPropagation();
-                                                const articleId = art.id;
-                                                const currentlySaved = !!savedMap[articleId];
-                                                setSavedMap(prev => ({ ...prev, [articleId]: !currentlySaved }));
-                                                try {
-                                                    await savedContentApi.toggleBookmark('Article', articleId);
-                                                } catch (err) {
-                                                    setSavedMap(prev => ({ ...prev, [articleId]: currentlySaved }));
-                                                }
-                                            }}
-                                            className={`absolute top-4 right-4 p-2 rounded-xl backdrop-blur-md transition-all active:scale-95 shadow-md ${
-                                                savedMap[art.id]
-                                                    ? 'bg-amber-500 text-slate-950 font-bold'
-                                                    : 'bg-slate-900/60 text-white hover:bg-amber-500 hover:text-slate-950'
-                                            }`}
-                                            title={savedMap[art.id] ? "Saved in Personal Library" : "Save Article"}
-                                        >
-                                            <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: savedMap[art.id] ? "'FILL' 1" : "'FILL' 0" }}>
-                                                bookmark
-                                            </span>
-                                        </button>
-                                    </div>
+                                    ) : (
+                                        <div className="px-5 pt-5 flex items-center justify-between">
+                                            <div className="bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
+                                                {art.category}
+                                            </div>
+                                            <button
+                                                onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    const articleId = art.id;
+                                                    const currentlySaved = !!savedMap[articleId];
+                                                    setSavedMap(prev => ({ ...prev, [articleId]: !currentlySaved }));
+                                                    try {
+                                                        await savedContentApi.toggleBookmark('Article', articleId);
+                                                    } catch (err) {
+                                                        setSavedMap(prev => ({ ...prev, [articleId]: currentlySaved }));
+                                                    }
+                                                }}
+                                                className={`p-2 rounded-xl transition-all active:scale-95 border border-slate-200 dark:border-slate-800 ${
+                                                    savedMap[art.id]
+                                                        ? 'bg-amber-500 text-slate-950 font-bold'
+                                                        : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                                }`}
+                                                title={savedMap[art.id] ? "Saved in Personal Library" : "Save Article"}
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: savedMap[art.id] ? "'FILL' 1" : "'FILL' 0" }}>
+                                                    bookmark
+                                                </span>
+                                            </button>
+                                        </div>
+                                    )}
 
                                     {/* Info Body */}
                                     <div className="p-5 flex-1 flex flex-col justify-between">
@@ -434,9 +460,39 @@ export default function Articles() {
                                                     <p className="text-[9px] text-slate-400 truncate">{art.date}</p>
                                                 </div>
                                             </div>
-                                            <div className="flex items-center gap-1 text-[10px] font-black text-blue-500">
-                                                <span className="material-symbols-outlined text-[14px]">schedule</span>
-                                                {art.readTime}
+                                            <div className="flex items-center gap-2">
+                                                 <button
+                                                     onClick={(e) => {
+                                                         e.stopPropagation();
+                                                         setReportingArticle(art);
+                                                     }}
+                                                     className="p-1 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                                                     title="Report Article"
+                                                 >
+                                                     <span className="material-symbols-outlined text-[16px]">report</span>
+                                                 </button>
+                                                {(currentUser?.role === 'System Administrator' || currentUser?.role === 'SYSADM' || currentUser?.role === 'HRADM' || art.author?.name === currentUser?.fullName) && (
+                                                    <button
+                                                        onClick={async (e) => {
+                                                            e.stopPropagation();
+                                                            if (!window.confirm('Are you sure you want to delete this article?')) return;
+                                                            try {
+                                                                await deleteArticle(art.id);
+                                                                setAllArticles(prev => prev.filter(a => a.id !== art.id));
+                                                            } catch (err) {
+                                                                alert('Failed to delete article.');
+                                                            }
+                                                        }}
+                                                        className="p-1 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                        title="Delete Article"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">delete</span>
+                                                    </button>
+                                                )}
+                                                <div className="flex items-center gap-1 text-[10px] font-black text-blue-500">
+                                                    <span className="material-symbols-outlined text-[14px]">schedule</span>
+                                                    {art.readTime}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -716,6 +772,15 @@ export default function Articles() {
                     </div>
                 </div>
             )}
+
+            {/* Report Article Modal */}
+            <ReportModal
+                isOpen={!!reportingArticle}
+                onClose={() => setReportingArticle(null)}
+                targetType="Article"
+                targetId={reportingArticle?.id || 1}
+                targetName={reportingArticle?.author?.name || 'Author'}
+            />
         </>
     );
 }

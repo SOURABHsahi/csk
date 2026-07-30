@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { searchApi, resolveMediaUrl } from '../utils/apiService';
+import { searchApi, resolveMediaUrl, saveRecentSearch, getLocalRecentSearches, clearLocalRecentSearches } from '../utils/apiService';
 
 function useQuery() {
     return new URLSearchParams(useLocation().search);
@@ -66,19 +66,40 @@ export default function Search() {
     useEffect(() => {
         setSearchQuery(initialQuery);
         setActiveCategory(initialType);
+        if (initialQuery && initialQuery.trim().length >= 3) {
+            const q = initialQuery.trim();
+            saveRecentSearch(q);
+            setRecentSearches(prev => [
+                { searchTerm: q, searchDate: new Date().toISOString() },
+                ...prev.filter(item => item.searchTerm.toLowerCase() !== q.toLowerCase())
+            ].slice(0, 10));
+            searchApi.saveHistory(q);
+        }
     }, [initialQuery, initialType]);
 
     // Load recent history and trending queries
     const loadSidebarData = useCallback(async () => {
         try {
             const [histRes, trendRes] = await Promise.all([
-                searchApi.getHistory(10),
-                searchApi.getTrending(8)
+                searchApi.getHistory(10).catch(() => null),
+                searchApi.getTrending(8).catch(() => null)
             ]);
-            setRecentSearches(Array.isArray(histRes) ? histRes : (histRes?.data || []));
+            const apiItems = Array.isArray(histRes) ? histRes : (histRes?.data || []);
+            const localItems = getLocalRecentSearches();
+
+            const combined = [...localItems];
+            apiItems.forEach(item => {
+                const term = typeof item === 'string' ? item : item.searchTerm;
+                if (term && !combined.some(c => c.searchTerm.toLowerCase() === term.toLowerCase())) {
+                    combined.push({ searchTerm: term, searchDate: item.searchDate || new Date().toISOString() });
+                }
+            });
+
+            setRecentSearches(combined.slice(0, 10));
             setTrendingSearches(Array.isArray(trendRes) ? trendRes : (trendRes?.data || []));
         } catch (e) {
             console.error('Failed to load search sidebar data', e);
+            setRecentSearches(getLocalRecentSearches());
         }
     }, []);
 
@@ -104,14 +125,22 @@ export default function Search() {
         return { fromDate: null, toDate: null };
     };
 
-    // Fetch search results from API
+    // Fetch search results from API (Minimum 3 characters required)
     const performSearch = useCallback(async (isLoadMore = false) => {
+        const queryTerm = searchQuery.trim();
+        if (queryTerm.length > 0 && queryTerm.length < 3) {
+            setResults([]);
+            setTotalCount(0);
+            setIsSearching(false);
+            return;
+        }
+
         setIsSearching(true);
         try {
             const pageToFetch = isLoadMore ? pageNumber + 1 : 1;
             const { fromDate, toDate } = getDateRangeIso(activeDateRange);
             const res = await searchApi.search(
-                searchQuery.trim(),
+                queryTerm,
                 activeCategory,
                 pageToFetch,
                 20,
@@ -153,15 +182,36 @@ export default function Search() {
 
     const handleSearchSubmit = (e) => {
         e.preventDefault();
-        if (!searchQuery.trim()) return;
-        navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}&type=${activeCategory}`);
+        const term = searchQuery.trim();
+        if (!term || term.length < 3) return;
+
+        // Save to Recent Searches ONLY on explicit search submit
+        saveRecentSearch(term);
+        setRecentSearches(prev => [
+            { searchTerm: term, searchDate: new Date().toISOString() },
+            ...prev.filter(item => item.searchTerm.toLowerCase() !== term.toLowerCase())
+        ].slice(0, 10));
+        searchApi.saveHistory(term);
+
+        navigate(`/search?q=${encodeURIComponent(term)}&type=${activeCategory}`);
     };
 
     const handleClearHistory = async (e, term = null) => {
         if (e) e.stopPropagation();
+
+        // 1. Immediately update state
+        if (term) {
+            setRecentSearches(prev => prev.filter(item => item.searchTerm.toLowerCase() !== term.toLowerCase()));
+        } else {
+            setRecentSearches([]);
+        }
+
+        // 2. Immediately clear localStorage
+        clearLocalRecentSearches(term);
+
+        // 3. Clear backend search history
         try {
-            await searchApi.clearHistory(term);
-            loadSidebarData();
+            await searchApi.clearHistory(term).catch(() => null);
         } catch (err) {
             console.error('Failed to clear search history', err);
         }
@@ -424,7 +474,7 @@ export default function Search() {
                         </div>
                         <div className="flex flex-col gap-1">
                             {recentSearches.length > 0 ? (
-                                recentSearches.map((rec, i) => (
+                                recentSearches.slice(0, 10).map((rec, i) => (
                                     <div key={i} className="flex items-center justify-between group rounded-xl px-2 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
                                         <button 
                                             onClick={() => { setSearchQuery(rec.searchTerm); navigate(`/search?q=${encodeURIComponent(rec.searchTerm)}`); }}

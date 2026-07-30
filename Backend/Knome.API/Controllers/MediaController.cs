@@ -8,6 +8,12 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Knome.API.Controllers;
 
+public class UploadMediaDto
+{
+    public IFormFile File { get; set; } = null!;
+    public string Type { get; set; } = "doc";
+}
+
 [Authorize]
 [ApiController]
 [Route("api/media")]
@@ -21,13 +27,14 @@ public class MediaController : KnomeControllerBase
     }
 
     [HttpPost("upload")]
+    [Consumes("multipart/form-data")]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> UploadMedia([FromForm] IFormFile file, [FromForm] string type = "doc")
+    public async Task<IActionResult> UploadMedia([FromForm] UploadMediaDto dto)
     {
-        if (file == null)
+        if (dto.File == null)
             throw new BadRequestException("No file provided.");
 
-        var url = await _fileStorageService.SaveMediaAsync(file, type);
+        var url = await _fileStorageService.SaveMediaAsync(dto.File, dto.Type);
         
         return Ok(ApiResponse<object>.SuccessResponse(200, "File uploaded successfully.", new { url }));
     }

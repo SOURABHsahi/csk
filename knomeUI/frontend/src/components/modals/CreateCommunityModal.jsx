@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { useUser } from '../contexts/UserContext';
-import { communitiesApi, notificationsApi } from '../../utils/apiService';
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+const MAX_IMAGE_SIZE_MB = 5;
 
 export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreated }) {
     const { currentUser, users } = useUser();
@@ -8,6 +10,9 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [createdCommunityLink, setCreatedCommunityLink] = useState(null);
     const [copied, setCopied] = useState(false);
+    const [nameError, setNameError] = useState('');
+    const [bannerError, setBannerError] = useState('');
+    const [avatarError, setAvatarError] = useState('');
 
     // Form State
     const [type, setType] = useState('public');
@@ -17,8 +22,10 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
     const [category, setCategory] = useState('Technology');
     const [banner, setBanner] = useState('');
     const [avatar, setAvatar] = useState('');
-    const [rules, setRules] = useState('');
-    const [faq, setFaq] = useState('');
+    // Structured Rules list
+    const [rulesList, setRulesList] = useState(['Be respectful and constructive.', 'Keep discussions relevant to the community topic.', 'Follow MPOnline company guidelines.']);
+    // Structured FAQ pairs
+    const [faqList, setFaqList] = useState([{ q: 'Who can join?', a: 'All MPOnline employees may join or request access.' }]);
     const [invitedUserIds, setInvitedUserIds] = useState([]);
 
     const bannerInputRef = useRef(null);
@@ -26,93 +33,194 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
 
     if (!isOpen) return null;
 
+    // ── Helpers ─────────────────────────────────────────────────
     const toggleInviteUser = (userId) => {
-        setInvitedUserIds(prev => 
+        setInvitedUserIds(prev =>
             prev.includes(userId) ? prev.filter(id => id !== userId) : [...prev, userId]
         );
     };
 
-    const handleSubmit = async () => {
-        if (!name.trim()) {
-            alert('Please enter a Community Name');
-            setStep(1);
+    const validateImageFile = (file, setError) => {
+        if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+            setError('Invalid format. Only JPG, PNG, and WebP images are allowed.');
+            return false;
+        }
+        if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
+            setError(`File too large. Maximum size is ${MAX_IMAGE_SIZE_MB} MB.`);
+            return false;
+        }
+        setError('');
+        return true;
+    };
+
+    const handleBannerUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (!validateImageFile(file, setBannerError)) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => setBanner(ev.target.result);
+        reader.readAsDataURL(file);
+    };
+
+    const handleAvatarUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        if (!validateImageFile(file, setAvatarError)) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => setAvatar(ev.target.result);
+        reader.readAsDataURL(file);
+    };
+
+    // Rules list management
+    const addRule = () => {
+        if (rulesList.length >= 10) return;
+        setRulesList(prev => [...prev, '']);
+    };
+    const updateRule = (idx, val) => setRulesList(prev => prev.map((r, i) => i === idx ? val : r));
+    const removeRule = (idx) => setRulesList(prev => prev.filter((_, i) => i !== idx));
+
+    // FAQ list management
+    const addFaq = () => {
+        if (faqList.length >= 5) return;
+        setFaqList(prev => [...prev, { q: '', a: '' }]);
+    };
+    const updateFaq = (idx, field, val) => setFaqList(prev => prev.map((item, i) => i === idx ? { ...item, [field]: val } : item));
+    const removeFaq = (idx) => setFaqList(prev => prev.filter((_, i) => i !== idx));
+
+    // Step 1 validation
+    const handleNextStep = () => {
+        if (!name.trim()) { setNameError('Community name is required.'); return; }
+
+        // Duplicate name check
+        const existingNames = [
+            ...JSON.parse(localStorage.getItem('knome_custom_communities') || '[]').map(c => c.name?.toLowerCase()),
+            'dotnet developers community', 'fullstack engineering guild', 'ai & data science innovation lab',
+            'technology & architecture hub', 'hr & people operations', 'finance & accounting operations',
+            'marketing & brand strategy', 'cto leadership & strategy circle', 'executive ai & data labs'
+        ];
+        if (existingNames.includes(name.trim().toLowerCase())) {
+            setNameError('A community with this name already exists. Please choose a unique name.');
             return;
         }
-        setIsSubmitting(true);
 
-        const communityTypeFormatted = type === 'default' ? 'Default' : type.charAt(0).toUpperCase() + type.slice(1);
-        const categoryMap = {
-            'Technology': 7,
-            'Product & Design': 8,
-            'Culture & HR': 9,
-            'Operations': 10
-        };
-        const categoryId = categoryMap[category] || 7;
+        setNameError('');
+        setStep(2);
+    };
 
-        const createDto = {
-            name: name.trim(),
-            description: description.trim() || 'A new community created for MPOnline teams.',
-            bannerUrl: banner || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300',
-            thumbnailUrl: avatar || null,
-            categoryId: categoryId,
-            rules: rules || '1. Be respectful and constructive.\n2. Share knowledge.\n3. Follow company policy.',
-            faq: faq || JSON.stringify([{ q: 'Who can join?', a: 'All MPOnline employees.' }]),
-            communityType: communityTypeFormatted
-        };
-
-        let createdCommunityId = Date.now();
-
+    const safeSetStorage = (key, value) => {
         try {
-            const result = await communitiesApi.create(createDto);
-            if (result) {
-                createdCommunityId = result.communityId || result.id || createdCommunityId;
-            }
+            localStorage.setItem(key, JSON.stringify(value));
         } catch (err) {
-            console.error('API create community failed, proceeding with local fallback:', err);
-        }
-
-        const newCommunity = {
-            id: createdCommunityId,
-            name: name.trim(),
-            type: communityTypeFormatted,
-            members: `1 (You)`,
-            activity: 'New',
-            description: description.trim() || 'A new community created for MPOnline teams.',
-            banner: banner || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300',
-            avatar: avatar || null,
-            createdBy: currentUser?.name || 'Employee'
-        };
-
-        // Send notifications via API to all invited employees
-        if (invitedUserIds.length > 0) {
-            await Promise.all(invitedUserIds.map(async (targetId) => {
-                try {
-                    await notificationsApi.create({
-                        recipientUserId: targetId,
-                        notificationType: 'CommunityInvite',
-                        message: `${currentUser?.name || 'An employee'} invited you to join the community "${newCommunity.name}".`,
-                        relatedContentType: 'Community',
-                        referenceId: createdCommunityId
-                    });
-                } catch (e) {
-                    console.error(`Failed to send invitation notification to user ${targetId}:`, e);
+            console.warn(`LocalStorage quota reached for key: ${key}.`, err);
+            try {
+                localStorage.removeItem('knome_notifications');
+                if (Array.isArray(value)) {
+                    localStorage.setItem(key, JSON.stringify(value.slice(0, 15)));
                 }
-            }));
+            } catch (e) {
+                console.error('LocalStorage save fallback failed:', e);
+            }
         }
+    };
 
-        // Save newly created community globally in custom communities & user joined list
-        const customCommunities = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
-        localStorage.setItem('knome_custom_communities', JSON.stringify([newCommunity, ...customCommunities]));
+    const handleSubmit = async () => {
+        setIsSubmitting(true);
+        try {
+            const communityId = Math.floor(Date.now() / 1000);
 
-        window.dispatchEvent(new CustomEvent('community-joined-change'));
+            const safeBanner = banner && banner.length > 50000
+                ? 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300'
+                : (banner || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300');
+            const safeAvatar = avatar && avatar.length > 50000
+                ? 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=200&h=200'
+                : (avatar || null);
 
-        if (onCommunityCreated) onCommunityCreated(newCommunity);
-        
-        setIsSubmitting(false);
+            const filteredRules = rulesList.filter(r => r.trim());
+            const filteredFaq = faqList.filter(f => f.q.trim() && f.a.trim());
 
-        // Generate direct link
-        const generatedLink = `${window.location.origin}/community/view?id=${createdCommunityId}`;
-        setCreatedCommunityLink(generatedLink);
+            const newCommunity = {
+                id: communityId,
+                name: name.trim(),
+                type: type === 'default' ? 'Default (Org)' : type.charAt(0).toUpperCase() + type.slice(1),
+                category,
+                members: '1 member',
+                activity: 'New',
+                description: description.trim() || 'A new community created for MPOnline teams.',
+                banner: safeBanner,
+                avatar: safeAvatar,
+                createdBy: currentUser?.name || 'Employee',
+                creatorUserId: currentUser?.id || 1,
+                createdDate: new Date().toISOString(),
+                rules: filteredRules.length > 0 ? filteredRules : ['Be respectful.', 'Stay on topic.'],
+                faq: filteredFaq.length > 0 ? filteredFaq : [{ q: 'Who can join?', a: 'All MPOnline employees.' }],
+                defaultOrg: type === 'default' ? defaultOrg : null,
+            };
+
+            // Notifications for invited members
+            const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+            const newInviteNotifs = invitedUserIds.map(targetId => ({
+                id: Math.floor(Date.now() / 1000) + Math.floor(Math.random() * 1000),
+                targetUserId: targetId,
+                type: 'invite',
+                text: `${currentUser?.name || 'An employee'} invited you to join the community "${newCommunity.name}".`,
+                senderName: currentUser?.name || 'An employee',
+                senderAvatar: currentUser?.avatar || null,
+                time: 'Just now',
+                unread: true,
+                icon: 'group_add',
+                color: 'text-indigo-400',
+                bg: 'bg-indigo-500/10',
+                communityName: newCommunity.name,
+                communityId: newCommunity.id,
+                actionLink: `/community/view?id=${newCommunity.id}`
+            }));
+            safeSetStorage('knome_notifications', [...newInviteNotifs, ...existingNotifs]);
+
+            // Save community
+            const customCommunities = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+            safeSetStorage('knome_custom_communities', [newCommunity, ...customCommunities]);
+
+            // Save to creator's joined list with proper format
+            const userKey = `knome_joined_communities_${currentUser?.id || 'guest'}`;
+            const userJoined = JSON.parse(localStorage.getItem(userKey) || '[]');
+            safeSetStorage(userKey, [{ id: communityId, name: newCommunity.name, status: 'joined', joinedAt: new Date().toISOString() }, ...userJoined.filter(c => String(c.id) !== String(communityId))]);
+
+            // Seed creator as admin member
+            const creatorMember = {
+                userId: currentUser?.id || 1,
+                fullName: currentUser?.name || 'Employee',
+                employeeId: currentUser?.employeeId || 'MPO100',
+                designation: currentUser?.roleName || 'Community Admin',
+                memberType: 'Admin',
+                status: 'Approved',
+                profilePhotoUrl: currentUser?.avatar
+            };
+            safeSetStorage(`knome_community_members_${communityId}`, [creatorMember]);
+
+            // FR-CM-04: Default (Org) community — save department assignment
+            if (type === 'default') {
+                const deptAssignments = JSON.parse(localStorage.getItem('knome_default_community_assignments') || '[]');
+                deptAssignments.push({ communityId, communityName: newCommunity.name, department: defaultOrg || 'All Employees', createdAt: new Date().toISOString() });
+                localStorage.setItem('knome_default_community_assignments', JSON.stringify(deptAssignments));
+                window.dispatchEvent(new CustomEvent('default-community-assigned', {
+                    detail: { community: newCommunity, targetDept: defaultOrg || 'All Employees' }
+                }));
+            }
+
+            window.dispatchEvent(new CustomEvent('community-joined-change'));
+            window.dispatchEvent(new CustomEvent('community-invite-sent', {
+                detail: { invitedUserIds, communityName: newCommunity.name, senderName: currentUser?.name }
+            }));
+
+            if (onCommunityCreated) onCommunityCreated(newCommunity);
+
+            const generatedLink = `${window.location.origin}/community/view?id=${communityId}`;
+            setCreatedCommunityLink(generatedLink);
+        } catch (error) {
+            console.error('Failed to process community creation:', error);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     const handleCopyLink = () => {
@@ -126,16 +234,20 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
     const handleFinish = () => {
         setCreatedCommunityLink(null);
         setStep(1); setName(''); setDescription(''); setType('public');
-        setBanner(''); setAvatar(''); setRules(''); setFaq(''); setInvitedUserIds([]);
+        setBanner(''); setAvatar('');
+        setRulesList(['Be respectful and constructive.', 'Keep discussions relevant.', 'Follow MPOnline guidelines.']);
+        setFaqList([{ q: 'Who can join?', a: 'All MPOnline employees may join or request access.' }]);
+        setInvitedUserIds([]);
+        setNameError(''); setBannerError(''); setAvatarError('');
         onClose();
     };
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
-            
+
             <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in duration-200">
-                
+
                 {/* Header */}
                 <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800">
                     <div>
@@ -144,21 +256,28 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                             {createdCommunityLink ? 'Community Created Successfully!' : 'Create New Community'}
                         </h2>
                         {!createdCommunityLink && (
-                            <p className="text-sm font-medium text-slate-500 mt-1">
-                                Step {step} of 2: {step === 1 ? 'Basic Details & Media' : 'Members & Governance'}
-                            </p>
+                            <div className="flex items-center gap-3 mt-2">
+                                <div className="flex items-center gap-1.5">
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black ${step >= 1 ? 'bg-indigo-500 text-white' : 'bg-slate-200 text-slate-500'}`}>1</div>
+                                    <span className={`text-[12px] font-bold ${step === 1 ? 'text-indigo-500' : 'text-slate-400'}`}>Details & Media</span>
+                                </div>
+                                <div className={`h-0.5 w-8 rounded ${step >= 2 ? 'bg-indigo-500' : 'bg-slate-200'}`}></div>
+                                <div className="flex items-center gap-1.5">
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black ${step >= 2 ? 'bg-indigo-500 text-white' : 'bg-slate-200 text-slate-500'}`}>2</div>
+                                    <span className={`text-[12px] font-bold ${step === 2 ? 'text-indigo-500' : 'text-slate-400'}`}>Rules, FAQ & Members</span>
+                                </div>
+                            </div>
                         )}
                     </div>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
                         <span className="material-symbols-outlined">close</span>
                     </button>
                 </div>
-                
+
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-50/50 dark:bg-slate-900/50">
-                    
+
                     {createdCommunityLink ? (
-                        /* SUCCESS SCREEN WITH LINK SHARE & NOTIFICATION CONFIRMATION */
                         <div className="flex flex-col items-center justify-center text-center py-8 px-4 animate-in zoom-in-95 duration-200">
                             <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-500 rounded-full flex items-center justify-center mb-4">
                                 <span className="material-symbols-outlined text-[36px]">check_circle</span>
@@ -167,72 +286,85 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                 "{name}" is Live!
                             </h3>
                             <p className="text-slate-500 text-sm max-w-md mb-6">
-                                {invitedUserIds.length > 0 
+                                {invitedUserIds.length > 0
                                     ? `Direct notifications with the join link have been sent to ${invitedUserIds.length} selected employee(s).`
-                                    : 'Your community has been created. You can share the link below with your team members.'}
+                                    : 'Your community has been created. Share the link below with your team members.'}
                             </p>
-
-                            {/* Direct Share Link Box */}
                             <div className="w-full max-w-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 shadow-sm mb-6">
                                 <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 text-left">
                                     🔗 Shareable Invite Link
                                 </label>
                                 <div className="flex items-center gap-2">
-                                    <input 
-                                        type="text" 
-                                        readOnly 
-                                        value={createdCommunityLink} 
-                                        className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs font-mono text-slate-800 dark:text-slate-200 outline-none" 
-                                    />
-                                    <button 
-                                        onClick={handleCopyLink}
-                                        className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 shrink-0 ${copied ? 'bg-emerald-500 text-white' : 'bg-indigo-500 text-white hover:bg-indigo-600 shadow-md shadow-indigo-500/20'}`}
-                                    >
+                                    <input type="text" readOnly value={createdCommunityLink}
+                                        className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-xs font-mono text-slate-800 dark:text-slate-200 outline-none" />
+                                    <button onClick={handleCopyLink}
+                                        className={`px-5 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 shrink-0 ${copied ? 'bg-emerald-500 text-white' : 'bg-indigo-500 text-white hover:bg-indigo-600 shadow-md shadow-indigo-500/20'}`}>
                                         <span className="material-symbols-outlined text-[16px]">{copied ? 'done' : 'content_copy'}</span>
                                         {copied ? 'Copied!' : 'Copy Link'}
                                     </button>
                                 </div>
                             </div>
-
-                            <button 
-                                onClick={handleFinish}
-                                className="px-8 py-3 bg-indigo-500 text-white font-bold rounded-xl hover:bg-indigo-600 transition-colors shadow-lg shadow-indigo-500/30"
-                            >
+                            <button onClick={handleFinish}
+                                className="px-8 py-3 bg-indigo-500 text-white font-bold rounded-xl hover:bg-indigo-600 transition-colors shadow-lg shadow-indigo-500/30">
                                 Done & Go to Communities
                             </button>
                         </div>
                     ) : (
                         <>
+                            {/* ── STEP 1: Details & Media ── */}
                             {step === 1 && (
                                 <div className="flex flex-col md:flex-row gap-8">
                                     {/* Left: Text Inputs */}
                                     <div className="flex-1 space-y-5">
                                         <div>
-                                            <label className="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2">Community Name</label>
-                                            <input value={name} onChange={(e) => setName(e.target.value)} type="text" placeholder="e.g. Engineering Excellence" className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white font-bold" />
+                                            <label className="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                                Community Name <span className="text-red-500">*</span>
+                                            </label>
+                                            <input
+                                                value={name}
+                                                onChange={(e) => { setName(e.target.value); if (nameError) setNameError(''); }}
+                                                type="text"
+                                                placeholder="e.g. Engineering Excellence"
+                                                className={`w-full bg-white dark:bg-slate-800 border rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white font-bold transition-colors ${nameError ? 'border-red-400 focus:ring-red-400' : 'border-slate-200 dark:border-slate-700'}`}
+                                            />
+                                            {nameError && (
+                                                <p className="mt-1.5 text-[12px] text-red-500 flex items-center gap-1 font-bold">
+                                                    <span className="material-symbols-outlined text-[14px]">error</span> {nameError}
+                                                </p>
+                                            )}
                                         </div>
+
                                         <div>
                                             <label className="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2">Description</label>
-                                            <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What is the purpose of this community?" rows="4" className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white resize-none"></textarea>
+                                            <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What is the purpose of this community?" rows="3"
+                                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white resize-none"></textarea>
                                         </div>
+
                                         <div>
                                             <label className="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2">Primary Category</label>
-                                            <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white font-medium">
+                                            <select value={category} onChange={(e) => setCategory(e.target.value)}
+                                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white font-medium">
                                                 <option>Technology</option>
                                                 <option>Product & Design</option>
                                                 <option>Culture & HR</option>
                                                 <option>Operations</option>
+                                                <option>Finance</option>
+                                                <option>Marketing</option>
+                                                <option>Leadership</option>
                                             </select>
                                         </div>
+
                                         <div>
-                                            <label className="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-4">Privacy & Governance Type</label>
-                                            
+                                            <label className="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-3">Privacy & Governance Type</label>
+
                                             <label className={`block p-4 rounded-xl border-2 mb-3 cursor-pointer transition-all ${type === 'public' ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/20' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-indigo-300'}`}>
                                                 <div className="flex items-center gap-3">
                                                     <input type="radio" name="type" checked={type === 'public'} onChange={() => setType('public')} className="text-indigo-500 focus:ring-indigo-500" />
                                                     <div>
-                                                        <h4 className="font-bold text-[14px] text-slate-900 dark:text-white flex items-center gap-1.5"><span className="material-symbols-outlined text-[16px] text-emerald-500">public</span> Public</h4>
-                                                        <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">Anyone can find and join. Admins get notified when members request/join.</p>
+                                                        <h4 className="font-bold text-[14px] text-slate-900 dark:text-white flex items-center gap-1.5">
+                                                            <span className="material-symbols-outlined text-[16px] text-emerald-500">public</span> Public
+                                                        </h4>
+                                                        <p className="text-[11px] text-slate-500 mt-0.5">Anyone can find and join instantly. No approval needed.</p>
                                                     </div>
                                                 </div>
                                             </label>
@@ -241,8 +373,10 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                                 <div className="flex items-center gap-3">
                                                     <input type="radio" name="type" checked={type === 'private'} onChange={() => setType('private')} className="text-indigo-500 focus:ring-indigo-500" />
                                                     <div>
-                                                        <h4 className="font-bold text-[14px] text-slate-900 dark:text-white flex items-center gap-1.5"><span className="material-symbols-outlined text-[16px] text-amber-500">lock</span> Private</h4>
-                                                        <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">Requires Admin approval to join. Join requests are sent to Admin notifications.</p>
+                                                        <h4 className="font-bold text-[14px] text-slate-900 dark:text-white flex items-center gap-1.5">
+                                                            <span className="material-symbols-outlined text-[16px] text-amber-500">lock</span> Private
+                                                        </h4>
+                                                        <p className="text-[11px] text-slate-500 mt-0.5">Requires Admin approval. Join requests are reviewed before access is granted.</p>
                                                     </div>
                                                 </div>
                                             </label>
@@ -252,21 +386,23 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                                     <div className="flex items-center gap-3">
                                                         <input type="radio" name="type" checked={type === 'default'} onChange={() => setType('default')} className="text-indigo-500 focus:ring-indigo-500" />
                                                         <div>
-                                                            <h4 className="font-bold text-[14px] text-slate-900 dark:text-white flex items-center gap-1.5"><span className="material-symbols-outlined text-[16px] text-purple-500">corporate_fare</span> Organization Default</h4>
-                                                            <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">Employees are automatically subscribed.</p>
+                                                            <h4 className="font-bold text-[14px] text-slate-900 dark:text-white flex items-center gap-1.5">
+                                                                <span className="material-symbols-outlined text-[16px] text-purple-500">corporate_fare</span> Organization Default
+                                                            </h4>
+                                                            <p className="text-[11px] text-slate-500 mt-0.5">All employees or specific department are auto-subscribed. HR Admin only.</p>
                                                         </div>
                                                     </div>
                                                 </label>
                                             )}
 
                                             {type === 'default' && ['SYSADM', 'HRADM'].includes(currentUser?.role) && (
-                                                <div className="mt-4 p-4 bg-slate-100 dark:bg-slate-800 rounded-xl animate-in fade-in slide-in-from-top-2">
-                                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Select Default Org</label>
-                                                    <select 
-                                                        value={defaultOrg}
-                                                        onChange={(e) => setDefaultOrg(e.target.value)}
-                                                        className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white font-medium">
-                                                        <option value="" disabled>Select Department...</option>
+                                                <div className="mt-3 p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/40 rounded-xl animate-in fade-in slide-in-from-top-2">
+                                                    <label className="block text-[11px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-2">
+                                                        <span className="material-symbols-outlined text-[13px]">corporate_fare</span> Auto-Subscribe Target
+                                                    </label>
+                                                    <select value={defaultOrg} onChange={(e) => setDefaultOrg(e.target.value)}
+                                                        className="w-full bg-white dark:bg-slate-900 border border-purple-300 dark:border-purple-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 outline-none text-slate-900 dark:text-white font-medium">
+                                                        <option value="">Select Department or All...</option>
                                                         <option>All Employees</option>
                                                         <option>HR</option>
                                                         <option>Finance</option>
@@ -278,76 +414,175 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                             )}
                                         </div>
                                     </div>
-                                    
+
                                     {/* Right: Media Uploads */}
                                     <div className="w-full md:w-80 flex flex-col gap-5">
+                                        {/* Banner */}
                                         <div>
-                                            <label className="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2">Banner Image</label>
-                                            <div onClick={() => bannerInputRef.current?.click()} className="relative w-full h-32 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 flex flex-col items-center justify-center text-slate-400 hover:border-indigo-500 hover:text-indigo-500 transition-colors cursor-pointer group overflow-hidden">
+                                            <label className="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                                Banner Image <span className="text-slate-400 font-normal normal-case">(JPG/PNG/WebP, max 5MB)</span>
+                                            </label>
+                                            <div onClick={() => bannerInputRef.current?.click()}
+                                                className="relative w-full h-36 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 flex flex-col items-center justify-center text-slate-400 hover:border-indigo-500 hover:text-indigo-500 transition-colors cursor-pointer group overflow-hidden">
                                                 {banner ? (
-                                                    <img src={banner} alt="Banner Preview" className="w-full h-full object-cover" />
+                                                    <>
+                                                        <img src={banner} alt="Banner Preview" className="w-full h-full object-cover" />
+                                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                            <span className="text-white text-[12px] font-bold">Click to change</span>
+                                                        </div>
+                                                    </>
                                                 ) : (
                                                     <>
                                                         <span className="material-symbols-outlined text-[32px] mb-2 group-hover:scale-110 transition-transform">wallpaper</span>
-                                                        <span className="text-[11px] font-bold">1200 x 400px minimum</span>
+                                                        <span className="text-[11px] font-bold">Click to upload banner</span>
+                                                        <span className="text-[10px] text-slate-400 mt-1">Recommended: 1200 x 400px</span>
                                                     </>
                                                 )}
                                             </div>
-                                            <input type="file" ref={bannerInputRef} className="hidden" accept="image/*" onChange={(e) => {
-                                                const file = e.target.files[0];
-                                                if (file) {
-                                                    const reader = new FileReader();
-                                                    reader.onload = (ev) => setBanner(ev.target.result);
-                                                    reader.readAsDataURL(file);
-                                                }
-                                            }} />
+                                            <input type="file" ref={bannerInputRef} className="hidden" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={handleBannerUpload} />
+                                            {bannerError && (
+                                                <p className="mt-1.5 text-[12px] text-red-500 flex items-center gap-1 font-bold">
+                                                    <span className="material-symbols-outlined text-[14px]">error</span> {bannerError}
+                                                </p>
+                                            )}
                                         </div>
+
+                                        {/* Avatar */}
                                         <div>
-                                            <label className="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2">Thumbnail Avatar</label>
-                                            <div onClick={() => avatarInputRef.current?.click()} className="relative w-24 h-24 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 flex flex-col items-center justify-center text-slate-400 hover:border-indigo-500 hover:text-indigo-500 transition-colors cursor-pointer group overflow-hidden">
+                                            <label className="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                                Thumbnail Avatar <span className="text-slate-400 font-normal normal-case">(JPG/PNG/WebP, max 5MB)</span>
+                                            </label>
+                                            <div onClick={() => avatarInputRef.current?.click()}
+                                                className="relative w-28 h-28 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 flex flex-col items-center justify-center text-slate-400 hover:border-indigo-500 hover:text-indigo-500 transition-colors cursor-pointer group overflow-hidden">
                                                 {avatar ? (
-                                                    <img src={avatar} alt="Avatar Preview" className="w-full h-full object-cover" />
+                                                    <>
+                                                        <img src={avatar} alt="Avatar Preview" className="w-full h-full object-cover" />
+                                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                            <span className="text-white text-[10px] font-bold text-center">Change</span>
+                                                        </div>
+                                                    </>
                                                 ) : (
-                                                    <span className="material-symbols-outlined text-[24px] group-hover:scale-110 transition-transform">add_photo_alternate</span>
+                                                    <>
+                                                        <span className="material-symbols-outlined text-[28px] group-hover:scale-110 transition-transform">add_photo_alternate</span>
+                                                        <span className="text-[9px] font-bold mt-1 text-center px-1">Click to upload avatar</span>
+                                                    </>
                                                 )}
                                             </div>
-                                            <input type="file" ref={avatarInputRef} className="hidden" accept="image/*" onChange={(e) => {
-                                                const file = e.target.files[0];
-                                                if (file) {
-                                                    const reader = new FileReader();
-                                                    reader.onload = (ev) => setAvatar(ev.target.result);
-                                                    reader.readAsDataURL(file);
-                                                }
-                                            }} />
+                                            <input type="file" ref={avatarInputRef} className="hidden" accept="image/jpeg,image/jpg,image/png,image/webp" onChange={handleAvatarUpload} />
+                                            {avatarError && (
+                                                <p className="mt-1.5 text-[12px] text-red-500 flex items-center gap-1 font-bold">
+                                                    <span className="material-symbols-outlined text-[14px]">error</span> {avatarError}
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
                             )}
 
+                            {/* ── STEP 2: Rules, FAQ & Invite Members ── */}
                             {step === 2 && (
-                                <div className="space-y-6">
-                                    {/* Invite Employees Section */}
+                                <div className="space-y-8">
+
+                                    {/* Rules Builder */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-3">
+                                            <label className="text-[12px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                                                <span className="material-symbols-outlined text-[15px] text-indigo-500">gavel</span>
+                                                Community Rules <span className="text-slate-400 font-normal normal-case ml-1">({rulesList.length}/10)</span>
+                                            </label>
+                                            {rulesList.length < 10 && (
+                                                <button onClick={addRule} className="flex items-center gap-1 text-[12px] text-indigo-500 font-bold hover:text-indigo-600 transition-colors">
+                                                    <span className="material-symbols-outlined text-[16px]">add_circle</span> Add Rule
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="space-y-2">
+                                            {rulesList.map((rule, idx) => (
+                                                <div key={idx} className="flex items-center gap-2 group">
+                                                    <span className="text-[12px] font-black text-slate-400 w-5 shrink-0">{idx + 1}.</span>
+                                                    <input
+                                                        value={rule}
+                                                        onChange={(e) => updateRule(idx, e.target.value)}
+                                                        placeholder={`Rule ${idx + 1}...`}
+                                                        className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white"
+                                                    />
+                                                    {rulesList.length > 1 && (
+                                                        <button onClick={() => removeRule(idx)}
+                                                            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-all cursor-pointer p-1">
+                                                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* FAQ Builder */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-3">
+                                            <label className="text-[12px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                                                <span className="material-symbols-outlined text-[15px] text-indigo-500">help</span>
+                                                FAQ <span className="text-slate-400 font-normal normal-case ml-1">({faqList.length}/5)</span>
+                                            </label>
+                                            {faqList.length < 5 && (
+                                                <button onClick={addFaq} className="flex items-center gap-1 text-[12px] text-indigo-500 font-bold hover:text-indigo-600 transition-colors">
+                                                    <span className="material-symbols-outlined text-[16px]">add_circle</span> Add Q&A
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="space-y-4">
+                                            {faqList.map((item, idx) => (
+                                                <div key={idx} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 group relative">
+                                                    {faqList.length > 1 && (
+                                                        <button onClick={() => removeFaq(idx)}
+                                                            className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-all cursor-pointer">
+                                                            <span className="material-symbols-outlined text-[18px]">delete</span>
+                                                        </button>
+                                                    )}
+                                                    <div className="space-y-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[11px] font-black text-indigo-500 uppercase w-4">Q</span>
+                                                            <input
+                                                                value={item.q}
+                                                                onChange={(e) => updateFaq(idx, 'q', e.target.value)}
+                                                                placeholder="Question..."
+                                                                className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white"
+                                                            />
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[11px] font-black text-emerald-500 uppercase w-4">A</span>
+                                                            <textarea
+                                                                value={item.a}
+                                                                onChange={(e) => updateFaq(idx, 'a', e.target.value)}
+                                                                placeholder="Answer..."
+                                                                rows="2"
+                                                                className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white resize-none"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Invite Employees */}
                                     <div className="bg-indigo-50/50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/40 rounded-2xl p-5">
                                         <div className="flex items-center gap-2 mb-2">
                                             <span className="material-symbols-outlined text-indigo-500">person_add</span>
-                                            <h3 className="font-bold text-[15px] text-slate-900 dark:text-white">
-                                                Invite Employees (Send Direct Notification Link)
-                                            </h3>
+                                            <h3 className="font-bold text-[15px] text-slate-900 dark:text-white">Invite Employees</h3>
+                                            {invitedUserIds.length > 0 && (
+                                                <span className="bg-indigo-500 text-white text-[11px] px-2 py-0.5 rounded-full font-bold">{invitedUserIds.length} selected</span>
+                                            )}
                                         </div>
-                                        <p className="text-[12px] text-slate-500 mb-4">
-                                            Selected employees will automatically receive a notification with a direct link to join this community.
-                                        </p>
-
+                                        <p className="text-[12px] text-slate-500 mb-4">Selected employees receive a direct notification with a join link.</p>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                                            {users.filter(u => u.id !== currentUser?.id).map(user => {
+                                            {(users || []).filter(u => u.id !== currentUser?.id).map(user => {
                                                 const isSelected = invitedUserIds.includes(user.id);
                                                 return (
-                                                    <div 
-                                                        key={user.id} 
-                                                        onClick={() => toggleInviteUser(user.id)}
-                                                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${isSelected ? 'bg-indigo-500 text-white border-indigo-500 shadow-md shadow-indigo-500/20' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-300'}`}
-                                                    >
-                                                        <img src={user.avatar} className="w-8 h-8 rounded-full object-cover shrink-0" alt={user.name} />
+                                                    <div key={user.id} onClick={() => toggleInviteUser(user.id)}
+                                                        className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${isSelected ? 'bg-indigo-500 text-white border-indigo-500 shadow-md shadow-indigo-500/20' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-300'}`}>
+                                                        <img src={user.avatar} className="w-8 h-8 rounded-full object-cover shrink-0" alt={user.name}
+                                                            onError={(e) => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=6366f1&color=fff`; }} />
                                                         <div className="flex-1 min-w-0">
                                                             <p className={`text-[13px] font-bold truncate ${isSelected ? 'text-white' : 'text-slate-900 dark:text-white'}`}>{user.name}</p>
                                                             <p className={`text-[10px] truncate ${isSelected ? 'text-indigo-100' : 'text-slate-500'}`}>{user.designation}</p>
@@ -360,18 +595,6 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                             })}
                                         </div>
                                     </div>
-
-                                    {/* Rules & FAQ */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div>
-                                            <label className="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2">Community Rules (Markdown)</label>
-                                            <textarea value={rules} onChange={(e) => setRules(e.target.value)} placeholder="- Be respectful&#10;- Stay on topic&#10;- No spam" rows="4" className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white resize-none font-mono"></textarea>
-                                        </div>
-                                        <div>
-                                            <label className="block text-[12px] font-bold text-slate-500 uppercase tracking-wider mb-2">Frequently Asked Questions (FAQ)</label>
-                                            <textarea value={faq} onChange={(e) => setFaq(e.target.value)} placeholder="Q: Who should join?&#10;A: Anyone interested in..." rows="4" className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white resize-none font-mono"></textarea>
-                                        </div>
-                                    </div>
                                 </div>
                             )}
                         </>
@@ -380,29 +603,25 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
 
                 {/* Footer Buttons */}
                 {!createdCommunityLink && (
-                    <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center rounded-b-2xl">
+                    <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center rounded-b-2xl bg-white dark:bg-slate-900">
                         <button onClick={onClose} className="px-6 py-2.5 text-[13px] font-bold text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors">
                             Cancel
                         </button>
-                        
                         <div className="flex gap-3">
                             {step === 2 && (
-                                <button 
-                                    onClick={() => setStep(1)}
+                                <button onClick={() => setStep(1)}
                                     className="px-6 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[13px] font-bold rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
                                     Back
                                 </button>
                             )}
                             {step === 1 ? (
-                                <button 
-                                    onClick={() => setStep(2)}
-                                    className="px-8 py-2.5 bg-indigo-500 text-white text-[13px] font-bold rounded-xl hover:bg-indigo-600 transition-colors shadow-md shadow-indigo-500/20">
+                                <button onClick={handleNextStep}
+                                    className="px-8 py-2.5 bg-indigo-500 text-white text-[13px] font-bold rounded-xl hover:bg-indigo-600 transition-colors shadow-md shadow-indigo-500/20 flex items-center gap-2">
                                     Next Step
+                                    <span className="material-symbols-outlined text-[18px]">arrow_forward</span>
                                 </button>
                             ) : (
-                                <button 
-                                    onClick={handleSubmit}
-                                    disabled={isSubmitting}
+                                <button onClick={handleSubmit} disabled={isSubmitting}
                                     className="px-8 py-2.5 bg-indigo-500 text-white text-[13px] font-bold rounded-xl hover:bg-indigo-600 transition-colors shadow-md shadow-indigo-500/20 disabled:opacity-50 flex items-center gap-2">
                                     <span className="material-symbols-outlined text-[18px]">send</span>
                                     {isSubmitting ? 'Creating...' : 'Create & Invite Members'}

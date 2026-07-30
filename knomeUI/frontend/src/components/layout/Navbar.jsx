@@ -4,7 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import NotificationSettingsModal from '../modals/NotificationSettingsModal';
 import NotificationToast from '../ui/NotificationToast';
 import knomeLogo from '../../assets/knome_logo.png';
-import { notificationsApi, profileApi, searchApi, resolveMediaUrl } from '../../utils/apiService';
+import { notificationsApi, profileApi, searchApi, karmaApi, resolveMediaUrl, saveRecentSearch, getLocalRecentSearches, clearLocalRecentSearches } from '../../utils/apiService';
 import * as signalR from '@microsoft/signalr';
 
 export default function Navbar() {
@@ -13,6 +13,30 @@ export default function Navbar() {
     const { pathname } = useLocation();
     const navigate = useNavigate();
     
+    // User Karma Points State
+    const [userKarma, setUserKarma] = useState(currentUser?.karma || 0);
+
+    useEffect(() => {
+        if (currentUser?.karma !== undefined) {
+            setUserKarma(currentUser.karma);
+        }
+        const fetchKarma = async () => {
+            try {
+                const bal = await karmaApi.getMyBalance();
+                if (bal && typeof bal.totalPoints === 'number') {
+                    setUserKarma(bal.totalPoints);
+                }
+            } catch {
+                /* fallback to existing userKarma */
+            }
+        };
+        fetchKarma();
+    }, [currentUser?.userId, currentUser?.employeeId, currentUser?.karma]);
+
+    const isSysAdmin = currentUser?.role === 'SYSADM' || 
+                       currentUser?.roleName === 'System Administrator' || 
+                       (Array.isArray(currentUser?.roles) && (currentUser.roles.includes('SYSADM') || currentUser.roles.includes('System Administrator') || currentUser.roles.includes('SystemAdmin')));
+
     // Smart YouTube-Style Search State
     const [searchQuery, setSearchQuery] = useState('');
     const [showSuggestions, setShowSuggestions] = useState(false);
@@ -29,22 +53,34 @@ export default function Navbar() {
         const loadInitialSearchData = async () => {
             try {
                 const [histRes, trendRes] = await Promise.all([
-                    searchApi.getHistory(5),
-                    searchApi.getTrending(6)
+                    searchApi.getHistory(10).catch(() => null),
+                    searchApi.getTrending(6).catch(() => null)
                 ]);
-                setRecentSearches(Array.isArray(histRes) ? histRes : (histRes?.data || []));
+                const apiItems = Array.isArray(histRes) ? histRes : (histRes?.data || []);
+                const localItems = getLocalRecentSearches();
+
+                const combined = [...localItems];
+                apiItems.forEach(item => {
+                    const term = typeof item === 'string' ? item : item.searchTerm;
+                    if (term && !combined.some(c => c.searchTerm.toLowerCase() === term.toLowerCase())) {
+                        combined.push({ searchTerm: term, searchDate: item.searchDate || new Date().toISOString() });
+                    }
+                });
+
+                setRecentSearches(combined.slice(0, 10));
                 setTrendingSearches(Array.isArray(trendRes) ? trendRes : (trendRes?.data || []));
             } catch (e) {
                 console.error('Failed to load search history/trending data', e);
+                setRecentSearches(getLocalRecentSearches());
             }
         };
 
         loadInitialSearchData();
     }, [showSuggestions]);
 
-    // Real-time debounced search suggestions
+    // Real-time debounced search suggestions (Requires at least 3 characters)
     useEffect(() => {
-        if (!searchQuery.trim()) {
+        if (!searchQuery.trim() || searchQuery.trim().length < 3) {
             setSuggestions([]);
             setIsSearchingSuggestions(false);
             setSelectedIndex(-1);
@@ -70,23 +106,66 @@ export default function Navbar() {
 
     const handleSearch = (query, categoryFilter = null) => {
         const q = query ? query.trim() : searchQuery.trim();
-        if (!q) return;
+        if (!q || q.length < 3) return;
+
+        // Save immediately to Recent Searches state & localStorage
+        saveRecentSearch(q);
+        setRecentSearches(prev => [
+            { searchTerm: q, searchDate: new Date().toISOString() },
+            ...prev.filter(item => item.searchTerm.toLowerCase() !== q.toLowerCase())
+        ].slice(0, 10));
+
+        // Push to backend API asynchronously
+        searchApi.saveHistory(q);
+
         setSearchQuery('');
         setShowSuggestions(false);
         setSelectedIndex(-1);
+
+        // If search query matches a specific user name or employee ID, navigate directly to their profile
+        const matchedUser = users.find(u => 
+            u.name.toLowerCase() === q.toLowerCase() || 
+            u.name.toLowerCase().includes(q.toLowerCase()) ||
+            u.employeeId?.toLowerCase() === q.toLowerCase()
+        );
+
+        if (matchedUser) {
+            navigate('/profile', { 
+                state: { 
+                    user: { 
+                        userId: matchedUser.userId || matchedUser.id, 
+                        id: matchedUser.userId || matchedUser.id, 
+                        employeeId: matchedUser.employeeId,
+                        name: matchedUser.name, 
+                        fullName: matchedUser.name, 
+                        profilePhotoUrl: matchedUser.avatar, 
+                        avatar: matchedUser.avatar 
+                    } 
+                } 
+            });
+            return;
+        }
+
         const typeParam = categoryFilter ? `&type=${encodeURIComponent(categoryFilter)}` : '';
         navigate(`/search?q=${encodeURIComponent(q)}${typeParam}`);
     };
 
     const handleClearHistory = async (e, term = null) => {
         if (e) e.stopPropagation();
+        
+        // 1. Immediately update local state
+        if (term) {
+            setRecentSearches(prev => prev.filter(item => item.searchTerm.toLowerCase() !== term.toLowerCase()));
+        } else {
+            setRecentSearches([]);
+        }
+
+        // 2. Immediately clear localStorage
+        clearLocalRecentSearches(term);
+
+        // 3. Clear backend search history
         try {
-            await searchApi.clearHistory(term);
-            if (term) {
-                setRecentSearches(prev => prev.filter(item => item.searchTerm !== term));
-            } else {
-                setRecentSearches([]);
-            }
+            await searchApi.clearHistory(term).catch(() => null);
         } catch (err) {
             console.error('Failed to clear search history', err);
         }
@@ -105,7 +184,24 @@ export default function Navbar() {
             e.preventDefault();
             if (selectedIndex >= 0 && selectedIndex < suggestions.length) {
                 const selected = suggestions[selectedIndex];
-                handleSearch(selected.title);
+                setShowSuggestions(false);
+                setSearchQuery('');
+                if (selected.contentType === 'User' || selected.type === 'User') {
+                    navigate('/profile', { 
+                        state: { 
+                            user: { 
+                                userId: selected.id, 
+                                id: selected.id, 
+                                name: selected.title, 
+                                fullName: selected.title, 
+                                profilePhotoUrl: selected.thumbnailUrl, 
+                                avatar: selected.thumbnailUrl 
+                            } 
+                        } 
+                    });
+                } else {
+                    handleSearch(selected.title);
+                }
             } else {
                 handleSearch(searchQuery);
             }
@@ -161,19 +257,13 @@ export default function Navbar() {
         const isReaction = type.includes('reaction') || type.includes('like');
         const isComment = type.includes('comment');
         const isMention = type.includes('mention');
-        const isCommunityInvite = type.includes('community') || type.includes('invite');
 
         let icon = 'notifications';
         let color = 'text-slate-400';
         let bg = 'bg-slate-500/10';
         let category = 'System';
 
-        if (isCommunityInvite) {
-            icon = 'group_add';
-            color = 'text-indigo-500';
-            bg = 'bg-indigo-500/10';
-            category = 'Connections';
-        } else if (isFollow || isConnectionReq) {
+        if (isFollow || isConnectionReq) {
             icon = isConnectionReq ? 'connect_without_contact' : 'person_add';
             color = 'text-indigo-500';
             bg = 'bg-indigo-500/10';
@@ -195,26 +285,52 @@ export default function Navbar() {
             category = 'Mentions';
         }
 
-        const senderName = n.senderName || n.actorName || 'System';
-        const senderAvatar = resolveMediaUrl(n.senderAvatar) || (senderName ? `https://ui-avatars.com/api/?name=${encodeURIComponent(senderName)}&background=6366f1&color=fff` : null);
+        let senderName = n.senderName || n.actorName;
+        if (!senderName || senderName === 'System') {
+            const match = (n.message || '').match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+(shared|invited|sent|commented|liked|reacted|posted|mentioned)/);
+            if (match) {
+                senderName = match[1];
+            } else {
+                senderName = 'System';
+            }
+        }
+        const senderAvatar = resolveMediaUrl(n.senderAvatar) || (senderName && senderName !== 'System' ? `https://ui-avatars.com/api/?name=${encodeURIComponent(senderName)}&background=6366f1&color=fff` : null);
         const dateVal = n.createdAt || n.createdDate;
-        const targetCommunityId = n.referenceId || n.relatedContentId;
-        const resolvedTargetUrl = n.targetUrl || (isCommunityInvite && targetCommunityId ? `/community/view?id=${targetCommunityId}` : null);
+        const msg = (n.message || '').toLowerCase();
+        const refId = n.relatedContentId || n.referenceId;
+
+        let targetUrl = n.targetUrl;
+        if (!targetUrl) {
+            if (msg.includes('post') || type.includes('post') || type.includes('share')) {
+                targetUrl = refId ? `/posts?id=${refId}` : '/posts';
+            } else if (msg.includes('article') || type.includes('article')) {
+                targetUrl = refId ? `/article-view?id=${refId}` : '/articles';
+            } else if (msg.includes('community') || type.includes('community')) {
+                targetUrl = refId ? `/community/view?id=${refId}` : '/community';
+            } else if (msg.includes('video') || type.includes('video')) {
+                targetUrl = refId ? `/videos?id=${refId}` : '/videos';
+            } else if (msg.includes('podcast') || type.includes('podcast')) {
+                targetUrl = refId ? `/podcasts?id=${refId}` : '/podcasts';
+            }
+        }
 
         return {
             id: n.notificationId || n.id,
             category,
-            type: isCommunityInvite ? 'community_invite' : (isConnectionReq ? 'follow_request' : (isFollow ? 'follow' : type)),
-            title: n.title || (isCommunityInvite ? 'Community Invitation' : (isFollow ? 'New Follower' : (isConnectionReq ? 'Connection Request' : 'Notification'))),
+            type: isConnectionReq ? 'follow_request' : (isFollow ? 'follow' : type),
+            title: n.title || (isFollow ? 'New Follower' : (isConnectionReq ? 'Connection Request' : 'Notification')),
             text: n.message,
-            targetUrl: resolvedTargetUrl,
+            message: n.message,
+            targetUrl,
+            relatedContentType: n.relatedContentType,
+            relatedContentId: n.relatedContentId || n.referenceId,
             createdDate: dateVal,
             time: formatRelativeTime(dateVal),
             unread: !n.isRead,
             icon,
             color,
             bg,
-            senderUserId: n.senderUserId || n.referenceId || n.relatedContentId || n.actorUserId,
+            senderUserId: n.senderUserId || n.actorUserId,
             senderName,
             senderAvatar,
             handled: n.isRead,
@@ -222,21 +338,108 @@ export default function Navbar() {
         };
     };
 
+    // Read community notifications from localStorage (invite, join_request, approved, rejected)
+    const getLocalCommunityNotifs = () => {
+        try {
+            const all = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+            const isCurrentUserAdmin = ['SYSADM', 'CADM'].includes(currentUser?.role) ||
+                ['System Administrator', 'HR Administrator', 'Community Administrator', 'System Admin'].includes(currentUser?.roleName);
+
+            return all
+                .filter(n => {
+                    // Direct notification for this user (e.g. targetUserId or targetCreatorId matches currentUser.id)
+                    if (currentUser?.id && String(n.targetUserId) === String(currentUser.id)) return true;
+                    if (currentUser?.id && n.targetCreatorId && String(n.targetCreatorId) === String(currentUser.id)) return true;
+                    // Admin join_request notifs: show to users with admin role or creator
+                    if (n.type === 'join_request' && (n.targetUserId === 'admin' || isCurrentUserAdmin)) return true;
+                    return false;
+                })
+                .map(n => ({
+                    id: n.id || `local_${n.communityId}_${n.targetUserId}_${n.type}`,
+                    type: n.type || 'community_invite',
+                    category: 'Community',
+                    icon: n.icon || 'group_add',
+                    color: n.color || 'text-indigo-400',
+                    bg: n.bg || 'bg-indigo-500/10',
+                    text: n.text,
+                    senderName: n.senderName || 'Community Admin',
+                    senderAvatar: n.senderAvatar || null,
+                    time: n.time || 'Just now',
+                    unread: n.unread !== false,
+                    isLocalNotif: true,
+                    targetUrl: n.actionLink || (n.communityId ? `/community/view?id=${n.communityId}` : '/community'),
+                    relatedContentId: n.communityId,
+                    relatedContentType: 'community',
+                    communityName: n.communityName,
+                    communityId: n.communityId,
+                }));
+        } catch (e) {
+            return [];
+        }
+    };
+
     const fetchNotifications = async () => {
         try {
             const res = await notificationsApi.getAll(false);
+            let apiNotifs = [];
             if (Array.isArray(res)) {
-                setAllNotifs(res.map(mapNotificationItem));
+                apiNotifs = res.map(mapNotificationItem);
             } else if (res?.items) {
-                setAllNotifs(res.items.map(mapNotificationItem));
+                apiNotifs = res.items.map(mapNotificationItem);
             }
+            // Merge local community invite notifications
+            const localNotifs = getLocalCommunityNotifs();
+            const apiIds = new Set(apiNotifs.map(n => String(n.id)));
+            const freshLocal = localNotifs.filter(n => !apiIds.has(String(n.id)));
+            setAllNotifs([...freshLocal, ...apiNotifs]);
         } catch (error) {
             console.error('Failed to fetch notifications', error);
+            // Fallback: at least show local notifs
+            setAllNotifs(getLocalCommunityNotifs());
         }
     };
 
     useEffect(() => {
         fetchNotifications();
+
+        // Listen for real-time community invite events (fired by CreateCommunityModal)
+        const handleCommunityInviteSent = (e) => {
+            const { invitedUserIds = [], communityName, senderName } = e.detail || {};
+            if (!invitedUserIds.includes(currentUser?.id)) return;
+
+            // Re-read localStorage to pick up the new notif
+            const localNotifs = getLocalCommunityNotifs();
+            const newNotif = localNotifs.find(n => n.communityName === communityName && n.unread);
+            if (newNotif) {
+                setAllNotifs(prev => {
+                    const filtered = prev.filter(n => String(n.id) !== String(newNotif.id));
+                    return [newNotif, ...filtered];
+                });
+                setToastNotification(newNotif);
+                playChimeSound();
+            }
+        };
+
+        // Also listen for storage changes (multi-tab invite)
+        const handleStorageChange = () => {
+            const localNotifs = getLocalCommunityNotifs();
+            if (localNotifs.length > 0) {
+                setAllNotifs(prev => {
+                    const prevLocalIds = new Set(prev.filter(n => n.isLocalNotif).map(n => String(n.id)));
+                    const newOnes = localNotifs.filter(n => !prevLocalIds.has(String(n.id)));
+                    if (newOnes.length === 0) return prev;
+                    // Show toast for brand-new invite
+                    if (newOnes[0].unread) {
+                        setToastNotification(newOnes[0]);
+                        playChimeSound();
+                    }
+                    return [...newOnes, ...prev.filter(n => !n.isLocalNotif)];
+                });
+            }
+        };
+
+        window.addEventListener('community-invite-sent', handleCommunityInviteSent);
+        window.addEventListener('storage', handleStorageChange);
 
         const token = localStorage.getItem('knome_jwt');
         if (!token) return;
@@ -245,6 +448,7 @@ export default function Navbar() {
             .withUrl("http://localhost:5095/hubs/notifications", {
                 accessTokenFactory: () => token
             })
+            .configureLogging(signalR.LogLevel.None)
             .withAutomaticReconnect()
             .build();
 
@@ -252,20 +456,24 @@ export default function Navbar() {
             const mapped = mapNotificationItem(notification);
             mapped.time = 'Just now';
             mapped.unread = true;
-            setAllNotifs(prev => [mapped, ...prev]);
+            setAllNotifs(prev => {
+                const filtered = prev.filter(item => item.id !== mapped.id);
+                return [mapped, ...filtered];
+            });
             setToastNotification(mapped);
             playChimeSound();
         });
 
-        connection.start().catch(err => {
-            const msg = err?.message?.toLowerCase() || '';
-            if (err?.name !== 'AbortError' && !msg.includes('negotiation') && !msg.includes('handshake') && !msg.includes('stopped')) {
-                console.error("SignalR Connection Error: ", err);
-            }
+        connection.start().catch(() => {
+            /* Silently ignore startup/re-negotiation traces */
         });
 
         return () => {
-            connection.stop().catch(() => {});
+            window.removeEventListener('community-invite-sent', handleCommunityInviteSent);
+            window.removeEventListener('storage', handleStorageChange);
+            if (connection.state === signalR.HubConnectionState.Connected) {
+                connection.stop().catch(() => {});
+            }
         };
     }, [currentUser]);
 
@@ -286,30 +494,103 @@ export default function Navbar() {
         }
     };
 
-    const handleNotificationClick = async (notif) => {
-        if (notif.unread) {
+    const resolveCommunityTarget = (notif) => {
+        if (notif.communityId) return `/community/view?id=${notif.communityId}`;
+        if (notif.targetUrl && notif.targetUrl.includes('/community/view')) return notif.targetUrl;
+        if (notif.linkUrl && notif.linkUrl.includes('/community/view')) return notif.linkUrl;
+        if (notif.actionLink && notif.actionLink.includes('/community/view')) return notif.actionLink;
+
+        const txt = notif.text || notif.message || '';
+        const match = txt.match(/"([^"]+)"/);
+        const commName = match ? match[1] : notif.communityName;
+
+        if (commName) {
             try {
-                await notificationsApi.markRead(notif.id);
-                setAllNotifs(prev => prev.map(n => n.id === notif.id ? { ...n, unread: false, handled: true } : n));
-            } catch (err) {
-                console.error('Failed to mark notification read:', err);
+                const allCustom = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+                const found = allCustom.find(c => c.name?.toLowerCase() === commName.toLowerCase() || c.title?.toLowerCase() === commName.toLowerCase());
+                if (found) return `/community/view?id=${found.id}`;
+            } catch (e) { /* ignore */ }
+
+            const seedMap = {
+                'devops & ai innovation hub': 101,
+                'react developer hub': 102,
+                'employee engagement hub': 103,
+                'tech innovation hub': 1,
+                'frontend developers guild': 3,
+                'database architects': 4
+            };
+            const mappedId = seedMap[commName.toLowerCase()];
+            if (mappedId) return `/community/view?id=${mappedId}`;
+        }
+
+        return '/community';
+    };
+
+    const handleNotificationClick = (notif) => {
+        setIsNotifOpen(false);
+
+        if (notif.unread && notif.id) {
+            // Mark read in localStorage for local community invite notifs
+            if (notif.isLocalNotif) {
+                try {
+                    const stored = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+                    const updated = stored.map(n => String(n.id) === String(notif.id) ? { ...n, unread: false } : n);
+                    localStorage.setItem('knome_notifications', JSON.stringify(updated));
+                } catch (e) { /* ignore */ }
+            } else {
+                notificationsApi.markRead(notif.id).catch(err => console.error('Mark read failed:', err));
+            }
+            setAllNotifs(prev => prev.map(n => n.id === notif.id ? { ...n, unread: false, handled: true } : n));
+        }
+
+        let dest = notif.targetUrl || notif.linkUrl || notif.actionLink;
+        const msg = (notif.text || notif.message || '').toLowerCase();
+        const relType = (notif.relatedContentType || '').toLowerCase();
+        const refId = notif.relatedContentId || notif.referenceId;
+        const isCommNotif = notif.category === 'Community' || notif.type?.includes('community') || msg.includes('community') || notif.communityId || notif.communityName;
+
+        if (isCommNotif) {
+            dest = resolveCommunityTarget(notif);
+        } else if (!dest || dest === '/posts' || dest === '/articles' || dest === '/videos' || dest === '/podcasts') {
+            if (relType === 'post' || msg.includes('post') || notif.type?.includes('post') || notif.type?.includes('share')) {
+                dest = refId ? `/posts?id=${refId}` : '/posts';
+            } else if (relType === 'article' || msg.includes('article') || notif.type?.includes('article')) {
+                dest = refId ? `/article-view?id=${refId}` : '/articles';
+            } else if (relType === 'community' || msg.includes('community') || notif.type?.includes('community')) {
+                dest = resolveCommunityTarget(notif);
+            } else if (relType === 'video' || msg.includes('video') || notif.type?.includes('video')) {
+                dest = refId ? `/videos?id=${refId}` : '/videos';
+            } else if (relType === 'podcast' || msg.includes('podcast') || notif.type?.includes('podcast')) {
+                dest = refId ? `/podcasts?id=${refId}` : '/podcasts';
+            } else if (relType === 'user' || notif.type?.includes('follow') || notif.senderUserId) {
+                const uId = refId || notif.senderUserId;
+                dest = uId ? `/profile?id=${uId}` : '/profile';
+            } else {
+                dest = '/posts';
             }
         }
-        setIsNotifOpen(false);
-        if (notif.targetUrl) {
-            navigate(notif.targetUrl);
-        } else if (notif.senderUserId) {
-            navigate(`/profile/${notif.senderUserId}`);
+
+        const currentPath = window.location.pathname + window.location.search;
+        if (currentPath === dest) {
+            window.location.reload();
+        } else {
+            navigate(dest);
         }
     };
 
     const handleDeleteNotification = async (e, notifId) => {
         e.stopPropagation();
+        // Remove from localStorage if it's a local community invite notif
+        try {
+            const stored = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+            const updated = stored.filter(n => String(n.id) !== String(notifId));
+            localStorage.setItem('knome_notifications', JSON.stringify(updated));
+        } catch (err) { /* ignore */ }
+        setAllNotifs(prev => prev.filter(n => n.id !== notifId));
         try {
             await notificationsApi.delete(notifId);
-            setAllNotifs(prev => prev.filter(n => n.id !== notifId));
         } catch (err) {
-            console.error('Failed to delete notification:', err);
+            // Local notif — backend 404 is expected, silently ignore
         }
     };
 
@@ -371,7 +652,7 @@ export default function Navbar() {
         { to: '/', label: 'Dashboard' },
         { to: '/jobs', label: 'Jobs' },
     ];
-    if (['SYSADM', 'HRADM'].includes(currentUser.role)) {
+    if (isSysAdmin) {
         navLinks.push({ to: '/admin-console', label: 'Admin' });
     }
 
@@ -408,7 +689,7 @@ export default function Navbar() {
                     </Link>
 
                     {/* Pill-shaped Nav Links */}
-                    <div className="hidden xl:flex items-center p-1 rounded-xl"
+                    <div className="hidden md:flex items-center p-1 rounded-2xl"
                         style={{
                             background: 'var(--bg-surface)',
                             border: '1px solid var(--border-subtle)',
@@ -495,7 +776,30 @@ export default function Navbar() {
                                                 return (
                                                     <button
                                                         key={`${item.contentType}-${item.id}-${idx}`}
-                                                        onMouseDown={() => handleSearch(item.title)}
+                                                        onMouseDown={() => {
+                                                            setShowSuggestions(false);
+                                                            setSearchQuery('');
+                                                            if (item.contentType === 'User' || item.type === 'User') {
+                                                                navigate('/profile', { 
+                                                                    state: { 
+                                                                        user: { 
+                                                                            userId: item.id, 
+                                                                            id: item.id, 
+                                                                            name: item.title, 
+                                                                            fullName: item.title, 
+                                                                            profilePhotoUrl: item.thumbnailUrl, 
+                                                                            avatar: item.thumbnailUrl 
+                                                                        } 
+                                                                    } 
+                                                                });
+                                                            } else if (item.contentType === 'Article') {
+                                                                navigate(`/article-view?id=${item.id}`);
+                                                            } else if (item.contentType === 'Community') {
+                                                                navigate('/community');
+                                                            } else {
+                                                                handleSearch(item.title);
+                                                            }
+                                                        }}
                                                         className={`w-full text-left px-4 py-2.5 flex items-center gap-3 transition-colors ${isHighlighted ? 'bg-blue-500/15' : 'hover:bg-blue-500/10'}`}
                                                     >
                                                         {resolvedThumb ? (
@@ -530,7 +834,7 @@ export default function Navbar() {
                                                 <div className="px-4 py-1 flex items-center justify-between">
                                                     <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1">
                                                         <span className="material-symbols-outlined text-[13px]">history</span>
-                                                        Recent Searches
+                                                        Recent Searches ({Math.min(recentSearches.length, 10)})
                                                     </span>
                                                     <button 
                                                         onMouseDown={(e) => handleClearHistory(e, null)}
@@ -539,7 +843,7 @@ export default function Navbar() {
                                                         Clear All
                                                     </button>
                                                 </div>
-                                                {recentSearches.map((rec, idx) => (
+                                                {recentSearches.slice(0, 10).map((rec, idx) => (
                                                     <div 
                                                         key={`rec-${idx}`}
                                                         onMouseDown={() => handleSearch(rec.searchTerm)}
@@ -591,16 +895,18 @@ export default function Navbar() {
                 {/* ─── RIGHT: Actions & Profile ─── */}
                 <div className="flex items-center gap-2.5 justify-end">
 
-                    {/* Karma Badge */}
-                    <Link to="/karma-history" className="relative hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all hover:scale-105"
-                        style={{
-                            background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.12), rgba(245, 158, 11, 0.08))',
-                            border: '1px solid rgba(251, 191, 36, 0.25)',
-                        }}
-                        title="Karma Points">
-                        <span className="material-symbols-outlined text-amber-400 text-[15px]" style={{fontVariationSettings:"'FILL' 1"}}>military_tech</span>
-                        <span className="text-[12px] font-black text-amber-400">1,250</span>
-                    </Link>
+                    {/* Karma Badge (Hidden for System Admin) */}
+                    {!isSysAdmin && (
+                        <Link to="/karma-history" className="relative hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all hover:scale-105"
+                            style={{
+                                background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.12), rgba(245, 158, 11, 0.08))',
+                                border: '1px solid rgba(251, 191, 36, 0.25)',
+                            }}
+                            title={`${userKarma.toLocaleString()} Karma Points`}>
+                            <span className="material-symbols-outlined text-amber-400 text-[15px]" style={{fontVariationSettings:"'FILL' 1"}}>military_tech</span>
+                            <span className="text-[12px] font-black text-amber-400">{userKarma.toLocaleString()}</span>
+                        </Link>
+                    )}
 
                     {/* ─── Theme Toggle ─── */}
                     <button
@@ -696,9 +1002,9 @@ export default function Navbar() {
                                     </div>
                                 </div>
                                 <div className="max-h-80 overflow-y-auto custom-scrollbar">
-                                    {notifications.map(n => (
+                                    {notifications.map((n, idx) => (
                                         <div 
-                                            key={n.id} 
+                                            key={n.id ? `${n.id}-${idx}` : idx} 
                                             onClick={() => handleNotificationClick(n)}
                                             className={`group relative flex flex-col gap-2 px-4 py-3 border-b border-slate-100 dark:border-slate-800/60 transition-colors cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 ${n.unread ? 'border-l-2 border-blue-500 bg-blue-50/20 dark:bg-blue-900/10' : ''}`}
                                         >
@@ -780,24 +1086,21 @@ export default function Navbar() {
                                                     >
                                                         Follow Back
                                                     </button>
-                                                </div>
-                                            )}
-
-                                            {/* Action Button for Community Invitations */}
-                                            {n.type === 'invite' && (
+                                                                                     {/* Action Button for Community Invitations & Shares */}
+                                            {(n.type === 'invite' || n.type === 'community_invite' || n.type === 'community_shared' || (n.text && n.text.toLowerCase().includes('community'))) && (
                                                 <div className="pl-12 mt-1">
                                                     <button 
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            setIsNotifOpen(false);
-                                                            navigate('/community');
+                                                            handleNotificationClick(n);
                                                         }}
-                                                        className="px-3 py-1 bg-indigo-500 text-white rounded-lg text-[11px] font-bold hover:bg-indigo-600 transition-colors shadow-sm flex items-center gap-1"
+                                                        className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[11px] font-bold transition-all shadow-md shadow-indigo-500/20 flex items-center gap-1.5 cursor-pointer"
                                                     >
-                                                        <span className="material-symbols-outlined text-[14px]">groups</span>
-                                                        Join Community
+                                                        <span className="material-symbols-outlined text-[15px]">groups</span>
+                                                        View Community
                                                     </button>
                                                 </div>
+                                            )}           </div>
                                             )}
                                         </div>
                                     ))}
@@ -845,8 +1148,12 @@ export default function Navbar() {
                                         {users.map(u => (
                                             <button
                                                 key={u.id}
-                                                onClick={() => { setCurrentUser(u); setIsUserMenuOpen(false); }}
-                                                className={`w-full text-left px-2 py-1.5 rounded-lg text-[12px] font-semibold transition-colors flex items-center gap-2 ${currentUser.id === u.id ? 'text-blue-600 dark:text-blue-400 bg-blue-500/10' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                                                onClick={() => { 
+                                                    setCurrentUser(u); 
+                                                    setIsUserMenuOpen(false); 
+                                                    navigate('/');
+                                                }}
+                                                className={`w-full text-left px-2 py-1.5 rounded-lg text-[12px] font-semibold transition-colors flex items-center gap-2 ${currentUser.employeeId === u.employeeId ? 'text-blue-600 dark:text-blue-400 bg-blue-500/10' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-800 dark:hover:text-slate-200'}`}
                                             >
                                                 <div className="w-5 h-5 rounded-md flex items-center justify-center text-white text-[10px] font-black"
                                                     style={{background: 'linear-gradient(135deg, #3b7fff, #00d4ff)'}}>

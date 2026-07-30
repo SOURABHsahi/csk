@@ -6,10 +6,6 @@ namespace Knome.API.Models;
 
 public partial class KnomeContext : DbContext
 {
-    public KnomeContext()
-    {
-    }
-
     public KnomeContext(DbContextOptions<KnomeContext> options)
         : base(options)
     {
@@ -89,10 +85,6 @@ public partial class KnomeContext : DbContext
 
     public virtual DbSet<VideoTag> VideoTags { get; set; }
 
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
-#warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
-        => optionsBuilder.UseSqlServer("Server=localhost;Database=Knome;Trusted_Connection=True;TrustServerCertificate=True;");
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Article>(entity =>
@@ -126,6 +118,7 @@ public partial class KnomeContext : DbContext
                 .HasMaxLength(20)
                 .IsUnicode(false);
             entity.Property(e => e.FileUrl).HasMaxLength(400);
+            entity.Property(e => e.PublishedDate).HasDefaultValueSql("(sysutcdatetime())");
 
             entity.HasOne(d => d.Article).WithMany(p => p.ArticleAttachments)
                 .HasForeignKey(d => d.ArticleId)
@@ -630,6 +623,7 @@ public partial class KnomeContext : DbContext
                 .HasMaxLength(20)
                 .IsUnicode(false);
             entity.Property(e => e.FileUrl).HasMaxLength(400);
+            entity.Property(e => e.PublishedDate).HasDefaultValueSql("(sysutcdatetime())");
 
             entity.HasOne(d => d.Post).WithMany(p => p.PostAttachments)
                 .HasForeignKey(d => d.PostId)

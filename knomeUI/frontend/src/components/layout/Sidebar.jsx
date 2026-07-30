@@ -16,7 +16,18 @@ export default function Sidebar() {
         { to: '/search',           icon: 'search',       label: 'Discover',      color: '#8b5cf6' },
     ];
 
-    if (['SYSADM', 'HRADM'].includes(currentUser.role)) {
+    const isSysAdmin = currentUser?.role === 'SYSADM' ||
+                       ['System Administrator', 'System Admin'].includes(currentUser?.roleName) ||
+                       (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => ['SYSADM', 'System Administrator', 'SystemAdmin'].includes(r)));
+
+    const isHrOrSysAdmin = ['SYSADM', 'HRADM'].includes(currentUser?.role) ||
+                           ['System Administrator', 'HR Administrator', 'System Admin', 'HR Admin'].includes(currentUser?.roleName) ||
+                           (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => ['SYSADM', 'HRADM', 'System Administrator', 'HR Administrator', 'SystemAdmin', 'HRAdmin'].includes(r)));
+
+    if (isSysAdmin) {
+        navItems.push({ to: '/admin-console', icon: 'admin_panel_settings', label: 'Admin Console', color: '#f43f5e' });
+    }
+    if (isHrOrSysAdmin) {
         navItems.push({ to: '/hr-analytics', icon: 'bar_chart', label: 'HR Analytics', color: '#ef4444' });
     }
 
@@ -53,16 +64,18 @@ export default function Sidebar() {
                     </div>
 
                     {/* Stats Row */}
-                    <div className="relative z-10 grid grid-cols-3 gap-2 pt-2.5 border-t border-theme-30">
-                        <div className="text-center">
-                            <p className="text-[13px] font-black text-slate-900 dark:text-white">1.2k</p>
-                            <p className="text-[9px] uppercase tracking-wider font-bold text-theme-30-text">Points</p>
-                        </div>
-                        <div className="text-center border-x border-theme-30">
+                    <div className={`relative z-10 grid ${currentUser.role === 'SYSADM' ? 'grid-cols-2' : 'grid-cols-3'} gap-2 pt-2.5 border-t border-theme-30`}>
+                        {currentUser.role !== 'SYSADM' && (
+                            <div className="text-center">
+                                <p className="text-[13px] font-black text-slate-900 dark:text-white">{(currentUser.karma || 0).toLocaleString()}</p>
+                                <p className="text-[9px] uppercase tracking-wider font-bold text-theme-30-text">Points</p>
+                            </div>
+                        )}
+                        <div className={`text-center ${currentUser.role !== 'SYSADM' ? 'border-x border-theme-30' : ''}`}>
                             <p className="text-[13px] font-black text-slate-900 dark:text-white">84</p>
                             <p className="text-[9px] uppercase tracking-wider font-bold text-theme-30-text">Posts</p>
                         </div>
-                        <div className="text-center">
+                        <div className={`text-center ${currentUser.role === 'SYSADM' ? 'border-l border-theme-30' : ''}`}>
                             <p className="text-[13px] font-black text-slate-900 dark:text-white">312</p>
                             <p className="text-[9px] uppercase tracking-wider font-bold text-theme-30-text">Network</p>
                         </div>

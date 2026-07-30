@@ -4,6 +4,14 @@ using Knome.API.DTOs.Interactions;
 
 namespace Knome.API.DTOs.Articles;
 
+public class ArticleAttachmentDto
+{
+    public long AttachmentId { get; set; }
+    public string FileUrl { get; set; } = string.Empty;
+    public string FileType { get; set; } = string.Empty;
+    public DateTime PublishedDate { get; set; }
+}
+
 public class ArticleDto
 {
     public long ArticleId { get; set; }
@@ -25,6 +33,7 @@ public class ArticleDto
     public int AvgReadTimeSeconds { get; set; }
     public List<string> Tags { get; set; } = new();
     public List<string> AttachmentUrls { get; set; } = new();
+    public List<ArticleAttachmentDto> Attachments { get; set; } = new();
     public int VersionsCount { get; set; }
     public ContentSummaryDto? EngagementSummary { get; set; }
 }

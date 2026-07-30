@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useUser } from '../components/contexts/UserContext';
 import { useAudio } from '../components/contexts/AudioContext';
 import UploadPodcastModal from '../components/modals/UploadPodcastModal';
-import { podcastsApi, savedContentApi, resolveMediaUrl } from '../utils/apiService';
+import { podcastsApi, savedContentApi, resolveMediaUrl, getPersonalizedRecommendations } from '../utils/apiService';
 
 export default function Podcasts() {
     const { currentUser } = useUser();
@@ -89,13 +89,15 @@ export default function Podcasts() {
     };
 
     // Filter & Sort Logic
-    const displayedEpisodes = podcastEpisodes
+    const rawEpisodes = podcastEpisodes
         .filter(ep => {
             // Tab filter
             if (activeTab === 'My Podcasts') {
                 if (currentUser?.name && !ep.author?.toLowerCase().includes(currentUser.name.toLowerCase())) {
                     return false;
                 }
+            } else if (activeTab === '✨ Recommended for You') {
+                // Return true, handled by recommendation engine below
             } else if (activeTab === 'General' || activeTab === 'Tech' || activeTab === 'Leadership' || activeTab === 'Engineering') {
                 if (ep.category.toLowerCase() !== activeTab.toLowerCase()) {
                     return false;
@@ -118,8 +120,11 @@ export default function Podcasts() {
                 return false;
             }
             return true;
-        })
-        .sort((a, b) => {
+        });
+
+    const displayedEpisodes = activeTab === '✨ Recommended for You'
+        ? getPersonalizedRecommendations(rawEpisodes, currentUser)
+        : rawEpisodes.sort((a, b) => {
             if (filterSort === 'Oldest First') return a.id - b.id;
             if (filterSort === 'Duration (Longest)') return b.durationSeconds - a.durationSeconds;
             return b.id - a.id; // Newest First
@@ -251,7 +256,7 @@ export default function Podcasts() {
 
                 {/* Tabs */}
                 <div className="flex border-b border-slate-200 dark:border-slate-800 overflow-x-auto custom-scrollbar">
-                    {['All Episodes', 'General', 'Tech', 'Leadership', 'Engineering', 'My Podcasts'].map(tab => (
+                    {['All Episodes', '✨ Recommended for You', 'General', 'Tech', 'Leadership', 'Engineering', 'My Podcasts'].map(tab => (
                         <button 
                             key={tab}
                             onClick={() => {

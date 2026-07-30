@@ -18,6 +18,7 @@ namespace Knome.API.Services;
 public class ContentInteractionService : IContentInteractionService
 {
     private readonly IContentInteractionRepository _repo;
+    private readonly IUserRepository _userRepo;
     private readonly IKarmaService _karmaService;
     private readonly IMapper _mapper;
     private readonly ISuspensionGuard _suspensionGuard;
@@ -26,6 +27,7 @@ public class ContentInteractionService : IContentInteractionService
 
     public ContentInteractionService(
         IContentInteractionRepository repo, 
+        IUserRepository userRepo,
         IKarmaService karmaService, 
         IMapper mapper, 
         ISuspensionGuard suspensionGuard, 
@@ -33,6 +35,7 @@ public class ContentInteractionService : IContentInteractionService
         IHubContext<NotificationHub> hubContext)
     {
         _repo = repo;
+        _userRepo = userRepo;
         _karmaService = karmaService;
         _mapper = mapper;
         _suspensionGuard = suspensionGuard;
@@ -301,10 +304,13 @@ public class ContentInteractionService : IContentInteractionService
         // Send notification to the recipient if shared directly to a user
         if (dto.SharedToType == SharedToTypes.User && dto.SharedToId.HasValue)
         {
+            var sharingUser = await _userRepo.GetProfileByIdAsync(userId);
+            var sharingUserName = sharingUser?.FullName ?? "Someone";
+
             await _notificationService.PublishAsync(
                 (int)dto.SharedToId.Value,
                 NotificationTypes.Share,
-                $"Someone shared a {contentType.ToLower()} with you.",
+                $"{sharingUserName} shared a {contentType.ToLower()} with you.",
                 relatedContentType: contentType,
                 relatedContentId: contentId);
         }

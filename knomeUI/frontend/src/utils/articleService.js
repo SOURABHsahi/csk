@@ -1,11 +1,13 @@
 import { apiClient } from './apiClient';
+import { resolveMediaUrl } from './apiService';
 
-const API_BASE = 'http://localhost:5095';
-
-const resolveUrl = (url) => {
-    if (!url) return null;
-    return url.startsWith('http') ? url : `${API_BASE}${url}`;
-};
+const DEFAULT_COVER_IMAGES = [
+    'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200',
+    'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&q=80&w=1200',
+    'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=1200',
+    'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&q=80&w=1200',
+    'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&q=80&w=1200'
+];
 
 export async function getArticles(categoryId = null, tag = null, search = null, pageNumber = 1, pageSize = 20) {
     try {
@@ -16,25 +18,57 @@ export async function getArticles(categoryId = null, tag = null, search = null, 
 
         const data = await apiClient.get(endpoint);
 
-        return data.map(art => {
-            // Find cover image if it exists in attachments
-            const coverAttachment = art.attachmentUrls?.find(url => url.match(/\.(jpeg|jpg|gif|png|webp)$/i));
-            const coverImage = coverAttachment ? resolveUrl(coverAttachment) : 'https://images.unsplash.com/photo-1507238691740-187a5b1d37b8?auto=format&fit=crop&q=90&w=1600&h=800';
+        return data.map((art, idx) => {
+            // Find cover image if it exists in coverImageUrl or attachments
+            const coverAttachment = art.coverImageUrl 
+                || art.attachmentUrls?.find(url => url.match(/\.(jpeg|jpg|gif|png|webp)$/i))
+                || art.attachments?.find(a => a.fileType === 'Image' || (a.fileUrl && a.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i)))?.fileUrl;
+
+            const coverImage = coverAttachment 
+                ? resolveMediaUrl(coverAttachment) 
+                : DEFAULT_COVER_IMAGES[idx % DEFAULT_COVER_IMAGES.length];
+
+            const attachmentsList = (art.attachments && art.attachments.length > 0)
+                ? art.attachments.map(att => ({
+                    url: resolveMediaUrl(att.fileUrl),
+                    rawUrl: att.fileUrl,
+                    name: att.fileName || att.fileUrl.split('/').pop() || 'Attached Document',
+                    fileType: att.fileType,
+                    publishedDate: att.publishedDate || art.publishedDate,
+                    isDoc: Boolean(att.fileUrl.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)$/i) || att.fileType === 'Document'),
+                    isImage: Boolean(att.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) || att.fileType === 'Image'),
+                    isVideo: Boolean(att.fileUrl.match(/\.(mp4|webm|ogg|mov|m4v|mkv)$/i) || att.fileType === 'Video' || att.fileUrl.includes('media_') || att.fileUrl.includes('/videos/')),
+                  }))
+                : (art.attachmentUrls || []).map(url => ({
+                    url: resolveMediaUrl(url),
+                    rawUrl: url,
+                    name: url.split('/').pop() || 'Attached Document',
+                    publishedDate: art.publishedDate || art.createdDate,
+                    isDoc: Boolean(url.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)$/i)),
+                    isImage: Boolean(url.match(/\.(jpeg|jpg|gif|png|webp)$/i)),
+                    isVideo: Boolean(url.match(/\.(mp4|webm|ogg|mov|m4v|mkv)$/i) || url.includes('media_') || url.includes('/videos/')),
+                  }));
+
+            const authorName = art.authorFullName || 'Enterprise Author';
+            const authorAvatar = art.authorProfilePhotoUrl 
+                ? resolveMediaUrl(art.authorProfilePhotoUrl) 
+                : `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=6366f1&color=fff&size=256&bold=true`;
 
             return {
                 id: art.articleId.toString(),
                 title: art.title,
                 subtitle: art.description || 'No summary provided',
                 author: {
-                    name: art.authorFullName,
+                    name: authorName,
                     role: art.authorDesignation || 'Writer',
-                    avatar: resolveUrl(art.authorProfilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(art.authorFullName)}&background=6366f1&color=fff&size=256&bold=true`
+                    avatar: authorAvatar
                 },
                 date: new Date(art.publishedDate || art.createdDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
                 readTime: `${art.avgReadTimeSeconds > 0 ? Math.ceil(art.avgReadTimeSeconds / 60) : 5} min read`,
                 category: art.categoryName || 'General',
                 tags: art.tags || [],
                 image: coverImage,
+                attachments: attachmentsList,
                 likes: art.engagementSummary?.likesCount || 0,
                 reactions: art.engagementSummary?.likesCount || 0,
                 views: art.viewCount || 0,
@@ -62,6 +96,16 @@ export async function saveArticle(articleDto) {
         return response;
     } catch (error) {
         console.error('Failed to save article', error);
+        throw error;
+    }
+}
+
+export async function deleteArticle(articleId) {
+    try {
+        const response = await apiClient.delete(`/Articles/${articleId}`);
+        return response;
+    } catch (error) {
+        console.error('Failed to delete article', error);
         throw error;
     }
 }

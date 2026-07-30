@@ -12,7 +12,16 @@ export const users = [
     { id: 6, employeeId: 'MPO106', name: 'Mayur Verma', role: 'EMP', roleName: 'Employee', designation: 'UI Designer', department: 'Engineering', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/55.jpg' },
 ];
 
-const UserContext = createContext();
+const UserContext = createContext({
+    currentUser: null,
+    setCurrentUser: () => {},
+    users,
+    isAuthLoading: false,
+    isAuthenticated: false,
+    login: async () => {},
+    logout: async () => {},
+    refreshCurrentUser: async () => {},
+});
 
 export const UserProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
@@ -97,16 +106,22 @@ export const UserProvider = ({ children }) => {
                         setIsAuthenticated(true);
                         setIsAuthLoading(false);
                         return;
-                    } catch {
-                        // Token may be expired — clear and show login
+                    } catch (err) {
+                        console.warn('Session expired or token invalid — resetting session:', err?.message || err);
+                        // Token expired or 401 — clear stored session
                         localStorage.removeItem('knome_jwt');
                         localStorage.removeItem('knome_refresh');
                         localStorage.removeItem('knome_employeeId');
+                        setCurrentUser(null);
+                        setIsAuthenticated(false);
+                        setIsAuthLoading(false);
+                        return;
                     }
                 }
             }
 
             // No valid session — show login page
+            setCurrentUser(null);
             setIsAuthenticated(false);
             setIsAuthLoading(false);
         };
@@ -175,4 +190,19 @@ export const UserProvider = ({ children }) => {
     );
 };
 
-export const useUser = () => useContext(UserContext);
+export const useUser = () => {
+    const context = useContext(UserContext);
+    if (!context) {
+        return {
+            currentUser: null,
+            setCurrentUser: () => {},
+            users: [],
+            isAuthLoading: false,
+            isAuthenticated: false,
+            login: async () => {},
+            logout: async () => {},
+            refreshCurrentUser: async () => {},
+        };
+    }
+    return context;
+};

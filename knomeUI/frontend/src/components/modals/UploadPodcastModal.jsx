@@ -370,53 +370,17 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
 
                         <div className="space-y-4">
                             <div>
-                                <div className="flex items-center justify-between mb-2">
-                                    <label className="block text-[12px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Podcast Series Grouping</label>
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsCreatingSeries(!isCreatingSeries)}
-                                        className="text-[11px] font-bold text-pink-500 hover:underline"
-                                    >
-                                        {isCreatingSeries ? 'Cancel' : '+ New Series'}
-                                    </button>
-                                </div>
-
-                                {isCreatingSeries ? (
-                                    <div className="p-3 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-pink-500/30 space-y-2">
-                                        <input 
-                                            type="text"
-                                            value={newSeriesTitle}
-                                            onChange={(e) => setNewSeriesTitle(e.target.value)}
-                                            placeholder="Series Title"
-                                            className="w-full text-xs font-bold p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none"
-                                        />
-                                        <input 
-                                            type="text"
-                                            value={newSeriesDesc}
-                                            onChange={(e) => setNewSeriesDesc(e.target.value)}
-                                            placeholder="Series Description"
-                                            className="w-full text-xs p-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={handleCreateSeries}
-                                            className="w-full py-1.5 bg-pink-500 text-white font-bold text-xs rounded-lg hover:bg-pink-600 transition-colors"
-                                        >
-                                            Save Series
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <select 
-                                        value={seriesId}
-                                        onChange={(e) => setSeriesId(e.target.value)}
-                                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-pink-500 outline-none text-slate-900 dark:text-white font-medium"
-                                    >
-                                        <option value="">Standalone Episode</option>
-                                        {seriesList.map(s => (
-                                            <option key={s.seriesId} value={s.seriesId}>{s.title}</option>
-                                        ))}
-                                    </select>
-                                )}
+                                <label className="block text-[12px] font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider">Podcast Series Grouping</label>
+                                <select 
+                                    value={seriesId}
+                                    onChange={(e) => setSeriesId(e.target.value)}
+                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-pink-500 outline-none text-slate-900 dark:text-white font-medium"
+                                >
+                                    <option value="">Standalone Episode</option>
+                                    {seriesList.map(s => (
+                                        <option key={s.seriesId} value={s.seriesId}>{s.title}</option>
+                                    ))}
+                                </select>
                             </div>
 
                             <div>
@@ -435,14 +399,17 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
 
                             <div className="flex gap-4">
                                 <div className="flex-1">
-                                    <label className="block text-[12px] font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider">Duration (MM:SS)</label>
-                                    <input 
-                                        type="text" 
-                                        value={duration}
-                                        onChange={(e) => setDuration(e.target.value)}
-                                        placeholder="e.g. 45:00" 
-                                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm outline-none text-slate-900 dark:text-white" 
-                                    />
+                                    <label className="block text-[12px] font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider flex items-center justify-between">
+                                        <span>Duration</span>
+                                        <span className="text-[10px] text-pink-600 font-extrabold uppercase bg-pink-500/10 px-2 py-0.5 rounded">Auto</span>
+                                    </label>
+                                    <div className="w-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between select-none cursor-not-allowed">
+                                        <div className="flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-[18px] text-pink-500">schedule</span>
+                                            <span>{duration || (audioFile ? 'Calculating...' : 'Auto-detected on upload')}</span>
+                                        </div>
+                                        <span className="material-symbols-outlined text-[16px] text-slate-400">lock</span>
+                                    </div>
                                 </div>
                                 <div className="flex-1">
                                     <label className="block text-[12px] font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider">Cover Art Image</label>

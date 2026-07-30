@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../contexts/UserContext';
+import { useToast } from '../contexts/ToastContext';
 import ReportModal from '../modals/ReportModal';
 
 import { interactionsApi, postsApi, searchApi, resolveMediaUrl } from '../../utils/apiService';
@@ -195,6 +196,7 @@ function ImageGrid({ images, onImageClick }) {
 
 export default function PostCard({ post, onPostDeleted }) {
     const { currentUser } = useUser();
+    const { addToast } = useToast();
     const navigate = useNavigate();
     
     // Interaction States
@@ -238,11 +240,11 @@ export default function PostCard({ post, onPostDeleted }) {
         try {
             await interactionsApi.shareContent('Post', post.id, 'Timeline');
             setShareCount(prev => prev + 1);
-            alert('Post shared to your timeline successfully!');
+            addToast('Post shared to your timeline successfully!', 'success');
             setIsShareOpen(false);
         } catch (error) {
             console.error('Failed to share post', error);
-            alert('Failed to share post');
+            addToast('Failed to share post', 'error');
         }
     };
 
@@ -252,10 +254,10 @@ export default function PostCard({ post, onPostDeleted }) {
             try {
                 await interactionsApi.shareContent('Post', post.id, 'Community', parseInt(comm));
                 setShareCount(prev => prev + 1);
-                alert(`Post successfully shared to community!`);
+                addToast('Post successfully shared to community!', 'success');
                 setIsShareOpen(false);
             } catch (error) {
-                alert('Failed to share post to community');
+                addToast('Failed to share post to community', 'error');
             }
         }
     };
@@ -264,42 +266,41 @@ export default function PostCard({ post, onPostDeleted }) {
         if (selectedShareUsers.length === 0) return;
         try {
             await Promise.all(selectedShareUsers.map(u => 
-                interactionsApi.shareContent('Post', post.id, 'User', u.id)
+                interactionsApi.shareContent('Post', post.id, 'User', u.id || u.userId)
             ));
             setShareCount(prev => prev + selectedShareUsers.length);
-            alert(`Post successfully shared with ${selectedShareUsers.length} user(s)!`);
+            addToast(`Post successfully shared with ${selectedShareUsers.length} user(s)!`, 'success');
             setIsShareOpen(false);
             setShareMode('menu');
             setSelectedShareUsers([]);
             setShareSearchQuery('');
         } catch (error) {
             console.error('Failed to share post with users', error);
-            alert('Failed to share post with some users.');
+            addToast('Failed to share post with some users.', 'error');
         }
     };
 
     useEffect(() => {
         if (shareMode !== 'userSearch') return;
-        if (!shareSearchQuery.trim()) {
-            setShareSearchResults([]);
-            return;
-        }
+        let isMounted = true;
 
-        const delayDebounceFn = setTimeout(async () => {
+        const fetchUsers = async () => {
             setIsShareSearching(true);
             try {
-                const res = await searchApi.searchUsers(shareSearchQuery);
-                if (res) {
-                    setShareSearchResults(Array.isArray(res) ? res : (res.items || []));
+                const res = await searchApi.searchUsers(shareSearchQuery.trim());
+                if (res && isMounted) {
+                    const rawList = Array.isArray(res) ? res : (res.items || []);
+                    setShareSearchResults(rawList);
                 }
             } catch (error) {
                 console.error("Failed to search users", error);
             } finally {
-                setIsShareSearching(false);
+                if (isMounted) setIsShareSearching(false);
             }
-        }, 300);
+        };
 
-        return () => clearTimeout(delayDebounceFn);
+        const timer = setTimeout(fetchUsers, shareSearchQuery ? 300 : 0);
+        return () => { isMounted = false; clearTimeout(timer); };
     }, [shareSearchQuery, shareMode]);
 
     const handleDeletePost = async () => {
@@ -401,10 +402,10 @@ export default function PostCard({ post, onPostDeleted }) {
     };
 
     return (
-        <article className="rounded-2xl overflow-hidden flex flex-col transition-all hover:-translate-y-1"
+        <article className={`rounded-2xl overflow-hidden flex flex-col transition-all hover:-translate-y-1 ${post.isHighlighted ? 'ring-2 ring-indigo-500 shadow-2xl' : ''}`}
             style={{
                 background: 'var(--bg-card)',
-                border: '1px solid var(--border-subtle)',
+                border: post.isHighlighted ? '1px solid #6366f1' : '1px solid var(--border-subtle)',
                 boxShadow: 'var(--shadow-premium)',
             }}>
             {/* Header */}
@@ -494,6 +495,14 @@ export default function PostCard({ post, onPostDeleted }) {
                         ARTICLE
                     </div>
                 )}
+                {post.title && (
+                    <h3 
+                        onClick={() => post.type === 'article' && navigate('/article-view?id=' + (post.id === 1 ? '2' : post.id))}
+                        className={`text-base font-extrabold text-slate-900 dark:text-white mb-1.5 leading-snug ${post.type === 'article' ? 'hover:text-blue-500 cursor-pointer transition-colors' : ''}`}
+                    >
+                        {post.title}
+                    </h3>
+                )}
                 <p className="text-[13.5px] text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
                     {post.content}
                 </p>
@@ -531,8 +540,16 @@ export default function PostCard({ post, onPostDeleted }) {
                     {otherAttachments.map(att => {
                         if (att.type === 'video') {
                             return (
-                                <div key={att.id} className="overflow-hidden bg-black">
-                                    <video src={att.url} controls className="w-full" style={{ maxHeight: '460px' }} />
+                                <div key={att.id} className="overflow-hidden bg-black rounded-xl border border-slate-200 dark:border-slate-800">
+                                    <video 
+                                        src={att.url} 
+                                        controls 
+                                        controlsList="nodownload" 
+                                        disablePictureInPicture 
+                                        onContextMenu={(e) => e.preventDefault()} 
+                                        className="w-full" 
+                                        style={{ maxHeight: '460px' }} 
+                                    />
                                 </div>
                             );
                         } else if (att.type === 'audio') {
@@ -543,7 +560,13 @@ export default function PostCard({ post, onPostDeleted }) {
                                         style={{ background: 'linear-gradient(135deg,#8b5cf6,#6366f1)' }}>
                                         <span className="material-symbols-outlined text-white text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>headphones</span>
                                     </div>
-                                    <audio src={att.url} controls className="flex-1" />
+                                    <audio 
+                                        src={att.url} 
+                                        controls 
+                                        controlsList="nodownload" 
+                                        onContextMenu={(e) => e.preventDefault()} 
+                                        className="flex-1" 
+                                    />
                                 </div>
                             );
                         } else if (att.type === 'doc') {
@@ -555,11 +578,12 @@ export default function PostCard({ post, onPostDeleted }) {
                                         </div>
                                         <div className="min-w-0">
                                             <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate">{att.name}</p>
-                                            <p className="text-[11px] text-slate-500">Document</p>
+                                            <p className="text-[11px] text-slate-500">Document (View Only)</p>
                                         </div>
                                     </div>
-                                    <a href={att.url} target="_blank" rel="noreferrer" className="shrink-0 p-2 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors">
-                                        <span className="material-symbols-outlined text-[20px]">download</span>
+                                    <a href={att.url} target="_blank" rel="noreferrer" className="shrink-0 px-3 py-1.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500 hover:text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1">
+                                        <span className="material-symbols-outlined text-[16px]">visibility</span>
+                                        View File
                                     </a>
                                 </div>
                             );
@@ -598,44 +622,67 @@ export default function PostCard({ post, onPostDeleted }) {
             {/* Interaction Bar */}
             <div className="px-3 py-2 flex items-center justify-between relative">
                 
-                {/* Reaction Popover (FR-CI-01) */}
-                {reactionHover && (
-                    <div 
-                        className="absolute bottom-full left-4 mb-2 bg-theme-60-surface border border-theme-30 shadow-xl rounded-full px-3 py-2 flex gap-2 animate-in fade-in slide-in-from-bottom-2 z-20"
-                        onMouseEnter={() => setReactionHover(true)}
-                        onMouseLeave={handleReactionMouseLeave}
-                    >
-                        {Object.entries(REACTION_TYPES).map(([key, data]) => (
-                            <button 
-                                key={key}
-                                onClick={() => toggleReaction(key)}
-                                className="w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 flex flex-col items-center justify-center group/react transition-transform hover:scale-125 origin-bottom"
-                                title={data.label}
-                            >
-                                <span className="text-[22px] group-hover/react:-translate-y-1 transition-transform">{data.icon}</span>
-                            </button>
-                        ))}
-                    </div>
-                )}
-
-                <button 
-                    onMouseEnter={handleReactionMouseEnter}
-                    onMouseLeave={handleReactionMouseLeave}
-                    onClick={() => toggleReaction(reaction ? null : 'like')}
-                    className={`flex-1 flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] transition-colors ${reaction ? REACTION_TYPES[reaction].color : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                {/* Reaction Picker Container (FR-CI-01) */}
+                <div 
+                    className="relative flex-1 flex justify-center items-center"
+                    onMouseEnter={() => {
+                        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                        hoverTimeoutRef.current = setTimeout(() => setReactionHover(true), 150);
+                    }}
+                    onMouseLeave={() => {
+                        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                        hoverTimeoutRef.current = setTimeout(() => setReactionHover(false), 350);
+                    }}
                 >
-                    {reaction ? (
-                        <>
-                            <span className="text-[18px]">{REACTION_TYPES[reaction].icon}</span>
-                            {REACTION_TYPES[reaction].label}
-                        </>
-                    ) : (
-                        <>
-                            <span className="material-symbols-outlined text-[20px]">thumb_up</span>
-                            Like
-                        </>
+                    {/* Reaction Popover */}
+                    {reactionHover && (
+                        <div 
+                            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl rounded-full px-3 py-2 flex gap-2 animate-in fade-in slide-in-from-bottom-2 z-30"
+                            onMouseEnter={() => {
+                                if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                                setReactionHover(true);
+                            }}
+                            onMouseLeave={() => {
+                                if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                                hoverTimeoutRef.current = setTimeout(() => setReactionHover(false), 350);
+                            }}
+                        >
+                            {/* Invisible Hitbox Bridge connecting Popover to Like Button */}
+                            <div className="absolute top-full left-0 right-0 h-4" />
+
+                            {Object.entries(REACTION_TYPES).map(([key, data]) => (
+                                <button 
+                                    key={key}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleReaction(key);
+                                    }}
+                                    className="w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex flex-col items-center justify-center group/react transition-transform hover:scale-125 origin-bottom cursor-pointer"
+                                    title={data.label}
+                                >
+                                    <span className="text-[22px] group-hover/react:-translate-y-1 transition-transform">{data.icon}</span>
+                                </button>
+                            ))}
+                        </div>
                     )}
-                </button>
+
+                    <button 
+                        onClick={() => toggleReaction(reaction ? null : 'like')}
+                        className={`w-full flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] transition-colors ${reaction ? REACTION_TYPES[reaction].color : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                    >
+                        {reaction ? (
+                            <>
+                                <span className="text-[18px]">{REACTION_TYPES[reaction].icon}</span>
+                                {REACTION_TYPES[reaction].label}
+                            </>
+                        ) : (
+                            <>
+                                <span className="material-symbols-outlined text-[20px]">thumb_up</span>
+                                Like
+                            </>
+                        )}
+                    </button>
+                </div>
 
                 <button 
                     onClick={async () => {
@@ -683,7 +730,11 @@ export default function PostCard({ post, onPostDeleted }) {
                 {/* Share Button (FR-CI-03) */}
                 <div className="flex-1 relative">
                     <button 
-                        onClick={() => setIsShareOpen(!isShareOpen)}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setIsShareOpen(!isShareOpen);
+                        }}
                         className="w-full flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     >
                         <span className="material-symbols-outlined text-[20px]">share</span>
@@ -691,10 +742,10 @@ export default function PostCard({ post, onPostDeleted }) {
                     </button>
 
                     {/* Share Popover Modal... */}
-                    {isShareOpen && (
+                    {isShareOpen && createPortal(
                         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setIsShareOpen(false)}></div>
-                            <div className="relative bg-theme-60-surface rounded-2xl shadow-xl w-full max-w-sm p-6 border border-theme-30 animate-in fade-in zoom-in duration-200">
+                            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={(e) => { e.stopPropagation(); setIsShareOpen(false); }}></div>
+                            <div className="relative bg-theme-60-surface rounded-2xl shadow-xl w-full max-w-sm p-6 border border-theme-30 animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
                                 <div className="flex justify-between items-center mb-4">
                                     <div className="flex items-center gap-2">
                                         {shareMode === 'userSearch' && (
@@ -741,25 +792,39 @@ export default function PostCard({ post, onPostDeleted }) {
                                                 <div className="text-center py-4 text-slate-500 text-sm">Searching...</div>
                                             ) : shareSearchResults.length > 0 ? (
                                                 shareSearchResults.map(user => {
-                                                    const isSelected = selectedShareUsers.some(u => u.id === user.id);
+                                                    const userId = user.id || user.userId;
+                                                    const userName = user.title || user.fullName || user.name || 'User';
+                                                    const userRole = user.summary || user.designation || user.roleName || 'Employee';
+                                                    const rawPhoto = user.authorProfilePhotoUrl || user.profilePhotoUrl || user.thumbnailUrl || user.avatar;
+                                                    const userAvatar = resolveMediaUrl(rawPhoto) || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=6366f1&color=fff`;
+                                                    const isSelected = selectedShareUsers.some(u => (u.id || u.userId) === userId);
+
                                                     return (
-                                                        <label key={user.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
+                                                        <label key={userId} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 cursor-pointer transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
                                                             <input 
                                                                 type="checkbox" 
                                                                 className="rounded text-indigo-500 focus:ring-indigo-500 bg-slate-100 border-slate-300 dark:border-slate-600 dark:bg-slate-700 w-4 h-4 cursor-pointer"
                                                                 checked={isSelected}
                                                                 onChange={() => {
                                                                     if (isSelected) {
-                                                                        setSelectedShareUsers(prev => prev.filter(u => u.id !== user.id));
+                                                                        setSelectedShareUsers(prev => prev.filter(u => (u.id || u.userId) !== userId));
                                                                     } else {
-                                                                        setSelectedShareUsers(prev => [...prev, user]);
+                                                                        setSelectedShareUsers(prev => [...prev, { ...user, id: userId }]);
                                                                     }
                                                                 }}
                                                             />
-                                                            <img src={user.authorProfilePhotoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.title)}&background=6366f1&color=fff`} alt={user.title} className="w-8 h-8 rounded-full object-cover" />
+                                                            <img 
+                                                                src={userAvatar} 
+                                                                alt={userName} 
+                                                                className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700 shadow-sm"
+                                                                onError={(e) => {
+                                                                    e.target.onerror = null; 
+                                                                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=6366f1&color=fff`;
+                                                                }}
+                                                            />
                                                             <div className="flex-1 min-w-0">
-                                                                <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{user.title}</p>
-                                                                <p className="text-[11px] text-slate-500 truncate">{user.summary}</p>
+                                                                <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{userName}</p>
+                                                                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{userRole}</p>
                                                             </div>
                                                         </label>
                                                     );
@@ -778,7 +843,7 @@ export default function PostCard({ post, onPostDeleted }) {
                                     </div>
                                 )}
                             </div>
-                        </div>
+                        </div>, document.body
                     )}
                 </div>
             </div>
@@ -787,8 +852,8 @@ export default function PostCard({ post, onPostDeleted }) {
                 isOpen={isReportModalOpen} 
                 onClose={() => setIsReportModalOpen(false)} 
                 targetType="Post"
-                targetId={post.id}
-                targetName={post.author.name}
+                targetId={post?.id}
+                targetName={post?.author?.name || post?.authorFullName || 'Author'}
             />
 
             {/* Comments Section (FR-CI-02, FR-CI-05) */}

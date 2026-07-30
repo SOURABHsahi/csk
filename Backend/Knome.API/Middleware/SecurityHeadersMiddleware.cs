@@ -20,10 +20,10 @@ public class SecurityHeadersMiddleware
             headers["X-Content-Type-Options"] = "nosniff";
 
         if (!headers.ContainsKey("X-Frame-Options"))
-            headers["X-Frame-Options"] = "DENY";
+            headers["X-Frame-Options"] = "SAMEORIGIN";
 
         if (!headers.ContainsKey("Content-Security-Policy"))
-            headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none';";
+            headers["Content-Security-Policy"] = "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: http://localhost:5173 http://localhost:3000 http://localhost:5000 http://localhost:5095; frame-ancestors 'self' http://localhost:5173 http://localhost:3000 http://localhost:5000 http://localhost:5095;";
 
         if (!headers.ContainsKey("X-XSS-Protection"))
             headers["X-XSS-Protection"] = "1; mode=block";

@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import PostCard from '../components/widgets/PostCard';
 import CreatePostModal from '../components/modals/CreatePostModal';
-import { postsApi, mapPost } from '../utils/apiService';
+import { postsApi, mapPost, getPersonalizedRecommendations } from '../utils/apiService';
 
 export default function Posts() {
     const { currentUser } = useUser();
+    const location = useLocation();
+    const queryParams = new URLSearchParams(location.search);
+    const targetPostId = queryParams.get('id') || queryParams.get('postId') || queryParams.get('highlight');
     
     // Core state
     const [posts, setPosts] = useState([]);
@@ -18,10 +22,29 @@ export default function Posts() {
         setIsLoading(true);
         try {
             const data = await postsApi.getPosts(null, null, 1, 100);
-            if (data) {
-                const mapped = data.map(mapPost);
-                setPosts(mapped);
+            let mapped = data ? data.map(mapPost) : [];
+            
+            // If target post ID is specified via notification link, ensure it is fetched and prioritized
+            if (targetPostId) {
+                const targetIdNum = parseInt(targetPostId, 10);
+                const exists = mapped.some(p => p.id === targetIdNum);
+                if (!exists) {
+                    try {
+                        const targetData = await postsApi.getById(targetIdNum);
+                        if (targetData) {
+                            const mappedTarget = mapPost(targetData);
+                            mappedTarget.isHighlighted = true;
+                            mapped = [mappedTarget, ...mapped];
+                        }
+                    } catch (e) {
+                        console.warn("Could not fetch target post:", e);
+                    }
+                } else {
+                    mapped = mapped.map(p => p.id === targetIdNum ? { ...p, isHighlighted: true } : p);
+                }
             }
+
+            setPosts(mapped);
         } catch (error) {
             console.error('Failed to load posts', error);
         } finally {
@@ -31,18 +54,47 @@ export default function Posts() {
 
     useEffect(() => {
         loadPosts();
-    }, []);
+    }, [targetPostId]);
 
     // Get all unique tags for filter pills
-    const allTags = ['All', ...new Set(posts.flatMap(post => post.tags || []))];
+    const allTags = ['All', '✨ Recommended', ...new Set(posts.flatMap(post => post.tags || []))];
 
-    // Filter logic
-    const filteredPosts = posts.filter(post => {
-        const matchesSearch = (post.content || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    // Filter and sort logic — highlighted target post always at top
+    const rawPosts = posts.filter(post => {
+        const matchesSearch = !searchQuery || (post.content || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                               (post.author?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesTag = selectedTag === 'All' || (post.tags && post.tags.includes(selectedTag));
+        const matchesTag = selectedTag === 'All' || selectedTag === '✨ Recommended' || (post.tags && post.tags.includes(selectedTag));
         return matchesSearch && matchesTag;
     });
+
+    const filteredPosts = (selectedTag === '✨ Recommended'
+        ? getPersonalizedRecommendations(rawPosts, currentUser)
+        : rawPosts
+    ).sort((a, b) => {
+        if (a.isHighlighted) return -1;
+        if (b.isHighlighted) return 1;
+        return 0;
+    });
+
+    // Infinite Scroll State
+    const [visibleCount, setVisibleCount] = useState(6);
+    const [isFetchingMore, setIsFetchingMore] = useState(false);
+
+    useEffect(() => {
+        const handleScroll = () => {
+            if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 400) {
+                if (!isFetchingMore && visibleCount < filteredPosts.length) {
+                    setIsFetchingMore(true);
+                    setTimeout(() => {
+                        setVisibleCount(prev => prev + 6);
+                        setIsFetchingMore(false);
+                    }, 300);
+                }
+            }
+        };
+        window.addEventListener('scroll', handleScroll);
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, [isFetchingMore, visibleCount, filteredPosts.length]);
 
     const handlePostCreated = () => {
         // Small delay so backend processes the new post before refetch
@@ -147,9 +199,19 @@ export default function Posts() {
                         <h3 className="font-bold text-slate-700 dark:text-slate-350 text-sm">Loading posts...</h3>
                     </div>
                 ) : filteredPosts.length > 0 ? (
-                    filteredPosts.map(post => (
-                        <PostCard key={post.id} post={post} onPostDeleted={() => loadPosts()} />
-                    ))
+                    <>
+                        {filteredPosts.slice(0, visibleCount).map(post => (
+                            <PostCard key={post.id} post={post} onPostDeleted={() => loadPosts()} />
+                        ))}
+
+                        {/* Infinite Scroll Progress Indicator */}
+                        {visibleCount < filteredPosts.length && (
+                            <div className="py-6 text-center flex items-center justify-center gap-2 text-slate-400 text-xs font-semibold">
+                                <span className="material-symbols-outlined text-[20px] animate-spin text-indigo-500">progress_activity</span>
+                                <span>Loading more posts on scroll...</span>
+                            </div>
+                        )}
+                    </>
                 ) : (
                     <div className="glass bg-white dark:bg-slate-950 p-12 rounded-2xl border border-slate-200 dark:border-slate-800 text-center flex flex-col items-center justify-center gap-3">
                         <span className="material-symbols-outlined text-4xl text-slate-300 dark:text-slate-700 animate-bounce">feed</span>

@@ -7,13 +7,30 @@ public static class ContentTypes
     public const string Video = "Video";
     public const string Podcast = "Podcast";
     public const string Community = "Community";
+    public const string Job = "Job";
+    public const string Document = "Document";
 
-    public static readonly string[] All = { Post, Article, Video, Podcast, Community };
+    public static readonly string[] All = { Post, Article, Video, Podcast, Community, Job, Document };
+
+    public static string Normalize(string? contentType)
+    {
+        if (string.IsNullOrWhiteSpace(contentType)) return string.Empty;
+        var trimmed = contentType.Trim();
+        if (trimmed.Equals(Post, StringComparison.OrdinalIgnoreCase)) return Post;
+        if (trimmed.Equals(Article, StringComparison.OrdinalIgnoreCase)) return Article;
+        if (trimmed.Equals(Video, StringComparison.OrdinalIgnoreCase)) return Video;
+        if (trimmed.Equals(Podcast, StringComparison.OrdinalIgnoreCase)) return Podcast;
+        if (trimmed.Equals(Community, StringComparison.OrdinalIgnoreCase)) return Community;
+        if (trimmed.Equals(Job, StringComparison.OrdinalIgnoreCase)) return Job;
+        if (trimmed.Equals(Document, StringComparison.OrdinalIgnoreCase)) return Document;
+        return trimmed;
+    }
 
     public static bool IsValid(string? contentType)
     {
         if (string.IsNullOrWhiteSpace(contentType)) return false;
-        return contentType == Post || contentType == Article || contentType == Video || contentType == Podcast;
+        var norm = Normalize(contentType);
+        return norm == Post || norm == Article || norm == Video || norm == Podcast || norm == Community || norm == Job || norm == Document;
     }
 }
 

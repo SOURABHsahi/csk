@@ -1,50 +1,64 @@
-const BASE_URL = 'http://localhost:5095/api';
+// Layer 1 (React UI) -> Layer 2 (Next.js BFF) -> Layer 3 & 4 (API Gateway + YARP) -> Layer 5 (Backend API) -> Layer 6 (Database)
+const PRIMARY_URL = window.ENV_BFF_URL || 'http://localhost:3000/api/proxy';
+const GATEWAY_URL = 'http://localhost:5000/api';
+const DIRECT_BACKEND_URL = 'http://localhost:5095/api';
 
 export const apiClient = {
     async request(endpoint, options = {}) {
-        const url = `${BASE_URL}${endpoint}`;
-        
-        // Setup headers
+        const token = localStorage.getItem('knome_jwt');
         const headers = {
             'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
             ...options.headers
         };
 
-        // Add auth token if available
-        const token = localStorage.getItem('knome_jwt');
-        if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-        }
+        const config = { ...options, headers };
 
-        const config = {
-            ...options,
-            headers
-        };
-
+        // Attempt 1: Next.js BFF -> Gateway -> Backend -> SQL Server DB
         try {
+            const url = `${PRIMARY_URL}${endpoint}`;
             const response = await fetch(url, config);
-            
-            if (response.status === 401) {
-                console.error("Unauthorized: Please log in again");
-                throw new Error('Unauthorized');
+            return await this.handleResponse(response);
+        } catch (bffError) {
+            // Attempt 2: Direct API Gateway (YARP) -> Backend -> SQL Server DB
+            try {
+                const url = `${GATEWAY_URL}${endpoint}`;
+                const response = await fetch(url, config);
+                return await this.handleResponse(response);
+            } catch (gatewayError) {
+                // Attempt 3: Direct Backend API -> SQL Server DB
+                try {
+                    const url = `${DIRECT_BACKEND_URL}${endpoint}`;
+                    const response = await fetch(url, config);
+                    return await this.handleResponse(response);
+                } catch (backendError) {
+                    console.error(`API Call failed across all layers for ${endpoint}:`, backendError);
+                    throw backendError;
+                }
             }
-
-            if (response.status === 204) {
-                return null;
-            }
-
-            const text = await response.text();
-            const data = text ? JSON.parse(text) : null;
-            
-            if (!response.ok) {
-                throw new Error((data && data.message) || 'API request failed');
-            }
-
-            return data.data; // Backend uses ApiResponse<T> where data is in .data property
-        } catch (error) {
-            console.error(`API Error on ${endpoint}:`, error);
-            throw error;
         }
+    },
+
+    async handleResponse(response) {
+        if (response.status === 401) {
+            localStorage.removeItem('knome_jwt');
+            localStorage.removeItem('knome_refresh');
+            localStorage.removeItem('knome_employeeId');
+            throw new Error('Unauthorized');
+        }
+
+        if (response.status === 204) {
+            return null;
+        }
+
+        const text = await response.text();
+        const data = text ? JSON.parse(text) : null;
+        
+        if (!response.ok) {
+            throw new Error((data && data.message) || 'API request failed');
+        }
+
+        return data?.data !== undefined ? data.data : data;
     },
 
     get(endpoint, options = {}) {
@@ -64,51 +78,43 @@ export const apiClient = {
     },
 
     async uploadProfileImage(file) {
-        const url = `${BASE_URL}/users/profile/image`;
         const token = localStorage.getItem('knome_jwt');
         const formData = new FormData();
         formData.append('File', file);
-        
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
         try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-                },
-                body: formData
-            });
-            const text = await response.text();
-            const data = text ? JSON.parse(text) : null;
-            if (!response.ok) throw new Error((data && data.message) || 'Upload failed');
-            return data.data;
-        } catch (error) {
-            console.error(`Upload Error on profile/image:`, error);
-            throw error;
+            const response = await fetch(`${PRIMARY_URL}/users/profile/image`, { method: 'POST', headers, body: formData });
+            return (await this.handleResponse(response));
+        } catch (e) {
+            try {
+                const response = await fetch(`${DIRECT_BACKEND_URL}/users/profile/image`, { method: 'POST', headers, body: formData });
+                return (await this.handleResponse(response));
+            } catch (err) {
+                console.error(`Upload Error on profile/image:`, err);
+                throw err;
+            }
         }
     },
 
     async uploadFile(endpoint, file, type = 'doc') {
-        const url = `${BASE_URL}${endpoint}`;
         const token = localStorage.getItem('knome_jwt');
         const formData = new FormData();
         formData.append('file', file);
         formData.append('type', type);
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
         
         try {
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: {
-                    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-                },
-                body: formData
-            });
-            const text = await response.text();
-            const data = text ? JSON.parse(text) : null;
-            if (!response.ok) throw new Error((data && data.message) || 'Upload failed');
-            return data.data; // MediaUploadResult
-        } catch (error) {
-            console.error(`Upload Error on ${endpoint}:`, error);
-            throw error;
+            const response = await fetch(`${PRIMARY_URL}${endpoint}`, { method: 'POST', headers, body: formData });
+            return (await this.handleResponse(response));
+        } catch (e) {
+            try {
+                const response = await fetch(`${DIRECT_BACKEND_URL}${endpoint}`, { method: 'POST', headers, body: formData });
+                return (await this.handleResponse(response));
+            } catch (err) {
+                console.error(`Upload Error on ${endpoint}:`, err);
+                throw err;
+            }
         }
     }
 };

@@ -13,5 +13,7 @@ public partial class PostAttachment
 
     public string FileType { get; set; } = null!;
 
+    public DateTime PublishedDate { get; set; }
+
     public virtual Post Post { get; set; } = null!;
 }

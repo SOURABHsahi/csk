@@ -27,6 +27,8 @@ public class PostArticleProfile : Profile
         CreateMap<ArticleVersion, ArticleVersionDto>()
             .ForMember(dest => dest.EditedByUserName, opt => opt.MapFrom(src => src.EditedByUser != null ? src.EditedByUser.FullName : "Unknown"));
 
+        CreateMap<ArticleAttachment, ArticleAttachmentDto>();
+
         CreateMap<Article, ArticleDto>()
             .ForMember(dest => dest.AuthorEmployeeId, opt => opt.MapFrom(src => src.AuthorUser != null ? src.AuthorUser.EmployeeId : string.Empty))
             .ForMember(dest => dest.AuthorFullName, opt => opt.MapFrom(src => src.AuthorUser != null ? src.AuthorUser.FullName : "Unknown"))
@@ -35,6 +37,7 @@ public class PostArticleProfile : Profile
             .ForMember(dest => dest.CategoryName, opt => opt.MapFrom(src => src.Category != null ? src.Category.Name : string.Empty))
             .ForMember(dest => dest.Tags, opt => opt.MapFrom(src => src.ArticleTags.Select(t => t.Tag).ToList()))
             .ForMember(dest => dest.AttachmentUrls, opt => opt.MapFrom(src => src.ArticleAttachments.Select(pa => pa.FileUrl).ToList()))
+            .ForMember(dest => dest.Attachments, opt => opt.MapFrom(src => src.ArticleAttachments))
             .ForMember(dest => dest.VersionsCount, opt => opt.MapFrom(src => src.ArticleVersions != null ? src.ArticleVersions.Count : 0))
             .ForMember(dest => dest.EngagementSummary, opt => opt.Ignore());
 

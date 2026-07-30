@@ -9,6 +9,7 @@ public class PostAttachmentDto
     public long AttachmentId { get; set; }
     public string FileUrl { get; set; } = string.Empty;
     public string FileType { get; set; } = string.Empty;
+    public DateTime PublishedDate { get; set; }
 }
 
 public class PostDto

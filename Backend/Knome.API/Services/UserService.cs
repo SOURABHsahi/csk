@@ -72,17 +72,20 @@ public class UserService : IUserService
             {
                 var isFollowing = targetUser.FollowerFollowingUsers.Any(f => f.FollowerUserId == requestingUserId);
 
-                if (targetUser.BioVisibility == "Private" || (targetUser.BioVisibility == "Connections Only" && !isFollowing))
+                bool IsMasked(string visibility) =>
+                    visibility == "Private" || ((visibility == "Connections Only" || visibility == "ConnectionsOnly") && !isFollowing);
+
+                if (IsMasked(targetUser.BioVisibility))
                 {
                     dto.Bio = null;
                 }
 
-                if (targetUser.PhotosVisibility == "Private" || (targetUser.PhotosVisibility == "Connections Only" && !isFollowing))
+                if (IsMasked(targetUser.PhotosVisibility))
                 {
                     dto.ProfilePhotoUrl = null;
                 }
 
-                if (targetUser.InterestsVisibility == "Private" || (targetUser.InterestsVisibility == "Connections Only" && !isFollowing))
+                if (IsMasked(targetUser.InterestsVisibility))
                 {
                     dto.Interests.Clear();
                 }

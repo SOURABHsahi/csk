@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
 import { useUser } from '../contexts/UserContext';
 import { deleteVideo } from '../../utils/videoService';
+import ReportModal from './ReportModal';
 
 export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDeleted }) {
+    const { currentUser } = useUser();
+    const [liked, setLiked] = useState(false);
+    const [likesCount, setLikesCount] = useState(video?.likes || 0);
+    const [isReportOpen, setIsReportOpen] = useState(false);
+
     if (!isOpen || !video) return null;
 
-    const { currentUser } = useUser();
     const canDelete = currentUser?.role === 'SYSADM' || currentUser?.role === 'COMADM' || currentUser?.id === video.authorId;
 
     const handleDelete = async () => {
@@ -19,9 +24,6 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
             }
         }
     };
-
-    const [liked, setLiked] = useState(false);
-    const [likesCount, setLikesCount] = useState(video.likes || 0);
 
     const handleLike = () => {
         setLiked(!liked);
@@ -69,6 +71,9 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
                 <video 
                     className="w-full h-full"
                     controls 
+                    controlsList="nodownload"
+                    disablePictureInPicture
+                    onContextMenu={(e) => e.preventDefault()}
                     autoPlay
                     preload="auto"
                     poster={video.thumbnail}
@@ -168,6 +173,14 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
                                     <span className="material-symbols-outlined text-[20px]">share</span>
                                     Share
                                 </button>
+                                <button
+                                    onClick={() => setIsReportOpen(true)}
+                                    className="px-3 py-2.5 rounded-xl font-bold text-[13px] bg-rose-500/10 text-rose-400 hover:bg-rose-600 hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
+                                    title="Report Video"
+                                >
+                                    <span className="material-symbols-outlined text-[18px]">report</span>
+                                    Report
+                                </button>
                             </div>
 
                             {/* Comments Section (Mock) */}
@@ -213,6 +226,15 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
                 </div>
 
             </div>
+
+            {/* Report Video Modal */}
+            <ReportModal
+                isOpen={isReportOpen}
+                onClose={() => setIsReportOpen(false)}
+                targetType="Video"
+                targetId={video?.id || 1}
+                targetName={video?.author || video?.presenter || 'Creator'}
+            />
         </div>
     );
 }

@@ -1,23 +1,29 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import UploadVideoModal from '../components/modals/UploadVideoModal';
 import VideoPlayerModal from '../components/modals/VideoPlayerModal';
+import ReportModal from '../components/modals/ReportModal';
 import { getVideos } from '../utils/videoService';
-import { savedContentApi } from '../utils/apiService';
+import { savedContentApi, getPersonalizedRecommendations } from '../utils/apiService';
 
 export default function Videos() {
     const { currentUser } = useUser();
+    const location = useLocation();
+    const queryParams = new URLSearchParams(location.search);
+    const targetVideoId = queryParams.get('id') || queryParams.get('videoId');
     
     const [isUploadOpen, setIsUploadOpen] = useState(false);
     const [activeVideo, setActiveVideo] = useState(null);
     const [activeFilter, setActiveFilter] = useState('All');
     const [searchQuery, setSearchQuery] = useState('');
     const [savedMap, setSavedMap] = useState({});
+    const [reportingVideo, setReportingVideo] = useState(null);
     
     const [videos, setVideos] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    const filters = ['All', 'Training & Tutorials', 'Townhalls', 'Engineering Tech Talks', 'Leadership Updates'];
+    const filters = ['All', '✨ Recommended for You', 'Training & Tutorials', 'Townhalls', 'Engineering Tech Talks', 'Leadership Updates'];
 
     const fetchVideos = async () => {
         setIsLoading(true);
@@ -30,10 +36,23 @@ export default function Videos() {
         fetchVideos();
     }, []);
 
-    const filteredVideos = videos.filter(v => 
-        (activeFilter === 'All' || v.category === activeFilter) &&
-        (v.title.toLowerCase().includes(searchQuery.toLowerCase()) || v.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase())))
+    useEffect(() => {
+        if (targetVideoId && videos.length > 0) {
+            const found = videos.find(v => (v.id || v.videoId || '').toString() === targetVideoId.toString());
+            if (found) {
+                setActiveVideo(found);
+            }
+        }
+    }, [targetVideoId, videos]);
+
+    const rawFilteredVideos = videos.filter(v => 
+        (activeFilter === 'All' || activeFilter === '✨ Recommended for You' || v.category === activeFilter) &&
+        (!searchQuery || v.title.toLowerCase().includes(searchQuery.toLowerCase()) || v.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase())))
     );
+
+    const filteredVideos = activeFilter === '✨ Recommended for You'
+        ? getPersonalizedRecommendations(rawFilteredVideos, currentUser)
+        : rawFilteredVideos;
 
     return (
         <>
@@ -174,6 +193,20 @@ export default function Videos() {
                                             {video.duration}
                                         </span>
 
+                                        {/* Report Video Button */}
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setReportingVideo(video);
+                                            }}
+                                            className="absolute top-2 left-2 p-1.5 rounded-xl backdrop-blur-md transition-all active:scale-95 shadow-md z-10 bg-slate-900/60 text-white hover:bg-rose-600 hover:text-white cursor-pointer"
+                                            title="Report Video"
+                                        >
+                                            <span className="material-symbols-outlined text-[18px]">
+                                                report
+                                            </span>
+                                        </button>
+
                                         {/* Save Bookmark Button */}
                                         <button
                                             onClick={async (e) => {
@@ -228,6 +261,13 @@ export default function Videos() {
 
             <UploadVideoModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} onVideoUploaded={fetchVideos} />
             <VideoPlayerModal isOpen={!!activeVideo} onClose={() => setActiveVideo(null)} video={activeVideo} onVideoDeleted={fetchVideos} />
+            <ReportModal
+                isOpen={!!reportingVideo}
+                onClose={() => setReportingVideo(null)}
+                targetType="Video"
+                targetId={reportingVideo?.id || 1}
+                targetName={reportingVideo?.author || reportingVideo?.presenter || 'Creator'}
+            />
         </>
     );
 }

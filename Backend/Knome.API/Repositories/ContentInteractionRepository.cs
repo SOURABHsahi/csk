@@ -402,12 +402,14 @@ public class ContentInteractionRepository : IContentInteractionRepository
     // Author resolution (for notification targeting)
     public async Task<int?> GetContentAuthorUserIdAsync(string contentType, long contentId)
     {
-        return contentType switch
+        var norm = ContentTypes.Normalize(contentType);
+        return norm switch
         {
             ContentTypes.Post => await _db.Posts.Where(p => p.PostId == contentId).Select(p => (int?)p.AuthorUserId).FirstOrDefaultAsync(),
             ContentTypes.Article => await _db.Articles.Where(a => a.ArticleId == contentId).Select(a => (int?)a.AuthorUserId).FirstOrDefaultAsync(),
             ContentTypes.Video => await _db.Videos.Where(v => v.VideoId == contentId).Select(v => (int?)v.UploaderUserId).FirstOrDefaultAsync(),
             ContentTypes.Podcast => await _db.Podcasts.Where(p => p.PodcastId == contentId).Select(p => (int?)p.UploaderUserId).FirstOrDefaultAsync(),
+            ContentTypes.Job => await _db.Jobs.Where(j => j.JobId == (int)contentId).Select(j => (int?)j.PostedByUserId).FirstOrDefaultAsync(),
             _ => null
         };
     }

@@ -9,7 +9,6 @@ namespace Knome.API.DTOs.Search;
 public class GlobalSearchRequestDto
 {
     /// <summary>Free-text keyword or phrase. Partial (contains) matching is supported.</summary>
-    [Required(ErrorMessage = "Search query is required.")]
     [MaxLength(100, ErrorMessage = "Search query cannot exceed 100 characters.")]
     public string Query { get; set; } = string.Empty;
 

@@ -2,9 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { calculateEngagementScore } from '../../utils/engagementEngine';
 import { dashboardApi } from '../../utils/apiService';
+import { useUser } from '../contexts/UserContext';
 
 export default function HotPostsWidget() {
     const navigate = useNavigate();
+    const { currentUser } = useUser();
+    const isSysAdmin = currentUser?.role === 'SYSADM' || 
+                       currentUser?.roleName === 'System Administrator' || 
+                       (Array.isArray(currentUser?.roles) && (currentUser.roles.includes('SYSADM') || currentUser.roles.includes('System Administrator') || currentUser.roles.includes('SystemAdmin')));
+
     const [timeWindow, setTimeWindow] = useState('Daily');
     const [hotPosts, setHotPosts] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -100,7 +106,7 @@ export default function HotPostsWidget() {
                 <div className="flex flex-col gap-4">
                     {hotPosts.map((post, index) => (
                         <div 
-                            key={post.id} 
+                            key={post.id ? `${post.id}-${index}` : index} 
                             onClick={() => navigate(`/`)}
                             className="flex gap-3 group cursor-pointer p-2 rounded-xl transition-all hover:bg-blue-500/5"
                         >
@@ -134,10 +140,12 @@ export default function HotPostsWidget() {
                 </div>
             )}
 
-            <button onClick={() => navigate('/karma-history')} className="w-full mt-5 py-2.5 rounded-xl font-bold text-[12px] transition-all hover:-translate-y-0.5"
-                style={{background: 'rgba(37,99,235,0.1)', border: '1px solid rgba(37,99,235,0.2)', color: '#2563EB'}}>
-                View Full Leaderboard
-            </button>
+            {!isSysAdmin && (
+                <button onClick={() => navigate('/karma-history')} className="w-full mt-5 py-2.5 rounded-xl font-bold text-[12px] transition-all hover:-translate-y-0.5"
+                    style={{background: 'rgba(37,99,235,0.1)', border: '1px solid rgba(37,99,235,0.2)', color: '#2563EB'}}>
+                    View Full Leaderboard
+                </button>
+            )}
         </div>
     );
 }

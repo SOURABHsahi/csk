@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { interactionsApi } from '../../utils/apiService';
 
 const REASON_MAPPING = [
@@ -16,6 +17,8 @@ export default function ReportModal({ isOpen, onClose, targetType = 'Post', targ
     const [isSuccess, setIsSuccess] = useState(false);
 
     if (!isOpen) return null;
+
+    const safeTargetName = typeof targetName === 'string' ? targetName : (targetName?.name || targetName?.title || targetName?.fullName || 'Author');
 
     const handleSubmit = async () => {
         if (!selectedCode) return;
@@ -39,11 +42,11 @@ export default function ReportModal({ isOpen, onClose, targetType = 'Post', targ
         }
     };
 
-    return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    return createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
             
-            <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md flex flex-col border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in duration-200">
+            <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md flex flex-col border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in duration-200" onClick={(e) => e.stopPropagation()}>
                 {/* Header */}
                 <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
                     <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -67,7 +70,7 @@ export default function ReportModal({ isOpen, onClose, targetType = 'Post', targ
                     ) : (
                         <>
                             <p className="text-[13px] text-slate-600 dark:text-slate-400">
-                                You are reporting {targetType.toLowerCase()} by <span className="font-bold text-slate-900 dark:text-white">{targetName}</span>. Please select a reason below.
+                                You are reporting {targetType.toLowerCase()} by <span className="font-bold text-slate-900 dark:text-white">{safeTargetName}</span>. Please select a reason below.
                             </p>
 
                             <div className="flex flex-col gap-2">
@@ -107,6 +110,7 @@ export default function ReportModal({ isOpen, onClose, targetType = 'Post', targ
                     )}
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

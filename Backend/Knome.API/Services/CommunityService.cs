@@ -404,6 +404,10 @@ public class CommunityService : ICommunityService
     {
         await CheckIsAdminOrSysAdminAsync(communityId, currentUserId);
 
+        var community = await _repo.GetCommunityByIdAsync(communityId);
+        if (community != null && community.CreatedByUserId == targetUserId && currentUserId != targetUserId)
+            throw new BadRequestException("Cannot demote or remove the original creator of this community.");
+
         var adminsCount = await _repo.GetCommunityAdminsCountAsync(communityId);
         if (adminsCount <= 1 && await _repo.IsCommunityAdminAsync(communityId, targetUserId))
             throw new BadRequestException("Cannot remove the sole remaining Community Admin.");

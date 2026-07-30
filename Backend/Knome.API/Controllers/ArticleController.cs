@@ -48,7 +48,7 @@ public class ArticleController : KnomeControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = $"{Roles.Employee},{Roles.CommunityAdmin},{Roles.HRAdmin}")]
+    [Authorize(Roles = $"{Roles.Employee},{Roles.CommunityAdmin},{Roles.HRAdmin},{Roles.SystemAdmin}")]
     [ProducesResponseType(typeof(ApiResponse<ArticleDto>), StatusCodes.Status201Created)]
     public async Task<IActionResult> CreateArticle([FromBody] CreateArticleDto dto)
     {
@@ -57,7 +57,7 @@ public class ArticleController : KnomeControllerBase
     }
 
     [HttpPut("{articleId}")]
-    [Authorize(Roles = $"{Roles.Employee},{Roles.CommunityAdmin},{Roles.HRAdmin}")]
+    [Authorize(Roles = $"{Roles.Employee},{Roles.CommunityAdmin},{Roles.HRAdmin},{Roles.SystemAdmin}")]
     [ProducesResponseType(typeof(ApiResponse<ArticleDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> UpdateArticle(long articleId, [FromBody] UpdateArticleDto dto)
     {
@@ -66,7 +66,7 @@ public class ArticleController : KnomeControllerBase
     }
 
     [HttpDelete("{articleId}")]
-    [Authorize(Roles = $"{Roles.Employee},{Roles.CommunityAdmin},{Roles.HRAdmin}")]
+    [Authorize(Roles = $"{Roles.Employee},{Roles.CommunityAdmin},{Roles.HRAdmin},{Roles.SystemAdmin}")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> DeleteArticle(long articleId)
     {

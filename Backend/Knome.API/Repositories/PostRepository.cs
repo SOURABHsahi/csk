@@ -77,7 +77,8 @@ public class PostRepository : IPostRepository
             {
                 PostId = post.PostId,
                 FileUrl = url,
-                FileType = type
+                FileType = type,
+                PublishedDate = DateTime.UtcNow
             });
         }
 
@@ -110,7 +111,8 @@ public class PostRepository : IPostRepository
             {
                 PostId = post.PostId,
                 FileUrl = url,
-                FileType = type
+                FileType = type,
+                PublishedDate = DateTime.UtcNow
             });
         }
 

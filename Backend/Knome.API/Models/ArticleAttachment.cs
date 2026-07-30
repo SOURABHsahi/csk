@@ -13,5 +13,7 @@ public partial class ArticleAttachment
 
     public string FileType { get; set; } = null!;
 
+    public DateTime PublishedDate { get; set; }
+
     public virtual Article Article { get; set; } = null!;
 }

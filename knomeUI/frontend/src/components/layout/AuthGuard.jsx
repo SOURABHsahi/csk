@@ -9,7 +9,9 @@ import PageLoader from './PageLoader';
  * Redirects to /login if not authenticated.
  */
 export default function AuthGuard({ children }) {
-    const { isAuthenticated, isAuthLoading } = useUser();
+    const userContext = useUser();
+    const isAuthenticated = userContext?.isAuthenticated ?? false;
+    const isAuthLoading = userContext?.isAuthLoading ?? false;
 
     if (isAuthLoading) {
         return (

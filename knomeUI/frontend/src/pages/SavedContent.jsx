@@ -3,6 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { savedContentApi, resolveMediaUrl } from '../utils/apiService';
 import * as signalR from '@microsoft/signalr';
 
+const DEFAULT_CATEGORIES = [
+    { id: 'all', name: 'All Categories', icon: 'folder_open', color: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200' },
+    { id: 'work', name: 'Work & Tech', icon: 'computer', color: 'bg-indigo-500/10 text-indigo-600 border border-indigo-500/20' },
+    { id: 'design', name: 'Design & Arch', icon: 'palette', color: 'bg-purple-500/10 text-purple-600 border border-purple-500/20' },
+    { id: 'hr', name: 'HR & Policies', icon: 'gavel', color: 'bg-rose-500/10 text-rose-600 border border-rose-500/20' },
+    { id: 'favorites', name: 'Favorites', icon: 'star', color: 'bg-amber-500/10 text-amber-600 border border-amber-500/20' },
+    { id: 'readlater', name: 'Read Later', icon: 'schedule', color: 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' },
+];
+
 export default function SavedContent() {
     const navigate = useNavigate();
 
@@ -20,8 +29,34 @@ export default function SavedContent() {
     const [error, setError] = useState(null);
     const [actionId, setActionId] = useState(null); // For loading spinner on unsave button
 
+    // 📁 Category Management State
+    const [categories, setCategories] = useState(() => {
+        const saved = localStorage.getItem('knome_saved_categories');
+        return saved ? JSON.parse(saved) : DEFAULT_CATEGORIES;
+    });
+    const [selectedCategory, setSelectedCategory] = useState('all');
+    const [itemCategoryMap, setItemCategoryMap] = useState(() => {
+        const saved = localStorage.getItem('knome_item_category_map');
+        return saved ? JSON.parse(saved) : {
+            'Post_10075': 'hr',
+            'Post_10072': 'design',
+            'Post_10071': 'work',
+            'Post_51': 'favorites'
+        };
+    });
+
+    // Modal States
+    const [isCreateCatModalOpen, setIsCreateCatModalOpen] = useState(false);
+    const [newCategoryName, setNewCategoryName] = useState('');
+    const [newCategoryIcon, setNewCategoryIcon] = useState('folder');
+    const [assigningItem, setAssigningItem] = useState(null);
+
+    // 📜 Infinite Scroll State
+    const [visibleItemCount, setVisibleItemCount] = useState(8);
+    const [isFetchingMoreSaved, setIsFetchingMoreSaved] = useState(false);
+
     const tabs = [
-        { id: 'All', label: 'All', countKey: 'totalCount' },
+        { id: 'All', label: 'All Types', countKey: 'totalCount' },
         { id: 'Posts', label: 'Posts', countKey: 'postsCount' },
         { id: 'Articles', label: 'Articles', countKey: 'articlesCount' },
         { id: 'Videos', label: 'Videos', countKey: 'videosCount' },
@@ -113,7 +148,6 @@ export default function SavedContent() {
         const key = `${item.contentType}_${item.contentId}`;
         setActionId(key);
 
-        // Optimistic UI Removal
         setSavedItems((prev) => prev.filter((i) => !(i.contentType === item.contentType && i.contentId === item.contentId)));
         setCounts((prev) => ({
             ...prev,
@@ -125,11 +159,37 @@ export default function SavedContent() {
             loadCounts();
         } catch (err) {
             console.error('Failed to unsave item', err);
-            // Revert on error
             loadSavedContent();
         } finally {
             setActionId(null);
         }
+    };
+
+    // Category Creation Handler
+    const handleCreateCategory = (e) => {
+        e.preventDefault();
+        if (!newCategoryName.trim()) return;
+
+        const newCat = {
+            id: newCategoryName.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+            name: newCategoryName.trim(),
+            icon: newCategoryIcon || 'folder',
+            color: 'bg-indigo-500/10 text-indigo-600 border border-indigo-500/20'
+        };
+
+        const updated = [...categories, newCat];
+        setCategories(updated);
+        localStorage.setItem('knome_saved_categories', JSON.stringify(updated));
+        setNewCategoryName('');
+        setIsCreateCatModalOpen(false);
+    };
+
+    // Category Assignment Handler
+    const handleAssignCategory = (itemKey, categoryId) => {
+        const updatedMap = { ...itemCategoryMap, [itemKey]: categoryId };
+        setItemCategoryMap(updatedMap);
+        localStorage.setItem('knome_item_category_map', JSON.stringify(updatedMap));
+        setAssigningItem(null);
     };
 
     // Helper formatting
@@ -161,35 +221,107 @@ export default function SavedContent() {
         }
     };
 
+    // Filter items by category
+    const categoryFilteredItems = savedItems.filter(item => {
+        if (selectedCategory === 'all') return true;
+        const itemKey = `${item.contentType}_${item.contentId}`;
+        const itemCatId = itemCategoryMap[itemKey] || 'all';
+        return itemCatId === selectedCategory;
+    });
+
+    useEffect(() => {
+        const handleScroll = () => {
+            if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 350) {
+                if (!isFetchingMoreSaved && visibleItemCount < categoryFilteredItems.length) {
+                    setIsFetchingMoreSaved(true);
+                    setTimeout(() => {
+                        setVisibleItemCount(prev => prev + 6);
+                        setIsFetchingMoreSaved(false);
+                    }, 300);
+                }
+            }
+        };
+        window.addEventListener('scroll', handleScroll);
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, [isFetchingMoreSaved, visibleItemCount, categoryFilteredItems.length]);
+
     return (
-        <main className="flex-1 flex flex-col gap-6 pb-32 min-w-0">
+        <main className="flex-1 flex flex-col gap-5 pb-32 min-w-0 text-slate-800 dark:text-slate-100 font-sans">
             
             {/* Hero Header */}
-            <div className="relative rounded-2xl overflow-hidden mb-2 shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col md:flex-row items-start md:items-center justify-between text-left px-6 py-8 md:px-10 md:py-8 gap-6">
+            <div className="relative rounded-2xl overflow-hidden shadow-xs border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col md:flex-row items-start md:items-center justify-between text-left px-6 py-6 md:px-8 md:py-7 gap-6">
                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_left,_var(--tw-gradient-stops))] from-amber-100/50 dark:from-amber-900/20 via-transparent to-transparent pointer-events-none"></div>
                 <div className="absolute top-1/2 left-0 -translate-y-1/2 w-[500px] h-32 bg-amber-400/10 dark:bg-amber-500/10 blur-[80px] pointer-events-none"></div>
                 
                 <div className="relative z-10 flex flex-col items-start max-w-3xl">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-500/30 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-[11px] font-bold mb-3 backdrop-blur-md uppercase tracking-wider">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-amber-500/30 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-[11px] font-bold mb-2 backdrop-blur-md uppercase tracking-wider">
                         <span className="material-symbols-outlined text-[16px]">bookmark</span>
-                        <span>Personal Library</span>
+                        <span>Personal Library & Folders</span>
                     </div>
-                    <h1 className="text-3xl md:text-4xl lg:text-[40px] font-black tracking-tight mb-3 text-slate-900 dark:text-white" style={{ lineHeight: '1.2' }}>
+                    <h1 className="text-2xl md:text-3xl lg:text-4xl font-black tracking-tight mb-2 text-slate-900 dark:text-white">
                         <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-500 dark:from-amber-400 dark:via-orange-400 dark:to-yellow-400">
-                            Saved Content
+                            Saved Content & Categories
                         </span>
                     </h1>
-                    <p className="text-slate-600 dark:text-slate-400 text-sm md:text-[15px] font-medium leading-relaxed max-w-2xl">
-                        Your personal collection of bookmarked posts, technical articles, video tutorials, and audio podcasts.
+                    <p className="text-slate-600 dark:text-slate-400 text-xs md:text-sm font-medium leading-relaxed max-w-2xl">
+                        Organize your bookmarked posts, technical articles, videos, and podcasts into custom category folders.
                     </p>
                 </div>
             </div>
 
+            {/* 📁 CATEGORIES BAR & CREATION BUTTON */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 shadow-xs">
+                <div className="flex items-center justify-between mb-2 px-1">
+                    <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-amber-500 text-[18px]">folder_special</span>
+                        <h2 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                            Category Folders ({categories.length - 1})
+                        </h2>
+                    </div>
+                    <button
+                        onClick={() => setIsCreateCatModalOpen(true)}
+                        className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                        <span className="material-symbols-outlined text-[16px]">add</span>
+                        <span>New Category</span>
+                    </button>
+                </div>
+
+                {/* Categories Pills */}
+                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
+                    {categories.map((cat) => {
+                        const isSelected = selectedCategory === cat.id;
+                        const catItemCount = cat.id === 'all' 
+                            ? savedItems.length 
+                            : savedItems.filter(item => (itemCategoryMap[`${item.contentType}_${item.contentId}`] || 'all') === cat.id).length;
+
+                        return (
+                            <button
+                                key={cat.id}
+                                onClick={() => setSelectedCategory(cat.id)}
+                                className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer shrink-0 border ${
+                                    isSelected
+                                        ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm scale-[1.02]'
+                                        : 'bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750'
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-[16px]">{cat.icon}</span>
+                                <span>{cat.name}</span>
+                                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                                    isSelected ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                }`}>
+                                    {catItemCount}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
             {/* Filter Tabs & Search / Sort Controls */}
-            <div className="glass rounded-2xl border border-slate-200 dark:border-slate-800 p-4 bg-white dark:bg-slate-900 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-                
-                {/* Tabs */}
-                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar whitespace-nowrap pb-1 md:pb-0">
+            <div className="glass rounded-2xl border border-slate-200 dark:border-slate-800 p-3 bg-white dark:bg-slate-900 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+                {/* Content Type Tabs */}
+                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar whitespace-nowrap">
                     {tabs.map((tab) => {
                         const count = counts[tab.countKey] || 0;
                         const isActive = activeTab === tab.id;
@@ -200,15 +332,15 @@ export default function SavedContent() {
                                     setActiveTab(tab.id);
                                     setPageNumber(1);
                                 }}
-                                className={`px-4 py-2 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer ${
+                                className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer ${
                                     isActive
-                                        ? 'bg-amber-500 text-slate-950 shadow-md scale-[1.02]'
+                                        ? 'bg-indigo-600 text-white shadow-sm'
                                         : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                                 }`}
                             >
                                 <span>{tab.label}</span>
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                                    isActive ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                                    isActive ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
                                 }`}>
                                     {count}
                                 </span>
@@ -218,9 +350,9 @@ export default function SavedContent() {
                 </div>
 
                 {/* Search & Sort Controls */}
-                <div className="flex items-center gap-3 shrink-0">
-                    <div className="relative flex-1 md:w-64">
-                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
+                <div className="flex items-center gap-2 shrink-0">
+                    <div className="relative flex-1 md:w-56">
+                        <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[16px]">search</span>
                         <input
                             type="text"
                             placeholder="Search saved items..."
@@ -229,7 +361,7 @@ export default function SavedContent() {
                                 setSearchQuery(e.target.value);
                                 setPageNumber(1);
                             }}
-                            className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500"
+                            className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-amber-500"
                         />
                     </div>
 
@@ -239,7 +371,7 @@ export default function SavedContent() {
                             setSortBy(e.target.value);
                             setPageNumber(1);
                         }}
-                        className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 outline-none cursor-pointer"
+                        className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 outline-none cursor-pointer"
                     >
                         <option value="NewestSaved">Newest Saved</option>
                         <option value="OldestSaved">Oldest Saved</option>
@@ -266,13 +398,13 @@ export default function SavedContent() {
 
             {/* Skeleton Loading State */}
             {isLoading && (
-                <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-3">
                     {[1, 2, 3].map((i) => (
-                        <div key={i} className="glass bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 animate-pulse flex flex-col md:flex-row gap-5">
-                            <div className="w-full md:w-48 h-32 bg-slate-200 dark:bg-slate-800 rounded-xl shrink-0"></div>
-                            <div className="flex-1 flex flex-col gap-3 justify-center">
+                        <div key={i} className="glass bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 animate-pulse flex flex-col md:flex-row gap-4">
+                            <div className="w-full md:w-44 h-28 bg-slate-200 dark:bg-slate-800 rounded-xl shrink-0"></div>
+                            <div className="flex-1 flex flex-col gap-2 justify-center">
                                 <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-1/4"></div>
-                                <div className="h-6 bg-slate-200 dark:bg-slate-800 rounded w-3/4"></div>
+                                <div className="h-5 bg-slate-200 dark:bg-slate-800 rounded w-3/4"></div>
                                 <div className="h-4 bg-slate-200 dark:bg-slate-800 rounded w-1/2"></div>
                             </div>
                         </div>
@@ -281,43 +413,55 @@ export default function SavedContent() {
             )}
 
             {/* Empty State */}
-            {!isLoading && !error && savedItems.length === 0 && (
-                <div className="glass rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-12 text-center flex flex-col items-center justify-center min-h-[350px]">
-                    <div className="w-16 h-16 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center mb-4">
-                        <span className="material-symbols-outlined text-[36px]">bookmark_border</span>
+            {!isLoading && !error && categoryFilteredItems.length === 0 && (
+                <div className="glass rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-10 text-center flex flex-col items-center justify-center min-h-[300px]">
+                    <div className="w-14 h-14 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center mb-3">
+                        <span className="material-symbols-outlined text-[32px]">folder_off</span>
                     </div>
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">No Saved Items Found</h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 max-w-md mb-6 leading-relaxed">
-                        {searchQuery
-                            ? `No saved items matching "${searchQuery}". Try searching for another keyword.`
-                            : `You haven't bookmarked any ${activeTab !== 'All' ? activeTab.toLowerCase() : 'content'} yet. Click the save icon on any post, article, or video to bookmark it here.`}
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1.5">No Items in this Category</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mb-5 leading-relaxed">
+                        {selectedCategory !== 'all'
+                            ? `No saved items assigned to "${categories.find(c => c.id === selectedCategory)?.name}". Assign items to this category or select All Categories.`
+                            : `You haven't bookmarked any items yet.`}
                     </p>
-                    <button
-                        onClick={() => navigate('/')}
-                        className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition-transform hover:scale-105 shadow-md"
-                    >
-                        Explore Feed
-                    </button>
+                    {selectedCategory !== 'all' ? (
+                        <button
+                            onClick={() => setSelectedCategory('all')}
+                            className="px-5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-800 dark:text-slate-200 font-bold text-xs transition-transform"
+                        >
+                            View All Categories
+                        </button>
+                    ) : (
+                        <button
+                            onClick={() => navigate('/')}
+                            className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs transition-transform"
+                        >
+                            Explore Feed
+                        </button>
+                    )}
                 </div>
             )}
 
             {/* Saved Content Items List */}
-            {!isLoading && !error && savedItems.length > 0 && (
-                <div className="flex flex-col gap-4">
-                    {savedItems.map((item) => {
-                        const isUnsaving = actionId === `${item.contentType}_${item.contentId}`;
+            {!isLoading && !error && categoryFilteredItems.length > 0 && (
+                <div className="flex flex-col gap-3">
+                    {categoryFilteredItems.slice(0, visibleItemCount).map((item) => {
+                        const itemKey = `${item.contentType}_${item.contentId}`;
+                        const isUnsaving = actionId === itemKey;
                         const isAvailable = item.isAvailable !== false;
+                        const assignedCatId = itemCategoryMap[itemKey] || 'all';
+                        const assignedCat = categories.find(c => c.id === assignedCatId) || categories[0];
 
                         return (
                             <div
-                                key={`${item.contentType}_${item.contentId}`}
+                                key={itemKey}
                                 onClick={() => {
                                     if (isAvailable && item.targetUrl) {
                                         navigate(item.targetUrl);
                                     }
                                 }}
-                                className={`group glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 flex flex-col md:flex-row gap-5 relative overflow-hidden transition-all duration-200 ${
-                                    isAvailable ? 'hover:border-amber-500/50 hover:shadow-lg cursor-pointer' : 'opacity-80'
+                                className={`group glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 flex flex-col md:flex-row gap-4 relative overflow-hidden transition-all duration-200 ${
+                                    isAvailable ? 'hover:border-amber-500/50 hover:shadow-md cursor-pointer' : 'opacity-80'
                                 }`}
                             >
                                 {/* Thumbnail / Media Icon */}
@@ -325,39 +469,55 @@ export default function SavedContent() {
                                     <img
                                         src={resolveMediaUrl(item.thumbnailUrl)}
                                         alt={item.title}
-                                        className="w-full md:w-48 h-32 object-cover rounded-xl shrink-0 border border-slate-100 dark:border-slate-800"
+                                        className="w-full md:w-44 h-28 object-cover rounded-xl shrink-0 border border-slate-100 dark:border-slate-800"
                                     />
                                 ) : (
-                                    <div className="w-full md:w-48 h-32 rounded-xl shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 border border-slate-200 dark:border-slate-700">
-                                        <span className="material-symbols-outlined text-[40px]">
+                                    <div className="w-full md:w-44 h-28 rounded-xl shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 border border-slate-200 dark:border-slate-700">
+                                        <span className="material-symbols-outlined text-[36px]">
                                             {getTypeIcon(item.contentType)}
                                         </span>
                                     </div>
                                 )}
 
                                 {/* Content Info */}
-                                <div className="flex-1 flex flex-col justify-between pr-10">
+                                <div className="flex-1 flex flex-col justify-between pr-8">
                                     <div>
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider border ${getTypeColor(item.contentType)}`}>
+                                        <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                                            {/* Type Tag */}
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${getTypeColor(item.contentType)}`}>
                                                 {item.contentType}
                                             </span>
+
+                                            {/* 📁 Category Badge (Clickable to change category) */}
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setAssigningItem(item);
+                                                }}
+                                                className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer ${assignedCat.color || 'bg-slate-100 text-slate-700'}`}
+                                                title="Click to change Category"
+                                            >
+                                                <span className="material-symbols-outlined text-[13px]">{assignedCat.icon}</span>
+                                                <span>{assignedCat.name}</span>
+                                                <span className="material-symbols-outlined text-[11px] opacity-60">edit</span>
+                                            </button>
+
                                             <span className="text-[11px] font-semibold text-slate-400">
                                                 Saved {formatDate(item.savedDate)}
                                             </span>
                                         </div>
 
-                                        <h3 className="text-base md:text-lg font-bold text-slate-900 dark:text-white mb-1.5 leading-snug group-hover:text-amber-500 transition-colors line-clamp-2">
+                                        <h3 className="text-sm md:text-base font-bold text-slate-900 dark:text-white mb-1 leading-snug group-hover:text-amber-500 transition-colors line-clamp-2">
                                             {item.title}
                                         </h3>
 
                                         {isAvailable ? (
-                                            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mb-3">
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mb-2">
                                                 {item.summary}
                                             </p>
                                         ) : (
-                                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-500/10 text-rose-500 border border-rose-500/20 text-xs font-semibold mb-3">
-                                                <span className="material-symbols-outlined text-[16px]">visibility_off</span>
+                                            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-rose-500/10 text-rose-500 border border-rose-500/20 text-xs font-semibold mb-2">
+                                                <span className="material-symbols-outlined text-[15px]">visibility_off</span>
                                                 <span>{item.unavailabilityReason || 'Content Unavailable'}</span>
                                             </div>
                                         )}
@@ -370,10 +530,10 @@ export default function SavedContent() {
                                                 <img
                                                     src={resolveMediaUrl(item.authorAvatar)}
                                                     alt={item.authorName}
-                                                    className="w-6 h-6 rounded-full object-cover shrink-0"
+                                                    className="w-5 h-5 rounded-full object-cover shrink-0"
                                                 />
                                             ) : (
-                                                <div className="w-6 h-6 rounded-full bg-indigo-500 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
+                                                <div className="w-5 h-5 rounded-full bg-indigo-500 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
                                                     {(item.authorName || 'U').charAt(0).toUpperCase()}
                                                 </div>
                                             )}
@@ -388,16 +548,16 @@ export default function SavedContent() {
                                         </div>
 
                                         {(item.likesCount > 0 || item.commentsCount > 0) && (
-                                            <div className="flex items-center gap-3 text-xs font-semibold text-slate-400">
+                                            <div className="flex items-center gap-2.5 text-xs font-semibold text-slate-400">
                                                 {item.likesCount > 0 && (
                                                     <span className="flex items-center gap-1">
-                                                        <span className="material-symbols-outlined text-[14px]">favorite</span>
+                                                        <span className="material-symbols-outlined text-[13px]">favorite</span>
                                                         {item.likesCount}
                                                     </span>
                                                 )}
                                                 {item.commentsCount > 0 && (
                                                     <span className="flex items-center gap-1">
-                                                        <span className="material-symbols-outlined text-[14px]">chat_bubble</span>
+                                                        <span className="material-symbols-outlined text-[13px]">chat_bubble</span>
                                                         {item.commentsCount}
                                                     </span>
                                                 )}
@@ -410,13 +570,13 @@ export default function SavedContent() {
                                 <button
                                     onClick={(e) => handleUnsave(e, item)}
                                     disabled={isUnsaving}
-                                    className="absolute top-4 right-4 w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-rose-500 hover:text-white text-amber-500 flex items-center justify-center shadow-sm transition-all hover:scale-110 z-10 cursor-pointer"
+                                    className="absolute top-3 right-3 w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-rose-500 hover:text-white text-amber-500 flex items-center justify-center shadow-xs transition-all hover:scale-110 z-10 cursor-pointer"
                                     title="Unsave item"
                                 >
                                     {isUnsaving ? (
                                         <div className="w-4 h-4 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
                                     ) : (
-                                        <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+                                        <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>
                                             bookmark
                                         </span>
                                     )}
@@ -424,6 +584,121 @@ export default function SavedContent() {
                             </div>
                         );
                     })}
+
+                    {/* Infinite Scroll Progress Indicator */}
+                    {visibleItemCount < categoryFilteredItems.length && (
+                        <div className="py-6 text-center flex items-center justify-center gap-2 text-slate-400 text-xs font-semibold">
+                            <span className="material-symbols-outlined text-[20px] animate-spin text-amber-500">progress_activity</span>
+                            <span>Loading more saved items on scroll...</span>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ─── MODAL 1: CREATE NEW CATEGORY ─── */}
+            {isCreateCatModalOpen && (
+                <div className="fixed inset-0 z-[120] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+                    <form onSubmit={handleCreateCategory} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl animate-in zoom-in-95 space-y-4">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-amber-500 font-bold">
+                                <span className="material-symbols-outlined text-xl">create_new_folder</span>
+                                <h3 className="text-sm font-black text-slate-900 dark:text-white">Create Category Folder</h3>
+                            </div>
+                            <button type="button" onClick={() => setIsCreateCatModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                                <span className="material-symbols-outlined text-lg">close</span>
+                            </button>
+                        </div>
+
+                        <div>
+                            <label className="block text-slate-500 font-bold text-xs mb-1">Category Name</label>
+                            <input
+                                type="text"
+                                required
+                                value={newCategoryName}
+                                onChange={e => setNewCategoryName(e.target.value)}
+                                placeholder="e.g. AI Research, Design Patterns..."
+                                className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 text-xs font-semibold outline-none text-slate-900 dark:text-white"
+                            />
+                        </div>
+
+                        <div>
+                            <label className="block text-slate-500 font-bold text-xs mb-1">Folder Icon</label>
+                            <div className="grid grid-cols-6 gap-2">
+                                {['folder', 'lightbulb', 'code', 'school', 'work', 'star'].map((icon) => (
+                                    <button
+                                        type="button"
+                                        key={icon}
+                                        onClick={() => setNewCategoryIcon(icon)}
+                                        className={`p-2 rounded-lg flex items-center justify-center border cursor-pointer ${newCategoryIcon === icon ? 'bg-amber-500 text-slate-950 border-amber-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'}`}
+                                    >
+                                        <span className="material-symbols-outlined text-[18px]">{icon}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setIsCreateCatModalOpen(false)}
+                                className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl shadow-xs"
+                            >
+                                Create Category
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            {/* ─── MODAL 2: ASSIGN CATEGORY TO ITEM ─── */}
+            {assigningItem && (
+                <div className="fixed inset-0 z-[120] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-sm w-full p-5 shadow-2xl animate-in zoom-in-95 space-y-4">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-indigo-600 font-bold">
+                                <span className="material-symbols-outlined text-xl">folder_zip</span>
+                                <h3 className="text-sm font-black text-slate-900 dark:text-white">Assign Category</h3>
+                            </div>
+                            <button onClick={() => setAssigningItem(null)} className="text-slate-400 hover:text-slate-600">
+                                <span className="material-symbols-outlined text-lg">close</span>
+                            </button>
+                        </div>
+
+                        <p className="text-xs text-slate-500 font-semibold line-clamp-1">
+                            Item: "{assigningItem.title}"
+                        </p>
+
+                        <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar">
+                            {categories.map((cat) => {
+                                const itemKey = `${assigningItem.contentType}_${assigningItem.contentId}`;
+                                const isCurrent = (itemCategoryMap[itemKey] || 'all') === cat.id;
+
+                                return (
+                                    <button
+                                        key={cat.id}
+                                        onClick={() => handleAssignCategory(itemKey, cat.id)}
+                                        className={`w-full p-2.5 rounded-xl text-left text-xs font-bold flex items-center justify-between transition-all cursor-pointer border ${
+                                            isCurrent
+                                                ? 'bg-amber-500/10 border-amber-500/30 text-amber-600'
+                                                : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-[16px]">{cat.icon}</span>
+                                            <span>{cat.name}</span>
+                                        </div>
+                                        {isCurrent && <span className="material-symbols-outlined text-[16px]">check</span>}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
                 </div>
             )}
         </main>

@@ -125,7 +125,7 @@ export const dashboardApi = {
 //  POSTS
 // ─────────────────────────────────────────────
 export const postsApi = {
-    getAll: () => apiClient.get('/Posts'),
+    getAll: () => apiClient.get('/posts'),
     getPosts: (audienceType = null, search = null, pageNumber = 1, pageSize = 100) => {
         let endpoint = `/posts?pageNumber=${pageNumber}&pageSize=${pageSize}`;
         if (audienceType) endpoint += `&audienceType=${audienceType}`;
@@ -133,10 +133,10 @@ export const postsApi = {
         return apiClient.get(endpoint);
     },
     getMyPosts: (pageNumber = 1, pageSize = 20) => apiClient.get(`/posts/my?pageNumber=${pageNumber}&pageSize=${pageSize}`),
-    getById: (id) => apiClient.get(`/Posts/${id}`),
+    getById: (id) => apiClient.get(`/posts/${id}`),
     getPost: (postId) => apiClient.get(`/posts/${postId}`),
-    create: (data) => apiClient.post('/Posts', data),
-    delete: (id) => apiClient.delete(`/Posts/${id}`),
+    create: (data) => apiClient.post('/posts', data),
+    delete: (id) => apiClient.delete(`/posts/${id}`),
 };
 
 // ─────────────────────────────────────────────
@@ -224,12 +224,15 @@ export const communitiesApi = {
     getById: (id) => apiClient.get(`/Communities/${id}`),
     create: (data) => apiClient.post('/Communities', data),
     update: (id, data) => apiClient.put(`/Communities/${id}`, data),
+    delete: (id) => apiClient.delete(`/Communities/${id}`),
     join: (id) => apiClient.post(`/Communities/${id}/join`),
     leave: (id) => apiClient.post(`/Communities/${id}/leave`),
     getMembers: (id) => apiClient.get(`/Communities/${id}/members`),
     getPosts: (id) => apiClient.get(`/Communities/${id}/posts`),
     decideMembership: (communityId, targetUserId, status) => apiClient.put(`/Communities/${communityId}/members/${targetUserId}/decide`, { status }),
 };
+
+
 
 // ─────────────────────────────────────────────
 //  INTERACTIONS (Comments, Reactions, Bookmarks, Shares)
@@ -333,11 +336,68 @@ export const searchApi = {
     /** GET /Search/history */
     getHistory: (count = 10) => apiClient.get(`/Search/history?count=${count}`),
 
+    /** POST /Search/history */
+    saveHistory: (term) => {
+        if (!term || typeof term !== 'string' || term.trim().length < 3) return Promise.resolve(null);
+        return apiClient.post('/Search/history', { searchTerm: term.trim() }).catch(() => null);
+    },
+
     /** DELETE /Search/history?term= */
     clearHistory: (term = null) => {
         const params = term ? `?term=${encodeURIComponent(term)}` : '';
         return apiClient.delete(`/Search/history${params}`);
     },
+};
+
+/** Helper to save recent searches locally in localStorage (Max 10) */
+export const saveRecentSearch = (term) => {
+    if (!term || typeof term !== 'string') return;
+    const cleanTerm = term.trim();
+    if (!cleanTerm || cleanTerm.length < 3) return;
+
+    try {
+        const stored = localStorage.getItem('knome_recent_searches');
+        let list = stored ? JSON.parse(stored) : [];
+        if (!Array.isArray(list)) list = [];
+
+        list = list.filter(item => item && item.searchTerm && item.searchTerm.toLowerCase() !== cleanTerm.toLowerCase());
+        list.unshift({
+            searchTerm: cleanTerm,
+            searchDate: new Date().toISOString()
+        });
+
+        list = list.slice(0, 10);
+        localStorage.setItem('knome_recent_searches', JSON.stringify(list));
+    } catch (e) {
+        console.error('Failed to save recent search to localStorage', e);
+    }
+};
+
+export const getLocalRecentSearches = () => {
+    try {
+        const stored = localStorage.getItem('knome_recent_searches');
+        const list = stored ? JSON.parse(stored) : [];
+        return Array.isArray(list) ? list.slice(0, 10) : [];
+    } catch (e) {
+        return [];
+    }
+};
+
+export const clearLocalRecentSearches = (term = null) => {
+    try {
+        if (term) {
+            const stored = localStorage.getItem('knome_recent_searches');
+            let list = stored ? JSON.parse(stored) : [];
+            if (Array.isArray(list)) {
+                list = list.filter(item => item && item.searchTerm && item.searchTerm.toLowerCase() !== term.toLowerCase());
+                localStorage.setItem('knome_recent_searches', JSON.stringify(list));
+            }
+        } else {
+            localStorage.removeItem('knome_recent_searches');
+        }
+    } catch (e) {
+        console.error('Failed to clear recent searches from localStorage', e);
+    }
 };
 
 // ─────────────────────────────────────────────
@@ -368,6 +428,10 @@ export const adminApi = {
     /** PUT /users/{id}/activate */
     activateUser: (userId) => 
         apiClient.put(`/users/${userId}/activate`),
+
+    /** PUT /users/{id}/roles */
+    changeUserRoles: (userId, roleNames) =>
+        apiClient.put(`/users/${userId}/roles`, { roleNames: Array.isArray(roleNames) ? roleNames : [roleNames] }),
 
     /** GET /audit/logs */
     getAuditLogs: (pageNumber = 1, pageSize = 20) => 
@@ -407,6 +471,7 @@ export const jobsApi = {
 //  MEDIA
 // ─────────────────────────────────────────────
 export const mediaApi = {
+    upload: (file, type) => mediaApi.uploadFile(file, type),
     /** POST /media/upload */
     uploadFile: (file, type, onProgress) => {
         return new Promise((resolve, reject) => {
@@ -680,4 +745,89 @@ export const mapFeedItem = (item) => {
         base.coverImage = item.attachmentUrl;
     }
     return base;
+};
+
+/**
+ * Personalized Recommendation Engine:
+ * Scores content items (Posts, Articles, Videos, Podcasts) based on:
+ * 1. User recent search queries
+ * 2. User saved categories/bookmarks
+ * 3. Topic matches (tags, category, title, description)
+ * 4. Engagement signals (likes, views)
+ * 5. Returns items sorted by highest relevance match percentage!
+ */
+export const getPersonalizedRecommendations = (items = [], currentUser = null) => {
+    if (!Array.isArray(items) || items.length === 0) return [];
+
+    const recentSearches = getLocalRecentSearches().map(s => s.searchTerm.toLowerCase());
+    
+    let savedKeywords = [];
+    try {
+        const savedPosts = JSON.parse(localStorage.getItem('knome_saved_posts_full') || '[]');
+        const savedArticles = JSON.parse(localStorage.getItem('knome_saved_articles_full') || '[]');
+        const savedVideos = JSON.parse(localStorage.getItem('knome_saved_videos_full') || '[]');
+        const savedPodcasts = JSON.parse(localStorage.getItem('knome_saved_podcasts_full') || '[]');
+        const allSaved = [...savedPosts, ...savedArticles, ...savedVideos, ...savedPodcasts];
+
+        allSaved.forEach(item => {
+            if (item.category) savedKeywords.push(item.category.toLowerCase());
+            if (item.tags && Array.isArray(item.tags)) {
+                item.tags.forEach(t => savedKeywords.push(typeof t === 'string' ? t.replace('#', '').toLowerCase() : ''));
+            }
+        });
+    } catch (e) {}
+
+    const userDept = currentUser?.department?.toLowerCase() || '';
+
+    const scored = items.map(item => {
+        let score = 65; // base score
+        let matchReasons = [];
+
+        const title = (item.title || item.contentText || '').toLowerCase();
+        const desc = (item.description || item.subtitle || item.content || '').toLowerCase();
+        const category = (item.category || item.categoryName || '').toLowerCase();
+        const tags = Array.isArray(item.tags) ? item.tags.map(t => typeof t === 'string' ? t.replace('#', '').toLowerCase() : '') : [];
+
+        // 1. Search term match (+20 pts)
+        recentSearches.forEach(term => {
+            if (term && (title.includes(term) || desc.includes(term) || category.includes(term) || tags.includes(term))) {
+                score += 20;
+                if (!matchReasons.includes(`Matches search "${term}"`)) {
+                    matchReasons.push(`Based on recent search "${term}"`);
+                }
+            }
+        });
+
+        // 2. Saved interest match (+15 pts)
+        savedKeywords.forEach(kw => {
+            if (kw && (category.includes(kw) || tags.includes(kw) || title.includes(kw))) {
+                score += 15;
+                if (!matchReasons.includes(`Matches interest in ${kw}`)) {
+                    matchReasons.push(`Based on interest in ${kw}`);
+                }
+            }
+        });
+
+        // 3. Department relevance (+10 pts)
+        if (userDept && (category.includes(userDept) || desc.includes(userDept) || title.includes(userDept))) {
+            score += 10;
+            matchReasons.push(`Relevant for ${currentUser.department}`);
+        }
+
+        // 4. Popularity bonus (+5 pts)
+        const likes = item.likes || item.reactionCount || item.views || 0;
+        if (likes > 5) score += 5;
+
+        const matchPercent = Math.min(Math.max(score, 78), 99);
+        const reasonText = matchReasons[0] || (category ? `Popular in ${category}` : `Top pick for your profile`);
+
+        return {
+            ...item,
+            recommendationScore: matchPercent,
+            recommendationReason: reasonText,
+            isRecommended: true
+        };
+    });
+
+    return scored.sort((a, b) => b.recommendationScore - a.recommendationScore);
 };

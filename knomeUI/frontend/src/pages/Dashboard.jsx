@@ -9,7 +9,7 @@ import PeopleYouMayKnowWidget from '../components/widgets/PeopleYouMayKnowWidget
 import TextScramble from '../components/ui/TextScramble';
 import ScrollExpandMedia from '../components/ui/scroll-expansion-hero';
 import { BackgroundPaths } from '../components/ui/background-paths';
-import { dashboardApi, mapFeedItem } from '../utils/apiService';
+import { dashboardApi, karmaApi, mapFeedItem } from '../utils/apiService';
 
 export default function Dashboard() {
     const { currentUser } = useUser();
@@ -18,7 +18,29 @@ export default function Dashboard() {
     const [greeting, setGreeting] = useState('');
     const [isLoading, setIsLoading] = useState(true);
 
+    const [userKarma, setUserKarma] = useState(currentUser?.karma || 0);
     const [showHero, setShowHero] = useState(false);
+
+    const isSysAdmin = currentUser?.role === 'SYSADM' || 
+                       currentUser?.roleName === 'System Administrator' || 
+                       (Array.isArray(currentUser?.roles) && (currentUser.roles.includes('SYSADM') || currentUser.roles.includes('System Administrator') || currentUser.roles.includes('SystemAdmin')));
+
+    useEffect(() => {
+        if (currentUser?.karma !== undefined) {
+            setUserKarma(currentUser.karma);
+        }
+        const loadKarma = async () => {
+            try {
+                const bal = await karmaApi.getMyBalance();
+                if (bal && typeof bal.totalPoints === 'number') {
+                    setUserKarma(bal.totalPoints);
+                }
+            } catch {
+                /* fallback */
+            }
+        };
+        loadKarma();
+    }, [currentUser?.userId, currentUser?.employeeId, currentUser?.karma]);
 
     useEffect(() => {
         const hour = new Date().getHours();
@@ -41,8 +63,37 @@ export default function Dashboard() {
         }
     };
 
+    const handlePostCreated = (e) => {
+        const newPostData = e?.detail || e;
+        if (newPostData && (newPostData.id || newPostData.postId)) {
+            const mapped = mapFeedItem(newPostData);
+            setPosts(prev => {
+                const targetId = mapped.id;
+                if (prev.some(p => p.id === targetId)) return prev;
+                return [mapped, ...prev];
+            });
+        }
+        // background sync
+        dashboardApi.getFeed('All').then(data => {
+            if (data && Array.isArray(data)) setPosts(data.map(mapFeedItem));
+        }).catch(() => {});
+    };
+
+    const handlePostDeleted = (e) => {
+        const deletedId = e?.detail?.id || e;
+        if (deletedId) {
+            setPosts(prev => prev.filter(p => p.id !== deletedId));
+        }
+    };
+
     useEffect(() => {
         loadPosts();
+        window.addEventListener('post-created', handlePostCreated);
+        window.addEventListener('post-deleted', handlePostDeleted);
+        return () => {
+            window.removeEventListener('post-created', handlePostCreated);
+            window.removeEventListener('post-deleted', handlePostDeleted);
+        };
     }, []);
 
     return (
@@ -77,11 +128,13 @@ export default function Dashboard() {
                                 <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
                                 {showHero ? 'Close Hero' : 'Explore Hero'}
                             </button>
-                            <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold"
-                                style={{background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)'}}>
-                                <span className="material-symbols-outlined text-[16px] text-amber-500" style={{fontVariationSettings:"'FILL' 1"}}>military_tech</span>
-                                1,250 Karma Points
-                            </div>
+                            {!isSysAdmin && (
+                                <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold"
+                                    style={{background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)'}}>
+                                    <span className="material-symbols-outlined text-[16px] text-amber-500" style={{fontVariationSettings:"'FILL' 1"}}>military_tech</span>
+                                    {userKarma.toLocaleString()} Karma Points
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -163,8 +216,8 @@ export default function Dashboard() {
 
                     {/* Post Feed */}
                     <div className="flex flex-col gap-5">
-                        {posts.map(post => (
-                            <PostCard key={post.id} post={post} onPostDeleted={() => loadPosts(500)} />
+                        {posts.map((post, idx) => (
+                            <PostCard key={post.id ? `${post.id}-${idx}` : idx} post={post} onPostDeleted={() => loadPosts(500)} />
                         ))}
                     </div>
                 </main>

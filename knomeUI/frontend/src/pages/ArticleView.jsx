@@ -1,9 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { getArticles } from '../utils/articleService';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useUser } from '../components/contexts/UserContext';
+import { getArticles, deleteArticle } from '../utils/articleService';
+import { resolveMediaUrl, interactionsApi } from '../utils/apiService';
+import ReportModal from '../components/modals/ReportModal';
 
 export default function ArticleView() {
     const location = useLocation();
+    const navigate = useNavigate();
+    const { currentUser } = useUser();
+
+    const [isReportOpen, setIsReportOpen] = useState(false);
     
     // Read ?id=X query parameter
     const searchParams = new URLSearchParams(location.search);
@@ -24,23 +31,80 @@ export default function ArticleView() {
     
     // Find current article or fallback
     const article = articles.find(art => art.id === articleId) || articles.find(art => art.id === '1') || articles[0];
+
+    const isSystemAdminOrAuthor = currentUser?.role === 'System Administrator' || 
+                                  currentUser?.role === 'SYSADM' || 
+                                  currentUser?.role === 'HR Administrator' || 
+                                  currentUser?.role === 'HRADM' || 
+                                  article?.author?.name === currentUser?.fullName;
+
+    const handleDeleteArticle = async () => {
+        if (!article?.id) return;
+        if (!window.confirm('Are you sure you want to delete this article?')) return;
+        try {
+            await deleteArticle(article.id);
+            alert('Article deleted successfully.');
+            navigate('/articles');
+        } catch (err) {
+            alert('Failed to delete article.');
+        }
+    };
     
     // Local interactive states for the selected article
     const [likes, setLikes] = useState(0);
     const [userLiked, setUserLiked] = useState(false);
     const [comments, setComments] = useState([]);
     const [newComment, setNewComment] = useState('');
+
+    const loadArticleComments = async (artId) => {
+        if (!artId) return;
+        try {
+            const localKey = `knome_article_comments_${artId}`;
+            const storedLocal = JSON.parse(localStorage.getItem(localKey) || '[]');
+
+            const apiRes = await interactionsApi.getComments('Article', artId).catch(() => null);
+            const apiComments = Array.isArray(apiRes) ? apiRes : (apiRes?.data || []);
+
+            const mappedApi = apiComments.map(c => ({
+                id: c.commentId || c.id,
+                author: c.authorFullName || c.author?.name || c.author || 'User',
+                avatar: c.authorProfilePhotoUrl ? resolveMediaUrl(c.authorProfilePhotoUrl) : (c.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName || 'User')}&background=6366f1&color=fff`),
+                time: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : (c.time || 'Recently'),
+                text: c.commentText || c.text || '',
+                replies: (c.replies || []).map(r => ({
+                    id: r.commentId || r.id,
+                    author: r.authorFullName || r.author?.name || r.author || 'User',
+                    avatar: r.authorProfilePhotoUrl ? resolveMediaUrl(r.authorProfilePhotoUrl) : (r.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(r.authorFullName || 'User')}&background=6366f1&color=fff`),
+                    time: r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : (r.time || 'Recently'),
+                    text: r.commentText || r.text || ''
+                }))
+            }));
+
+            // Merge API and local comments by ID
+            const mergedMap = new Map();
+            [...mappedApi, ...storedLocal].forEach(c => {
+                if (c && c.id) mergedMap.set(c.id, c);
+            });
+
+            const finalComments = Array.from(mergedMap.values()).sort((a, b) => b.id - a.id);
+            setComments(finalComments);
+        } catch (err) {
+            console.error('Failed to load article comments:', err);
+        }
+    };
     
     // Update state when articleId changes or article loads
     useEffect(() => {
         if (article) {
             setLikes(article.likes);
             setUserLiked(false);
-            setComments(article.comments || []);
             setNewComment('');
             
             // Scroll to top of page when changing articles
             window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            // Load persistent comments from API & LocalStorage
+            loadArticleComments(article.id);
         }
     }, [article?.id]);
 
@@ -54,21 +118,78 @@ export default function ArticleView() {
         }
     };
 
-    const handleAddComment = (e) => {
+    const handleAddComment = async (e) => {
         e.preventDefault();
-        if (!newComment.trim()) return;
+        if (!newComment.trim() || !article?.id) return;
         
+        const commentText = newComment.trim();
+        const authorName = currentUser?.fullName || currentUser?.name || 'You';
+        const authorAvatar = currentUser?.profilePhotoUrl ? resolveMediaUrl(currentUser.profilePhotoUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=6366f1&color=fff`;
+
         const newC = {
             id: Date.now(),
-            author: 'You',
-            avatar: 'https://ui-avatars.com/api/?name=You&background=6366f1&color=fff',
+            author: authorName,
+            avatar: authorAvatar,
             time: 'Just now',
-            text: newComment.trim(),
+            text: commentText,
             replies: []
         };
         
-        setComments([newC, ...comments]);
+        // Optimistic UI update
+        setComments(prev => [newC, ...prev]);
         setNewComment('');
+
+        // Save to localStorage for instant local multi-session persistence
+        try {
+            const localKey = `knome_article_comments_${article.id}`;
+            const storedLocal = JSON.parse(localStorage.getItem(localKey) || '[]');
+            localStorage.setItem(localKey, JSON.stringify([newC, ...storedLocal]));
+        } catch (err) {}
+
+        // Save to backend database API so other users/devices see it!
+        try {
+            await interactionsApi.addComment('Article', article.id, commentText);
+        } catch (err) {
+            console.warn('Backend comment push failed (local comment preserved):', err);
+        }
+    };
+
+    const handleReplyComment = async (parentCommentId, replyText) => {
+        if (!replyText || !replyText.trim() || !article?.id) return;
+
+        const authorName = currentUser?.fullName || currentUser?.name || 'You';
+        const authorAvatar = currentUser?.profilePhotoUrl ? resolveMediaUrl(currentUser.profilePhotoUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=6366f1&color=fff`;
+
+        const newReply = {
+            id: Date.now(),
+            author: authorName,
+            avatar: authorAvatar,
+            time: 'Just now',
+            text: replyText.trim()
+        };
+
+        setComments(prev => prev.map(c => {
+            if (c.id === parentCommentId) {
+                return { ...c, replies: [...(c.replies || []), newReply] };
+            }
+            return c;
+        }));
+
+        try {
+            const localKey = `knome_article_comments_${article.id}`;
+            const storedLocal = JSON.parse(localStorage.getItem(localKey) || '[]');
+            const updatedLocal = storedLocal.map(c => {
+                if (c.id === parentCommentId) {
+                    return { ...c, replies: [...(c.replies || []), newReply] };
+                }
+                return c;
+            });
+            localStorage.setItem(localKey, JSON.stringify(updatedLocal));
+        } catch (err) {}
+
+        try {
+            await interactionsApi.addComment('Article', article.id, replyText.trim(), parentCommentId);
+        } catch (err) {}
     };
 
     if (isLoading) {
@@ -101,10 +222,32 @@ export default function ArticleView() {
             <main className="flex-1 bg-white dark:bg-slate-900 min-h-full px-4 md:px-12 py-12 max-w-[800px] mx-auto border-x border-slate-200 dark:border-slate-800 overflow-hidden">
                 {/*  Metadata Header  */}
                 <header className="mb-10">
-                    <nav className="flex items-center gap-2 mb-6 text-slate-500">
-                        <Link className="hover:text-blue-500 font-semibold text-xs" to="/articles">Articles</Link>
-                        <span className="material-symbols-outlined text-sm">chevron_right</span>
-                        <span className="text-xs font-semibold text-slate-400 dark:text-slate-600 truncate">{article.category}</span>
+                    <nav className="flex items-center justify-between mb-6 text-slate-500">
+                        <div className="flex items-center gap-2">
+                            <Link className="hover:text-blue-500 font-semibold text-xs" to="/articles">Articles</Link>
+                            <span className="material-symbols-outlined text-sm">chevron_right</span>
+                            <span className="text-xs font-semibold text-slate-400 dark:text-slate-600 truncate">{article.category}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {isSystemAdminOrAuthor && (
+                                <button 
+                                    onClick={handleDeleteArticle}
+                                    className="px-3 py-1.5 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                    title="Delete Article"
+                                >
+                                    <span className="material-symbols-outlined text-sm">delete</span>
+                                    Delete Article
+                                </button>
+                            )}
+                            <button
+                                onClick={() => setIsReportOpen(true)}
+                                className="px-3 py-1.5 bg-rose-500/10 text-rose-500 hover:bg-rose-600 hover:text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                title="Report Article"
+                            >
+                                <span className="material-symbols-outlined text-sm">report</span>
+                                Report
+                            </button>
+                        </div>
                     </nav>
                     <h1 className="font-bold text-2xl md:text-3xl text-slate-900 dark:text-white mb-6 leading-tight">
                         {article.title}
@@ -112,7 +255,12 @@ export default function ArticleView() {
                     <div className="flex items-center justify-between border-y border-slate-200 dark:border-slate-800 py-4">
                         <div className="flex items-center gap-4">
                             <div className="h-12 w-12 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 overflow-hidden shrink-0">
-                                <img className="w-full h-full object-cover" alt={article.author.name} src={article.author.avatar} />
+                                <img 
+                                    className="w-full h-full object-cover" 
+                                    alt={article.author.name} 
+                                    src={resolveMediaUrl(article.author.avatar)} 
+                                    onError={(e) => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(article.author?.name || 'User')}&background=6366f1&color=fff&size=256`; }}
+                                />
                             </div>
                             <div>
                                 <p className="font-bold text-slate-900 dark:text-white text-sm">{article.author.name}</p>
@@ -128,13 +276,22 @@ export default function ArticleView() {
                     </div>
                 </header>
 
-                {/*  Hero Image  */}
-                <figure className="mb-12 rounded-xl overflow-hidden shadow-md">
-                    <img className="w-full h-[320px] md:h-[400px] object-cover" alt={article.title} src={article.image} />
-                    <figcaption className="p-3 text-center bg-slate-50 dark:bg-slate-800/40 text-xs text-slate-500">
-                        {article.subtitle}
-                    </figcaption>
-                </figure>
+                {/* Hero Image */}
+                {article.image && (
+                    <figure className="mb-12 rounded-xl overflow-hidden shadow-md">
+                        <img 
+                            className="w-full h-[320px] md:h-[400px] object-cover" 
+                            alt={article.title} 
+                            src={resolveMediaUrl(article.image)} 
+                            onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200'; }}
+                        />
+                        {article.subtitle && (
+                            <figcaption className="p-3 text-center bg-slate-50 dark:bg-slate-800/40 text-xs text-slate-500">
+                                {article.subtitle}
+                            </figcaption>
+                        )}
+                    </figure>
+                )}
 
                 {/*  Article Body  */}
                 <article className="article-body text-slate-800 dark:text-slate-200 text-sm md:text-base leading-relaxed selection:bg-blue-500/10">
@@ -160,10 +317,102 @@ export default function ArticleView() {
                         }
                     })}
                     
+                    {/* Attached Documents & Media */}
+                    {article.attachments && article.attachments.length > 0 && (
+                        <div className="mt-8 mb-8 p-5 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800">
+                            <h3 className="text-sm font-extrabold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                                <span className="material-symbols-outlined text-blue-500 text-[20px]">attachment</span>
+                                Attached Documents & Media ({article.attachments.length})
+                            </h3>
+                            <div className="space-y-4">
+                                {article.attachments.map((file, idx) => {
+                                    const isVideo = file.isVideo || 
+                                                    file.fileType === 'Video' || 
+                                                    (file.name && file.name.toLowerCase().includes('media_')) || 
+                                                    (file.url && file.url.toLowerCase().match(/\.(mp4|webm|ogg|mov|m4v|mkv)$/i));
+
+                                    if (isVideo) {
+                                        const mediaUrl = resolveMediaUrl(file.url || file.rawUrl);
+                                        return (
+                                            <div key={idx} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white min-w-0">
+                                                        <span className="material-symbols-outlined text-rose-500 text-[20px] shrink-0">play_circle</span>
+                                                        <span className="truncate">{file.name || 'Uploaded Video Media'}</span>
+                                                    </div>
+                                                    <a
+                                                        href={mediaUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="px-2.5 py-1 bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-600 dark:text-rose-400 text-[11px] font-bold rounded-lg transition-colors flex items-center gap-1 shrink-0"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                                                        Open Full Video
+                                                    </a>
+                                                </div>
+
+                                                {/* Native HTML5 Video Player */}
+                                                <div className="relative rounded-xl overflow-hidden bg-slate-950 aspect-video border border-slate-200 dark:border-slate-800 shadow-inner">
+                                                    <video
+                                                        controls
+                                                        controlsList="nodownload"
+                                                        disablePictureInPicture
+                                                        onContextMenu={(e) => e.preventDefault()}
+                                                        preload="metadata"
+                                                        src={mediaUrl}
+                                                        className="w-full h-full object-contain"
+                                                    >
+                                                        Your browser does not support HTML5 video playback.
+                                                    </video>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+
+                                    return (
+                                        <div key={idx} className="flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200/80 dark:border-slate-700 shadow-sm hover:shadow-md transition-all">
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <div className="w-10 h-10 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0">
+                                                    <span className="material-symbols-outlined text-2xl">
+                                                        {file.isImage ? 'image' : 'description'}
+                                                    </span>
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                                        {file.name}
+                                                    </p>
+                                                    <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-medium mt-0.5">
+                                                        <span className="uppercase font-semibold text-slate-400">
+                                                            {file.isImage ? 'Image' : 'Document'}
+                                                        </span>
+                                                        <span>•</span>
+                                                        <span className="flex items-center gap-0.5 text-slate-500">
+                                                            <span className="material-symbols-outlined text-[11px]">schedule</span>
+                                                            {file.publishedDate ? new Date(file.publishedDate).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : (article.date || 'Just now')}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <a 
+                                                href={resolveMediaUrl(file.url)} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer"
+                                                className="px-3 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500 hover:text-white rounded-lg text-xs font-bold transition-colors shrink-0 flex items-center gap-1"
+                                            >
+                                                <span className="material-symbols-outlined text-sm">open_in_new</span>
+                                                View
+                                            </a>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
                     <div className="flex flex-wrap gap-2 mt-12 mb-8">
                         {article.tags && article.tags.map(tag => (
                             <span key={tag} className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-full text-xs font-bold border border-slate-200 dark:border-slate-700">
-                                {tag}
+                                #{tag}
                             </span>
                         ))}
                     </div>
@@ -178,14 +427,6 @@ export default function ArticleView() {
                         >
                             <span className="material-symbols-outlined text-[20px]" style={{fontVariationSettings: userLiked ? "'FILL' 1" : "'FILL' 0"}}>thumb_up</span>
                             <span className="text-xs font-bold">Like</span>
-                        </button>
-                        <button className="flex items-center gap-2 group hover:bg-slate-100 dark:hover:bg-slate-800 transition-all text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 px-3 py-1.5 rounded-lg">
-                            <span className="material-symbols-outlined text-[20px] group-hover:scale-110 duration-200" style={{fontVariationSettings: "'FILL' 1", color: '#14B8A6'}}>celebration</span>
-                            <span className="text-xs font-bold">Celebrate</span>
-                        </button>
-                        <button className="flex items-center gap-2 group hover:bg-slate-100 dark:hover:bg-slate-800 transition-all text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 px-3 py-1.5 rounded-lg">
-                            <span className="material-symbols-outlined text-[20px]" style={{fontVariationSettings: "'FILL' 1", color: '#6366F1'}}>psychology</span>
-                            <span className="text-xs font-bold">Insight</span>
                         </button>
                     </div>
                     <div className="flex items-center gap-4">
@@ -202,7 +443,11 @@ export default function ArticleView() {
                     {/*  Comment Input  */}
                     <div className="flex gap-4 mb-10">
                         <div className="h-10 w-10 shrink-0 rounded-full bg-slate-200 border border-slate-350 overflow-hidden">
-                            <img className="w-full h-full object-cover" alt="User avatar" src="https://ui-avatars.com/api/?name=You&background=6366f1&color=fff" />
+                            <img 
+                                className="w-full h-full object-cover" 
+                                alt="User avatar" 
+                                src={currentUser?.profilePhotoUrl ? resolveMediaUrl(currentUser.profilePhotoUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.fullName || 'User')}&background=6366f1&color=fff`} 
+                            />
                         </div>
                         <div className="flex-1">
                             <textarea 
@@ -226,7 +471,7 @@ export default function ArticleView() {
                     <div className="space-y-6">
                         {comments.length > 0 ? (
                             comments.map(comment => (
-                                <ArticleCommentThread key={comment.id} comment={comment} />
+                                <ArticleCommentThread key={comment.id} comment={comment} onReply={handleReplyComment} currentUser={currentUser} />
                             ))
                         ) : (
                             <p className="text-center text-xs text-slate-500 py-6">No comments yet. Be the first to start the discussion!</p>
@@ -289,29 +534,32 @@ export default function ArticleView() {
                     </div>
                 </div>
             </aside>
+
+            {/* Report Article Modal */}
+            <ReportModal
+                isOpen={isReportOpen}
+                onClose={() => setIsReportOpen(false)}
+                targetType="Article"
+                targetId={article?.id || 1}
+                targetName={article?.author?.name || 'Author'}
+            />
         </>
     );
 }
 
 // Thread sub-component
-function ArticleCommentThread({ comment, depth = 0 }) {
+function ArticleCommentThread({ comment, depth = 0, onReply, currentUser }) {
     const [isReplying, setIsReplying] = useState(false);
     const [replyText, setReplyText] = useState('');
-    const [replies, setReplies] = useState(comment.replies || []);
+    const replies = comment.replies || [];
 
     const submitReply = (e) => {
         e.preventDefault();
         if (!replyText.trim()) return;
 
-        const newReply = {
-            id: Date.now(),
-            author: 'You',
-            avatar: 'https://ui-avatars.com/api/?name=You&background=6366f1&color=fff',
-            time: 'Just now',
-            text: replyText.trim()
-        };
-
-        setReplies([...replies, newReply]);
+        if (onReply) {
+            onReply(comment.id, replyText.trim());
+        }
         setReplyText('');
         setIsReplying(false);
     };
@@ -356,7 +604,7 @@ function ArticleCommentThread({ comment, depth = 0 }) {
                 {replies && replies.length > 0 && (
                     <div className="mt-4 space-y-4 border-l border-slate-100 dark:border-slate-800 pl-4">
                         {replies.map(reply => (
-                            <ArticleCommentThread key={reply.id} comment={reply} depth={depth + 1} />
+                            <ArticleCommentThread key={reply.id} comment={reply} depth={depth + 1} onReply={onReply} currentUser={currentUser} />
                         ))}
                     </div>
                 )}

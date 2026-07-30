@@ -71,10 +71,10 @@ export default function MyCommunitiesWidget() {
             </div>
 
             <div className="flex flex-col gap-3">
-                {joinedCommunities.map((community) => (
+                {joinedCommunities.map((community, idx) => (
                     <div 
-                        key={community.id || community.name}
-                        onClick={() => navigate('/community')}
+                        key={community.id ? `${community.id}-${idx}` : `${community.name}-${idx}`}
+                        onClick={() => navigate(`/community/view?id=${community.id || 101}`)}
                         className="flex items-center gap-3 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700 bg-slate-50/50 dark:bg-slate-800/50 hover:bg-white dark:hover:bg-slate-800 transition-all cursor-pointer group"
                     >
                         <div className="w-10 h-10 rounded-xl overflow-hidden shrink-0 relative">
@@ -96,7 +96,11 @@ export default function MyCommunitiesWidget() {
                             </h4>
                             <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
                                 <span className="material-symbols-outlined text-[12px]">group</span>
-                                {community.members || '1 Member'} · <span className="text-emerald-500 font-bold">Joined</span>
+                                {(() => {
+                                    const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${community.id}`) || '[]');
+                                    const count = localMembers.length > 0 ? localMembers.length : (parseInt(community.members) || 1);
+                                    return `${count} ${count === 1 ? 'member' : 'members'}`;
+                                })()} · <span className="text-emerald-500 font-bold">Joined</span>
                             </p>
                         </div>
 

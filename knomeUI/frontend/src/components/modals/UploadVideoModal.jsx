@@ -14,6 +14,8 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
     
     // File states
     const [videoFile, setVideoFile] = useState(null);
+    const [videoDuration, setVideoDuration] = useState('');
+    const [durationSeconds, setDurationSeconds] = useState(0);
     const [thumbnailFile, setThumbnailFile] = useState(null);
     const [thumbnailPreview, setThumbnailPreview] = useState('');
 
@@ -40,6 +42,30 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
         const file = e.target.files[0];
         if (file) {
             setVideoFile(file);
+            setVideoDuration('Calculating...');
+            
+            // Auto-detect video duration from video file metadata
+            const tempVideo = document.createElement('video');
+            tempVideo.preload = 'metadata';
+            const objectUrl = URL.createObjectURL(file);
+            tempVideo.src = objectUrl;
+            tempVideo.onloadedmetadata = () => {
+                URL.revokeObjectURL(objectUrl);
+                if (tempVideo.duration && !isNaN(tempVideo.duration)) {
+                    const totalSeconds = Math.floor(tempVideo.duration);
+                    const minutes = Math.floor(totalSeconds / 60);
+                    const seconds = totalSeconds % 60;
+                    const formatted = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                    setVideoDuration(formatted);
+                    setDurationSeconds(totalSeconds);
+                } else {
+                    setVideoDuration('00:00');
+                }
+            };
+            tempVideo.onerror = () => {
+                URL.revokeObjectURL(objectUrl);
+                setVideoDuration('Unknown');
+            };
         }
     };
 
@@ -112,6 +138,7 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                 sourceType: sourceType,
                 sourceUrl: finalVideoUrl,
                 fileSizeMb: fileSizeMb,
+                durationSeconds: durationSeconds || null,
                 tags: finalTags
             };
 
@@ -127,6 +154,8 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
             setDescription('');
             setTags([]);
             setVideoFile(null);
+            setVideoDuration('');
+            setDurationSeconds(0);
             setThumbnailFile(null);
             setThumbnailPreview('');
             setSourceUrlInput('');
@@ -234,8 +263,21 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                                 <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Enter video title" className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white" />
                             </div>
                             <div>
+                                <label className="block text-[12px] font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider flex items-center justify-between">
+                                    <span>Video Duration</span>
+                                    <span className="text-[10px] text-cyan-600 font-extrabold uppercase bg-cyan-500/10 px-2 py-0.5 rounded">Auto-Detected</span>
+                                </label>
+                                <div className="w-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between select-none cursor-not-allowed">
+                                    <div className="flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-[18px] text-cyan-500">schedule</span>
+                                        <span>{videoDuration || (videoFile ? 'Calculating duration...' : 'Select a video file to auto-detect duration')}</span>
+                                    </div>
+                                    <span className="material-symbols-outlined text-[16px] text-slate-400">lock</span>
+                                </div>
+                            </div>
+                            <div>
                                 <label className="block text-[12px] font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider">Description</label>
-                                <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="What is this video about?" rows="4" className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white resize-none"></textarea>
+                                <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="What is this video about?" rows="3" className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white resize-none"></textarea>
                             </div>
                         </div>
 

@@ -1,14 +1,28 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { getKarmaBadge } from '../utils/karmaEngine';
 import { karmaApi } from '../utils/apiService';
 import { useUser } from '../components/contexts/UserContext';
 
 export default function KarmaHistory() {
     const { currentUser } = useUser();
-    const [balance, setBalance] = useState({ totalPoints: 1250, badgeLevel: 'Gold', recentTransactions: [] });
+    const navigate = useNavigate();
+
+    const isSysAdmin = currentUser?.role === 'SYSADM' || 
+                       currentUser?.roleName === 'System Administrator' || 
+                       (Array.isArray(currentUser?.roles) && (currentUser.roles.includes('SYSADM') || currentUser.roles.includes('System Administrator') || currentUser.roles.includes('SystemAdmin')));
+
+    useEffect(() => {
+        if (isSysAdmin) {
+            navigate('/', { replace: true });
+        }
+    }, [isSysAdmin, navigate]);
+
+    const [balance, setBalance] = useState({ totalPoints: currentUser?.karma || 0, badgeLevel: 'Bronze', recentTransactions: [] });
     const [leaderboard, setLeaderboard] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
+
+    if (isSysAdmin) return null;
 
     useEffect(() => {
         async function fetchKarmaData() {

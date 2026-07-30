@@ -17,8 +17,10 @@ export default function NotificationToast({ notification, onClose }) {
         onClose();
         if (notification.targetUrl) {
             navigate(notification.targetUrl);
-        } else if (notification.senderUserId) {
-            navigate(`/profile/${notification.senderUserId}`);
+        } else if (notification.type?.includes('follow') && notification.senderUserId) {
+            navigate(`/profile?id=${notification.senderUserId}`);
+        } else {
+            navigate('/posts');
         }
     };
 

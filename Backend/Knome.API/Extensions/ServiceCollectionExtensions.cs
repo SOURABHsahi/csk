@@ -269,6 +269,8 @@ public static class ServiceCollectionExtensions
                 Description = "Enterprise-grade ASP.NET Core 9 Web API for the Knome platform."
             });
 
+            c.CustomSchemaIds(type => type.FullName);
+
             c.AddSecurityDefinition("Bearer", jwtScheme);
             c.AddSecurityRequirement(jwtRequirement);
         });

@@ -207,12 +207,14 @@ public class NotificationService : INotificationService
 
             dto.TargetUrl = type switch
             {
-                "post" => $"/posts?highlight={id}",
-                "article" => $"/article/{id}",
-                "video" => $"/videos?highlight={id}",
-                "podcast" => $"/podcasts?highlight={id}",
-                "community" => $"/communities/{id}",
-                "user" => $"/profile/{id}",
+                "post" => $"/posts?id={id}",
+                "article" => $"/article-view?id={id}",
+                "video" => $"/videos?id={id}",
+                "podcast" => $"/podcasts?id={id}",
+                "community" => $"/community/view?id={id}",
+                "user" => $"/profile?id={id}",
+                "job" => $"/jobs?id={id}",
+                "badge" => $"/karma-history",
                 _ => null
             };
         }
