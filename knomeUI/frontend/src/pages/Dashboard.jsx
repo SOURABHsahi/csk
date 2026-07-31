@@ -289,7 +289,7 @@ export default function Dashboard() {
                             </div>
                         )}
                     </div>
-                </main>main>
+                </main>
 
                 {/* Right Sidebar Widgets */}
                 <aside className="w-full xl:w-[340px] shrink-0 flex flex-col gap-5">
