@@ -3,6 +3,8 @@ import Modal from './Modal';
 import { saveArticle } from '../../utils/articleService';
 import { useUser } from '../contexts/UserContext';
 
+import { checkRestrictedContent } from '../../utils/restrictedWords';
+
 export default function CreateArticleModal({ isOpen, onClose, onArticleCreated }) {
     const { currentUser } = useUser();
     const [title, setTitle] = useState('');
@@ -25,6 +27,13 @@ export default function CreateArticleModal({ isOpen, onClose, onArticleCreated }
     const handlePublish = async () => {
         if (!title.trim() || !content.trim()) {
             alert('Title and content are required.');
+            return;
+        }
+
+        const textToScan = `${title} ${tags} ${content}`;
+        const foundKeyword = checkRestrictedContent(textToScan);
+        if (foundKeyword) {
+            alert(`Article cannot be published. It contains the restricted term: "${foundKeyword}".`);
             return;
         }
         

@@ -52,10 +52,11 @@ public static class BadgeLevels
 
     public static string ComputeBadge(int totalPoints)
     {
-        if (totalPoints >= 1500) return Platinum;
-        if (totalPoints >= 500) return Gold;
-        if (totalPoints >= 100) return Silver;
-        return Bronze;
+        if (totalPoints >= 5000) return Platinum;
+        if (totalPoints >= 1000) return Gold;
+        if (totalPoints >= 500) return Silver;
+        if (totalPoints >= 100) return Bronze;
+        return "Contributor";
     }
 
     /// <summary>Ordinal rank of a badge level (higher = better). Empty/unknown = 0.</summary>

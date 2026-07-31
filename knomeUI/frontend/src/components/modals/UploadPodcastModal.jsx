@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { mediaApi, podcastsApi } from '../../utils/apiService';
 import { useUser } from '../contexts/UserContext';
+import { checkRestrictedContent } from '../../utils/restrictedWords';
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB (FR-PD-05)
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.aac', '.ogg', '.m4a', '.webm'];
@@ -204,6 +205,13 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
     const handleUpload = async () => {
         if (!title.trim()) {
             alert('Episode title is required.');
+            return;
+        }
+
+        const textToScan = `${title} ${description} ${categoryName}`;
+        const foundKeyword = checkRestrictedContent(textToScan);
+        if (foundKeyword) {
+            alert(`Podcast episode cannot be uploaded. It contains the restricted term: "${foundKeyword}".`);
             return;
         }
 

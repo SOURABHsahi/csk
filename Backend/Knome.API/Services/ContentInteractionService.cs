@@ -396,8 +396,14 @@ public class ContentInteractionService : IContentInteractionService
         var sharesCount = await _repo.GetSharesCountAsync(contentType, contentId);
         var bookmark = await _repo.GetBookmarkAsync(contentType, contentId, currentUserId);
 
-        // Hot Posts formula: (Reactions * 3) + (Comments * 5) + (Shares * 4)
-        var score = (reactionSummary.TotalCount * 3) + (commentsCount * 5) + (sharesCount * 4);
+        // FR-HP-01 Hot Posts formula: (Views * 1) + (Reactions * 3) + (Comments * 5) + (Shares * 4)
+        var views = 0L;
+        if (contentType.Equals(ContentTypes.Video, StringComparison.OrdinalIgnoreCase))
+        {
+            var video = await _db.Videos.AsNoTracking().FirstOrDefaultAsync(v => v.VideoId == contentId);
+            views = video?.ViewCount ?? 0;
+        }
+        var score = (views * 1) + (reactionSummary.TotalCount * 3) + (commentsCount * 5) + (sharesCount * 4);
 
         return new ContentSummaryDto
         {

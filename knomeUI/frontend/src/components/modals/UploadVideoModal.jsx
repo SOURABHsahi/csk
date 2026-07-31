@@ -2,6 +2,8 @@ import React, { useState, useRef } from 'react';
 import { apiClient } from '../../utils/apiClient';
 import { useUser } from '../contexts/UserContext';
 
+import { checkRestrictedContent } from '../../utils/restrictedWords';
+
 export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
     const { currentUser } = useUser();
     const isCurrentUserAdmin = ['SYSADM', 'CADM', 'HRADM'].includes(currentUser?.role) ||
@@ -156,6 +158,13 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
     const handleUpload = async () => {
         if (!title.trim()) {
             alert("Please enter a video title.");
+            return;
+        }
+
+        const textToScan = `${title} ${description} ${tagInput} ${tags.join(' ')}`;
+        const foundKeyword = checkRestrictedContent(textToScan);
+        if (foundKeyword) {
+            alert(`Video cannot be uploaded. It contains the restricted term: "${foundKeyword}".`);
             return;
         }
 
