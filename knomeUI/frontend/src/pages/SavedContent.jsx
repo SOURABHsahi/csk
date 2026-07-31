@@ -12,6 +12,36 @@ const DEFAULT_CATEGORIES = [
     { id: 'readlater', name: 'Read Later', icon: 'schedule', color: 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20' },
 ];
 
+export const getDefaultThumbnail = (contentType = '', category = '') => {
+    const typeLower = (contentType || '').toLowerCase();
+    const catLower = (category || '').toLowerCase();
+
+    if (typeLower === 'video') {
+        return 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=600';
+    }
+    if (typeLower === 'podcast') {
+        return 'https://images.unsplash.com/photo-1590602847861-f357a9332bbc?auto=format&fit=crop&q=80&w=600';
+    }
+    if (typeLower === 'article') {
+        if (catLower.includes('design')) return 'https://images.unsplash.com/photo-1561070791-2526d30994b5?auto=format&fit=crop&q=80&w=600';
+        if (catLower.includes('hr') || catLower.includes('policy')) return 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&q=80&w=600';
+        return 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=600';
+    }
+    if (typeLower === 'document' || typeLower === 'job') {
+        return 'https://images.unsplash.com/photo-1450133064473-71024230f91b?auto=format&fit=crop&q=80&w=600';
+    }
+    // Default for Posts & General Content
+    return 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600';
+};
+
+const extractText = (val) => {
+    if (!val) return '';
+    if (typeof val === 'string') return val;
+    if (Array.isArray(val)) return val.map(extractText).filter(Boolean).join(' ');
+    if (typeof val === 'object') return val.text || val.content || val.description || val.title || val.subtitle || '';
+    return String(val);
+};
+
 export default function SavedContent() {
     const navigate = useNavigate();
 
@@ -97,21 +127,60 @@ export default function SavedContent() {
             });
 
             const payload = res?.data ?? res;
-            if (payload) {
-                const items = Array.isArray(payload.items) ? payload.items : (Array.isArray(payload) ? payload : []);
-                setSavedItems(items);
-                setTotalCount(payload.totalCount ?? items.length);
-            } else {
-                setSavedItems([]);
-                setTotalCount(0);
-            }
+            const items = payload ? (Array.isArray(payload.items) ? payload.items : (Array.isArray(payload) ? payload : [])) : [];
+
+            // Merge local custom category bookmarks from SaveToCategoryModal
+            const localCustomSaved = JSON.parse(localStorage.getItem('knome_saved_items_custom') || '[]');
+            const formattedLocal = localCustomSaved.map(s => ({
+                id: s.id,
+                contentId: s.contentId || s.id,
+                contentType: s.contentType || 'Post',
+                title: extractText(s.title),
+                summary: extractText(s.content),
+                contentText: extractText(s.content),
+                thumbnailUrl: s.thumbnailUrl || s.image || s.thumbnail || s.coverImage || s.mediaUrl || (Array.isArray(s.mediaUrls) ? s.mediaUrls[0] : null) || (Array.isArray(s.attachmentUrls) ? s.attachmentUrls[0] : null),
+                authorFullName: extractText(s.author),
+                savedAt: s.savedAt,
+                userCategory: s.category,
+                categoryName: s.category
+            }));
+
+            const combined = [...formattedLocal, ...items];
+            const deduped = Array.from(new Map(combined.map(i => [String(i.contentId || i.id), i])).values());
+
+            setSavedItems(deduped);
+            setTotalCount(deduped.length);
         } catch (e) {
             console.error('Failed to load saved content', e);
-            setError(e.message || 'Failed to load saved content. Please check your connection and try again.');
+            // Fall back to local saved items if API fails
+            const localCustomSaved = JSON.parse(localStorage.getItem('knome_saved_items_custom') || '[]');
+            const formattedLocal = localCustomSaved.map(s => ({
+                id: s.id,
+                contentId: s.contentId || s.id,
+                contentType: s.contentType || 'Post',
+                title: extractText(s.title),
+                summary: extractText(s.content),
+                contentText: extractText(s.content),
+                thumbnailUrl: s.thumbnailUrl || s.image || s.thumbnail || s.coverImage || s.mediaUrl || (Array.isArray(s.mediaUrls) ? s.mediaUrls[0] : null) || (Array.isArray(s.attachmentUrls) ? s.attachmentUrls[0] : null),
+                authorFullName: extractText(s.author),
+                savedAt: s.savedAt,
+                userCategory: s.category,
+                categoryName: s.category
+            }));
+            setSavedItems(formattedLocal);
+            setTotalCount(formattedLocal.length);
         } finally {
             setIsLoading(false);
         }
     }, [activeTab, searchQuery, sortBy, pageNumber]);
+
+    useEffect(() => {
+        const handleBookmarkSaved = () => {
+            loadSavedContent();
+        };
+        window.addEventListener('knome-bookmark-saved', handleBookmarkSaved);
+        return () => window.removeEventListener('knome-bookmark-saved', handleBookmarkSaved);
+    }, [loadSavedContent]);
 
     useEffect(() => {
         loadCounts();
@@ -135,10 +204,14 @@ export default function SavedContent() {
             loadSavedContent();
         });
 
-        connection.start().catch((err) => console.log('SavedContent SignalR Error:', err));
+        connection.start().catch((err) => {
+            if (err?.name !== 'AbortError' && !err?.message?.includes('stopped during negotiation')) {
+                console.warn('SavedContent SignalR Error:', err?.message || err);
+            }
+        });
 
         return () => {
-            connection.stop();
+            connection.stop().catch(() => {});
         };
     }, [loadCounts, loadSavedContent]);
 
@@ -224,8 +297,15 @@ export default function SavedContent() {
     // Filter items by category
     const categoryFilteredItems = savedItems.filter(item => {
         if (selectedCategory === 'all') return true;
-        const itemKey = `${item.contentType}_${item.contentId}`;
-        const itemCatId = itemCategoryMap[itemKey] || 'all';
+        const itemKey1 = `${item.contentType}_${item.contentId}`;
+        const itemKey2 = `${item.contentType}_${item.id}`;
+        const itemCatId = itemCategoryMap[itemKey1] || 
+                          itemCategoryMap[itemKey2] || 
+                          itemCategoryMap[item.contentId] || 
+                          itemCategoryMap[item.id] || 
+                          item.categoryId || 
+                          (item.userCategory ? item.userCategory.toLowerCase().replace(/\s+/g, '_') : null) || 
+                          'all';
         return itemCatId === selectedCategory;
     });
 
@@ -452,6 +532,9 @@ export default function SavedContent() {
                         const assignedCatId = itemCategoryMap[itemKey] || 'all';
                         const assignedCat = categories.find(c => c.id === assignedCatId) || categories[0];
 
+                        const rawImage = item.thumbnailUrl || item.image || item.thumbnail || item.coverImage || item.mediaUrl || (Array.isArray(item.mediaUrls) ? item.mediaUrls[0] : null) || (Array.isArray(item.attachmentUrls) ? item.attachmentUrls[0] : null);
+                        const thumbnailSrc = rawImage ? resolveMediaUrl(rawImage) : getDefaultThumbnail(item.contentType, item.userCategory || item.categoryName);
+
                         return (
                             <div
                                 key={itemKey}
@@ -464,20 +547,15 @@ export default function SavedContent() {
                                     isAvailable ? 'hover:border-amber-500/50 hover:shadow-md cursor-pointer' : 'opacity-80'
                                 }`}
                             >
-                                {/* Thumbnail / Media Icon */}
-                                {item.thumbnailUrl ? (
-                                    <img
-                                        src={resolveMediaUrl(item.thumbnailUrl)}
-                                        alt={item.title}
-                                        className="w-full md:w-44 h-28 object-cover rounded-xl shrink-0 border border-slate-100 dark:border-slate-800"
-                                    />
-                                ) : (
-                                    <div className="w-full md:w-44 h-28 rounded-xl shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 border border-slate-200 dark:border-slate-700">
-                                        <span className="material-symbols-outlined text-[36px]">
-                                            {getTypeIcon(item.contentType)}
-                                        </span>
-                                    </div>
-                                )}
+                                {/* Thumbnail / Media Image */}
+                                <img
+                                    src={thumbnailSrc}
+                                    alt={extractText(item.title)}
+                                    className="w-full md:w-44 h-28 object-cover rounded-xl shrink-0 border border-slate-100 dark:border-slate-800"
+                                    onError={(e) => {
+                                        e.target.src = getDefaultThumbnail(item.contentType, item.userCategory || item.categoryName);
+                                    }}
+                                />
 
                                 {/* Content Info */}
                                 <div className="flex-1 flex flex-col justify-between pr-8">
@@ -508,12 +586,12 @@ export default function SavedContent() {
                                         </div>
 
                                         <h3 className="text-sm md:text-base font-bold text-slate-900 dark:text-white mb-1 leading-snug group-hover:text-amber-500 transition-colors line-clamp-2">
-                                            {item.title}
+                                            {extractText(item.title)}
                                         </h3>
 
                                         {isAvailable ? (
                                             <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mb-2">
-                                                {item.summary}
+                                                {extractText(item.summary || item.contentText)}
                                             </p>
                                         ) : (
                                             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-rose-500/10 text-rose-500 border border-rose-500/20 text-xs font-semibold mb-2">
@@ -529,16 +607,16 @@ export default function SavedContent() {
                                             {item.authorAvatar ? (
                                                 <img
                                                     src={resolveMediaUrl(item.authorAvatar)}
-                                                    alt={item.authorName}
+                                                    alt={extractText(item.authorName || item.authorFullName)}
                                                     className="w-5 h-5 rounded-full object-cover shrink-0"
                                                 />
                                             ) : (
                                                 <div className="w-5 h-5 rounded-full bg-indigo-500 text-white font-bold text-[10px] flex items-center justify-center shrink-0">
-                                                    {(item.authorName || 'U').charAt(0).toUpperCase()}
+                                                    {extractText(item.authorName || item.authorFullName || 'U').charAt(0).toUpperCase()}
                                                 </div>
                                             )}
                                             <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                                {item.authorName || 'Knome Member'}
+                                                {extractText(item.authorName || item.authorFullName || 'Knome Member')}
                                             </span>
                                             {item.authorRole && (
                                                 <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">

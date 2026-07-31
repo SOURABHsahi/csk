@@ -29,25 +29,39 @@ export async function getArticles(categoryId = null, tag = null, search = null, 
                 : DEFAULT_COVER_IMAGES[idx % DEFAULT_COVER_IMAGES.length];
 
             const attachmentsList = (art.attachments && art.attachments.length > 0)
-                ? art.attachments.map(att => ({
-                    url: resolveMediaUrl(att.fileUrl),
-                    rawUrl: att.fileUrl,
-                    name: att.fileName || att.fileUrl.split('/').pop() || 'Attached Document',
-                    fileType: att.fileType,
-                    publishedDate: att.publishedDate || art.publishedDate,
-                    isDoc: Boolean(att.fileUrl.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)$/i) || att.fileType === 'Document'),
-                    isImage: Boolean(att.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) || att.fileType === 'Image'),
-                    isVideo: Boolean(att.fileUrl.match(/\.(mp4|webm|ogg|mov|m4v|mkv)$/i) || att.fileType === 'Video' || att.fileUrl.includes('media_') || att.fileUrl.includes('/videos/')),
-                  }))
-                : (art.attachmentUrls || []).map(url => ({
-                    url: resolveMediaUrl(url),
-                    rawUrl: url,
-                    name: url.split('/').pop() || 'Attached Document',
-                    publishedDate: art.publishedDate || art.createdDate,
-                    isDoc: Boolean(url.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)$/i)),
-                    isImage: Boolean(url.match(/\.(jpeg|jpg|gif|png|webp)$/i)),
-                    isVideo: Boolean(url.match(/\.(mp4|webm|ogg|mov|m4v|mkv)$/i) || url.includes('media_') || url.includes('/videos/')),
-                  }));
+                ? art.attachments.map(att => {
+                    const fileUrl = (att.fileUrl || '').toLowerCase();
+                    const isDoc = Boolean(fileUrl.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)$/i) || att.fileType === 'Document');
+                    const isImage = Boolean(fileUrl.match(/\.(jpeg|jpg|gif|png|webp|svg|bmp)$/i) || att.fileType === 'Image');
+                    const isVideo = !isDoc && !isImage && Boolean(fileUrl.match(/\.(mp4|webm|ogg|mov|m4v|mkv)$/i) || att.fileType === 'Video' || fileUrl.includes('/uploads/videos/'));
+
+                    return {
+                        url: resolveMediaUrl(att.fileUrl),
+                        rawUrl: att.fileUrl,
+                        name: att.fileName || att.fileUrl.split('/').pop() || 'Attached File',
+                        fileType: att.fileType,
+                        publishedDate: att.publishedDate || art.publishedDate,
+                        isDoc,
+                        isImage,
+                        isVideo,
+                    };
+                  })
+                : (art.attachmentUrls || []).map(url => {
+                    const rawUrl = (url || '').toLowerCase();
+                    const isDoc = Boolean(rawUrl.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)$/i));
+                    const isImage = Boolean(rawUrl.match(/\.(jpeg|jpg|gif|png|webp|svg|bmp)$/i));
+                    const isVideo = !isDoc && !isImage && Boolean(rawUrl.match(/\.(mp4|webm|ogg|mov|m4v|mkv)$/i) || rawUrl.includes('/uploads/videos/'));
+
+                    return {
+                        url: resolveMediaUrl(url),
+                        rawUrl: url,
+                        name: url.split('/').pop() || 'Attached File',
+                        publishedDate: art.publishedDate || art.createdDate,
+                        isDoc,
+                        isImage,
+                        isVideo,
+                    };
+                  });
 
             const authorName = art.authorFullName || 'Enterprise Author';
             const authorAvatar = art.authorProfilePhotoUrl 

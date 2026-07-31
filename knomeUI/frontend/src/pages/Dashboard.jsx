@@ -21,6 +21,9 @@ export default function Dashboard() {
     const [userKarma, setUserKarma] = useState(currentUser?.karma || 0);
     const [showHero, setShowHero] = useState(false);
 
+    const [activeFilter, setActiveFilter] = useState('All');
+    const [announcements, setAnnouncements] = useState([]);
+
     const isSysAdmin = currentUser?.role === 'SYSADM' || 
                        currentUser?.roleName === 'System Administrator' || 
                        (Array.isArray(currentUser?.roles) && (currentUser.roles.includes('SYSADM') || currentUser.roles.includes('System Administrator') || currentUser.roles.includes('SystemAdmin')));
@@ -40,6 +43,12 @@ export default function Dashboard() {
             }
         };
         loadKarma();
+
+        // Load HR Broadcast Announcements (FR-DB-05)
+        dashboardApi.getAnnouncements().then(res => {
+            if (Array.isArray(res)) setAnnouncements(res);
+            else if (res?.items) setAnnouncements(res.items);
+        }).catch(() => {});
     }, [currentUser?.userId, currentUser?.employeeId, currentUser?.karma]);
 
     useEffect(() => {
@@ -49,18 +58,26 @@ export default function Dashboard() {
         else setGreeting('Good Evening');
     }, []);
 
-    const loadPosts = async () => {
+    const loadPosts = async (filterType = activeFilter) => {
         setIsLoading(true);
         try {
-            const data = await dashboardApi.getFeed('All');
+            const data = await dashboardApi.getFeed(filterType);
             if (data && Array.isArray(data)) {
                 setPosts(data.map(mapFeedItem));
+            } else {
+                setPosts([]);
             }
         } catch (err) {
             console.error('Failed to load feed:', err);
+            setPosts([]);
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleFilterChange = (filterId) => {
+        setActiveFilter(filterId);
+        loadPosts(filterId);
     };
 
     const handlePostCreated = (e) => {
@@ -73,8 +90,7 @@ export default function Dashboard() {
                 return [mapped, ...prev];
             });
         }
-        // background sync
-        dashboardApi.getFeed('All').then(data => {
+        dashboardApi.getFeed(activeFilter).then(data => {
             if (data && Array.isArray(data)) setPosts(data.map(mapFeedItem));
         }).catch(() => {});
     };
@@ -87,7 +103,7 @@ export default function Dashboard() {
     };
 
     useEffect(() => {
-        loadPosts();
+        loadPosts('All');
         window.addEventListener('post-created', handlePostCreated);
         window.addEventListener('post-deleted', handlePostDeleted);
         return () => {
@@ -138,6 +154,23 @@ export default function Dashboard() {
                         </div>
                     </div>
 
+                    {/* HR Organization Announcement Banner (FR-DB-05) */}
+                    {announcements && announcements.length > 0 && (
+                        <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 border border-amber-500/30 flex items-start gap-3 shadow-xs">
+                            <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                                <span className="material-symbols-outlined text-[20px]" style={{fontVariationSettings: "'FILL' 1"}}>campaign</span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-0.5">
+                                    <span className="text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white px-2 py-0.5 rounded-md">HR Broadcast</span>
+                                    <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">• Organization Announcement</span>
+                                </div>
+                                <h4 className="text-sm font-black text-slate-900 dark:text-white leading-snug">{announcements[0].title || announcements[0].message}</h4>
+                                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 font-medium">{announcements[0].content || announcements[0].details || announcements[0].message}</p>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Interactive Background Paths Hero Showcase */}
                     {showHero && (
                         <div className="flex flex-col gap-4">
@@ -165,8 +198,6 @@ export default function Dashboard() {
                             </ScrollExpandMedia>
                         </div>
                     )}
-
-
 
                     {/* Create Post Composer */}
                     {currentUser.role !== 'SYSADM' && (
@@ -214,13 +245,51 @@ export default function Dashboard() {
                         </div>
                     )}
 
-                    {/* Post Feed */}
-                    <div className="flex flex-col gap-5">
-                        {posts.map((post, idx) => (
-                            <PostCard key={post.id ? `${post.id}-${idx}` : idx} post={post} onPostDeleted={() => loadPosts(500)} />
+                    {/* Feed Category Filter Bar (FR-DB-07) */}
+                    <div className="flex items-center gap-1.5 p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-x-auto custom-scrollbar shadow-xs">
+                        {[
+                            { id: 'All', label: 'All Posts', icon: 'dynamic_feed' },
+                            { id: 'Communities', label: 'Communities', icon: 'forum' },
+                            { id: 'Articles', label: 'Articles', icon: 'article' },
+                            { id: 'Videos', label: 'Videos', icon: 'videocam' },
+                            { id: 'Podcasts', label: 'Podcasts', icon: 'podcasts' },
+                            { id: 'Jobs', label: 'Jobs', icon: 'work' },
+                        ].map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => handleFilterChange(tab.id)}
+                                className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                                    activeFilter === tab.id
+                                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-[16px]">{tab.icon}</span>
+                                {tab.label}
+                            </button>
                         ))}
                     </div>
-                </main>
+
+                    {/* Post Feed */}
+                    <div className="flex flex-col gap-5">
+                        {isLoading ? (
+                            <div className="p-8 text-center text-slate-400 text-xs font-bold flex items-center justify-center gap-2">
+                                <span className="material-symbols-outlined animate-spin">progress_activity</span>
+                                Loading feed...
+                            </div>
+                        ) : posts.length > 0 ? (
+                            posts.map((post, idx) => (
+                                <PostCard key={post.id ? `${post.id}-${idx}` : idx} post={post} onPostDeleted={() => loadPosts(activeFilter)} />
+                            ))
+                        ) : (
+                            <div className="p-12 text-center flex flex-col items-center justify-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+                                <span className="material-symbols-outlined text-4xl text-slate-300 dark:text-slate-600 mb-2">find_in_page</span>
+                                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">No content found for '{activeFilter}'</h4>
+                                <p className="text-xs text-slate-400 mt-1">Try switching to 'All Posts' to view the full enterprise timeline.</p>
+                            </div>
+                        )}
+                    </div>
+                </main>main>
 
                 {/* Right Sidebar Widgets */}
                 <aside className="w-full xl:w-[340px] shrink-0 flex flex-col gap-5">

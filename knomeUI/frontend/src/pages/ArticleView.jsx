@@ -4,6 +4,8 @@ import { useUser } from '../components/contexts/UserContext';
 import { getArticles, deleteArticle } from '../utils/articleService';
 import { resolveMediaUrl, interactionsApi } from '../utils/apiService';
 import ReportModal from '../components/modals/ReportModal';
+import SaveToCategoryModal from '../components/modals/SaveToCategoryModal';
+import ArticleShareModal from '../components/modals/ArticleShareModal';
 
 export default function ArticleView() {
     const location = useLocation();
@@ -11,6 +13,8 @@ export default function ArticleView() {
     const { currentUser } = useUser();
 
     const [isReportOpen, setIsReportOpen] = useState(false);
+    const [savingArticleModal, setSavingArticleModal] = useState(null);
+    const [sharingArticleModal, setSharingArticleModal] = useState(null);
     
     // Read ?id=X query parameter
     const searchParams = new URLSearchParams(location.search);
@@ -267,11 +271,21 @@ export default function ArticleView() {
                                 <p className="text-xs text-slate-500">{article.author.role} {article.author.department ? `• ${article.author.department}` : ''}</p>
                             </div>
                         </div>
-                        <div className="text-right">
+                        <div className="text-right flex flex-col items-end gap-1.5">
                             <p className="text-xs text-slate-500">{article.date}</p>
-                            <p className="text-xs text-blue-500 flex items-center justify-end gap-1 font-bold mt-1">
-                                <span className="material-symbols-outlined text-sm">schedule</span> {article.readTime}
-                            </p>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setSavingArticleModal({ ...article, contentType: 'Article', text: article.subtitle || article.title })}
+                                    className="px-3 py-1 bg-amber-500/10 hover:bg-amber-500 text-amber-600 dark:text-amber-400 hover:text-slate-950 text-xs font-bold rounded-xl transition-all flex items-center gap-1 cursor-pointer"
+                                    title="Save to Category Folder"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">bookmark</span>
+                                    Save to Category
+                                </button>
+                                <span className="text-xs text-blue-500 flex items-center gap-1 font-bold">
+                                    <span className="material-symbols-outlined text-sm">schedule</span> {article.readTime}
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </header>
@@ -326,13 +340,58 @@ export default function ArticleView() {
                             </h3>
                             <div className="space-y-4">
                                 {article.attachments.map((file, idx) => {
-                                    const isVideo = file.isVideo || 
-                                                    file.fileType === 'Video' || 
-                                                    (file.name && file.name.toLowerCase().includes('media_')) || 
-                                                    (file.url && file.url.toLowerCase().match(/\.(mp4|webm|ogg|mov|m4v|mkv)$/i));
+                                    const fileName = (file.name || file.url || file.rawUrl || '').toLowerCase();
+                                    const isDoc = file.isDoc || 
+                                                  file.fileType === 'Document' || 
+                                                  !!fileName.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)(\?.*)?$/i);
+
+                                    const isImage = !isDoc && (
+                                        file.isImage || 
+                                        file.fileType === 'Image' || 
+                                        !!fileName.match(/\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?.*)?$/i)
+                                    );
+
+                                    const isVideo = !isDoc && !isImage && (
+                                        file.isVideo || 
+                                        file.fileType === 'Video' || 
+                                        !!fileName.match(/\.(mp4|webm|ogg|mov|m4v|mkv)(\?.*)?$/i)
+                                    );
+
+                                    const mediaUrl = resolveMediaUrl(file.url || file.rawUrl);
+
+                                    if (isImage) {
+                                        return (
+                                            <div key={idx} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white min-w-0">
+                                                        <span className="material-symbols-outlined text-indigo-500 text-[20px] shrink-0">image</span>
+                                                        <span className="truncate">{file.name || 'Attached Photo'}</span>
+                                                    </div>
+                                                    <a
+                                                        href={mediaUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="px-2.5 py-1 bg-indigo-500/10 hover:bg-indigo-500 hover:text-white text-indigo-600 dark:text-indigo-400 text-[11px] font-bold rounded-lg transition-colors flex items-center gap-1 shrink-0"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                                                        View Full Image
+                                                    </a>
+                                                </div>
+
+                                                {/* Image Preview Container */}
+                                                <div className="relative rounded-xl overflow-hidden bg-slate-950/5 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 flex items-center justify-center p-1">
+                                                    <img
+                                                        src={mediaUrl}
+                                                        alt={file.name || 'Attached Image'}
+                                                        onError={(e) => { e.target.src = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=1200'; }}
+                                                        className="max-h-[450px] w-auto max-w-full rounded-lg object-contain shadow-sm"
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    }
 
                                     if (isVideo) {
-                                        const mediaUrl = resolveMediaUrl(file.url || file.rawUrl);
                                         return (
                                             <div key={idx} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm space-y-3">
                                                 <div className="flex items-center justify-between">
@@ -374,7 +433,7 @@ export default function ArticleView() {
                                             <div className="flex items-center gap-3 min-w-0">
                                                 <div className="w-10 h-10 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0">
                                                     <span className="material-symbols-outlined text-2xl">
-                                                        {file.isImage ? 'image' : 'description'}
+                                                        description
                                                     </span>
                                                 </div>
                                                 <div className="min-w-0">
@@ -383,7 +442,7 @@ export default function ArticleView() {
                                                     </p>
                                                     <div className="flex items-center gap-1.5 text-[10px] text-slate-500 font-medium mt-0.5">
                                                         <span className="uppercase font-semibold text-slate-400">
-                                                            {file.isImage ? 'Image' : 'Document'}
+                                                            Document
                                                         </span>
                                                         <span>•</span>
                                                         <span className="flex items-center gap-0.5 text-slate-500">
@@ -394,7 +453,7 @@ export default function ArticleView() {
                                                 </div>
                                             </div>
                                             <a 
-                                                href={resolveMediaUrl(file.url)} 
+                                                href={mediaUrl} 
                                                 target="_blank" 
                                                 rel="noopener noreferrer"
                                                 className="px-3 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500 hover:text-white rounded-lg text-xs font-bold transition-colors shrink-0 flex items-center gap-1"
@@ -431,8 +490,13 @@ export default function ArticleView() {
                     </div>
                     <div className="flex items-center gap-4">
                         <span className="text-xs text-slate-500">{likes.toLocaleString()} views • {likes} reactions</span>
-                        <button className="p-2 text-slate-500 hover:text-blue-500 transition-colors">
+                        <button 
+                            onClick={() => setSharingArticleModal(article)}
+                            className="px-3.5 py-1.5 bg-blue-500/10 hover:bg-blue-500 text-blue-600 dark:text-blue-400 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                            title="Share Article"
+                        >
                             <span className="material-symbols-outlined text-[18px]">share</span>
+                            <span>Share Article</span>
                         </button>
                     </div>
                 </section>
@@ -542,6 +606,20 @@ export default function ArticleView() {
                 targetType="Article"
                 targetId={article?.id || 1}
                 targetName={article?.author?.name || 'Author'}
+            />
+
+            {/* Save to Category Modal */}
+            <SaveToCategoryModal
+                isOpen={!!savingArticleModal}
+                onClose={() => setSavingArticleModal(null)}
+                item={savingArticleModal}
+            />
+
+            {/* Share Article Modal */}
+            <ArticleShareModal
+                isOpen={!!sharingArticleModal}
+                onClose={() => setSharingArticleModal(null)}
+                article={sharingArticleModal}
             />
         </>
     );

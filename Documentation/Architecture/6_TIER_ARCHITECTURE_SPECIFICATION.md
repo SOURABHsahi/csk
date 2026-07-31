@@ -23,11 +23,11 @@ graph TD
     end
 
     subgraph Tier3_4 ["Layers 3 & 4: API Gateway & YARP Reverse Proxy"]
-        Gateway[".NET Core 9 API Gateway<br/>(Gateway/Knome.Gateway)<br/>Port: 5000<br/>• YARP Reverse Proxy Engine<br/>• Rate Limiting & Throttling<br/>• CORS & Security Headers<br/>• OpenAPI / Swagger Diagnostics"]
+        Gateway[".NET Core 10 API Gateway<br/>(Gateway/Knome.Gateway)<br/>Port: 5000<br/>• YARP Reverse Proxy Engine<br/>• Rate Limiting & Throttling<br/>• CORS & Security Headers<br/>• OpenAPI / Swagger Diagnostics"]
     end
 
     subgraph Tier5 ["Layer 5: Backend API & Repository Layer"]
-        BackendAPI[".NET Core 9 Web API<br/>(Backend/Knome.API)<br/>Port: 5095<br/>• Controllers (Thin Router)<br/>• Services (Business Logic)<br/>• Repositories (EF Core Abstraction)<br/>• FluentValidation & AutoMapper"]
+        BackendAPI[".NET Core 10 Web API<br/>(Backend/Knome.API)<br/>Port: 5095<br/>• Controllers (Thin Router)<br/>• Services (Business Logic)<br/>• Repositories (EF Core Abstraction)<br/>• FluentValidation & AutoMapper"]
     end
 
     subgraph Tier6 ["Layer 6: Relational Database Layer"]
@@ -172,10 +172,10 @@ export async function DELETE(req: NextRequest, { params }: { params: { path: str
 
 ---
 
-### Layer 3: API Gateway (.NET Core 9)
+### Layer 3: API Gateway (.NET Core 10)
 
 * **Location**: `Gateway/Knome.Gateway`
-* **Technologies**: ASP.NET Core 9 Web API, Microsoft Rate Limiting, OpenAPI / Swashbuckle
+* **Technologies**: ASP.NET Core 10 Web API, Microsoft Rate Limiting, OpenAPI / Swashbuckle
 * **Port**: `http://localhost:5000` / `https://localhost:5001`
 * **Primary Responsibilities**:
   1. Entry gateway for all external microservices and BFF calls.
@@ -325,7 +325,7 @@ app.Run();
 ### Layer 5: Backend API & Repository Layer
 
 * **Location**: `Backend/Knome.API`
-* **Technologies**: ASP.NET Core 9 Web API, Entity Framework Core 9, AutoMapper, FluentValidation, Serilog, BCrypt, JWT Authentication
+* **Technologies**: ASP.NET Core 10 Web API, Entity Framework Core 10, AutoMapper, FluentValidation, Serilog, BCrypt, JWT Authentication
 * **Port**: `http://localhost:5095`
 * **Primary Responsibilities**:
   1. Contain all business application logic inside dedicated `Services/` (e.g. `AuthService`, `UserService`, `PostService`, `NotificationService`, `KarmaService`).
@@ -425,7 +425,7 @@ npm run dev   # Target: http://localhost:5173
 | :--- | :--- | :--- | :--- | :--- |
 | **Layer 1** | React UI | React 18 / Vite | `5173` | Public Client Presentation |
 | **Layer 2** | Next.js BFF | Next.js App Router | `3000` | Client-Facing BFF Proxy |
-| **Layer 3** | API Gateway | ASP.NET Core 9 | `5000` | Gateway Middleware & Security |
+| **Layer 3** | API Gateway | ASP.NET Core 10 | `5000` | Gateway Middleware & Security |
 | **Layer 4** | YARP Reverse Proxy | Yarp.ReverseProxy | `5000` | Internal Cluster Proxy Engine |
-| **Layer 5** | Backend API / Repo | ASP.NET Core 9 | `5095` | Internal Business & Data Services |
+| **Layer 5** | Backend API / Repo | ASP.NET Core 10 | `5095` | Internal Business & Data Services |
 | **Layer 6** | Database Layer | MS SQL Server | `1433` | Internal Database Source-of-Truth |

@@ -6,6 +6,8 @@ import { savedContentApi, getPersonalizedRecommendations } from '../utils/apiSer
 import { apiClient } from '../utils/apiClient';
 import { checkRestrictedContent } from '../utils/restrictedWords';
 import ReportModal from '../components/modals/ReportModal';
+import SaveToCategoryModal from '../components/modals/SaveToCategoryModal';
+import ArticleShareModal from '../components/modals/ArticleShareModal';
 
 export default function Articles() {
     const { currentUser } = useUser();
@@ -18,6 +20,8 @@ export default function Articles() {
     const [isLoading, setIsLoading] = useState(true);
     const [savedMap, setSavedMap] = useState({});
     const [reportingArticle, setReportingArticle] = useState(null);
+    const [savingArticleModal, setSavingArticleModal] = useState(null);
+    const [sharingArticleModal, setSharingArticleModal] = useState(null);
 
     const loadData = async () => {
         setIsLoading(true);
@@ -380,30 +384,39 @@ export default function Articles() {
                                             <div className="absolute top-4 left-4 bg-slate-900/80 backdrop-blur-sm text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
                                                 {art.category}
                                             </div>
-                                            {/* Save Bookmark Button */}
-                                            <button
-                                                onClick={async (e) => {
-                                                    e.stopPropagation();
-                                                    const articleId = art.id;
-                                                    const currentlySaved = !!savedMap[articleId];
-                                                    setSavedMap(prev => ({ ...prev, [articleId]: !currentlySaved }));
-                                                    try {
-                                                        await savedContentApi.toggleBookmark('Article', articleId);
-                                                    } catch (err) {
-                                                        setSavedMap(prev => ({ ...prev, [articleId]: currentlySaved }));
-                                                    }
-                                                }}
-                                                className={`absolute top-4 right-4 p-2 rounded-xl backdrop-blur-md transition-all active:scale-95 shadow-md ${
-                                                    savedMap[art.id]
-                                                        ? 'bg-amber-500 text-slate-950 font-bold'
-                                                        : 'bg-slate-900/60 text-white hover:bg-amber-500 hover:text-slate-950'
-                                                }`}
-                                                title={savedMap[art.id] ? "Saved in Personal Library" : "Save Article"}
-                                            >
-                                                <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: savedMap[art.id] ? "'FILL' 1" : "'FILL' 0" }}>
-                                                    bookmark
-                                                </span>
-                                            </button>
+                                            {/* Save & Share Action Buttons */}
+                                            <div className="absolute top-4 right-4 flex items-center gap-1.5">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setSharingArticleModal(art);
+                                                    }}
+                                                    className="p-2 rounded-xl bg-slate-900/60 text-white hover:bg-blue-600 transition-all active:scale-95 shadow-md"
+                                                    title="Share Article"
+                                                >
+                                                    <span className="material-symbols-outlined text-[18px]">share</span>
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setSavingArticleModal({
+                                                            ...art,
+                                                            contentType: 'Article',
+                                                            text: art.subtitle || art.description || art.title,
+                                                        });
+                                                    }}
+                                                    className={`p-2 rounded-xl backdrop-blur-md transition-all active:scale-95 shadow-md ${
+                                                        savedMap[art.id]
+                                                            ? 'bg-amber-500 text-slate-950 font-bold'
+                                                            : 'bg-slate-900/60 text-white hover:bg-amber-500 hover:text-slate-950'
+                                                    }`}
+                                                    title={savedMap[art.id] ? "Saved in Personal Library" : "Save Article to Category"}
+                                                >
+                                                    <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: savedMap[art.id] ? "'FILL' 1" : "'FILL' 0" }}>
+                                                        bookmark
+                                                    </span>
+                                                </button>
+                                            </div>
                                         </div>
                                     ) : (
                                         <div className="px-5 pt-5 flex items-center justify-between">
@@ -411,23 +424,20 @@ export default function Articles() {
                                                 {art.category}
                                             </div>
                                             <button
-                                                onClick={async (e) => {
+                                                onClick={(e) => {
                                                     e.stopPropagation();
-                                                    const articleId = art.id;
-                                                    const currentlySaved = !!savedMap[articleId];
-                                                    setSavedMap(prev => ({ ...prev, [articleId]: !currentlySaved }));
-                                                    try {
-                                                        await savedContentApi.toggleBookmark('Article', articleId);
-                                                    } catch (err) {
-                                                        setSavedMap(prev => ({ ...prev, [articleId]: currentlySaved }));
-                                                    }
+                                                    setSavingArticleModal({
+                                                        ...art,
+                                                        contentType: 'Article',
+                                                        text: art.subtitle || art.description || art.title,
+                                                    });
                                                 }}
                                                 className={`p-2 rounded-xl transition-all active:scale-95 border border-slate-200 dark:border-slate-800 ${
                                                     savedMap[art.id]
                                                         ? 'bg-amber-500 text-slate-950 font-bold'
                                                         : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800'
                                                 }`}
-                                                title={savedMap[art.id] ? "Saved in Personal Library" : "Save Article"}
+                                                title={savedMap[art.id] ? "Saved in Personal Library" : "Save Article to Category"}
                                             >
                                                 <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: savedMap[art.id] ? "'FILL' 1" : "'FILL' 0" }}>
                                                     bookmark
@@ -780,6 +790,23 @@ export default function Articles() {
                 targetType="Article"
                 targetId={reportingArticle?.id || 1}
                 targetName={reportingArticle?.author?.name || 'Author'}
+            />
+
+            {/* Save to Category Modal */}
+            <SaveToCategoryModal
+                isOpen={!!savingArticleModal}
+                onClose={() => setSavingArticleModal(null)}
+                item={savingArticleModal}
+                onSaved={(savedItem) => {
+                    setSavedMap(prev => ({ ...prev, [savedItem.contentId || savedItem.id]: true }));
+                }}
+            />
+
+            {/* Share Article Modal */}
+            <ArticleShareModal
+                isOpen={!!sharingArticleModal}
+                onClose={() => setSharingArticleModal(null)}
+                article={sharingArticleModal}
             />
         </>
     );

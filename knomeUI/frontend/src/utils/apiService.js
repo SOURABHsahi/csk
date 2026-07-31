@@ -542,10 +542,11 @@ const ATTACHMENT_TYPE_MAP = { Image: 'image', Document: 'doc', Video: 'video', A
 
 export const resolveMediaUrl = (url) => {
     if (!url) return null;
-    let cleaned = url.replace(/\\/g, '/');
-    if (cleaned.startsWith('http')) {
-        return cleaned;
+    if (typeof url !== 'string') return url;
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) {
+        return url;
     }
+    let cleaned = url.replace(/\\/g, '/');
     if (!cleaned.startsWith('/')) {
         cleaned = '/' + cleaned;
     }

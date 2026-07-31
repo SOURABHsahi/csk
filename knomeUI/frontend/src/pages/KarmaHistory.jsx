@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getKarmaBadge } from '../utils/karmaEngine';
-import { karmaApi } from '../utils/apiService';
+import { karmaApi, resolveMediaUrl } from '../utils/apiService';
 import { useUser } from '../components/contexts/UserContext';
 
 export default function KarmaHistory() {
@@ -42,7 +42,7 @@ export default function KarmaHistory() {
                         name: item.fullName || item.userName || 'Employee',
                         role: item.designation || 'Contributor',
                         points: item.totalPoints || 0,
-                        avatar: item.profilePhotoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.fullName || 'User')}&background=6366f1&color=fff`
+                        avatar: resolveMediaUrl(item.profilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.fullName || item.userName || 'Employee')}&background=6366f1&color=fff`
                     }));
                     setLeaderboard(mappedLb);
                 }
@@ -90,16 +90,14 @@ export default function KarmaHistory() {
     ];
 
     const displayLeaderboard = leaderboard.length > 0 ? leaderboard : [
-        { rank: 1, userId: 1, name: 'Sourabh Sahu', role: 'Staff Engineer', points: 6420, avatar: 'https://randomuser.me/api/portraits/men/22.jpg' },
-        { rank: 2, userId: 2, name: 'Meghna Tiwari', role: 'Design Lead', points: 5150, avatar: 'https://randomuser.me/api/portraits/women/44.jpg' },
-        { rank: 3, userId: 3, name: 'Vishendra Sharma', role: 'DevOps Architect', points: 4890, avatar: 'https://randomuser.me/api/portraits/men/11.jpg' },
-        { rank: 4, userId: 4, name: 'Rishikesh Ugle', role: 'Product Manager', points: 3200, avatar: 'https://randomuser.me/api/portraits/men/33.jpg' },
-        { rank: 5, userId: 5, name: 'Loveneesh Sharma', role: 'System Admin', points: 2800, avatar: 'https://randomuser.me/api/portraits/men/55.jpg' },
-        { rank: 6, userId: 6, name: 'Mayur Verma', role: 'Tech Lead', points: 1950, avatar: 'https://randomuser.me/api/portraits/men/66.jpg' },
-        { rank: 7, userId: 7, name: 'Aditi Sharma', role: 'HR Specialist', points: 1250, avatar: 'https://randomuser.me/api/portraits/women/12.jpg' },
-        { rank: 8, userId: 8, name: 'Rahul Kumar', role: 'Developer', points: 890, avatar: 'https://randomuser.me/api/portraits/men/82.jpg' },
-        { rank: 9, userId: 9, name: 'Priya Singh', role: 'Security', points: 600, avatar: 'https://randomuser.me/api/portraits/women/33.jpg' },
-        { rank: 10, userId: 10, name: 'Amit Patel', role: 'Data Scientist', points: 150, avatar: 'https://randomuser.me/api/portraits/men/91.jpg' },
+        { rank: 1, userId: 1, name: 'Sourabh Sahu', role: 'Staff Engineer', points: 6420, avatar: `https://ui-avatars.com/api/?name=Sourabh+Sahu&background=6366f1&color=fff` },
+        { rank: 2, userId: 2, name: 'Vishendra Sharma', role: 'DevOps Architect', points: 4890, avatar: `https://ui-avatars.com/api/?name=Vishendra+Sharma&background=3b82f6&color=fff` },
+        { rank: 3, userId: 3, name: 'Mayur Verma', role: 'Tech Lead', points: 1950, avatar: `https://ui-avatars.com/api/?name=Mayur+Verma&background=10b981&color=fff` },
+        { rank: 4, userId: 4, name: 'Meghna Tiwari', role: 'Design Lead', points: 5150, avatar: `https://ui-avatars.com/api/?name=Meghna+Tiwari&background=ec4899&color=fff` },
+        { rank: 5, userId: 5, name: 'Rishikesh Ugle', role: 'Product Manager', points: 3200, avatar: `https://ui-avatars.com/api/?name=Rishikesh+Ugle&background=f59e0b&color=fff` },
+        { rank: 6, userId: 6, name: 'Loveneesh Sharma', role: 'System Admin', points: 2800, avatar: `https://ui-avatars.com/api/?name=Loveneesh+Sharma&background=8b5cf6&color=fff` },
+        { rank: 7, userId: 7, name: 'Aditi Sharma', role: 'HR Specialist', points: 1250, avatar: `https://ui-avatars.com/api/?name=Aditi+Sharma&background=06b6d4&color=fff` },
+        { rank: 8, userId: 8, name: 'Rahul Kumar', role: 'Developer', points: 890, avatar: `https://ui-avatars.com/api/?name=Rahul+Kumar&background=64748b&color=fff` },
     ];
 
     return (
@@ -212,8 +210,13 @@ export default function KarmaHistory() {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="flex items-center gap-3">
-                                                <img src={user.avatar} className="w-10 h-10 rounded-xl object-cover shadow-sm" alt={user.name} />
+                                             <div className="flex items-center gap-3">
+                                                 <img 
+                                                     src={resolveMediaUrl(user.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=6366f1&color=fff`} 
+                                                     onError={(e) => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=6366f1&color=fff`; }}
+                                                     className="w-10 h-10 rounded-xl object-cover shadow-sm shrink-0 border border-slate-200 dark:border-slate-700" 
+                                                     alt={user.name} 
+                                                 />
                                                 <div>
                                                     <div className="text-[14px] font-bold text-slate-900 dark:text-white leading-tight flex items-center gap-2">
                                                         {user.name}

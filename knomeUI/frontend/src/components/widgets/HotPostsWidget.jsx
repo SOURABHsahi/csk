@@ -24,7 +24,8 @@ export default function HotPostsWidget() {
                 // Map FeedItemDto to match what the widget expects
                 const ranked = data.map((p, index) => ({
                     id: p.contentId,
-                    title: p.title || p.textSummary?.substring(0, 55) + '...' || 'Untitled',
+                    contentType: p.contentType || 'Post',
+                    title: p.title || (p.textSummary ? (p.textSummary.length > 55 ? p.textSummary.substring(0, 55) + '...' : p.textSummary) : 'Untitled'),
                     author: p.authorFullName || 'Employee',
                     score: p.hotScore || 0,
                     isRecent: (new Date() - new Date(p.publishedDate)) < 86400000, // < 24h
@@ -38,6 +39,26 @@ export default function HotPostsWidget() {
             setHotPosts([]);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handlePostClick = (post) => {
+        if (!post || !post.id) return;
+
+        if (post.contentType === 'Article' || post.contentType === 'article') {
+            navigate(`/article-view?id=${post.id}`);
+            return;
+        }
+
+        const targetEl = document.getElementById(`post-${post.id}`);
+        if (targetEl) {
+            targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            targetEl.classList.add('ring-4', 'ring-indigo-500', 'shadow-2xl');
+            setTimeout(() => {
+                targetEl.classList.remove('ring-4', 'ring-indigo-500', 'shadow-2xl');
+            }, 3000);
+        } else {
+            navigate(`/posts?id=${post.id}`);
         }
     };
 
@@ -107,8 +128,8 @@ export default function HotPostsWidget() {
                     {hotPosts.map((post, index) => (
                         <div 
                             key={post.id ? `${post.id}-${index}` : index} 
-                            onClick={() => navigate(`/`)}
-                            className="flex gap-3 group cursor-pointer p-2 rounded-xl transition-all hover:bg-blue-500/5"
+                            onClick={() => handlePostClick(post)}
+                            className="flex gap-3 group cursor-pointer p-2 rounded-xl transition-all hover:bg-blue-500/5 active:scale-[0.98]"
                         >
                             <div className="text-xl font-extrabold w-5 shrink-0 leading-none mt-0.5 text-[#0284C7]">
                                 {index + 1}

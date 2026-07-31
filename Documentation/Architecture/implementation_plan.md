@@ -4,7 +4,7 @@
 
 | Item | Status |
 |------|--------|
-| **Project** | ASP.NET Core 9 Web API (`net9.0`) |
+| **Project** | ASP.NET Core 10 Web API (`net10.0`) |
 | **DbContext** | `Data/KnomeDbContext.cs` — 35 entities, scaffolded ✅ |
 | **Models** | 35 files in `Models/` — scaffolded, **will NOT be modified** ✅ |
 | **NuGet Packages** | AutoMapper, FluentValidation, Swashbuckle, Serilog already added to `.csproj` ✅ |

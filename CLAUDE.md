@@ -16,7 +16,7 @@ This repository follows a strict Database-First architecture using Entity Framew
 
 ### Backend
 
-- ASP.NET Core 9 Web API
+- ASP.NET Core 10 Web API
 - Entity Framework Core
 - SQL Server
 - Repository Pattern

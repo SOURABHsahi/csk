@@ -3,7 +3,7 @@
 ## Identity
 
 Enterprise knowledge management platform (LinkedIn/Medium/YouTube hybrid) for MPOnline Limited.
-Monorepo with two top-level packages: `Backend/Knome.API` (ASP.NET Core 9) + `Frontend/knome-web` (React/Vite/TypeScript).
+Monorepo with two top-level packages: `Backend/Knome.API` (ASP.NET Core 10) + `Frontend/knome-web` (React/Vite/TypeScript).
 
 ## Existing Instruction Files
 

@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
 import ReportModal from '../modals/ReportModal';
+import SaveToCategoryModal from '../modals/SaveToCategoryModal';
 
 import { interactionsApi, postsApi, searchApi, resolveMediaUrl } from '../../utils/apiService';
 
@@ -38,6 +39,8 @@ function ImageLightbox({ images, startIndex, onClose }) {
         return () => { document.body.style.overflow = ''; };
     }, []);
 
+    const FALLBACK_IMG = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=1200';
+
     return createPortal(
         <div
             className="fixed inset-0 z-[999] flex items-center justify-center"
@@ -47,7 +50,7 @@ function ImageLightbox({ images, startIndex, onClose }) {
             {/* Close */}
             <button
                 onClick={onClose}
-                className="absolute top-5 right-5 w-10 h-10 rounded-full flex items-center justify-center text-white transition-all hover:bg-white/20"
+                className="absolute top-5 right-5 w-10 h-10 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all hover:bg-white/10"
             >
                 <span className="material-symbols-outlined text-[24px]">close</span>
             </button>
@@ -72,7 +75,8 @@ function ImageLightbox({ images, startIndex, onClose }) {
 
             {/* Image */}
             <img
-                src={images[current].url}
+                src={resolveMediaUrl(images[current]?.url)}
+                onError={(e) => { e.target.src = FALLBACK_IMG; }}
                 alt="Full view"
                 className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl"
                 style={{ userSelect: 'none' }}
@@ -99,7 +103,12 @@ function ImageLightbox({ images, startIndex, onClose }) {
                             className="w-12 h-12 rounded-lg overflow-hidden border-2 transition-all"
                             style={{ borderColor: i === current ? 'white' : 'rgba(255,255,255,0.3)' }}
                         >
-                            <img src={img.url} alt="thumb" className="w-full h-full object-cover" />
+                            <img 
+                                src={resolveMediaUrl(img.url)} 
+                                onError={(e) => { e.target.src = FALLBACK_IMG; }} 
+                                alt="thumb" 
+                                className="w-full h-full object-cover" 
+                            />
                         </button>
                     ))}
                 </div>
@@ -113,6 +122,8 @@ function ImageLightbox({ images, startIndex, onClose }) {
 function ImageGrid({ images, onImageClick }) {
     if (images.length === 0) return null;
 
+    const FALLBACK_IMG = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=1200';
+
     // Single image — full width, tall cover
     if (images.length === 1) {
         return (
@@ -122,7 +133,8 @@ function ImageGrid({ images, onImageClick }) {
                 onClick={() => onImageClick(0)}
             >
                 <img
-                    src={images[0].url}
+                    src={resolveMediaUrl(images[0].url)}
+                    onError={(e) => { e.target.src = FALLBACK_IMG; }}
                     alt="Post image"
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
                     style={{ maxHeight: '520px', display: 'block' }}
@@ -142,7 +154,12 @@ function ImageGrid({ images, onImageClick }) {
                         className="overflow-hidden cursor-zoom-in group relative"
                         onClick={() => onImageClick(i)}
                     >
-                        <img src={img.url} alt="Post image" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
+                        <img 
+                            src={resolveMediaUrl(img.url)} 
+                            onError={(e) => { e.target.src = FALLBACK_IMG; }} 
+                            alt="Post image" 
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
+                        />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
                     </div>
                 ))}
@@ -155,12 +172,22 @@ function ImageGrid({ images, onImageClick }) {
         return (
             <div className="w-full grid grid-cols-2 gap-0.5" style={{ height: '380px' }}>
                 <div className="overflow-hidden cursor-zoom-in group relative row-span-2" onClick={() => onImageClick(0)}>
-                    <img src={images[0].url} alt="Post image" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
+                    <img 
+                        src={resolveMediaUrl(images[0].url)} 
+                        onError={(e) => { e.target.src = FALLBACK_IMG; }} 
+                        alt="Post image" 
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
+                    />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
                 </div>
                 {images.slice(1, 3).map((img, i) => (
                     <div key={i} className="overflow-hidden cursor-zoom-in group relative" style={{ height: '189px' }} onClick={() => onImageClick(i + 1)}>
-                        <img src={img.url} alt="Post image" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
+                        <img 
+                            src={resolveMediaUrl(img.url)} 
+                            onError={(e) => { e.target.src = FALLBACK_IMG; }} 
+                            alt="Post image" 
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
+                        />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
                     </div>
                 ))}
@@ -179,7 +206,12 @@ function ImageGrid({ images, onImageClick }) {
                     className="overflow-hidden cursor-zoom-in group relative"
                     onClick={() => onImageClick(i)}
                 >
-                    <img src={img.url} alt="Post image" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
+                    <img 
+                        src={resolveMediaUrl(img.url)} 
+                        onError={(e) => { e.target.src = FALLBACK_IMG; }} 
+                        alt="Post image" 
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
+                    />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
                     {/* +N overlay on last cell */}
                     {i === 3 && extraCount > 0 && (
@@ -204,7 +236,11 @@ export default function PostCard({ post, onPostDeleted }) {
     const [reaction, setReaction] = useState(initialReaction);
     const [likeCount, setLikeCount] = useState(post.likes || 0);
     const [shareCount, setShareCount] = useState(post.shares || 0);
-    const [isSaved, setIsSaved] = useState(post.isSaved || false); // FR-CI-04
+    const [isSaved, setIsSaved] = useState(() => {
+        const bookmarkedIds = JSON.parse(localStorage.getItem('knome_bookmarked_ids') || '[]');
+        return post.isSaved || bookmarkedIds.includes(String(post.id));
+    }); // FR-CI-04
+    const [isSaveCategoryModalOpen, setIsSaveCategoryModalOpen] = useState(false);
     const [showComments, setShowComments] = useState(false);
     const [hasFetchedComments, setHasFetchedComments] = useState(false);
     const [isShareOpen, setIsShareOpen] = useState(false);
@@ -402,7 +438,9 @@ export default function PostCard({ post, onPostDeleted }) {
     };
 
     return (
-        <article className={`rounded-2xl overflow-hidden flex flex-col transition-all hover:-translate-y-1 ${post.isHighlighted ? 'ring-2 ring-indigo-500 shadow-2xl' : ''}`}
+        <article 
+            id={post.id ? `post-${post.id}` : undefined}
+            className={`rounded-2xl overflow-hidden flex flex-col transition-all hover:-translate-y-1 ${post.isHighlighted ? 'ring-2 ring-indigo-500 shadow-2xl' : ''}`}
             style={{
                 background: 'var(--bg-card)',
                 border: post.isHighlighted ? '1px solid #6366f1' : '1px solid var(--border-subtle)',
@@ -433,19 +471,30 @@ export default function PostCard({ post, onPostDeleted }) {
                             <span className="text-slate-500 dark:text-slate-400 text-[11.5px] font-bold uppercase tracking-wider">{post.author.role}</span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                            {/* Save Button (FR-CI-04) */}
+                            {/* Save & Categorize Button (FR-CI-04) */}
                             <button 
                                 onClick={async () => {
-                                    const nextState = !isSaved;
-                                    setIsSaved(nextState);
-                                    try {
-                                        await interactionsApi.toggleBookmark('Post', post.id);
-                                    } catch (e) {
-                                        setIsSaved(!nextState); // Revert
+                                    if (isSaved) {
+                                        setIsSaved(false);
+                                        try {
+                                            const bookmarkedIds = JSON.parse(localStorage.getItem('knome_bookmarked_ids') || '[]');
+                                            localStorage.setItem('knome_bookmarked_ids', JSON.stringify(bookmarkedIds.filter(id => id !== String(post.id))));
+                                            
+                                            const localCustomSaved = JSON.parse(localStorage.getItem('knome_saved_items_custom') || '[]');
+                                            localStorage.setItem('knome_saved_items_custom', JSON.stringify(localCustomSaved.filter(i => String(i.contentId || i.id) !== String(post.id))));
+
+                                            await interactionsApi.toggleBookmark('Post', post.id);
+                                            window.dispatchEvent(new CustomEvent('knome-bookmark-saved', { detail: { id: post.id, removed: true } }));
+                                            addToast('Item removed from saved bookmarks.', 'info');
+                                        } catch (e) {
+                                            setIsSaved(true);
+                                        }
+                                    } else {
+                                        setIsSaveCategoryModalOpen(true);
                                     }
                                 }}
-                                className={`p-1.5 rounded-lg transition-all active:scale-95 ${isSaved ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:text-blue-600 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
-                                title={isSaved ? "Unsave" : "Save Content"}
+                                className={`p-1.5 rounded-lg transition-all active:scale-95 ${isSaved ? 'text-amber-500 bg-amber-50 dark:bg-amber-900/20' : 'text-slate-400 hover:text-amber-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                title={isSaved ? "Unsave" : "Save & Categorize Content"}
                             >
                                 <span className="material-symbols-outlined text-[18px]" style={{fontVariationSettings: isSaved ? "'FILL' 1" : "'FILL' 0"}}>bookmark</span>
                             </button>
@@ -896,6 +945,29 @@ export default function PostCard({ post, onPostDeleted }) {
                     </div>
                 </div>
             )}
+
+            {/* Save & Categorize Modal */}
+            <SaveToCategoryModal
+                isOpen={isSaveCategoryModalOpen}
+                onClose={() => setIsSaveCategoryModalOpen(false)}
+                item={{
+                    id: post.id,
+                    contentType: 'Post',
+                    title: post.title || '',
+                    content: post.content || post.text || '',
+                    image: post.image || post.mediaUrl || (Array.isArray(post.mediaUrls) ? post.mediaUrls[0] : null) || (Array.isArray(post.attachmentUrls) ? post.attachmentUrls[0] : null) || post.thumbnailUrl || post.thumbnail || null,
+                    author: post.author?.name || post.author,
+                    time: post.createdDate || post.time || 'Just now',
+                    tags: post.tags || []
+                }}
+                onSaved={async (savedItem) => {
+                    setIsSaved(true);
+                    try {
+                        await interactionsApi.toggleBookmark('Post', post.id);
+                    } catch (_) {}
+                    addToast(`✅ Saved to "${savedItem.category}"!`, 'success');
+                }}
+            />
         </article>
     );
 }

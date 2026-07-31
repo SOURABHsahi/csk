@@ -487,10 +487,29 @@ export default function Navbar() {
 
     const markAllRead = async () => {
         try {
-            await notificationsApi.markAllRead();
+            await notificationsApi.markAllRead().catch(() => {});
+            const stored = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+            const updated = stored.map(n => ({ ...n, unread: false }));
+            localStorage.setItem('knome_notifications', JSON.stringify(updated));
             setAllNotifs(prev => prev.map(n => ({ ...n, unread: false, handled: true })));
         } catch (error) {
             console.error("Failed to mark all as read", error);
+        }
+    };
+
+    const clearAllNotifications = async () => {
+        try {
+            await notificationsApi.markAllRead().catch(() => {});
+            const stored = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+            const currentUserIdStr = String(currentUser?.id || currentUser?.userId || '');
+            const remaining = stored.filter(n => {
+                const targetIdStr = String(n.targetUserId || n.userId || '');
+                return currentUserIdStr && targetIdStr !== currentUserIdStr;
+            });
+            localStorage.setItem('knome_notifications', JSON.stringify(remaining));
+            setAllNotifs([]);
+        } catch (error) {
+            setAllNotifs([]);
         }
     };
 
@@ -501,25 +520,42 @@ export default function Navbar() {
         if (notif.actionLink && notif.actionLink.includes('/community/view')) return notif.actionLink;
 
         const txt = notif.text || notif.message || '';
-        const match = txt.match(/"([^"]+)"/);
-        const commName = match ? match[1] : notif.communityName;
+        // Extract community name: look for 'community "Name"' or first quoted text
+        const commMatch = txt.match(/community\s+"([^"]+)"/i) || txt.match(/"([^"]+)"/);
+        const commName = commMatch ? commMatch[1] : notif.communityName;
 
         if (commName) {
+            const normalizedName = commName.trim().toLowerCase();
+
+            // 1. Check custom communities in localStorage
             try {
                 const allCustom = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
-                const found = allCustom.find(c => c.name?.toLowerCase() === commName.toLowerCase() || c.title?.toLowerCase() === commName.toLowerCase());
+                const found = allCustom.find(c => (c.name || c.title || '').trim().toLowerCase() === normalizedName);
                 if (found) return `/community/view?id=${found.id}`;
             } catch (e) { /* ignore */ }
 
+            // 2. Check user joined communities
+            try {
+                const userKey = `knome_joined_communities_${currentUser?.id || 'guest'}`;
+                const joined = JSON.parse(localStorage.getItem(userKey) || '[]');
+                const foundJoined = joined.find(c => (c.name || '').trim().toLowerCase() === normalizedName);
+                if (foundJoined) return `/community/view?id=${foundJoined.id}`;
+            } catch (e) { /* ignore */ }
+
+            // 3. Known enterprise seed map
             const seedMap = {
+                'higher': 101,
                 'devops & ai innovation hub': 101,
                 'react developer hub': 102,
                 'employee engagement hub': 103,
                 'tech innovation hub': 1,
+                'technology innovation hub': 1,
                 'frontend developers guild': 3,
-                'database architects': 4
+                'database architects': 4,
+                'hr & general announcements': 5,
+                'culture & hr hub': 6
             };
-            const mappedId = seedMap[commName.toLowerCase()];
+            const mappedId = seedMap[normalizedName];
             if (mappedId) return `/community/view?id=${mappedId}`;
         }
 
@@ -963,9 +999,15 @@ export default function Navbar() {
                                 }}>
                                 <div className="flex items-center justify-between px-4 py-3 border-b" style={{borderColor: 'var(--border-mid)'}}>
                                     <span className="font-bold text-sm text-slate-900 dark:text-slate-100">Notifications</span>
-                                    <div className="flex items-center gap-2">
-                                        <button onClick={markAllRead} className="text-[11px] font-bold text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors">Mark all read</button>
-                                        <button onClick={() => { setIsNotifSettingsOpen(true); setIsNotifOpen(false); }} className="text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-colors">
+                                    <div className="flex items-center gap-2.5">
+                                        {allNotifs.length > 0 && (
+                                            <>
+                                                <button onClick={markAllRead} className="text-[11px] font-bold text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors">Mark read</button>
+                                                <span className="text-slate-300 dark:text-slate-700 text-xs">•</span>
+                                                <button onClick={clearAllNotifications} className="text-[11px] font-bold text-rose-500 hover:text-rose-600 transition-colors">Clear all</button>
+                                            </>
+                                        )}
+                                        <button onClick={() => { setIsNotifSettingsOpen(true); setIsNotifOpen(false); }} className="text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-colors ml-1">
                                             <span className="material-symbols-outlined text-[16px]">settings</span>
                                         </button>
                                     </div>
@@ -1105,7 +1147,13 @@ export default function Navbar() {
                                         </div>
                                     ))}
                                     {notifications.length === 0 && (
-                                        <div className="p-6 text-center text-xs text-slate-400">No notifications</div>
+                                        <div className="py-10 px-4 text-center flex flex-col items-center justify-center">
+                                            <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mb-3">
+                                                <span className="material-symbols-outlined text-[24px]">notifications_paused</span>
+                                            </div>
+                                            <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">No Notifications</p>
+                                            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 font-medium">Only real & current notifications for your account will appear here.</p>
+                                        </div>
                                     )}
                                 </div>
                             </div>

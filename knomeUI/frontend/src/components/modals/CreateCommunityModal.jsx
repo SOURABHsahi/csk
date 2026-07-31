@@ -87,19 +87,58 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
     const updateFaq = (idx, field, val) => setFaqList(prev => prev.map((item, i) => i === idx ? { ...item, [field]: val } : item));
     const removeFaq = (idx) => setFaqList(prev => prev.filter((_, i) => i !== idx));
 
+    // Comprehensive Duplicate Name Check
+    const checkIsDuplicateCommunityName = (targetName) => {
+        if (!targetName || !targetName.trim()) return false;
+        const normalized = targetName.trim().toLowerCase();
+
+        // 1. Check custom communities in localStorage
+        const customComms = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+        if (customComms.some(c => c.name && c.name.trim().toLowerCase() === normalized)) {
+            return true;
+        }
+
+        // 2. Check all seed & enterprise system communities
+        const knownCommunities = [
+            'tech innovation hub',
+            'devops & ai innovation hub',
+            'frontend developers guild',
+            'database architects',
+            'hr & general announcements',
+            'culture & hr hub',
+            'dotnet developers community',
+            'fullstack engineering guild',
+            'ai & data science innovation lab',
+            'technology & architecture hub',
+            'hr & people operations',
+            'finance & accounting operations',
+            'marketing & brand strategy',
+            'cto leadership & strategy circle',
+            'executive ai & data labs'
+        ];
+        if (knownCommunities.some(k => k === normalized)) {
+            return true;
+        }
+
+        // 3. Check joined/persisted user communities
+        const userKey = `knome_joined_communities_${currentUser?.id || 'guest'}`;
+        const joinedComms = JSON.parse(localStorage.getItem(userKey) || '[]');
+        if (joinedComms.some(c => c.name && c.name.trim().toLowerCase() === normalized)) {
+            return true;
+        }
+
+        return false;
+    };
+
     // Step 1 validation
     const handleNextStep = () => {
-        if (!name.trim()) { setNameError('Community name is required.'); return; }
+        if (!name.trim()) { 
+            setNameError('Community name is required.'); 
+            return; 
+        }
 
-        // Duplicate name check
-        const existingNames = [
-            ...JSON.parse(localStorage.getItem('knome_custom_communities') || '[]').map(c => c.name?.toLowerCase()),
-            'dotnet developers community', 'fullstack engineering guild', 'ai & data science innovation lab',
-            'technology & architecture hub', 'hr & people operations', 'finance & accounting operations',
-            'marketing & brand strategy', 'cto leadership & strategy circle', 'executive ai & data labs'
-        ];
-        if (existingNames.includes(name.trim().toLowerCase())) {
-            setNameError('A community with this name already exists. Please choose a unique name.');
+        if (checkIsDuplicateCommunityName(name)) {
+            setNameError(`A community named "${name.trim()}" already exists. Please choose a unique community name.`);
             return;
         }
 
@@ -124,6 +163,11 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
     };
 
     const handleSubmit = async () => {
+        if (checkIsDuplicateCommunityName(name)) {
+            setNameError(`A community named "${name.trim()}" already exists. Please choose a unique community name.`);
+            setStep(1);
+            return;
+        }
         setIsSubmitting(true);
         try {
             const communityId = Math.floor(Date.now() / 1000);
@@ -195,7 +239,31 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                 status: 'Approved',
                 profilePhotoUrl: currentUser?.avatar
             };
-            safeSetStorage(`knome_community_members_${communityId}`, [creatorMember]);
+
+            const memberList = [creatorMember];
+            (invitedUserIds || []).forEach(uId => {
+                const targetUserObj = (users || []).find(u => String(u.id) === String(uId));
+                if (targetUserObj) {
+                    memberList.push({
+                        userId: targetUserObj.id,
+                        fullName: targetUserObj.name,
+                        employeeId: targetUserObj.employeeId || `MPO${targetUserObj.id}`,
+                        designation: targetUserObj.designation || 'Member',
+                        memberType: 'Member',
+                        status: 'Approved',
+                        profilePhotoUrl: targetUserObj.avatar
+                    });
+
+                    // Auto-subscribe directly to target user's joined community list
+                    try {
+                        const targetUserKey = `knome_joined_communities_${targetUserObj.id}`;
+                        const targetUserJoined = JSON.parse(localStorage.getItem(targetUserKey) || '[]');
+                        safeSetStorage(targetUserKey, [{ id: communityId, name: newCommunity.name, status: 'joined', joinedAt: new Date().toISOString() }, ...targetUserJoined.filter(c => String(c.id) !== String(communityId))]);
+                    } catch (e) { /* ignore */ }
+                }
+            });
+
+            safeSetStorage(`knome_community_members_${communityId}`, memberList);
 
             // FR-CM-04: Default (Org) community — save department assignment
             if (type === 'default') {
@@ -322,7 +390,15 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                             </label>
                                             <input
                                                 value={name}
-                                                onChange={(e) => { setName(e.target.value); if (nameError) setNameError(''); }}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    setName(val);
+                                                    if (checkIsDuplicateCommunityName(val)) {
+                                                        setNameError(`A community named "${val.trim()}" already exists. Please choose a unique community name.`);
+                                                    } else {
+                                                        setNameError('');
+                                                    }
+                                                }}
                                                 type="text"
                                                 placeholder="e.g. Engineering Excellence"
                                                 className={`w-full bg-white dark:bg-slate-800 border rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white font-bold transition-colors ${nameError ? 'border-red-400 focus:ring-red-400' : 'border-slate-200 dark:border-slate-700'}`}
@@ -381,35 +457,42 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                                 </div>
                                             </label>
 
-                                            {['SYSADM', 'HRADM'].includes(currentUser?.role) && (
+                                            {((['HRADM', 'HR'].includes(currentUser?.role)) ||
+                                               (['HR Administrator', 'HR Admin'].includes(currentUser?.roleName)) ||
+                                               (currentUser?.roleName && currentUser.roleName.toLowerCase().includes('hr') && !currentUser.roleName.toLowerCase().includes('system')) ||
+                                               (currentUser?.role && currentUser.role.toLowerCase().includes('hr') && currentUser.role !== 'SYSADM') ||
+                                               currentUser?.isHrAdmin === true) && (
                                                 <label className={`block p-4 rounded-xl border-2 cursor-pointer transition-all ${type === 'default' ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/20' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-indigo-300'}`}>
                                                     <div className="flex items-center gap-3">
-                                                        <input type="radio" name="type" checked={type === 'default'} onChange={() => setType('default')} className="text-indigo-500 focus:ring-indigo-500" />
+                                                        <input type="radio" name="type" checked={type === 'default'} onChange={() => setType('default')} className="text-indigo-500 focus:ring-indigo-500 cursor-pointer" />
                                                         <div>
                                                             <h4 className="font-bold text-[14px] text-slate-900 dark:text-white flex items-center gap-1.5">
-                                                                <span className="material-symbols-outlined text-[16px] text-purple-500">corporate_fare</span> Organization Default
+                                                                <span className="material-symbols-outlined text-[16px] text-purple-500">corporate_fare</span> Organization Default (Auto-Assigned)
                                                             </h4>
-                                                            <p className="text-[11px] text-slate-500 mt-0.5">All employees or specific department are auto-subscribed. HR Admin only.</p>
+                                                            <p className="text-[11px] text-slate-500 mt-0.5">Strictly HR Administrator Only: Auto-subscribes all employees or specific department members automatically.</p>
                                                         </div>
                                                     </div>
                                                 </label>
                                             )}
 
-                                            {type === 'default' && ['SYSADM', 'HRADM'].includes(currentUser?.role) && (
+                                            {type === 'default' && (
                                                 <div className="mt-3 p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800/40 rounded-xl animate-in fade-in slide-in-from-top-2">
-                                                    <label className="block text-[11px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-2">
-                                                        <span className="material-symbols-outlined text-[13px]">corporate_fare</span> Auto-Subscribe Target
+                                                    <label className="block text-[11px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider mb-2 flex items-center gap-1">
+                                                        <span className="material-symbols-outlined text-[14px]">groups</span> Auto-Subscribe Target Group *
                                                     </label>
                                                     <select value={defaultOrg} onChange={(e) => setDefaultOrg(e.target.value)}
-                                                        className="w-full bg-white dark:bg-slate-900 border border-purple-300 dark:border-purple-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 outline-none text-slate-900 dark:text-white font-medium">
-                                                        <option value="">Select Department or All...</option>
-                                                        <option>All Employees</option>
-                                                        <option>HR</option>
-                                                        <option>Finance</option>
-                                                        <option>Technology</option>
-                                                        <option>CTO</option>
-                                                        <option>Marketing</option>
+                                                        className="w-full bg-white dark:bg-slate-900 border border-purple-300 dark:border-purple-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500 outline-none text-slate-900 dark:text-white font-bold">
+                                                        <option value="">Select Target Group...</option>
+                                                        <option value="All Employees">🏢 All Employees (Entire Organization)</option>
+                                                        <option value="Technology">💻 Technology / Engineering Department</option>
+                                                        <option value="HR">👥 HR & People Operations Department</option>
+                                                        <option value="Finance">💰 Finance & Accounting Department</option>
+                                                        <option value="Marketing">📢 Marketing & Brand Strategy Department</option>
+                                                        <option value="Operations">⚙️ Operations & Logistics Department</option>
                                                     </select>
+                                                    <p className="text-[10px] text-purple-500 dark:text-purple-300 mt-1.5 font-medium">
+                                                        ✨ Employees in the selected department or all employees will be auto-assigned to this community upon creation (FR-CM-04).
+                                                    </p>
                                                 </div>
                                             )}
                                         </div>
@@ -567,14 +650,31 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
 
                                     {/* Invite Employees */}
                                     <div className="bg-indigo-50/50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/40 rounded-2xl p-5">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <span className="material-symbols-outlined text-indigo-500">person_add</span>
-                                            <h3 className="font-bold text-[15px] text-slate-900 dark:text-white">Invite Employees</h3>
-                                            {invitedUserIds.length > 0 && (
-                                                <span className="bg-indigo-500 text-white text-[11px] px-2 py-0.5 rounded-full font-bold">{invitedUserIds.length} selected</span>
-                                            )}
+                                        <div className="flex items-center justify-between gap-2 mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-indigo-500">group_add</span>
+                                                <h3 className="font-bold text-[15px] text-slate-900 dark:text-white">Auto-Add / Invite Employees</h3>
+                                                {invitedUserIds.length > 0 && (
+                                                    <span className="bg-indigo-500 text-white text-[11px] px-2.5 py-0.5 rounded-full font-bold">{invitedUserIds.length} selected</span>
+                                                )}
+                                            </div>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const allOtherIds = (users || []).filter(u => u.id !== currentUser?.id).map(u => u.id);
+                                                    if (invitedUserIds.length === allOtherIds.length) {
+                                                        setInvitedUserIds([]);
+                                                    } else {
+                                                        setInvitedUserIds(allOtherIds);
+                                                    }
+                                                }}
+                                                className="px-3.5 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500 hover:text-white text-indigo-600 dark:text-indigo-400 font-extrabold text-xs transition-all flex items-center gap-1.5 cursor-pointer border border-indigo-500/20"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">done_all</span>
+                                                {invitedUserIds.length === (users || []).filter(u => u.id !== currentUser?.id).length ? 'Deselect All' : 'Select All Employees'}
+                                            </button>
                                         </div>
-                                        <p className="text-[12px] text-slate-500 mb-4">Selected employees receive a direct notification with a join link.</p>
+                                        <p className="text-[12px] text-slate-500 mb-4">Selected employees will automatically be added as active community members upon creation — no manual invitations needed!</p>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                                             {(users || []).filter(u => u.id !== currentUser?.id).map(user => {
                                                 const isSelected = invitedUserIds.includes(user.id);
@@ -624,7 +724,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                 <button onClick={handleSubmit} disabled={isSubmitting}
                                     className="px-8 py-2.5 bg-indigo-500 text-white text-[13px] font-bold rounded-xl hover:bg-indigo-600 transition-colors shadow-md shadow-indigo-500/20 disabled:opacity-50 flex items-center gap-2">
                                     <span className="material-symbols-outlined text-[18px]">send</span>
-                                    {isSubmitting ? 'Creating...' : 'Create & Invite Members'}
+                                    {isSubmitting ? 'Creating...' : (invitedUserIds.length === (users || []).filter(u => u.id !== currentUser?.id).length ? '⚡ Create & Auto-Add All Members' : 'Create & Add Members')}
                                 </button>
                             )}
                         </div>

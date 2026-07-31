@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
-import { interactionsApi, adminApi, postsApi } from '../utils/apiService';
+import { interactionsApi, adminApi, postsApi, podcastsApi, resolveMediaUrl } from '../utils/apiService';
+import { apiClient } from '../utils/apiClient';
 
 // Default seed data directly matching user's SQL ContentReports table
 const SEED_REPORTS = [
@@ -147,6 +148,90 @@ export default function AdminConsole() {
     const showToast = (msg) => {
         setActionToast(msg);
         setTimeout(() => setActionToast(''), 4000);
+    };
+
+    // Pending Media Approvals State
+    const [pendingMediaApprovals, setPendingMediaApprovals] = useState(() => {
+        try {
+            return JSON.parse(localStorage.getItem('knome_pending_media_approvals') || '[]');
+        } catch (e) {
+            return [];
+        }
+    });
+
+    const refreshPendingMedia = () => {
+        try {
+            const stored = JSON.parse(localStorage.getItem('knome_pending_media_approvals') || '[]');
+            setPendingMediaApprovals(stored);
+        } catch (e) {
+            setPendingMediaApprovals([]);
+        }
+    };
+
+    useEffect(() => {
+        refreshPendingMedia();
+        const handleStorage = () => refreshPendingMedia();
+        window.addEventListener('storage', handleStorage);
+        return () => window.removeEventListener('storage', handleStorage);
+    }, []);
+
+    const handleApproveMedia = async (mediaItem) => {
+        try {
+            if (mediaItem.mediaType === 'Video' && mediaItem.dto) {
+                await apiClient.post('/videos', mediaItem.dto).catch(() => {});
+            } else if (mediaItem.mediaType === 'Podcast' && mediaItem.podcastData) {
+                await podcastsApi.create(mediaItem.podcastData).catch(() => {});
+            }
+
+            const updated = pendingMediaApprovals.filter(m => m.id !== mediaItem.id);
+            setPendingMediaApprovals(updated);
+            localStorage.setItem('knome_pending_media_approvals', JSON.stringify(updated));
+
+            if (mediaItem.authorId) {
+                const authorNotif = {
+                    id: `approved_notif_${Date.now()}`,
+                    type: 'media_approved',
+                    category: 'System',
+                    text: `🎉 Your ${mediaItem.mediaType} "${mediaItem.title}" was approved by Admin and is now live!`,
+                    senderName: 'System Admin',
+                    targetUserId: mediaItem.authorId,
+                    targetUrl: mediaItem.mediaType === 'Video' ? '/videos' : '/podcasts',
+                    time: 'Just now',
+                    unread: true
+                };
+                const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+                localStorage.setItem('knome_notifications', JSON.stringify([authorNotif, ...existingNotifs]));
+            }
+
+            showToast(`✅ ${mediaItem.mediaType} "${mediaItem.title}" approved & published!`);
+        } catch (err) {
+            console.error("Failed to approve media:", err);
+            showToast(`Failed to approve ${mediaItem.mediaType}`);
+        }
+    };
+
+    const handleRejectMedia = (mediaItem) => {
+        const updated = pendingMediaApprovals.filter(m => m.id !== mediaItem.id);
+        setPendingMediaApprovals(updated);
+        localStorage.setItem('knome_pending_media_approvals', JSON.stringify(updated));
+
+        if (mediaItem.authorId) {
+            const authorNotif = {
+                id: `rejected_notif_${Date.now()}`,
+                type: 'media_rejected',
+                category: 'System',
+                text: `⚠️ Your ${mediaItem.mediaType} "${mediaItem.title}" was reviewed and not approved by Admin.`,
+                senderName: 'System Admin',
+                targetUserId: mediaItem.authorId,
+                targetUrl: mediaItem.mediaType === 'Video' ? '/videos' : '/podcasts',
+                time: 'Just now',
+                unread: true
+            };
+            const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+            localStorage.setItem('knome_notifications', JSON.stringify([authorNotif, ...existingNotifs]));
+        }
+
+        showToast(`Rejected ${mediaItem.mediaType} "${mediaItem.title}"`);
     };
 
     // Refresh Handler
@@ -845,6 +930,16 @@ export default function AdminConsole() {
                 >
                     <span className="material-symbols-outlined text-[16px]">history</span>
                     <span>Audit Trail ({auditTrail.length})</span>
+                </button>
+                <button
+                    onClick={() => setActiveTab('media_approvals')}
+                    className={`px-3 py-2 border-b-2 font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'media_approvals' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                >
+                    <span className="material-symbols-outlined text-[16px] text-rose-500">video_library</span>
+                    <span>Media Approvals ({pendingMediaApprovals.length})</span>
+                    {pendingMediaApprovals.length > 0 && (
+                        <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                    )}
                 </button>
                 <button
                     onClick={() => setActiveTab('analytics')}
@@ -1558,6 +1653,80 @@ export default function AdminConsole() {
                             </div>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* ─── TAB: MEDIA APPROVALS (VIDEOS & PODCASTS) ─── */}
+            {activeTab === 'media_approvals' && (
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs p-6 space-y-6">
+                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
+                        <div>
+                            <h2 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                                <span className="material-symbols-outlined text-rose-500">verified</span>
+                                Media Approvals Queue (Videos & Podcasts)
+                            </h2>
+                            <p className="text-xs text-slate-500 mt-0.5">
+                                Review video and podcast submissions uploaded by employees before publishing them to the enterprise platform.
+                            </p>
+                        </div>
+                        <span className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-3 py-1 rounded-full text-xs font-bold border border-indigo-200 dark:border-indigo-800">
+                            {pendingMediaApprovals.length} Pending Submission{pendingMediaApprovals.length === 1 ? '' : 's'}
+                        </span>
+                    </div>
+
+                    {pendingMediaApprovals.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {pendingMediaApprovals.map((item) => (
+                                <div key={item.id} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-3 shadow-xs">
+                                    <div className="flex items-center justify-between">
+                                        <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${item.mediaType === 'Video' ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20' : 'bg-pink-500/10 text-pink-600 dark:text-pink-400 border border-pink-500/20'}`}>
+                                            {item.mediaType} Submission
+                                        </span>
+                                        <span className="text-[11px] font-medium text-slate-400">
+                                            {new Date(item.submittedDate).toLocaleString()}
+                                        </span>
+                                    </div>
+
+                                    <div className="flex items-start gap-3">
+                                        <img src={resolveMediaUrl(item.thumbnail) || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=1200'} className="w-16 h-16 rounded-xl object-cover shrink-0 border border-slate-200 dark:border-slate-700 shadow-xs" alt={item.title} />
+                                        <div className="min-w-0 flex-1">
+                                            <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">{item.title}</h4>
+                                            <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">{item.description || 'No description provided.'}</p>
+                                            <div className="flex items-center gap-2 mt-2 text-[11px] text-slate-400 font-semibold">
+                                                <span>By: {item.authorName}</span>
+                                                <span>•</span>
+                                                <span>Category: {item.category}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-800">
+                                        <button
+                                            onClick={() => handleRejectMedia(item)}
+                                            className="px-4 py-1.5 bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold transition-colors"
+                                        >
+                                            Decline / Reject
+                                        </button>
+                                        <button
+                                            onClick={() => handleApproveMedia(item)}
+                                            className="px-5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                                            Approve & Publish
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="py-12 text-center flex flex-col items-center justify-center">
+                            <div className="w-14 h-14 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center mb-3">
+                                <span className="material-symbols-outlined text-[32px]">task_alt</span>
+                            </div>
+                            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">No Pending Media Approvals</h3>
+                            <p className="text-xs text-slate-400 max-w-sm mt-1">All submitted podcasts and videos have been reviewed and processed by system admins.</p>
+                        </div>
+                    )}
                 </div>
             )}
 

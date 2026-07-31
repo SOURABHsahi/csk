@@ -4,6 +4,7 @@ import { useUser } from '../components/contexts/UserContext';
 import UploadVideoModal from '../components/modals/UploadVideoModal';
 import VideoPlayerModal from '../components/modals/VideoPlayerModal';
 import ReportModal from '../components/modals/ReportModal';
+import SaveToCategoryModal from '../components/modals/SaveToCategoryModal';
 import { getVideos } from '../utils/videoService';
 import { savedContentApi, getPersonalizedRecommendations } from '../utils/apiService';
 
@@ -19,6 +20,7 @@ export default function Videos() {
     const [searchQuery, setSearchQuery] = useState('');
     const [savedMap, setSavedMap] = useState({});
     const [reportingVideo, setReportingVideo] = useState(null);
+    const [savingVideoModal, setSavingVideoModal] = useState(null);
     
     const [videos, setVideos] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -209,23 +211,20 @@ export default function Videos() {
 
                                         {/* Save Bookmark Button */}
                                         <button
-                                            onClick={async (e) => {
+                                            onClick={(e) => {
                                                 e.stopPropagation();
-                                                const videoId = video.id;
-                                                const currentlySaved = !!savedMap[videoId];
-                                                setSavedMap(prev => ({ ...prev, [videoId]: !currentlySaved }));
-                                                try {
-                                                    await savedContentApi.toggleBookmark('Video', videoId);
-                                                } catch (err) {
-                                                    setSavedMap(prev => ({ ...prev, [videoId]: currentlySaved }));
-                                                }
+                                                setSavingVideoModal({
+                                                    ...video,
+                                                    contentType: 'Video',
+                                                    text: video.description || video.title,
+                                                });
                                             }}
                                             className={`absolute top-2 right-2 p-1.5 rounded-xl backdrop-blur-md transition-all active:scale-95 shadow-md z-10 ${
                                                 savedMap[video.id]
                                                     ? 'bg-amber-500 text-slate-950 font-bold'
                                                     : 'bg-slate-900/60 text-white hover:bg-amber-500 hover:text-slate-950'
                                             }`}
-                                            title={savedMap[video.id] ? "Saved in Personal Library" : "Save Video"}
+                                            title={savedMap[video.id] ? "Saved in Personal Library" : "Save Video to Category"}
                                         >
                                             <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: savedMap[video.id] ? "'FILL' 1" : "'FILL' 0" }}>
                                                 bookmark
@@ -267,6 +266,14 @@ export default function Videos() {
                 targetType="Video"
                 targetId={reportingVideo?.id || 1}
                 targetName={reportingVideo?.author || reportingVideo?.presenter || 'Creator'}
+            />
+            <SaveToCategoryModal
+                isOpen={!!savingVideoModal}
+                onClose={() => setSavingVideoModal(null)}
+                item={savingVideoModal}
+                onSaved={(savedItem) => {
+                    setSavedMap(prev => ({ ...prev, [savedItem.contentId || savedItem.id]: true }));
+                }}
             />
         </>
     );

@@ -65,8 +65,9 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
     const renderPlayer = () => {
         const url = video.sourceUrl || "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
         const isExternalEmbed = url.includes('youtube.com') || url.includes('youtu.be') || url.includes('vimeo.com') || url.includes('sharepoint.com') || url.includes('onedrive.live.com') || url.includes('microsoftstream.com');
+        const isDirectVideoFile = !!url.match(/\.(mp4|webm|ogg|mov|m4v|mkv)(\?.*)?$/i) || url.includes('/uploads/') || url.includes('/Media/') || url.startsWith('data:video') || url.startsWith('blob:');
 
-        if (video.sourceType === 'LocalUpload' && !isExternalEmbed) {
+        if ((video.sourceType === 'LocalUpload' || isDirectVideoFile || !isExternalEmbed) && !isExternalEmbed) {
             return (
                 <video 
                     className="w-full h-full"

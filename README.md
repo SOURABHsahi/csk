@@ -1,13 +1,13 @@
 # Knome — Enterprise Knowledge Management Platform
 
 [![Backend Status: Frozen v1.2.8](https://img.shields.io/badge/Backend%20Status-Frozen%20v1.2.8-00C853.svg)](#10-current-project-status)
-[![ASP.NET Core 9](https://img.shields.io/badge/ASP.NET%20Core-9.0-512BD4.svg)](#2-technology-stack)
+[![ASP.NET Core 10](https://img.shields.io/badge/ASP.NET%20Core-10.0-512BD4.svg)](#2-technology-stack)
 [![Architecture: Database--First](https://img.shields.io/badge/Architecture-Database--First%20EF%20Core-0078D4.svg)](#3-architecture-overview)
 [![DI Verification: 100% PASS](https://img.shields.io/badge/DI%20Resolution-100%25%20PASS-2E7D32.svg)](#8-build--run-instructions)
 
 **Knome** is an enterprise-grade, internal Knowledge Management & Employee Engagement Portal developed for **MPOnline Limited**. The platform combines professional networking, rich-text technical blogging, multi-media content sharing, peer recognition (gamification), and enterprise collaboration into a unified, secure internal portal inspired by LinkedIn, Medium, and YouTube.
 
-This repository hosts the **production-ready backend API solution (`Backend/Knome.API`)** built on **ASP.NET Core 9 Web API** using a strict **Database-First Entity Framework Core** architecture, the **Repository and Service Pattern**, clean dependency injection, and comprehensive security hardening.
+This repository hosts the **production-ready backend API solution (`Backend/Knome.API`)** built on **ASP.NET Core 10 Web API** using a strict **Database-First Entity Framework Core** architecture, the **Repository and Service Pattern**, clean dependency injection, and comprehensive security hardening.
 
 ---
 
@@ -45,7 +45,7 @@ Enterprise knowledge silos occur when organizational insights, technical documen
 
 ### Core Backend & Runtime
 
-- **Runtime & Framework**: `.NET 9 SDK` (`ASP.NET Core 9 Web API`)
+- **Runtime & Framework**: `.NET 10 SDK` (`ASP.NET Core 10 Web API`)
 - **Language**: `C# 13` (`Nullable reference types enabled`, `File-scoped namespaces`)
 - **Database Engine**: `Microsoft SQL Server 2022+` (`Database-First EF Core scaffolding`)
 - **ORM**: `Microsoft.EntityFrameworkCore 9.0` (`Microsoft.Data.SqlClient`)
@@ -238,7 +238,7 @@ Knome implements comprehensive defense-in-depth security hardening verified duri
 ### Prerequisites
 
 - [Windows OS / Linux / macOS]
-- **.NET 9 SDK** (`net9.0`)
+- **.NET 10 SDK** (`net10.0`)
 - **Microsoft SQL Server 2022+** (`localhost`, database named `Knome`)
 
 ### 1. Database Setup

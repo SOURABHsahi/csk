@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useUser } from '../components/contexts/UserContext';
+import { useToast } from '../components/contexts/ToastContext';
 import { userApi, searchApi, resolveMediaUrl } from '../utils/apiService';
 import { Link } from 'react-router-dom';
 
 export default function Network() {
     const { currentUser } = useUser();
+    const { addToast } = useToast();
     
     const [activeTab, setActiveTab] = useState('Suggestions'); // Suggestions | Requests | Connections
     const [suggestions, setSuggestions] = useState([]);
@@ -15,6 +17,7 @@ export default function Network() {
     
     const [searchQuery, setSearchQuery] = useState('');
     const [loading, setLoading] = useState(true);
+    const [fullDirectory, setFullDirectory] = useState([]);
 
     const mapUserItem = (item) => {
         const name = item.name || item.fullName || item.title || 'User';
@@ -36,14 +39,14 @@ export default function Network() {
         };
     };
 
-    const fetchAllNetworkData = async () => {
-        setLoading(true);
+    const fetchAllNetworkData = async (isSilent = false) => {
+        if (!isSilent) setLoading(true);
         try {
             const [sugRes, reqRes, connRes, searchRes] = await Promise.all([
-                userApi.getSuggestions(),
-                userApi.getPendingRequests(),
-                currentUser?.userId ? userApi.getConnections(currentUser.userId) : Promise.resolve([]),
-                searchApi.searchUsers('', 100)
+                userApi.getSuggestions().catch(() => []),
+                userApi.getPendingRequests().catch(() => ({})),
+                currentUser?.userId ? userApi.getConnections(currentUser.userId).catch(() => []) : Promise.resolve([]),
+                searchApi.searchUsers('', 100).catch(() => [])
             ]);
 
             const sugArray = Array.isArray(sugRes) ? sugRes : (sugRes?.data || []);
@@ -53,33 +56,74 @@ export default function Network() {
             const connArray = Array.isArray(connRes) ? connRes : (connRes?.data || []);
             const searchArray = Array.isArray(searchRes) ? searchRes : (searchRes?.data || searchRes?.items || []);
 
-            setSuggestions(sugArray.filter(u => u.id !== currentUser?.userId).map(mapUserItem));
-            setReceivedRequests(receivedArray.map(mapUserItem));
-            setSentRequests(sentArray.map(mapUserItem));
-            setConnectionsList(connArray.map(mapUserItem));
-            setDirectory(searchArray.filter(u => (u.id || u.userId) !== currentUser?.userId).map(mapUserItem));
+            const connIds = new Set(connArray.map(u => String(u.id || u.userId)));
+            const sentIds = new Set(sentArray.map(u => String(u.id || u.userId)));
+            const receivedIds = new Set(receivedArray.map(u => String(u.id || u.userId)));
+
+            const deriveStatus = (item) => {
+                const id = String(item.id || item.userId);
+                if (connIds.has(id)) return 'Connected';
+                if (sentIds.has(id)) return 'PendingSent';
+                if (receivedIds.has(id)) return 'PendingReceived';
+                return item.connectionStatus || 'NotConnected';
+            };
+
+            const mappedSug = sugArray.filter(u => String(u.id || u.userId) !== String(currentUser?.userId)).map(u => mapUserItem({ ...u, connectionStatus: deriveStatus(u) }));
+            const mappedRec = receivedArray.map(u => mapUserItem({ ...u, connectionStatus: 'PendingReceived' }));
+            const mappedSent = sentArray.map(u => mapUserItem({ ...u, connectionStatus: 'PendingSent' }));
+            const mappedConn = connArray.map(u => mapUserItem({ ...u, connectionStatus: 'Connected' }));
+            const mappedDir = searchArray.filter(u => String(u.id || u.userId) !== String(currentUser?.userId)).map(u => mapUserItem({ ...u, connectionStatus: deriveStatus(u) }));
+
+            setSuggestions(mappedSug);
+            setReceivedRequests(mappedRec);
+            setSentRequests(mappedSent);
+            setConnectionsList(mappedConn);
+            setFullDirectory(mappedDir);
+
+            if (!searchQuery.trim()) {
+                setDirectory(mappedDir);
+            }
         } catch (err) {
             console.error("Error fetching network data:", err);
         } finally {
-            setLoading(false);
+            if (!isSilent) setLoading(false);
         }
     };
 
     useEffect(() => {
         if (currentUser?.userId) {
-            fetchAllNetworkData();
+            fetchAllNetworkData(false);
         }
     }, [currentUser]);
 
-    // Live Directory Search
+    // Live Directory Search (Smooth background filtering without double page load/spinner)
     useEffect(() => {
+        if (!searchQuery.trim()) {
+            if (fullDirectory.length > 0) {
+                setDirectory(fullDirectory);
+            }
+            return;
+        }
+
         const search = async () => {
-            if (!searchQuery.trim()) return;
             try {
                 const res = await searchApi.searchUsers(searchQuery, 100);
                 const userItems = Array.isArray(res) ? res : (res?.data || res?.items || []);
-                const filtered = userItems.filter(u => (u.id || u.userId) !== currentUser?.userId);
-                setDirectory(filtered.map(mapUserItem));
+                const filtered = userItems.filter(u => String(u.id || u.userId) !== String(currentUser?.userId));
+                
+                const connIds = new Set(connectionsList.map(u => String(u.id)));
+                const sentIds = new Set(sentRequests.map(u => String(u.id)));
+                const receivedIds = new Set(receivedRequests.map(u => String(u.id)));
+
+                const deriveStatus = (item) => {
+                    const id = String(item.id || item.userId);
+                    if (connIds.has(id)) return 'Connected';
+                    if (sentIds.has(id)) return 'PendingSent';
+                    if (receivedIds.has(id)) return 'PendingReceived';
+                    return item.connectionStatus || 'NotConnected';
+                };
+
+                setDirectory(filtered.map(u => mapUserItem({ ...u, connectionStatus: deriveStatus(u) })));
             } catch (err) {
                 console.error("Error searching users:", err);
             }
@@ -89,15 +133,32 @@ export default function Network() {
         return () => clearTimeout(debounce);
     }, [searchQuery, currentUser]);
 
+    const updatePersonStatus = (id, newStatus) => {
+        setSuggestions(prev => prev.map(p => p.id === id ? { ...p, connectionStatus: newStatus } : p));
+        setDirectory(prev => prev.map(p => p.id === id ? { ...p, connectionStatus: newStatus } : p));
+        setFullDirectory(prev => prev.map(p => p.id === id ? { ...p, connectionStatus: newStatus } : p));
+        setConnectionsList(prev => prev.map(p => p.id === id ? { ...p, connectionStatus: newStatus } : p));
+    };
+
     // Action Handlers
     const handleConnect = async (person) => {
         try {
             updatePersonStatus(person.id, 'PendingSent');
             await userApi.connect(person.id);
-            fetchAllNetworkData();
+            addToast && addToast(`✅ Connection request sent to ${person.name}!`, 'success');
+            fetchAllNetworkData(true);
         } catch (err) {
-            console.error("Failed to connect", err);
-            fetchAllNetworkData();
+            const msg = err?.message || '';
+            if (msg.includes('Already connected') || msg.includes('already connected')) {
+                updatePersonStatus(person.id, 'Connected');
+                addToast && addToast(`You are already connected with ${person.name}.`, 'info');
+            } else if (msg.includes('pending') || msg.includes('Pending')) {
+                updatePersonStatus(person.id, 'PendingSent');
+                addToast && addToast(`Connection request to ${person.name} is already pending.`, 'info');
+            } else {
+                addToast && addToast(`Notice: ${msg || 'Connection status updated'}`, 'info');
+            }
+            fetchAllNetworkData(true);
         }
     };
 
@@ -105,10 +166,10 @@ export default function Network() {
         try {
             updatePersonStatus(person.id, 'NotConnected');
             await userApi.cancelConnection(person.id);
-            fetchAllNetworkData();
+            addToast && addToast(`Connection request to ${person.name} canceled.`, 'info');
+            fetchAllNetworkData(true);
         } catch (err) {
-            console.error("Failed to cancel connection request", err);
-            fetchAllNetworkData();
+            fetchAllNetworkData(true);
         }
     };
 
@@ -120,11 +181,11 @@ export default function Network() {
             } else {
                 await userApi.connect(person.id);
             }
-            fetchAllNetworkData();
+            addToast && addToast(`🎉 You are now connected with ${person.name}!`, 'success');
+            fetchAllNetworkData(true);
             window.dispatchEvent(new CustomEvent('network-updated'));
         } catch (err) {
-            console.error("Failed to accept connection", err);
-            fetchAllNetworkData();
+            fetchAllNetworkData(true);
         }
     };
 
@@ -136,7 +197,6 @@ export default function Network() {
             }
             fetchAllNetworkData();
         } catch (err) {
-            console.error("Failed to reject connection", err);
             fetchAllNetworkData();
         }
     };
@@ -146,18 +206,12 @@ export default function Network() {
         try {
             updatePersonStatus(person.id, 'NotConnected');
             await userApi.removeConnection(person.id);
+            addToast && addToast(`Removed ${person.name} from 1st-degree connections.`, 'info');
             fetchAllNetworkData();
             window.dispatchEvent(new CustomEvent('network-updated'));
         } catch (err) {
-            console.error("Failed to remove connection", err);
             fetchAllNetworkData();
         }
-    };
-
-    const updatePersonStatus = (id, newStatus) => {
-        setSuggestions(prev => prev.map(p => p.id === id ? { ...p, connectionStatus: newStatus } : p));
-        setDirectory(prev => prev.map(p => p.id === id ? { ...p, connectionStatus: newStatus } : p));
-        setConnectionsList(prev => prev.map(p => p.id === id ? { ...p, connectionStatus: newStatus } : p));
     };
 
     return (

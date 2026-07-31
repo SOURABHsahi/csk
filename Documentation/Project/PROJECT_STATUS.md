@@ -1,7 +1,7 @@
 # Knome EEP Portal — Project Status & Roadmap
 
 **Current Version**: `v1.2.8` (Phase E Release Activities Completed — Backend Frozen for Frontend Handoff)  
-**Architecture**: ASP.NET Core 9 Web API (`net9.0`) + Entity Framework Core (`Database-First`) + Repository & Service Pattern  
+**Architecture**: ASP.NET Core 10 Web API (`net10.0`) + Entity Framework Core (`Database-First`) + Repository & Service Pattern  
 **Primary Requirements Reference**: Functional Requirements Document (`FRD v1.0`)
 
 ---
@@ -58,7 +58,7 @@ The following items from the FRD depend on external enterprise systems under act
 
 ### Prerequisites
 - Operating System: Windows
-- SDK: .NET 9.0 SDK (`net9.0`)
+- SDK: .NET 10.0 SDK (`net10.0`)
 - Database: Microsoft SQL Server (`LAPTOP-462`, database `Knome`)
 
 ### Build & Run API

@@ -1,7 +1,11 @@
-// Layer 1 (React UI) -> Layer 2 (Next.js BFF) -> Layer 3 & 4 (API Gateway + YARP) -> Layer 5 (Backend API) -> Layer 6 (Database)
-const PRIMARY_URL = window.ENV_BFF_URL || 'http://localhost:3000/api/proxy';
-const GATEWAY_URL = 'http://localhost:5000/api';
-const DIRECT_BACKEND_URL = 'http://localhost:5095/api';
+// Candidate Backend URLs ordered by priority (Direct Backend API first to avoid 5-10s connection timeouts)
+const CANDIDATES = [
+    'http://localhost:5095/api',                             // Layer 5: Direct Backend API (Primary)
+    'http://localhost:5000/api',                             // Layer 3/4: API Gateway (YARP)
+    window.ENV_BFF_URL || 'http://localhost:3000/api/proxy' // Layer 2: Next.js BFF
+];
+
+let activeBaseUrl = CANDIDATES[0]; // Start with port 5095 directly
 
 export const apiClient = {
     async request(endpoint, options = {}) {
@@ -14,28 +18,35 @@ export const apiClient = {
 
         const config = { ...options, headers };
 
-        // Attempt 1: Next.js BFF -> Gateway -> Backend -> SQL Server DB
+        // 1. Try active cached base URL first
         try {
-            const url = `${PRIMARY_URL}${endpoint}`;
+            const url = `${activeBaseUrl}${endpoint}`;
             const response = await fetch(url, config);
             return await this.handleResponse(response);
-        } catch (bffError) {
-            // Attempt 2: Direct API Gateway (YARP) -> Backend -> SQL Server DB
-            try {
-                const url = `${GATEWAY_URL}${endpoint}`;
-                const response = await fetch(url, config);
-                return await this.handleResponse(response);
-            } catch (gatewayError) {
-                // Attempt 3: Direct Backend API -> SQL Server DB
+        } catch (activeErr) {
+            // If the server was reached and responded with an API error (4xx/5xx), do not failover to fallback proxies
+            if (activeErr?.isApiError) {
+                throw activeErr;
+            }
+
+            // 2. Only if network fetch failed completely, try candidate URLs
+            for (const candidate of CANDIDATES) {
+                if (candidate === activeBaseUrl) continue;
                 try {
-                    const url = `${DIRECT_BACKEND_URL}${endpoint}`;
-                    const response = await fetch(url, config);
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 500);
+                    const url = `${candidate}${endpoint}`;
+                    const response = await fetch(url, { ...config, signal: controller.signal });
+                    clearTimeout(timeoutId);
+                    
+                    activeBaseUrl = candidate; // Cache working URL
                     return await this.handleResponse(response);
-                } catch (backendError) {
-                    console.error(`API Call failed across all layers for ${endpoint}:`, backendError);
-                    throw backendError;
+                } catch (candidateErr) {
+                    if (candidateErr?.isApiError) throw candidateErr;
                 }
             }
+            console.error(`API Call failed across all endpoints for ${endpoint}`);
+            throw activeErr;
         }
     },
 
@@ -44,7 +55,10 @@ export const apiClient = {
             localStorage.removeItem('knome_jwt');
             localStorage.removeItem('knome_refresh');
             localStorage.removeItem('knome_employeeId');
-            throw new Error('Unauthorized');
+            const err = new Error('Unauthorized');
+            err.isApiError = true;
+            err.status = 401;
+            throw err;
         }
 
         if (response.status === 204) {
@@ -55,7 +69,12 @@ export const apiClient = {
         const data = text ? JSON.parse(text) : null;
         
         if (!response.ok) {
-            throw new Error((data && data.message) || 'API request failed');
+            const errMessage = (data && (data.message || data.title)) || `API request failed with status ${response.status}`;
+            const err = new Error(errMessage);
+            err.isApiError = true;
+            err.status = response.status;
+            err.data = data;
+            throw err;
         }
 
         return data?.data !== undefined ? data.data : data;
@@ -84,16 +103,18 @@ export const apiClient = {
         const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
 
         try {
-            const response = await fetch(`${PRIMARY_URL}/users/profile/image`, { method: 'POST', headers, body: formData });
+            const response = await fetch(`${activeBaseUrl}/users/profile/image`, { method: 'POST', headers, body: formData });
             return (await this.handleResponse(response));
         } catch (e) {
-            try {
-                const response = await fetch(`${DIRECT_BACKEND_URL}/users/profile/image`, { method: 'POST', headers, body: formData });
-                return (await this.handleResponse(response));
-            } catch (err) {
-                console.error(`Upload Error on profile/image:`, err);
-                throw err;
+            for (const candidate of CANDIDATES) {
+                if (candidate === activeBaseUrl) continue;
+                try {
+                    const response = await fetch(`${candidate}/users/profile/image`, { method: 'POST', headers, body: formData });
+                    activeBaseUrl = candidate;
+                    return (await this.handleResponse(response));
+                } catch { /* continue */ }
             }
+            throw e;
         }
     },
 
@@ -105,16 +126,18 @@ export const apiClient = {
         const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
         
         try {
-            const response = await fetch(`${PRIMARY_URL}${endpoint}`, { method: 'POST', headers, body: formData });
+            const response = await fetch(`${activeBaseUrl}${endpoint}`, { method: 'POST', headers, body: formData });
             return (await this.handleResponse(response));
         } catch (e) {
-            try {
-                const response = await fetch(`${DIRECT_BACKEND_URL}${endpoint}`, { method: 'POST', headers, body: formData });
-                return (await this.handleResponse(response));
-            } catch (err) {
-                console.error(`Upload Error on ${endpoint}:`, err);
-                throw err;
+            for (const candidate of CANDIDATES) {
+                if (candidate === activeBaseUrl) continue;
+                try {
+                    const response = await fetch(`${candidate}${endpoint}`, { method: 'POST', headers, body: formData });
+                    activeBaseUrl = candidate;
+                    return (await this.handleResponse(response));
+                } catch { /* continue */ }
             }
+            throw e;
         }
     }
 };

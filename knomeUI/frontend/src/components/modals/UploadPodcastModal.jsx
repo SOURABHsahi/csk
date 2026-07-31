@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { mediaApi, podcastsApi } from '../../utils/apiService';
+import { useUser } from '../contexts/UserContext';
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB (FR-PD-05)
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.aac', '.ogg', '.m4a', '.webm'];
 
 export default function UploadPodcastModal({ isOpen, onClose }) {
+    const { currentUser } = useUser();
+    const isCurrentUserAdmin = ['SYSADM', 'CADM', 'HRADM'].includes(currentUser?.role) ||
+        ['System Administrator', 'HR Administrator', 'Community Administrator', 'System Admin'].includes(currentUser?.roleName);
+
     const [tab, setTab] = useState('upload');
     const [isRecording, setIsRecording] = useState(false);
     const [recordingTime, setRecordingTime] = useState(0);
@@ -238,10 +243,50 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                 categoryId: null
             };
 
-            await podcastsApi.create(podcastData);
-            
-            // Refresh list
-            window.dispatchEvent(new CustomEvent('podcast-published'));
+            if (isCurrentUserAdmin) {
+                await podcastsApi.create(podcastData);
+                alert("Podcast episode published successfully!");
+                window.dispatchEvent(new CustomEvent('podcast-published'));
+            } else {
+                const pendingItem = {
+                    id: `pending_podcast_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                    mediaType: 'Podcast',
+                    title: title.trim(),
+                    description: description.trim(),
+                    thumbnail: coverImageUrl || 'https://images.unsplash.com/photo-1590602847861-f357a9332bbc?auto=format&fit=crop&q=90&w=1600&h=900',
+                    audioUrl: audioUrl,
+                    duration: duration || 'Podcast',
+                    category: categoryName || 'General',
+                    authorName: currentUser?.name || 'Employee',
+                    authorId: currentUser?.id,
+                    authorAvatar: currentUser?.avatar,
+                    submittedDate: new Date().toISOString(),
+                    status: 'PendingApproval',
+                    podcastData: podcastData
+                };
+
+                const existingPending = JSON.parse(localStorage.getItem('knome_pending_media_approvals') || '[]');
+                localStorage.setItem('knome_pending_media_approvals', JSON.stringify([pendingItem, ...existingPending]));
+
+                const adminNotif = {
+                    id: `notif_approval_${Date.now()}`,
+                    type: 'media_approval',
+                    category: 'System',
+                    text: `${currentUser?.name || 'Employee'} uploaded podcast "${title.trim()}" awaiting your admin approval.`,
+                    senderName: currentUser?.name || 'Employee',
+                    senderAvatar: currentUser?.avatar,
+                    targetUserId: 'admin',
+                    targetUrl: '/admin-console',
+                    time: 'Just now',
+                    unread: true,
+                    mediaType: 'Podcast',
+                    pendingId: pendingItem.id
+                };
+                const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+                localStorage.setItem('knome_notifications', JSON.stringify([adminNotif, ...existingNotifs]));
+
+                alert(`Podcast episode "${title.trim()}" submitted successfully! It has been sent to the Admin for approval before going live.`);
+            }
             
             setIsUploading(false);
             onClose();

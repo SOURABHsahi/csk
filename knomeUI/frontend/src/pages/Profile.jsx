@@ -459,7 +459,7 @@ export default function Profile() {
                             <div className="rounded-2xl border shadow-sm p-6 glass card-lift">
                                 <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">About Me</h3>
                                 <p className="text-slate-600 dark:text-slate-300 leading-relaxed text-sm">
-                                    I am a dedicated professional working at Knome, focused on bridging the gap between innovative technology and user needs. I spend my days strategizing, analyzing metrics, and collaborating with cross-functional teams to deliver excellence.
+                                    {displayUser?.bio || 'Dedicated professional working at Knome, focused on innovation, teamwork, and driving platform excellence.'}
                                 </p>
                             </div>
                             
@@ -471,7 +471,12 @@ export default function Profile() {
                                         Core Skills
                                     </h3>
                                     <div className="flex flex-wrap gap-2">
-                                        {['Product Strategy', 'Agile Methodologies', 'Data Analysis', 'Cross-functional Leadership', 'UX Research'].map((skill, i) => (
+                                        {(Array.isArray(displayUser?.skills) && displayUser.skills.length > 0
+                                            ? displayUser.skills
+                                            : typeof displayUser?.skills === 'string' && displayUser.skills.trim() !== ''
+                                                ? displayUser.skills.split(',').map(s => s.trim())
+                                                : ['Product Strategy', 'Agile Methodologies', 'Data Analysis', 'Cross-functional Leadership', 'Problem Solving']
+                                        ).map((skill, i) => (
                                             <span key={i} className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50 text-[12px] font-bold rounded-lg">{skill}</span>
                                         ))}
                                     </div>
@@ -482,7 +487,12 @@ export default function Profile() {
                                         Interests
                                     </h3>
                                     <div className="flex flex-wrap gap-2">
-                                        {['AI & Machine Learning', 'Design Systems', 'Mentorship', 'Open Source', 'Photography'].map((interest, i) => (
+                                        {(Array.isArray(displayUser?.interests) && displayUser.interests.length > 0
+                                            ? displayUser.interests
+                                            : typeof displayUser?.interests === 'string' && displayUser.interests.trim() !== ''
+                                                ? displayUser.interests.split(',').map(i => i.trim())
+                                                : ['AI & Technology', 'Design Systems', 'Mentorship', 'Continuous Learning', 'Innovation']
+                                        ).map((interest, i) => (
                                             <span key={i} className="px-3 py-1.5 bg-pink-50 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400 border border-pink-100 dark:border-pink-800/50 text-[12px] font-bold rounded-lg">{interest}</span>
                                         ))}
                                     </div>
