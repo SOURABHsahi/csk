@@ -123,6 +123,24 @@ export function AudioProvider({ children }) {
         }
     };
 
+    const skipTime = (seconds) => {
+        if (audioRef.current && audioRef.current.duration) {
+            let newTime = audioRef.current.currentTime + seconds;
+            newTime = Math.max(0, Math.min(newTime, audioRef.current.duration));
+            audioRef.current.currentTime = newTime;
+            setCurrentTime(newTime);
+            setProgress((newTime / audioRef.current.duration) * 100);
+        }
+    };
+
+    const toggleMute = () => {
+        if (volume > 0) {
+            setVolume(0);
+        } else {
+            setVolume(1);
+        }
+    };
+
     return (
         <AudioContext.Provider value={{
             currentPodcast,
@@ -137,7 +155,9 @@ export function AudioProvider({ children }) {
             closePlayer,
             setVolume,
             setSpeed,
-            handleSeek
+            handleSeek,
+            skipTime,
+            toggleMute
         }}>
             {children}
         </AudioContext.Provider>

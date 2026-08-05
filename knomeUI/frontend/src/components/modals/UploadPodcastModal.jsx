@@ -245,6 +245,9 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                 }
             }
 
+            const currentAuthorId = currentUser?.id || currentUser?.userId;
+            const currentAuthorName = currentUser?.fullName || currentUser?.name || 'Employee';
+
             const podcastData = {
                 title: title.trim(),
                 description: description.trim(),
@@ -254,7 +257,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                 seriesId: seriesId ? parseInt(seriesId) : null,
                 categoryName: categoryName || 'General',
                 categoryId: null,
-                uploaderUserId: currentUser?.id
+                uploaderUserId: currentAuthorId
             };
 
             if (isCurrentUserAdmin) {
@@ -271,9 +274,9 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                     audioUrl: audioUrl,
                     duration: duration || 'Podcast',
                     category: categoryName || 'General',
-                    authorName: currentUser?.name || 'Employee',
-                    authorId: currentUser?.id,
-                    authorAvatar: currentUser?.avatar,
+                    authorName: currentAuthorName,
+                    authorId: currentAuthorId,
+                    authorAvatar: currentUser?.profilePhotoUrl || currentUser?.avatar,
                     submittedDate: new Date().toISOString(),
                     status: 'PendingApproval',
                     podcastData: podcastData
@@ -429,17 +432,53 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
 
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-[12px] font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider">Podcast Series Grouping</label>
-                                <select 
-                                    value={seriesId}
-                                    onChange={(e) => setSeriesId(e.target.value)}
-                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-pink-500 outline-none text-slate-900 dark:text-white font-medium"
-                                >
-                                    <option value="">Standalone Episode</option>
-                                    {seriesList.map(s => (
-                                        <option key={s.seriesId} value={s.seriesId}>{s.title}</option>
-                                    ))}
-                                </select>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="block text-[12px] font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">Podcast Series Grouping</label>
+                                    <button 
+                                        type="button"
+                                        onClick={() => setIsCreatingSeries(!isCreatingSeries)} 
+                                        className="text-[11px] font-bold text-pink-500 hover:text-pink-600 transition-colors flex items-center gap-1 cursor-pointer"
+                                    >
+                                        <span className="material-symbols-outlined text-[14px]">{isCreatingSeries ? 'close' : 'add'}</span>
+                                        {isCreatingSeries ? 'Cancel' : '+ New Series'}
+                                    </button>
+                                </div>
+                                {isCreatingSeries ? (
+                                    <div className="p-3 bg-pink-50/50 dark:bg-pink-950/20 border border-pink-200 dark:border-pink-900/30 rounded-xl space-y-2">
+                                        <input 
+                                            type="text" 
+                                            placeholder="New Series Title"
+                                            value={newSeriesTitle}
+                                            onChange={e => setNewSeriesTitle(e.target.value)}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-pink-500"
+                                        />
+                                        <input 
+                                            type="text" 
+                                            placeholder="Description (optional)"
+                                            value={newSeriesDesc}
+                                            onChange={e => setNewSeriesDesc(e.target.value)}
+                                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-pink-500"
+                                        />
+                                        <button 
+                                            type="button"
+                                            onClick={handleCreateSeries}
+                                            className="w-full py-1.5 bg-pink-500 hover:bg-pink-600 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer"
+                                        >
+                                            Save New Series
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <select 
+                                        value={seriesId}
+                                        onChange={(e) => setSeriesId(e.target.value)}
+                                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-pink-500 outline-none text-slate-900 dark:text-white font-medium cursor-pointer"
+                                    >
+                                        <option value="">Standalone Episode</option>
+                                        {seriesList.map(s => (
+                                            <option key={s.seriesId} value={s.seriesId}>{s.title}</option>
+                                        ))}
+                                    </select>
+                                )}
                             </div>
 
                             <div>

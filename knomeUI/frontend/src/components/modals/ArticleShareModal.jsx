@@ -131,6 +131,29 @@ export default function ArticleShareModal({ isOpen, onClose, article, onShared }
             await Promise.all(selectedUsers.map(u => 
                 interactionsApi.shareContent('Article', article.id, 'User', u.id || u.userId)
             ));
+            const notifsToStore = selectedUsers.map(u => ({
+                id: `local_share_${article.id}_${u.id || u.userId}_${Date.now()}`,
+                type: 'share',
+                category: 'Shares',
+                icon: 'share',
+                color: 'text-emerald-500',
+                bg: 'bg-emerald-500/10',
+                text: `${currentUser?.fullName || 'Someone'} shared an article with you.`,
+                senderName: currentUser?.fullName || 'Colleague',
+                senderAvatar: currentUser?.profilePhotoUrl || currentUser?.avatar || null,
+                targetUserId: u.id || u.userId,
+                time: 'Just now',
+                unread: true,
+                targetUrl: `/article-view?id=${article.id}`,
+                relatedContentType: 'Article',
+                relatedContentId: article.id
+            }));
+            const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+            localStorage.setItem('knome_notifications', JSON.stringify([...notifsToStore, ...existingNotifs]));
+            if (notifsToStore.length > 0) {
+                window.dispatchEvent(new CustomEvent('knome_notification_received', { detail: notifsToStore[0] }));
+            }
+
             if (onShared) onShared('users');
             alert(`Article successfully shared with ${selectedUsers.length} team member(s)!`);
             onClose();
@@ -384,6 +407,7 @@ export default function ArticleShareModal({ isOpen, onClose, article, onShared }
                     )}
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

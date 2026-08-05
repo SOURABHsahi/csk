@@ -5,12 +5,14 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using AutoMapper;
 using Knome.API.Constants;
+using Knome.API.Data;
 using Knome.API.DTOs.Interactions;
 using Knome.API.Exceptions;
 using Knome.API.Interfaces;
 using Knome.API.Models;
 
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using Knome.API.Hubs;
 
 namespace Knome.API.Services;
@@ -24,6 +26,8 @@ public class ContentInteractionService : IContentInteractionService
     private readonly ISuspensionGuard _suspensionGuard;
     private readonly INotificationService _notificationService;
     private readonly IHubContext<NotificationHub> _hubContext;
+    private readonly ICommunityRepository _communityRepo;
+    private readonly KnomeDbContext _db;
 
     public ContentInteractionService(
         IContentInteractionRepository repo, 
@@ -32,7 +36,9 @@ public class ContentInteractionService : IContentInteractionService
         IMapper mapper, 
         ISuspensionGuard suspensionGuard, 
         INotificationService notificationService,
-        IHubContext<NotificationHub> hubContext)
+        IHubContext<NotificationHub> hubContext,
+        ICommunityRepository communityRepo,
+        KnomeDbContext db)
     {
         _repo = repo;
         _userRepo = userRepo;
@@ -41,6 +47,8 @@ public class ContentInteractionService : IContentInteractionService
         _suspensionGuard = suspensionGuard;
         _notificationService = notificationService;
         _hubContext = hubContext;
+        _communityRepo = communityRepo;
+        _db = db;
     }
 
     // --- Security & Screening (FR-SM-01) ---
@@ -307,24 +315,67 @@ public class ContentInteractionService : IContentInteractionService
         // Award karma to the user who shared the content
         await _karmaService.AwardKarmaAsync(userId, KarmaActivityTypes.AddShare, KarmaPoints.AddSharePoints, contentType, contentId);
 
+        var sharingUser = await _userRepo.GetProfileByIdAsync(userId);
+        var sharingUserName = sharingUser?.FullName ?? "Someone";
+
         var authorId = await _repo.GetContentAuthorUserIdAsync(contentType, contentId);
         if (authorId.HasValue && authorId.Value != userId)
         {
             await _karmaService.AwardKarmaAsync(authorId.Value, KarmaActivityTypes.ReceiveShare, KarmaPoints.ReceiveSharePoints, contentType, contentId);
+            // Notify the content author that their content was shared
+            await _notificationService.PublishAsync(
+                authorId.Value,
+                NotificationTypes.Share,
+                $"{sharingUserName} shared your {contentType.ToLower()}.",
+                relatedContentType: contentType,
+                relatedContentId: contentId);
         }
 
-        // Send notification to the recipient if shared directly to a user
+        // --- Share to a specific User: notify them ---
         if (dto.SharedToType == SharedToTypes.User && dto.SharedToId.HasValue)
         {
-            var sharingUser = await _userRepo.GetProfileByIdAsync(userId);
-            var sharingUserName = sharingUser?.FullName ?? "Someone";
-
+            var recipientId = (int)dto.SharedToId.Value;
             await _notificationService.PublishAsync(
-                (int)dto.SharedToId.Value,
+                recipientId,
                 NotificationTypes.Share,
                 $"{sharingUserName} shared a {contentType.ToLower()} with you.",
                 relatedContentType: contentType,
                 relatedContentId: contentId);
+        }
+
+        // --- Share to a Community: inject into community feed (Post only) + notify members ---
+        if (dto.SharedToType == SharedToTypes.Community && dto.SharedToId.HasValue && contentType == ContentTypes.Post)
+        {
+            var communityId = (int)dto.SharedToId.Value;
+
+            // Avoid duplicate CommunityPost entry
+            var existing = await _communityRepo.GetCommunityPostAsync(communityId, contentId);
+            if (existing == null)
+            {
+                var communityPost = new CommunityPost
+                {
+                    CommunityId = communityId,
+                    PostId = contentId,
+                    IsPinned = false
+                };
+                await _communityRepo.AddCommunityPostAsync(communityPost);
+            }
+
+            // Notify all approved community members
+            var memberIds = await _db.CommunityMembers
+                .Where(m => m.CommunityId == communityId && m.UserId != userId && m.Status == CommunityMemberStatuses.Approved)
+                .Select(m => m.UserId)
+                .ToListAsync();
+
+            if (memberIds.Count > 0)
+            {
+                await _notificationService.PublishBroadcastAsync(
+                    NotificationTypes.Share,
+                    $"{sharingUserName} shared a post in your community.",
+                    relatedContentType: ContentTypes.Post,
+                    relatedContentId: contentId,
+                    candidateUserIds: memberIds);
+            }
         }
 
         return _mapper.Map<ShareDto>(saved);

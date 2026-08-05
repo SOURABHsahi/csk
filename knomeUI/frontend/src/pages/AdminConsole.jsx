@@ -248,12 +248,14 @@ export default function AdminConsole() {
                     uploaderUserId: targetAuthorId
                 };
                 await apiClient.post('/videos', postDto).catch(() => {});
+                window.dispatchEvent(new CustomEvent('video-published'));
             } else if (mediaItem.mediaType === 'Podcast' && mediaItem.podcastData) {
                 const postPodcast = {
                     ...mediaItem.podcastData,
                     uploaderUserId: targetAuthorId
                 };
                 await podcastsApi.create(postPodcast).catch(() => {});
+                window.dispatchEvent(new CustomEvent('podcast-published'));
             } else if (mediaItem.mediaType === 'Series' && mediaItem.seriesData) {
                 if (Array.isArray(mediaItem.customVideos)) {
                     try {

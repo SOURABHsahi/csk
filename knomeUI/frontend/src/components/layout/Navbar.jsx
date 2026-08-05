@@ -258,6 +258,8 @@ export default function Navbar() {
         const isComment = type.includes('comment');
         const isMention = type.includes('mention');
 
+        const isShare = type.includes('share') || msg.includes('shared');
+
         let icon = 'notifications';
         let color = 'text-slate-400';
         let bg = 'bg-slate-500/10';
@@ -283,15 +285,20 @@ export default function Navbar() {
             color = 'text-purple-500';
             bg = 'bg-purple-500/10';
             category = 'Mentions';
+        } else if (isShare) {
+            icon = 'share';
+            color = 'text-emerald-500';
+            bg = 'bg-emerald-500/10';
+            category = 'Shares';
         }
 
         let senderName = n.senderName || n.actorName;
         if (!senderName || senderName === 'System') {
-            const match = (n.message || '').match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+(shared|invited|sent|commented|liked|reacted|posted|mentioned)/);
-            if (match) {
-                senderName = match[1];
+            const match = (n.message || '').match(/^(.+?)\s+(shared|invited|sent|commented|liked|reacted|posted|mentioned)\b/i);
+            if (match && match[1].trim()) {
+                senderName = match[1].trim();
             } else {
-                senderName = 'System';
+                senderName = 'Colleague';
             }
         }
         const senderAvatar = resolveMediaUrl(n.senderAvatar) || (senderName && senderName !== 'System' ? `https://ui-avatars.com/api/?name=${encodeURIComponent(senderName)}&background=6366f1&color=fff` : null);
@@ -1086,7 +1093,11 @@ export default function Navbar() {
                     {/* Notifications */}
                     <div className="relative">
                         <button
-                            onClick={() => setIsNotifOpen(!isNotifOpen)}
+                            onClick={() => {
+                                const nextState = !isNotifOpen;
+                                setIsNotifOpen(nextState);
+                                if (nextState) fetchNotifications();
+                            }}
                             className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:scale-110"
                             style={{
                                 background: isDark ? 'rgba(14, 26, 56, 0.7)' : 'rgba(239, 246, 255, 0.85)',
@@ -1133,7 +1144,7 @@ export default function Navbar() {
 
                                 {/* Category Filters */}
                                 <div className="flex items-center gap-1 p-2 border-b border-slate-100 dark:border-slate-800 overflow-x-auto custom-scrollbar">
-                                    {['All', 'Reactions', 'Comments', 'Connections', 'Mentions'].map(cat => (
+                                    {['All', 'Shares', 'Reactions', 'Comments', 'Connections', 'Mentions'].map(cat => (
                                         <button
                                             key={cat}
                                             onClick={() => setActiveNotifFilter(cat)}

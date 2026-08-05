@@ -185,6 +185,7 @@ public class NotificationService : INotificationService
             Constants.NotificationTypes.Badge => "Karma Badge Earned",
             Constants.NotificationTypes.Mention => "Mentioned You",
             Constants.NotificationTypes.Reaction => "New Reaction",
+            Constants.NotificationTypes.Share => "Content Shared",
             _ => dto.EventType ?? "Notification"
         };
 
@@ -197,6 +198,15 @@ public class NotificationService : INotificationService
             {
                 dto.SenderName = sender.FullName;
                 dto.SenderAvatar = sender.ProfilePhotoUrl;
+            }
+        }
+
+        if (string.IsNullOrEmpty(dto.SenderName) && !string.IsNullOrEmpty(dto.Message))
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(dto.Message, @"^(.+?)\s+(shared|invited|sent|commented|liked|reacted|posted|mentioned)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (match.Success && !string.IsNullOrWhiteSpace(match.Groups[1].Value))
+            {
+                dto.SenderName = match.Groups[1].Value.Trim();
             }
         }
 

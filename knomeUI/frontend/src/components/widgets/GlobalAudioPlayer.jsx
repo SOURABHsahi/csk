@@ -6,7 +6,7 @@ export default function GlobalAudioPlayer() {
     const { 
         currentPodcast, isPlaying, volume, speed, progress, 
         currentTime, duration, togglePlay, closePlayer, 
-        setVolume, setSpeed, handleSeek 
+        setVolume, setSpeed, handleSeek, skipTime, toggleMute 
     } = audioCtx;
 
     const progressRef = useRef(null);
@@ -62,18 +62,26 @@ export default function GlobalAudioPlayer() {
                 {/* Center: Playback Controls */}
                 <div className="flex flex-col items-center flex-1 max-w-lg">
                     <div className="flex items-center gap-6">
-                        <button className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
+                        <button 
+                            onClick={() => skipTime && skipTime(-10)} 
+                            title="Rewind 10 seconds"
+                            className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                        >
                             <span className="material-symbols-outlined text-[24px]">replay_10</span>
                         </button>
                         
                         <button 
                             onClick={togglePlay}
-                            className="w-12 h-12 bg-pink-500 hover:bg-pink-600 text-white rounded-full flex items-center justify-center shadow-lg shadow-pink-500/30 transition-transform active:scale-95"
+                            className="w-12 h-12 bg-pink-500 hover:bg-pink-600 text-white rounded-full flex items-center justify-center shadow-lg shadow-pink-500/30 transition-transform active:scale-95 cursor-pointer"
                         >
                             <span className="material-symbols-outlined text-[28px]">{isPlaying ? 'pause' : 'play_arrow'}</span>
                         </button>
                         
-                        <button className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors">
+                        <button 
+                            onClick={() => skipTime && skipTime(10)} 
+                            title="Forward 10 seconds"
+                            className="text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                        >
                             <span className="material-symbols-outlined text-[24px]">forward_10</span>
                         </button>
                     </div>
@@ -94,7 +102,7 @@ export default function GlobalAudioPlayer() {
                             <button
                                 key={s}
                                 onClick={() => setSpeed(s)}
-                                className={`px-2 py-1 text-[10px] font-bold rounded-md transition-colors ${speed === s ? 'bg-white dark:bg-slate-700 text-pink-500 shadow-sm' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'}`}
+                                className={`px-2 py-1 text-[10px] font-bold rounded-md transition-colors cursor-pointer ${speed === s ? 'bg-white dark:bg-slate-700 text-pink-500 shadow-sm' : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'}`}
                             >
                                 {s}x
                             </button>
@@ -103,9 +111,11 @@ export default function GlobalAudioPlayer() {
 
                     {/* Volume Control */}
                     <div className="hidden md:flex items-center gap-2 group">
-                        <span className="material-symbols-outlined text-slate-400 text-[20px]">
-                            {volume === 0 ? 'volume_off' : volume < 0.5 ? 'volume_down' : 'volume_up'}
-                        </span>
+                        <button onClick={() => toggleMute && toggleMute()} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors">
+                            <span className="material-symbols-outlined text-[20px]">
+                                {volume === 0 ? 'volume_off' : volume < 0.5 ? 'volume_down' : 'volume_up'}
+                            </span>
+                        </button>
                         <input 
                             type="range" 
                             min="0" 

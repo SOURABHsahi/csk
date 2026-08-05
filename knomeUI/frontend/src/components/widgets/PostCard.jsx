@@ -7,7 +7,7 @@ import ReportModal from '../modals/ReportModal';
 import SaveToCategoryModal from '../modals/SaveToCategoryModal';
 import DocumentViewerModal from '../modals/DocumentViewerModal';
 
-import { interactionsApi, postsApi, searchApi, resolveMediaUrl, getVideoThumbnail } from '../../utils/apiService';
+import { interactionsApi, postsApi, searchApi, communitiesApi, resolveMediaUrl, getVideoThumbnail } from '../../utils/apiService';
 
 // Available reactions (FR-CI-01)
 const REACTION_TYPES = {
@@ -248,11 +248,16 @@ export default function PostCard({ post, onPostDeleted }) {
     const [reactionHover, setReactionHover] = useState(false);
 
     // Share Modal State
-    const [shareMode, setShareMode] = useState('menu'); // 'menu' | 'userSearch'
+    const [shareMode, setShareMode] = useState('menu'); // 'menu' | 'community' | 'userSearch'
     const [shareSearchQuery, setShareSearchQuery] = useState('');
     const [shareSearchResults, setShareSearchResults] = useState([]);
     const [isShareSearching, setIsShareSearching] = useState(false);
     const [selectedShareUsers, setSelectedShareUsers] = useState([]);
+    // Community share state
+    const [shareCommunities, setShareCommunities] = useState([]);
+    const [selectedShareCommunityId, setSelectedShareCommunityId] = useState('');
+    const [loadingCommunities, setLoadingCommunities] = useState(false);
+    const [isSharingToCommunity, setIsSharingToCommunity] = useState(false);
 
     // Lightbox & Document Viewer state
     const [lightboxIndex, setLightboxIndex] = useState(null);
@@ -290,19 +295,24 @@ export default function PostCard({ post, onPostDeleted }) {
     };
 
     const handleShareToCommunity = async () => {
-        const comm = prompt("Enter Community ID to share to:");
-        if (comm) {
-            try {
-                await interactionsApi.shareContent('Post', post.id, 'Community', parseInt(comm));
-                setShareCount(prev => prev + 1);
-                if (awardRuleKarma && (post.userId || post.authorId)) {
-                    awardRuleKarma(post.userId || post.authorId, 'SHARE_RECEIVED');
-                }
-                addToast('Post successfully shared to community!', 'success');
-                setIsShareOpen(false);
-            } catch (error) {
-                addToast('Failed to share post to community', 'error');
+        if (!selectedShareCommunityId) {
+            addToast('Please select a community to share to.', 'warning');
+            return;
+        }
+        setIsSharingToCommunity(true);
+        try {
+            await interactionsApi.shareContent('Post', post.id, 'Community', parseInt(selectedShareCommunityId));
+            setShareCount(prev => prev + 1);
+            if (awardRuleKarma && (post.userId || post.authorId)) {
+                awardRuleKarma(post.userId || post.authorId, 'SHARE_RECEIVED');
             }
+            addToast('Post successfully shared to community!', 'success');
+            setIsShareOpen(false);
+            setShareMode('menu');
+        } catch (error) {
+            addToast('Failed to share post to community', 'error');
+        } finally {
+            setIsSharingToCommunity(false);
         }
     };
 
@@ -319,6 +329,30 @@ export default function PostCard({ post, onPostDeleted }) {
             if (awardRuleKarma && (post.userId || post.authorId)) {
                 awardRuleKarma(post.userId || post.authorId, 'SHARE_RECEIVED');
             }
+            // Save local notification event for immediate UI update
+            const notifsToStore = selectedShareUsers.map(u => ({
+                id: `local_share_${post.id}_${u.id || u.userId}_${Date.now()}`,
+                type: 'share',
+                category: 'Shares',
+                icon: 'share',
+                color: 'text-emerald-500',
+                bg: 'bg-emerald-500/10',
+                text: `${currentUser?.fullName || 'Someone'} shared a post with you.`,
+                senderName: currentUser?.fullName || 'Colleague',
+                senderAvatar: currentUser?.profilePhotoUrl || currentUser?.avatar || null,
+                targetUserId: u.id || u.userId,
+                time: 'Just now',
+                unread: true,
+                targetUrl: `/posts?id=${post.id}`,
+                relatedContentType: 'Post',
+                relatedContentId: post.id
+            }));
+            const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+            localStorage.setItem('knome_notifications', JSON.stringify([...notifsToStore, ...existingNotifs]));
+            if (notifsToStore.length > 0) {
+                window.dispatchEvent(new CustomEvent('knome_notification_received', { detail: notifsToStore[0] }));
+            }
+
             addToast(`Post successfully shared with ${selectedShareUsers.length} user(s)!`, 'success');
             setIsShareOpen(false);
             setShareMode('menu');
@@ -352,6 +386,31 @@ export default function PostCard({ post, onPostDeleted }) {
         const timer = setTimeout(fetchUsers, shareSearchQuery ? 300 : 0);
         return () => { isMounted = false; clearTimeout(timer); };
     }, [shareSearchQuery, shareMode]);
+
+    // Fetch communities when entering community share mode
+    useEffect(() => {
+        if (shareMode !== 'community' || shareCommunities.length > 0) return;
+        let isMounted = true;
+        const fetchCommunities = async () => {
+            setLoadingCommunities(true);
+            try {
+                const res = await communitiesApi.getMyCommunities();
+                if (isMounted) {
+                    const list = Array.isArray(res) ? res : (res?.data || res?.items || []);
+                    setShareCommunities(list);
+                    if (list.length > 0) {
+                        setSelectedShareCommunityId(String(list[0].communityId || list[0].id || ''));
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to load communities for share', err);
+            } finally {
+                if (isMounted) setLoadingCommunities(false);
+            }
+        };
+        fetchCommunities();
+        return () => { isMounted = false; };
+    }, [shareMode, shareCommunities.length]);
 
     const handleDeletePost = async () => {
         if (!window.confirm("Are you sure you want to delete this post?")) return;
@@ -937,7 +996,7 @@ export default function PostCard({ post, onPostDeleted }) {
                             <div className="relative bg-theme-60-surface rounded-2xl shadow-xl w-full max-w-sm p-6 border border-theme-30 animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
                                 <div className="flex justify-between items-center mb-4">
                                     <div className="flex items-center gap-2">
-                                        {shareMode === 'userSearch' && (
+                                        {(shareMode === 'userSearch' || shareMode === 'community') && (
                                             <button onClick={() => setShareMode('menu')} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
                                                 <span className="material-symbols-outlined text-[20px]">arrow_back</span>
                                             </button>
@@ -954,12 +1013,43 @@ export default function PostCard({ post, onPostDeleted }) {
 
                                 {shareMode === 'menu' ? (
                                     <div className="flex flex-col gap-2">
-                                        <button onClick={handleShareToCommunity} className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                        <button onClick={() => setShareMode('community')} className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left text-sm font-semibold text-slate-700 dark:text-slate-200">
                                             <div className="w-8 h-8 rounded-full bg-cyan-100 dark:bg-cyan-900/30 text-cyan-500 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">groups</span></div> Share to Community
                                         </button>
                                         <button onClick={() => setShareMode('userSearch')} className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left text-sm font-semibold text-slate-700 dark:text-slate-200">
                                             <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-500 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">group_add</span></div> Share with Users
                                         </button>
+                                    </div>
+                                ) : shareMode === 'community' ? (
+                                    <div className="flex flex-col gap-4">
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">Select a community to share this post to:</p>
+                                        {loadingCommunities ? (
+                                            <div className="text-center py-4 text-slate-500 text-sm">Loading communities...</div>
+                                        ) : shareCommunities.length === 0 ? (
+                                            <div className="text-center py-4 text-slate-500 text-sm">You are not a member of any community.</div>
+                                        ) : (
+                                            <select
+                                                value={selectedShareCommunityId}
+                                                onChange={e => setSelectedShareCommunityId(e.target.value)}
+                                                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                            >
+                                                {shareCommunities.map(c => {
+                                                    const cId = String(c.communityId || c.id);
+                                                    const cName = c.name || c.communityName || 'Community';
+                                                    return <option key={cId} value={cId}>{cName}</option>;
+                                                })}
+                                            </select>
+                                        )}
+                                        {shareCommunities.length > 0 && (
+                                            <button
+                                                onClick={handleShareToCommunity}
+                                                disabled={isSharingToCommunity || !selectedShareCommunityId}
+                                                className="w-full bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2"
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">send</span>
+                                                {isSharingToCommunity ? 'Sharing...' : 'Share to Community'}
+                                            </button>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="flex flex-col gap-4">
