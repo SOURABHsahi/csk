@@ -87,6 +87,22 @@ public class ContentInteractionService : IContentInteractionService
             throw new BadRequestException($"Invalid content type '{contentType}'. Must be one of: {string.Join(", ", ContentTypes.All)}.");
     }
 
+    private async Task<List<CommentDto>> BuildRepliesTreeAsync(long parentCommentId)
+    {
+        var replies = await _repo.GetRepliesAsync(parentCommentId);
+        var replyDtos = new List<CommentDto>();
+
+        foreach (var reply in replies)
+        {
+            var dto = _mapper.Map<CommentDto>(reply);
+            dto.Replies = await BuildRepliesTreeAsync(reply.CommentId);
+            dto.RepliesCount = dto.Replies.Count;
+            replyDtos.Add(dto);
+        }
+
+        return replyDtos;
+    }
+
     // --- Comments (FR-CI-02, FR-CI-05) ---
     public async Task<List<CommentDto>> GetContentCommentsAsync(string contentType, long contentId)
     {
@@ -98,9 +114,8 @@ public class ContentInteractionService : IContentInteractionService
         foreach (var comment in topLevelComments)
         {
             var dto = _mapper.Map<CommentDto>(comment);
-            var replies = await _repo.GetRepliesAsync(comment.CommentId);
-            dto.Replies = _mapper.Map<List<CommentDto>>(replies);
-            dto.RepliesCount = replies.Count;
+            dto.Replies = await BuildRepliesTreeAsync(comment.CommentId);
+            dto.RepliesCount = dto.Replies.Count;
             dtos.Add(dto);
         }
 
@@ -121,9 +136,6 @@ public class ContentInteractionService : IContentInteractionService
             var parent = await _repo.GetCommentByIdAsync(dto.ParentCommentId.Value);
             if (parent == null || parent.ContentType != contentType || parent.ContentId != contentId)
                 throw new NotFoundException($"Parent comment ID {dto.ParentCommentId.Value} not found for this content.");
-
-            if (parent.ParentCommentId.HasValue)
-                throw new BadRequestException("Comments can only be nested up to 2 levels (Top-level comment and Reply).");
         }
 
         var comment = new Comment
@@ -397,12 +409,7 @@ public class ContentInteractionService : IContentInteractionService
         var bookmark = await _repo.GetBookmarkAsync(contentType, contentId, currentUserId);
 
         // FR-HP-01 Hot Posts formula: (Views * 1) + (Reactions * 3) + (Comments * 5) + (Shares * 4)
-        var views = 0L;
-        if (contentType.Equals(ContentTypes.Video, StringComparison.OrdinalIgnoreCase))
-        {
-            var video = await _db.Videos.AsNoTracking().FirstOrDefaultAsync(v => v.VideoId == contentId);
-            views = video?.ViewCount ?? 0;
-        }
+        var views = await _repo.GetContentViewCountAsync(contentType, contentId);
         var score = (views * 1) + (reactionSummary.TotalCount * 3) + (commentsCount * 5) + (sharesCount * 4);
 
         return new ContentSummaryDto

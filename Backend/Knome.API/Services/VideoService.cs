@@ -105,9 +105,19 @@ public class VideoService : IVideoService
                 throw new BadRequestException($"Category ID {dto.CategoryId.Value} does not exist.");
         }
 
+        int effectiveUploaderUserId = currentUserId;
+        if (dto.UploaderUserId.HasValue && dto.UploaderUserId.Value > 0)
+        {
+            var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
+            if (user != null && user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.CommunityAdmin))
+            {
+                effectiveUploaderUserId = dto.UploaderUserId.Value;
+            }
+        }
+
         var video = new Video
         {
-            UploaderUserId = currentUserId,
+            UploaderUserId = effectiveUploaderUserId,
             Title = dto.Title,
             Description = dto.Description,
             CategoryId = dto.CategoryId,
@@ -120,7 +130,7 @@ public class VideoService : IVideoService
         };
 
         var saved = await _repo.AddVideoAsync(video, dto.Tags);
-        await _karmaService.AwardKarmaAsync(currentUserId, KarmaActivityTypes.CreateVideo, KarmaPoints.CreateVideoPoints, ContentTypes.Video, saved.VideoId, KarmaCaps.CreateVideoDailyCap);
+        await _karmaService.AwardKarmaAsync(effectiveUploaderUserId, KarmaActivityTypes.CreateVideo, KarmaPoints.CreateVideoPoints, ContentTypes.Video, saved.VideoId, KarmaCaps.CreateVideoDailyCap);
 
         var resDto = _mapper.Map<VideoDto>(saved);
         resDto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Video, saved.VideoId, currentUserId);

@@ -1,25 +1,35 @@
 import React, { useState, useRef } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useUser, users } from '../components/contexts/UserContext';
+import { useToast } from '../components/contexts/ToastContext';
 import { getKarmaBadge } from '../utils/karmaEngine';
-import { profileApi, userApi, postsApi, articlesApi, videosApi, podcastsApi, communitiesApi, mapPost } from '../utils/apiService';
+import { profileApi, userApi, postsApi, articlesApi, videosApi, podcastsApi, communitiesApi, getCommunityImages, mapPost } from '../utils/apiService';
+import ShareProfileModal from '../components/modals/ShareProfileModal';
 
 export default function Profile() {
     const { currentUser, refreshCurrentUser } = useUser();
+    const { addToast } = useToast();
     const location = useLocation();
     const navigate = useNavigate();
+    const params = useParams();
     
+    const searchParams = new URLSearchParams(location.search);
+    const queryId = params.id || searchParams.get('id');
+
     const targetUserObj = location.state?.user;
-    const targetUserId = targetUserObj?.userId || targetUserObj?.id;
-    const isOwnProfile = !targetUserObj || 
-        (targetUserId && currentUser?.userId && String(targetUserId) === String(currentUser.userId)) ||
-        (targetUserId && currentUser?.id && String(targetUserId) === String(currentUser.id)) ||
+    const targetUserId = queryId || targetUserObj?.userId || targetUserObj?.id;
+    const isOwnProfile = !targetUserId ? true : (
+        (currentUser?.userId && String(targetUserId) === String(currentUser.userId)) ||
+        (currentUser?.id && String(targetUserId) === String(currentUser.id)) ||
         (targetUserObj?.employeeId && currentUser?.employeeId && targetUserObj.employeeId === currentUser.employeeId) ||
         (targetUserObj?.name && currentUser?.name && targetUserObj.name.toLowerCase().trim() === currentUser.name.toLowerCase().trim()) ||
         (targetUserObj?.fullName && currentUser?.fullName && targetUserObj.fullName.toLowerCase().trim() === currentUser.fullName.toLowerCase().trim()) ||
-        (targetUserObj?.fullName && currentUser?.name && targetUserObj.fullName.toLowerCase().trim() === currentUser.name.toLowerCase().trim());
+        (targetUserObj?.fullName && currentUser?.name && targetUserObj.fullName.toLowerCase().trim() === currentUser.name.toLowerCase().trim())
+    );
 
     const [fetchedUser, setFetchedUser] = useState(null);
+    const [isFollowing, setIsFollowing] = useState(false);
+    const [followersCount, setFollowersCount] = useState(0);
 
     const activeUserId = targetUserId || currentUser?.userId || currentUser?.id;
 
@@ -60,11 +70,65 @@ export default function Profile() {
             karma: targetUserObj?.karma || 0
         });
 
+    React.useEffect(() => {
+        const rawFollowers = displayUser?.followersCount ?? displayUser?.followers ?? 0;
+        const followedUsers = JSON.parse(localStorage.getItem('knome_followed_users') || '[]');
+        const targetId = String(activeUserId || displayUser?.userId || displayUser?.id || '');
+        const isFollowed = displayUser?.isFollowing || followedUsers.includes(targetId);
+        
+        setIsFollowing(isFollowed);
+        const storedCount = localStorage.getItem(`knome_followers_count_${targetId}`);
+        if (storedCount !== null) {
+            setFollowersCount(parseInt(storedCount));
+        } else {
+            const computed = isFollowed ? rawFollowers + 1 : rawFollowers;
+            setFollowersCount(computed);
+        }
+    }, [displayUser?.userId, displayUser?.id, displayUser?.followersCount, displayUser?.isFollowing, activeUserId]);
+
+    const handleToggleFollow = async () => {
+        const targetId = String(activeUserId || displayUser?.userId || displayUser?.id || '');
+        if (!targetId) return;
+
+        const currentlyFollowing = isFollowing;
+        const nextFollowingState = !currentlyFollowing;
+
+        const newCount = nextFollowingState ? followersCount + 1 : Math.max(0, followersCount - 1);
+
+        setIsFollowing(nextFollowingState);
+        setFollowersCount(newCount);
+        localStorage.setItem(`knome_followers_count_${targetId}`, String(newCount));
+
+        try {
+            const followed = JSON.parse(localStorage.getItem('knome_followed_users') || '[]');
+            let updated;
+            if (nextFollowingState) {
+                updated = [...new Set([...followed, targetId])];
+                addToast(`You are now following ${displayUser?.name || displayUser?.fullName || 'user'}! 🎉`, 'success');
+            } else {
+                updated = followed.filter(id => String(id) !== targetId);
+                addToast(`Unfollowed ${displayUser?.name || displayUser?.fullName || 'user'}`, 'info');
+            }
+            localStorage.setItem('knome_followed_users', JSON.stringify(updated));
+        } catch (e) {}
+
+        try {
+            if (nextFollowingState) {
+                await profileApi.follow(targetId).catch(() => {});
+            } else {
+                await profileApi.unfollow(targetId).catch(() => {});
+            }
+        } catch (err) {
+            console.error("Failed to update follow status", err);
+        }
+    };
+
     const currentProfileUserId = displayUser?.userId || displayUser?.id || targetUserId;
 
     const [activeTab, setActiveTab] = useState('About');
     const [networkFilter, setNetworkFilter] = useState('All');
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
     const fileInputRef = useRef(null);
@@ -191,7 +255,7 @@ export default function Profile() {
 
     const stats = {
         posts: displayUser.postsCount || 0,
-        followers: displayUser.followersCount || 0,
+        followers: followersCount,
         following: displayUser.followingCount || 0,
         mutuals: displayUser.mutualConnectionsCount || 0,
         commonCommunities: displayUser.commonCommunitiesCount || 0,
@@ -213,7 +277,9 @@ export default function Profile() {
                        displayUser?.role === 'SYSADM' ||
                        displayUser?.roleName === 'System Administrator';
 
-    const tabs = ['About', 'Posts', 'Articles', 'Videos', 'Podcasts', 'Communities', 'Network', ...(isSysAdmin ? [] : ['Karma'])];
+    const tabs = isSysAdmin 
+        ? ['About', 'Communities', 'Network'] 
+        : ['About', 'Posts', 'Articles', 'Videos', 'Podcasts', 'Communities', 'Network', 'Karma'];
 
     const avatarSource = resolveImageUrl(displayUser?.avatar || displayUser?.profilePhotoUrl, displayUser?.name || displayUser?.fullName);
 
@@ -371,32 +437,25 @@ export default function Profile() {
 
                                     {/* Follow / Following Toggle Button (FR-PN-01 & FR-PN-04) */}
                                     <button
-                                        onClick={async () => {
-                                            try {
-                                                if (displayUser.isFollowing) {
-                                                    await profileApi.unfollow(displayUser.userId);
-                                                } else {
-                                                    await profileApi.follow(displayUser.userId);
-                                                }
-                                                window.location.reload();
-                                            } catch (e) {
-                                                console.error(e);
-                                            }
-                                        }}
-                                        className={`px-5 py-2.5 font-bold text-sm rounded-xl transition-all border flex items-center gap-2 ${
-                                            displayUser.isFollowing 
-                                                ? 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200' 
-                                                : 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-transparent hover:opacity-90'
+                                        onClick={handleToggleFollow}
+                                        className={`px-5 py-2.5 font-bold text-sm rounded-xl transition-all border flex items-center gap-2 cursor-pointer ${
+                                            isFollowing 
+                                                ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 shadow-xs' 
+                                                : 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-transparent hover:opacity-90 shadow-md shadow-slate-900/10'
                                         }`}
                                     >
                                         <span className="material-symbols-outlined text-[18px]">
-                                            {displayUser.isFollowing ? 'check' : 'add'}
+                                            {isFollowing ? 'check_circle' : 'person_add'}
                                         </span>
-                                        {displayUser.isFollowing ? 'Following' : 'Follow'}
+                                        {isFollowing ? 'Following ✔' : 'Follow'}
                                     </button>
                                 </div>
                             )}
-                            <button className="flex-1 md:flex-none px-6 py-2.5 bg-indigo-500 text-white font-bold rounded-xl hover:bg-indigo-600 transition-all shadow-md shadow-indigo-500/20">
+                            <button 
+                                onClick={() => setIsShareModalOpen(true)}
+                                className="flex-1 md:flex-none px-6 py-2.5 bg-indigo-500 text-white font-bold rounded-xl hover:bg-indigo-600 transition-all shadow-md shadow-indigo-500/20 cursor-pointer flex items-center gap-2"
+                            >
+                                <span className="material-symbols-outlined text-[18px]">share</span>
                                 Share Profile
                             </button>
                         </div>
@@ -404,10 +463,12 @@ export default function Profile() {
 
                     {/* Interactive Stats Row */}
                     <div className="grid grid-cols-3 md:grid-cols-6 gap-4 py-6 border-t border-slate-100 dark:border-slate-800/50">
-                        <button onClick={() => setActiveTab('Posts')} className="text-center group cursor-pointer transition-transform hover:scale-105">
-                            <p className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-br from-indigo-500 to-purple-500">{stats.posts}</p>
-                            <p className="text-slate-500 dark:text-slate-400 text-[10px] md:text-xs font-bold uppercase tracking-wider mt-1 group-hover:text-indigo-500 transition-colors">Posts</p>
-                        </button>
+                        {!isSysAdmin && (
+                            <button onClick={() => setActiveTab('Posts')} className="text-center group cursor-pointer transition-transform hover:scale-105">
+                                <p className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-br from-indigo-500 to-purple-500">{stats.posts}</p>
+                                <p className="text-slate-500 dark:text-slate-400 text-[10px] md:text-xs font-bold uppercase tracking-wider mt-1 group-hover:text-indigo-500 transition-colors">Posts</p>
+                            </button>
+                        )}
                         <button onClick={() => { setActiveTab('Network'); setNetworkFilter('Followers'); }} className="text-center border-l border-slate-100 dark:border-slate-800/50 group cursor-pointer transition-transform hover:scale-105">
                             <p className="text-2xl font-black text-slate-900 dark:text-white group-hover:text-indigo-500 transition-colors">{stats.followers}</p>
                             <p className="text-slate-500 dark:text-slate-400 text-[10px] md:text-xs font-bold uppercase tracking-wider mt-1 group-hover:text-indigo-500 transition-colors">Followers</p>
@@ -634,27 +695,34 @@ export default function Profile() {
                         ) : tabData.articles.length === 0 ? (
                             <p className="text-slate-500 font-medium col-span-3 text-center py-8">No articles found.</p>
                         ) : (
-                            tabData.articles.map(article => (
-                                <div key={article.articleId} className="rounded-2xl border shadow-sm overflow-hidden glass card-lift flex flex-col">
-                                    <img src={article.coverImageUrl?.startsWith('http') ? article.coverImageUrl : `http://localhost:5095${article.coverImageUrl}`} alt={article.title} className="h-40 w-full object-cover" />
-                                    <div className="p-5 flex-1 flex flex-col justify-between">
-                                        <div>
-                                            <div className="flex items-center justify-between text-[11px] font-bold text-indigo-500 mb-2">
-                                                <span>{article.readTimeMinutes || 5} min read</span>
-                                                <span className="text-slate-400">{new Date(article.createdDate).toLocaleDateString()}</span>
+                            tabData.articles.map(article => {
+                                const artId = article.articleId || article.id;
+                                return (
+                                    <div 
+                                        key={artId} 
+                                        onClick={() => navigate(`/article-view?id=${artId}`)}
+                                        className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden glass card-lift flex flex-col cursor-pointer group hover:border-indigo-500 transition-all"
+                                    >
+                                        <img src={article.coverImageUrl?.startsWith('http') ? article.coverImageUrl : `http://localhost:5095${article.coverImageUrl}`} alt={article.title} className="h-40 w-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                        <div className="p-5 flex-1 flex flex-col justify-between">
+                                            <div>
+                                                <div className="flex items-center justify-between text-[11px] font-bold text-indigo-500 mb-2">
+                                                    <span>{article.readTimeMinutes || 5} min read</span>
+                                                    <span className="text-slate-400">{new Date(article.createdDate).toLocaleDateString()}</span>
+                                                </div>
+                                                <h4 className="font-bold text-slate-900 dark:text-white text-base mb-2 leading-snug group-hover:text-indigo-500 transition-colors">{article.title}</h4>
+                                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-4">{article.summary}</p>
                                             </div>
-                                            <h4 className="font-bold text-slate-900 dark:text-white text-base mb-2 leading-snug hover:text-indigo-500 cursor-pointer">{article.title}</h4>
-                                            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-4">{article.summary}</p>
-                                        </div>
-                                        <div className="flex items-center justify-between text-xs font-semibold text-slate-400 pt-3 border-t border-slate-100 dark:border-slate-800">
-                                            <span className="flex items-center gap-1">
-                                                <span className="material-symbols-outlined text-[16px]">visibility</span> {article.viewCount || 0} views
-                                            </span>
-                                            <button className="text-indigo-500 font-bold hover:underline">Read Article →</button>
+                                            <div className="flex items-center justify-between text-xs font-semibold text-slate-400 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                                <span className="flex items-center gap-1">
+                                                    <span className="material-symbols-outlined text-[16px]">visibility</span> {article.viewCount || 0} views
+                                                </span>
+                                                <button className="text-indigo-500 font-bold hover:underline cursor-pointer">Read Article →</button>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                     </div>
                 )}
@@ -667,9 +735,13 @@ export default function Profile() {
                             <p className="text-slate-500 font-medium col-span-3 text-center py-8">No videos found.</p>
                         ) : (
                             tabData.videos.map(video => (
-                                <div key={video.videoId} className="rounded-2xl border shadow-sm overflow-hidden glass card-lift">
+                                <div 
+                                    key={video.videoId || video.id} 
+                                    onClick={() => navigate('/videos')}
+                                    className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden glass card-lift cursor-pointer group hover:border-indigo-500 transition-all"
+                                >
                                     <div className="relative h-44 group cursor-pointer">
-                                        <img src={video.thumbnailUrl?.startsWith('http') ? video.thumbnailUrl : `http://localhost:5095${video.thumbnailUrl}`} alt={video.title} className="w-full h-full object-cover" />
+                                        <img src={video.thumbnailUrl?.startsWith('http') ? video.thumbnailUrl : `http://localhost:5095${video.thumbnailUrl}`} alt={video.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                                         <div className="absolute inset-0 bg-black/30 group-hover:bg-black/40 transition-colors flex items-center justify-center">
                                             <div className="w-12 h-12 rounded-full bg-white/90 text-indigo-600 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                                                 <span className="material-symbols-outlined text-[28px] pl-1" style={{fontVariationSettings:"'FILL' 1"}}>play_arrow</span>
@@ -678,7 +750,7 @@ export default function Profile() {
                                         <span className="absolute bottom-3 right-3 bg-black/80 text-white text-[10px] font-black px-2 py-1 rounded-md">{video.durationSeconds ? Math.floor(video.durationSeconds / 60) + ':' + (video.durationSeconds % 60).toString().padStart(2, '0') : '0:00'}</span>
                                     </div>
                                     <div className="p-4">
-                                        <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-1 line-clamp-1">{video.title}</h4>
+                                        <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-1 line-clamp-1 group-hover:text-indigo-500 transition-colors">{video.title}</h4>
                                         <p className="text-xs text-slate-400 font-medium">{video.viewCount || 0} views • {new Date(video.createdDate).toLocaleDateString()}</p>
                                     </div>
                                 </div>
@@ -695,16 +767,20 @@ export default function Profile() {
                             <p className="text-slate-500 font-medium text-center py-8">No podcasts found.</p>
                         ) : (
                             tabData.podcasts.map(podcast => (
-                                <div key={podcast.podcastId} className="rounded-2xl border shadow-sm p-5 glass card-lift flex items-center gap-5">
-                                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md">
+                                <div 
+                                    key={podcast.podcastId || podcast.id} 
+                                    onClick={() => navigate('/podcasts')}
+                                    className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 glass card-lift flex items-center gap-5 cursor-pointer group hover:border-indigo-500 transition-all"
+                                >
+                                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
                                         <span className="material-symbols-outlined text-[32px]">podcasts</span>
                                     </div>
                                     <div className="flex-1 min-w-0">
-                                        <h4 className="font-bold text-slate-900 dark:text-white text-sm truncate">{podcast.title}</h4>
+                                        <h4 className="font-bold text-slate-900 dark:text-white text-sm truncate group-hover:text-indigo-500 transition-colors">{podcast.title}</h4>
                                         <p className="text-xs text-slate-400 font-medium mt-1">{podcast.hostName || 'Host'} • {podcast.durationSeconds ? Math.floor(podcast.durationSeconds / 60) + ' min' : '0 min'}</p>
                                         <p className="text-[11px] text-slate-400 mt-0.5">{new Date(podcast.createdDate).toLocaleDateString()}</p>
                                     </div>
-                                    <button className="w-10 h-10 rounded-full bg-indigo-500 text-white flex items-center justify-center shadow-md hover:bg-indigo-600 transition-colors shrink-0">
+                                    <button className="w-10 h-10 rounded-full bg-indigo-500 text-white flex items-center justify-center shadow-md hover:bg-indigo-600 transition-colors shrink-0 cursor-pointer">
                                         <span className="material-symbols-outlined text-[20px] pl-0.5" style={{fontVariationSettings:"'FILL' 1"}}>play_arrow</span>
                                     </button>
                                 </div>
@@ -720,30 +796,38 @@ export default function Profile() {
                         ) : tabData.communities.length === 0 ? (
                             <p className="text-slate-500 font-medium col-span-3 text-center py-8">No communities found.</p>
                         ) : (
-                            tabData.communities.map(comm => (
-                                <div key={comm.communityId} className="rounded-2xl border shadow-sm overflow-hidden glass card-lift">
-                                    <div className="h-28 relative">
-                                        {comm.bannerImageUrl ? (
-                                            <img src={comm.bannerImageUrl.startsWith('http') ? comm.bannerImageUrl : `http://localhost:5095${comm.bannerImageUrl}`} alt={comm.name} className="w-full h-full object-cover" />
-                                        ) : (
-                                            <div className="w-full h-full bg-gradient-to-br from-indigo-500/20 to-purple-500/20"></div>
-                                        )}
-                                        <span className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full">{comm.currentUserRole || 'Member'}</span>
-                                    </div>
-                                    <div className="p-4 flex items-center justify-between">
-                                        <div>
-                                            <h4 className="font-bold text-slate-900 dark:text-white text-sm">{comm.name}</h4>
-                                            <p className="text-xs text-slate-400 font-medium mt-0.5">{comm.memberCount || 0} members</p>
+                            tabData.communities.map(comm => {
+                                const targetCommId = comm.communityId || comm.id;
+                                const bannerUrl = comm.bannerImageUrl ? (comm.bannerImageUrl.startsWith('http') ? comm.bannerImageUrl : `http://localhost:5095${comm.bannerImageUrl}`) : (comm.banner || getCommunityImages(comm.name).banner);
+                                return (
+                                    <div 
+                                        key={targetCommId} 
+                                        onClick={() => navigate(`/community/view?id=${targetCommId}`)}
+                                        className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden glass card-lift cursor-pointer hover:border-indigo-500 transition-all group"
+                                    >
+                                        <div className="h-28 relative overflow-hidden bg-slate-200 dark:bg-slate-800">
+                                            <img src={bannerUrl} alt={comm.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                            <div className="absolute inset-0 bg-black/10"></div>
+                                            <span className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full border border-white/20">{comm.currentUserRole || 'Member'}</span>
                                         </div>
-                                        <button 
-                                            onClick={() => navigate('/community')}
-                                            className="px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800/50 text-xs font-bold rounded-lg hover:bg-indigo-100 transition-colors cursor-pointer"
-                                        >
-                                            View
-                                        </button>
+                                        <div className="p-4 flex items-center justify-between">
+                                            <div>
+                                                <h4 className="font-bold text-slate-900 dark:text-white text-sm group-hover:text-indigo-500 transition-colors">{comm.name}</h4>
+                                                <p className="text-xs text-slate-400 font-medium mt-0.5">{comm.memberCount || comm.membersCount || 0} members</p>
+                                            </div>
+                                            <button 
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    navigate(`/community/view?id=${targetCommId}`);
+                                                }}
+                                                className="px-4 py-1.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-bold rounded-lg hover:bg-indigo-500 hover:text-white transition-all shadow-xs cursor-pointer"
+                                            >
+                                                View
+                                            </button>
+                                        </div>
                                     </div>
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                     </div>
                 )}
@@ -998,6 +1082,13 @@ export default function Profile() {
                     </div>
                 </div>
             )}
+
+            {/* Share Profile Modal */}
+            <ShareProfileModal 
+                isOpen={isShareModalOpen} 
+                onClose={() => setIsShareModalOpen(false)} 
+                user={displayUser} 
+            />
         </main>
     );
 }

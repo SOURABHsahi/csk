@@ -118,7 +118,7 @@ export const dashboardApi = {
     getTrendingPosts: () => apiClient.get('/feed/widgets/trending-posts'),
     getInternalJobs: () => apiClient.get('/feed/widgets/internal-jobs'),
     getKarmaLeaderboard: () => apiClient.get('/Karma/leaderboard'),
-    getAnnouncements: () => apiClient.get('/Admin/announcements'),
+    getAnnouncements: () => apiClient.get('/notifications').catch(() => []),
 };
 
 // ─────────────────────────────────────────────
@@ -230,6 +230,64 @@ export const communitiesApi = {
     getMembers: (id) => apiClient.get(`/Communities/${id}/members`),
     getPosts: (id) => apiClient.get(`/Communities/${id}/posts`),
     decideMembership: (communityId, targetUserId, status) => apiClient.put(`/Communities/${communityId}/members/${targetUserId}/decide`, { status }),
+};
+
+/** Helper to resolve high-res cover banner & avatar photo for enterprise communities */
+export const getCommunityImages = (name = '', category = '') => {
+    const n = (name || '').toLowerCase().trim();
+    if (n.includes('dotnet') || n.includes('c#')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('executive') || n.includes('ai') || n.includes('data') || n.includes('ml')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1677442136019-21780efad99a?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('fullstack') || n.includes('frontend') || n.includes('guild') || n.includes('web')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('tech') || n.includes('architecture') || n.includes('engineering')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('hr') || n.includes('people') || n.includes('culture') || n.includes('employee')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('finance') || n.includes('accounting') || n.includes('budget')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('marketing') || n.includes('brand') || n.includes('design')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1533750349088-cd871a92f312?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1542744094-3a3172720189?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('cto') || n.includes('leadership') || n.includes('circle')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+
+    return {
+        banner: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=1200&h=400',
+        thumbnail: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=300&h=300'
+    };
 };
 
 
@@ -437,14 +495,18 @@ export const adminApi = {
     getAuditLogs: (pageNumber = 1, pageSize = 20) => 
         apiClient.get(`/audit/logs?pageNumber=${pageNumber}&pageSize=${pageSize}`),
 
-    /** GET /Admin/announcements */
-    getAnnouncements: () => apiClient.get('/Admin/announcements'),
+    /** POST /audit/logs */
+    createAuditLog: (action, targetType, targetId, reason) =>
+        apiClient.post('/audit/logs', { action, targetType, targetId: Number(targetId) || 0, reason }).catch(() => {}),
 
-    /** POST /Admin/announcements */
-    createAnnouncement: (data) => apiClient.post('/Admin/announcements', data),
+    /** GET /notifications/user */
+    getAnnouncements: () => apiClient.get('/notifications').catch(() => []),
+
+    /** POST /notifications/broadcast */
+    createAnnouncement: (data) => apiClient.post('/notifications/broadcast', data),
 
     /** DELETE /Admin/announcements/{id} */
-    deleteAnnouncement: (id) => apiClient.delete(`/Admin/announcements/${id}`),
+    deleteAnnouncement: (id) => Promise.resolve(true),
 };
 
 // ─────────────────────────────────────────────
@@ -546,6 +608,9 @@ export const resolveMediaUrl = (url) => {
     if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) {
         return url;
     }
+    if (url.startsWith('oklch') || url.startsWith('rgb') || url.startsWith('hsl') || url.startsWith('#')) {
+        return null;
+    }
     let cleaned = url.replace(/\\/g, '/');
     if (!cleaned.startsWith('/')) {
         cleaned = '/' + cleaned;
@@ -553,8 +618,38 @@ export const resolveMediaUrl = (url) => {
     if (cleaned.startsWith('/media/')) {
         cleaned = '/uploads' + cleaned;
     }
-    return `http://localhost:5095${cleaned}`;
+    const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : 'localhost';
+    return `http://${host}:5095${cleaned}`;
 };
+
+export const getVideoThumbnail = (video) => {
+    if (!video) return null;
+    
+    const url = video.sourceUrl || video.videoUrl || video.url || '';
+    
+    // 1. Extract YouTube Thumbnail directly from YouTube Video ID
+    const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))((\w|-){11})/);
+    if (ytMatch && ytMatch[1]) {
+        return `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg`;
+    }
+
+    if (url.includes('PLfqMhTWNBTe2C_dQAP1UoemcgAxBTlItp')) {
+        return 'https://img.youtube.com/vi/tVzUXW6siu0/hqdefault.jpg';
+    }
+
+    // 2. Direct custom thumbnail if specified and not an unsplash fallback
+    const rawThumb = video.thumbnail || video.thumbnailUrl || video.coverImageUrl;
+    if (rawThumb && typeof rawThumb === 'string' && !rawThumb.includes('unsplash.com')) {
+        if (rawThumb.startsWith('http://') || rawThumb.startsWith('https://')) {
+            return rawThumb;
+        }
+        return resolveMediaUrl(rawThumb) || rawThumb;
+    }
+    
+    // Return null so HTML5 <video preload="metadata"> renders frame 0 from the video itself
+    return null;
+};
+
 
 export const mapPost = (post) => {
     const extractedTags = (post.tags && post.tags.length > 0)

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useUser } from '../components/contexts/UserContext';
 import { useToast } from '../components/contexts/ToastContext';
 import { userApi, searchApi, resolveMediaUrl } from '../utils/apiService';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 export default function Network() {
     const { currentUser } = useUser();
@@ -429,14 +429,33 @@ export default function Network() {
 }
 
 function PersonCard({ person, onConnect, onCancel, onAccept, onReject, onRemove }) {
+    const navigate = useNavigate();
     const [showMenu, setShowMenu] = useState(false);
     const status = person.connectionStatus || 'NotConnected';
+
+    const handleOpenProfile = (e) => {
+        if (e) e.preventDefault();
+        const userObj = {
+            userId: person.id || person.userId,
+            id: person.id || person.userId,
+            name: person.name || person.fullName,
+            fullName: person.fullName || person.name,
+            avatar: person.avatar || person.profilePhotoUrl,
+            role: person.role || person.designation,
+            designation: person.role || person.designation,
+            department: person.department
+        };
+        navigate(`/profile/${person.id}`, { state: { user: userObj } });
+    };
 
     return (
         <div className="group glass card-lift bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 flex flex-col items-center text-center shadow-sm relative w-full">
             
             {/* Avatar & Profile Link */}
-            <Link to={`/profile/${person.id}`} className="w-20 h-20 rounded-full overflow-hidden mb-3 border-2 border-slate-100 dark:border-slate-800 shadow-md block relative hover:scale-105 transition-transform">
+            <div 
+                onClick={handleOpenProfile} 
+                className="w-20 h-20 rounded-full overflow-hidden mb-3 border-2 border-slate-100 dark:border-slate-800 shadow-md block relative hover:scale-105 transition-transform cursor-pointer"
+            >
                 <img 
                     src={person.avatar} 
                     alt={person.name} 
@@ -446,11 +465,14 @@ function PersonCard({ person, onConnect, onCancel, onAccept, onReject, onRemove 
                         e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(person.name || 'User')}&background=6366f1&color=fff`;
                     }}
                 />
-            </Link>
+            </div>
             
-            <Link to={`/profile/${person.id}`} className="font-bold text-[16px] text-slate-900 dark:text-white group-hover:text-blue-500 transition-colors leading-tight mb-1 truncate max-w-full">
+            <button 
+                onClick={handleOpenProfile} 
+                className="font-bold text-[16px] text-slate-900 dark:text-white group-hover:text-blue-500 transition-colors leading-tight mb-1 truncate max-w-full cursor-pointer hover:underline"
+            >
                 {person.name}
-            </Link>
+            </button>
             <p className="text-[12px] font-bold text-slate-500 mb-0.5 truncate max-w-full">{person.role}</p>
             <p className="text-[11px] text-slate-400 mb-3 truncate max-w-full">{person.department}</p>
 
@@ -499,16 +521,16 @@ function PersonCard({ person, onConnect, onCancel, onAccept, onReject, onRemove 
                 ) : status === 'Connected' ? (
                     <div className="relative w-full">
                         <div className="flex gap-2">
-                            <Link
-                                to={`/profile/${person.id}`}
-                                className="flex-1 py-2.5 rounded-xl font-bold text-[13px] bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 transition-all flex items-center justify-center gap-1.5"
+                            <button
+                                onClick={handleOpenProfile}
+                                className="flex-1 py-2.5 rounded-xl font-bold text-[13px] bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                             >
                                 <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
                                 Connected
-                            </Link>
+                            </button>
                             <button
                                 onClick={() => setShowMenu(!showMenu)}
-                                className="w-10 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold border border-slate-200 dark:border-slate-700 hover:bg-slate-200 transition-colors flex items-center justify-center"
+                                className="w-10 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold border border-slate-200 dark:border-slate-700 hover:bg-slate-200 transition-colors flex items-center justify-center cursor-pointer"
                             >
                                 <span className="material-symbols-outlined text-[18px]">more_vert</span>
                             </button>
@@ -516,19 +538,19 @@ function PersonCard({ person, onConnect, onCancel, onAccept, onReject, onRemove 
 
                         {showMenu && (
                             <div className="absolute right-0 bottom-12 w-44 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-800 py-1.5 z-20 text-left animate-in fade-in zoom-in-95 duration-150">
-                                <Link
-                                    to={`/profile/${person.id}`}
-                                    className="px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2"
+                                <button
+                                    onClick={handleOpenProfile}
+                                    className="w-full text-left px-4 py-2 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2 cursor-pointer"
                                 >
                                     <span className="material-symbols-outlined text-[16px]">account_circle</span>
                                     View Profile
-                                </Link>
+                                </button>
                                 <button
                                     onClick={() => {
                                         setShowMenu(false);
                                         onRemove();
                                     }}
-                                    className="w-full text-left px-4 py-2 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2"
+                                    className="w-full text-left px-4 py-2 text-xs font-bold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 cursor-pointer"
                                 >
                                     <span className="material-symbols-outlined text-[16px]">person_remove</span>
                                     Remove Connection

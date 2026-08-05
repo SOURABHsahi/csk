@@ -12,6 +12,8 @@ export default function AuthGuard({ children }) {
     const userContext = useUser();
     const isAuthenticated = userContext?.isAuthenticated ?? false;
     const isAuthLoading = userContext?.isAuthLoading ?? false;
+    const currentUser = userContext?.currentUser;
+    const logout = userContext?.logout;
 
     if (isAuthLoading) {
         return (
@@ -46,6 +48,42 @@ export default function AuthGuard({ children }) {
 
     if (!isAuthenticated) {
         return <Navigate to="/login" replace />;
+    }
+
+    // Strict Account Suspension Guard — Block Posts, Articles, Videos, Podcasts & Community Access
+    if (currentUser && currentUser.isActive === false) {
+        return (
+            <div className="min-h-screen flex items-center justify-center p-6 bg-slate-950 text-white">
+                <div className="max-w-md w-full bg-slate-900 border border-rose-500/40 rounded-3xl p-8 shadow-2xl text-center space-y-6 animate-in fade-in zoom-in duration-300">
+                    <div className="w-20 h-20 rounded-2xl bg-rose-500/20 text-rose-500 flex items-center justify-center mx-auto shadow-inner border border-rose-500/30">
+                        <span className="material-symbols-outlined text-4xl">person_off</span>
+                    </div>
+                    <div>
+                        <h2 className="text-2xl font-black text-rose-400 tracking-tight mb-1">ACCESS DENIED</h2>
+                        <h3 className="text-base font-bold text-slate-200 uppercase tracking-wide">Account Suspended</h3>
+                    </div>
+                    <p className="text-sm text-slate-300 leading-relaxed bg-slate-800/80 p-4 rounded-xl border border-slate-700/50">
+                        Your account <strong className="text-white">({currentUser.name || currentUser.employeeId})</strong> has been suspended by System Administrator due to compliance & governance policies.
+                    </p>
+                    <div className="text-xs text-rose-300 font-semibold bg-rose-500/10 p-3 rounded-xl border border-rose-500/20 text-left space-y-1">
+                        <div className="font-black text-rose-400 mb-1 uppercase tracking-wider">Restricted Modules:</div>
+                        <div>⛔ Posts & Feeds Viewing / Creation</div>
+                        <div>⛔ Knowledge Articles & Blogs</div>
+                        <div>⛔ Video Streaming & Uploads</div>
+                        <div>⛔ Podcasts & Audio Recordings</div>
+                        <div>⛔ Enterprise Communities & Channels</div>
+                    </div>
+                    <div className="pt-2 flex flex-col gap-3">
+                        <button
+                            onClick={logout}
+                            className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl transition-all border border-slate-700 cursor-pointer shadow-lg"
+                        >
+                            Log Out & Return to Login
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
     }
 
     return children;

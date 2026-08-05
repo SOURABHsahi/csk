@@ -4,6 +4,7 @@ namespace Knome.API.DTOs.Videos;
 
 public class CreateVideoDto
 {
+    public int? UploaderUserId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public int? CategoryId { get; set; }

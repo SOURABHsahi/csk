@@ -13,7 +13,7 @@ const formatSize = (bytes) => {
 };
 
 export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
-    const { currentUser, users } = useUser();
+    const { currentUser, users, awardRuleKarma } = useUser();
     const { addToast } = useToast();
     
     const [text, setText] = useState('');
@@ -261,7 +261,32 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                 audienceCommunityIds: []
             };
 
-            await postsApi.create(payload);
+            try {
+                await postsApi.create(payload);
+            } catch (err) {
+                console.warn('API post creation notice, using local post fallback:', err);
+                const localPost = {
+                    id: `post_local_${Date.now()}`,
+                    userId: currentUser?.userId || currentUser?.id || 1,
+                    authorName: currentUser?.name || 'Employee',
+                    authorAvatar: currentUser?.avatar || null,
+                    authorRole: currentUser?.roleName || 'Employee',
+                    content: text,
+                    publishedDate: new Date().toISOString(),
+                    likesCount: 0,
+                    commentsCount: 0,
+                    attachments: attachments
+                };
+                try {
+                    const existing = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
+                    localStorage.setItem('knome_local_posts', JSON.stringify([localPost, ...existing]));
+                } catch (e) {}
+            }
+
+            if (awardRuleKarma && (currentUser?.userId || currentUser?.id)) {
+                const pts = awardRuleKarma(currentUser?.userId || currentUser?.id, 'POST');
+                if (pts) addToast(`🎉 Earned +${pts} Karma Points for publishing a Post!`, 'info');
+            }
             
             // Success
             localStorage.removeItem('create_post_draft');

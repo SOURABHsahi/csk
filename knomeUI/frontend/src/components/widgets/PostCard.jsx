@@ -5,8 +5,9 @@ import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
 import ReportModal from '../modals/ReportModal';
 import SaveToCategoryModal from '../modals/SaveToCategoryModal';
+import DocumentViewerModal from '../modals/DocumentViewerModal';
 
-import { interactionsApi, postsApi, searchApi, resolveMediaUrl } from '../../utils/apiService';
+import { interactionsApi, postsApi, searchApi, resolveMediaUrl, getVideoThumbnail } from '../../utils/apiService';
 
 // Available reactions (FR-CI-01)
 const REACTION_TYPES = {
@@ -227,7 +228,7 @@ function ImageGrid({ images, onImageClick }) {
 }
 
 export default function PostCard({ post, onPostDeleted }) {
-    const { currentUser } = useUser();
+    const { currentUser, awardRuleKarma } = useUser();
     const { addToast } = useToast();
     const navigate = useNavigate();
     
@@ -253,8 +254,9 @@ export default function PostCard({ post, onPostDeleted }) {
     const [isShareSearching, setIsShareSearching] = useState(false);
     const [selectedShareUsers, setSelectedShareUsers] = useState([]);
 
-    // Lightbox state
+    // Lightbox & Document Viewer state
     const [lightboxIndex, setLightboxIndex] = useState(null);
+    const [activeDocViewer, setActiveDocViewer] = useState(null);
     
     // Menu & Report (FR-SM-02)
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -276,6 +278,9 @@ export default function PostCard({ post, onPostDeleted }) {
         try {
             await interactionsApi.shareContent('Post', post.id, 'Timeline');
             setShareCount(prev => prev + 1);
+            if (awardRuleKarma && (post.userId || post.authorId)) {
+                awardRuleKarma(post.userId || post.authorId, 'SHARE_RECEIVED');
+            }
             addToast('Post shared to your timeline successfully!', 'success');
             setIsShareOpen(false);
         } catch (error) {
@@ -290,6 +295,9 @@ export default function PostCard({ post, onPostDeleted }) {
             try {
                 await interactionsApi.shareContent('Post', post.id, 'Community', parseInt(comm));
                 setShareCount(prev => prev + 1);
+                if (awardRuleKarma && (post.userId || post.authorId)) {
+                    awardRuleKarma(post.userId || post.authorId, 'SHARE_RECEIVED');
+                }
                 addToast('Post successfully shared to community!', 'success');
                 setIsShareOpen(false);
             } catch (error) {
@@ -299,12 +307,18 @@ export default function PostCard({ post, onPostDeleted }) {
     };
 
     const handleShareWithUsers = async () => {
-        if (selectedShareUsers.length === 0) return;
+        if (selectedShareUsers.length === 0) {
+            addToast('Please select at least one user to share with.', 'warning');
+            return;
+        }
         try {
             await Promise.all(selectedShareUsers.map(u => 
                 interactionsApi.shareContent('Post', post.id, 'User', u.id || u.userId)
             ));
             setShareCount(prev => prev + selectedShareUsers.length);
+            if (awardRuleKarma && (post.userId || post.authorId)) {
+                awardRuleKarma(post.userId || post.authorId, 'SHARE_RECEIVED');
+            }
             addToast(`Post successfully shared with ${selectedShareUsers.length} user(s)!`, 'success');
             setIsShareOpen(false);
             setShareMode('menu');
@@ -379,6 +393,9 @@ export default function PostCard({ post, onPostDeleted }) {
             setLikeCount(prev => Math.max(0, prev - 1)); // Removed reaction
         } else if (!previousReaction && newReaction) {
             setLikeCount(prev => prev + 1); // Added new reaction
+            if (awardRuleKarma && (post.userId || post.authorId)) {
+                awardRuleKarma(post.userId || post.authorId, 'LIKE_RECEIVED');
+            }
         }
         setReactionHover(false);
 
@@ -410,6 +427,9 @@ export default function PostCard({ post, onPostDeleted }) {
         try {
             const c = await interactionsApi.addComment('Post', post.id, newComment);
             if (c) {
+                if (awardRuleKarma && (post.userId || post.authorId)) {
+                    awardRuleKarma(post.userId || post.authorId, 'COMMENT_RECEIVED');
+                }
                 const newC = {
                     id: c.commentId,
                     author: c.authorFullName,
@@ -555,6 +575,105 @@ export default function PostCard({ post, onPostDeleted }) {
                 <p className="text-[13.5px] text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
                     {post.content}
                 </p>
+
+                {/* Shared Profile Card */}
+                {post.sharedProfile && (
+                    <div className="mt-3.5 p-4 rounded-2xl bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 border border-indigo-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+                        <div className="flex items-center gap-3.5 min-w-0">
+                            <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-black text-lg flex items-center justify-center shrink-0 shadow-md overflow-hidden">
+                                {post.sharedProfile.avatar ? (
+                                    <img src={post.sharedProfile.avatar} alt={post.sharedProfile.name} className="w-full h-full object-cover" />
+                                ) : (
+                                    (post.sharedProfile.name || 'U').charAt(0).toUpperCase()
+                                )}
+                            </div>
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                    <span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-extrabold uppercase tracking-wider">
+                                        SHARED PROFILE
+                                    </span>
+                                </div>
+                                <h4 className="font-extrabold text-slate-900 dark:text-white text-sm truncate mt-0.5">
+                                    {post.sharedProfile.name || post.sharedProfile.fullName}
+                                </h4>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                    {post.sharedProfile.designation || 'Contributor'} • {post.sharedProfile.department || 'General'}
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => navigate('/profile', { state: { user: post.sharedProfile } })}
+                            className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-indigo-500/20 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                        >
+                            <span className="material-symbols-outlined text-[16px]">visibility</span>
+                            View Profile
+                        </button>
+                    </div>
+                )}
+                {/* Shared Video Player / Card inside PostCard */}
+                {(post.sharedVideo || post.type === 'video_share' || post.videoUrl || (post.content && (post.content.includes('Shared Video:') || post.content.includes('📹')))) && (
+                    <div className="mt-3.5 rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-xl">
+                        {(() => {
+                            const vidObj = post.sharedVideo || {
+                                id: post.id || `shared_vid_${Date.now()}`,
+                                title: post.title?.replace('📹 Shared Video: ', '').replace(/ — uploaded by.*/, '') || post.content?.replace(/^.*Shared Video: "/, '').replace(/".*/, '') || 'Shared Video',
+                                sourceUrl: post.videoUrl || post.sourceUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+                                thumbnail: post.thumbnail || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=1200',
+                                author: post.authorName || post.author || 'MPOnline Team'
+                            };
+                            const vUrl = vidObj.sourceUrl || vidObj.videoUrl || post.videoUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+                            const isYT = vUrl && (vUrl.includes('youtube.com') || vUrl.includes('youtu.be'));
+
+                            return (
+                                <div className="flex flex-col">
+                                    <div className="relative aspect-video w-full bg-black overflow-hidden group">
+                                        {isYT ? (
+                                            <iframe
+                                                src={vUrl.includes('embed') ? vUrl : `https://www.youtube.com/embed/${(vUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=))((\w|-){11})/) || [])[1] || ''}`}
+                                                className="w-full h-full border-0"
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                                                title={vidObj.title}
+                                            />
+                                        ) : (
+                                            <video
+                                                src={resolveMediaUrl(vUrl) || vUrl}
+                                                poster={getVideoThumbnail(vidObj) || undefined}
+                                                preload="metadata"
+                                                controls
+                                                controlsList="nodownload"
+                                                className="w-full h-full object-contain"
+                                                onError={(e) => {
+                                                    if (e.target && !e.target.src.includes('BigBuckBunny.mp4')) {
+                                                        e.target.src = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+                                                    }
+                                                }}
+                                            />
+                                        )}
+                                    </div>
+                                    <div className="p-3.5 bg-slate-900 flex items-center justify-between gap-3 border-t border-slate-800">
+                                        <div className="min-w-0">
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-md inline-flex items-center gap-1">
+                                                <span className="material-symbols-outlined text-[12px]">play_circle</span>
+                                                SHARED VIDEO
+                                            </span>
+                                            <h5 className="font-extrabold text-white text-xs sm:text-sm truncate mt-1">
+                                                {vidObj.title}
+                                            </h5>
+                                        </div>
+                                        <button
+                                            onClick={() => navigate(`/videos?id=${vidObj.id || ''}&title=${encodeURIComponent(vidObj.title || '')}&url=${encodeURIComponent(vUrl)}`)}
+                                            className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-600 hover:to-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shrink-0 transition-all shadow-md shadow-cyan-500/20 cursor-pointer"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">play_arrow</span>
+                                            <span>Play Full Video</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                    </div>
+                )}
+
                 {post.type === 'article' && (
                     <button 
                         onClick={() => navigate('/article-view?id=' + (post.id === 1 ? '2' : post.id))}
@@ -619,27 +738,48 @@ export default function PostCard({ post, onPostDeleted }) {
                                 </div>
                             );
                         } else if (att.type === 'doc') {
+                            const isPdf = att.name?.toLowerCase().endsWith('.pdf') || att.url?.toLowerCase().includes('.pdf');
                             return (
-                                <div key={att.id} className="mx-5 mb-2 p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-between">
-                                    <div className="flex items-center gap-3 overflow-hidden">
-                                        <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-500 rounded-lg flex items-center justify-center shrink-0">
-                                            <span className="material-symbols-outlined text-[20px]">description</span>
+                                <div key={att.id} className="mx-5 mb-3 p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl flex items-center justify-between gap-4 shadow-sm hover:shadow-md transition-all group">
+                                    <div className="flex items-center gap-3.5 overflow-hidden">
+                                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-sm transition-transform group-hover:scale-105 ${
+                                            isPdf ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/20'
+                                        }`}>
+                                            <span className="material-symbols-outlined text-[24px]">
+                                                {isPdf ? 'picture_as_pdf' : 'description'}
+                                            </span>
                                         </div>
                                         <div className="min-w-0">
-                                            <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate">{att.name}</p>
-                                            <p className="text-[11px] text-slate-500">Document (View Only)</p>
+                                            <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate" title={att.name}>{att.name}</p>
+                                            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                                                <span className="font-semibold uppercase tracking-wider text-[10px] px-1.5 py-0.5 bg-slate-200/70 dark:bg-slate-700/70 rounded text-slate-700 dark:text-slate-300">
+                                                    {isPdf ? 'PDF' : 'DOC'}
+                                                </span>
+                                                <span>Document (View Only)</span>
+                                            </div>
                                         </div>
                                     </div>
-                                    <a href={att.url} target="_blank" rel="noreferrer" className="shrink-0 px-3 py-1.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500 hover:text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1">
+                                    <button 
+                                        onClick={() => setActiveDocViewer(att)}
+                                        className="shrink-0 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-500/20 active:scale-95 cursor-pointer"
+                                    >
                                         <span className="material-symbols-outlined text-[16px]">visibility</span>
                                         View File
-                                    </a>
+                                    </button>
                                 </div>
                             );
                         }
                         return null;
                     })}
                 </div>
+            )}
+
+            {/* ── Document Viewer Modal ── */}
+            {activeDocViewer && (
+                <DocumentViewerModal 
+                    document={activeDocViewer} 
+                    onClose={() => setActiveDocViewer(null)} 
+                />
             )}
 
             {/* ── Fullscreen Lightbox ── */}
@@ -722,12 +862,12 @@ export default function PostCard({ post, onPostDeleted }) {
                         {reaction ? (
                             <>
                                 <span className="text-[18px]">{REACTION_TYPES[reaction].icon}</span>
-                                {REACTION_TYPES[reaction].label}
+                                {REACTION_TYPES[reaction].label} ({likeCount})
                             </>
                         ) : (
                             <>
                                 <span className="material-symbols-outlined text-[20px]">thumb_up</span>
-                                Like
+                                Like ({likeCount})
                             </>
                         )}
                     </button>
@@ -773,7 +913,7 @@ export default function PostCard({ post, onPostDeleted }) {
                     className="flex-1 flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
                     <span className="material-symbols-outlined text-[20px]">chat_bubble</span>
-                    Comment
+                    Comment ({comments.length || post.commentsCount || 0})
                 </button>
 
                 {/* Share Button (FR-CI-03) */}
@@ -787,7 +927,7 @@ export default function PostCard({ post, onPostDeleted }) {
                         className="w-full flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     >
                         <span className="material-symbols-outlined text-[20px]">share</span>
-                        Share
+                        Share ({shareCount})
                     </button>
 
                     {/* Share Popover Modal... */}
@@ -814,9 +954,6 @@ export default function PostCard({ post, onPostDeleted }) {
 
                                 {shareMode === 'menu' ? (
                                     <div className="flex flex-col gap-2">
-                                        <button onClick={handleShareToTimeline} className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left text-sm font-semibold text-slate-700 dark:text-slate-200">
-                                            <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-500 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">dynamic_feed</span></div> Share to Timeline
-                                        </button>
                                         <button onClick={handleShareToCommunity} className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left text-sm font-semibold text-slate-700 dark:text-slate-200">
                                             <div className="w-8 h-8 rounded-full bg-cyan-100 dark:bg-cyan-900/30 text-cyan-500 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">groups</span></div> Share to Community
                                         </button>
@@ -978,6 +1115,10 @@ function CommentThread({ postId, comment, depth = 0 }) {
     const [replyText, setReplyText] = useState('');
     const [replies, setReplies] = useState(comment.replies || []);
 
+    useEffect(() => {
+        setReplies(comment.replies || []);
+    }, [comment.replies]);
+
     const submitReply = async (e) => {
         e.preventDefault();
         if (!replyText.trim()) return;
@@ -986,15 +1127,15 @@ function CommentThread({ postId, comment, depth = 0 }) {
             const c = await interactionsApi.addComment('Post', postId, replyText.trim(), comment.id);
             if (c) {
                 const newReply = {
-                    id: c.commentId,
-                    author: c.authorFullName,
-                    avatar: c.authorProfilePhotoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName)}&background=6366f1&color=fff`,
+                    id: c.commentId || Date.now(),
+                    author: c.authorFullName || 'You',
+                    avatar: c.authorProfilePhotoUrl ? resolveMediaUrl(c.authorProfilePhotoUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName || 'User')}&background=6366f1&color=fff`,
                     time: 'Just now',
-                    text: c.commentText,
+                    text: c.commentText || replyText.trim(),
                     replies: []
                 };
 
-                setReplies([...replies, newReply]);
+                setReplies(prev => [...prev, newReply]);
                 setReplyText('');
                 setIsReplying(false);
             }
@@ -1013,28 +1154,42 @@ function CommentThread({ postId, comment, depth = 0 }) {
                         <span className="font-bold text-[13px] text-slate-900 dark:text-white">{comment.author}</span>
                         <span className="text-[10px] text-slate-500 dark:text-slate-400">{comment.time}</span>
                     </div>
-                    <p className="text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{comment.text}</p>
+                    <p className="text-[13px] text-slate-700 dark:text-slate-350 leading-relaxed whitespace-pre-wrap">{comment.text}</p>
                 </div>
                 
                 {/* Comment Actions */}
                 <div className="flex items-center gap-3 mt-1 ml-2 text-[11px] font-bold text-slate-500">
                     <button className="hover:text-indigo-500 transition-colors">Like</button>
-                    {/* Allow reply if less than 3 levels deep */}
-                    {depth < 3 && (
-                        <button onClick={() => setIsReplying(!isReplying)} className="hover:text-indigo-500 transition-colors">Reply</button>
-                    )}
+                    <button onClick={() => setIsReplying(!isReplying)} className="hover:text-indigo-500 transition-colors">Reply</button>
                 </div>
 
                 {isReplying && (
-                    <form onSubmit={submitReply} className="mt-3 relative max-w-sm">
-                        <input 
-                            type="text" 
-                            autoFocus
-                            placeholder={`Reply to ${comment.author}...`} 
-                            value={replyText}
-                            onChange={(e) => setReplyText(e.target.value)}
-                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full pl-4 pr-10 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white"
-                        />
+                    <form onSubmit={submitReply} className="mt-3 flex items-center gap-2 max-w-md">
+                        <div className="relative flex-1">
+                            <input 
+                                type="text" 
+                                autoFocus
+                                placeholder={`Reply to ${comment.author}...`} 
+                                value={replyText}
+                                onChange={(e) => setReplyText(e.target.value)}
+                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full pl-4 pr-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white"
+                            />
+                        </div>
+                        <button 
+                            type="submit"
+                            disabled={!replyText.trim()}
+                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-full text-xs font-semibold flex items-center gap-1 transition-all shrink-0 shadow-sm"
+                        >
+                            <span className="material-symbols-outlined text-[14px]">send</span>
+                            <span>Reply</span>
+                        </button>
+                        <button 
+                            type="button"
+                            onClick={() => { setIsReplying(false); setReplyText(''); }}
+                            className="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-medium transition-colors shrink-0"
+                        >
+                            Cancel
+                        </button>
                     </form>
                 )}
 

@@ -155,6 +155,91 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
         }
     };
 
+    const handleUrlInputChange = async (val) => {
+        setSourceUrlInput(val);
+        if (!val || !val.trim()) return;
+
+        const cleanUrl = val.trim();
+
+        // 1. YouTube Video Match
+        let ytMatch = cleanUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))((\w|-){11})/);
+        if (ytMatch && ytMatch[1]) {
+            const vId = ytMatch[1];
+            const ytThumb = `https://img.youtube.com/vi/${vId}/hqdefault.jpg`;
+            setThumbnailPreview(ytThumb);
+            setIsAutoThumbnail(true);
+            setVideoDuration('05:30');
+            setDurationSeconds(330);
+
+            // Fetch YouTube oEmbed metadata for title & description & thumbnail
+            try {
+                const res = await fetch(`https://noembed.com/embed?url=https://www.youtube.com/watch?v=${vId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.title) {
+                        setTitle(data.title);
+                        if (!description) {
+                            setDescription(`${data.title}\n\nUploaded via Enterprise Video Portal. Channel: ${data.author_name || 'YouTube'}`);
+                        }
+                    }
+                    if (data.thumbnail_url) {
+                        setThumbnailPreview(data.thumbnail_url);
+                    }
+                }
+            } catch (err) {
+                console.warn("oEmbed fetch notice:", err);
+            }
+            return;
+        }
+
+        // 2. Direct MP4/Video Link Match
+        if (cleanUrl.match(/\.(mp4|webm|ogg|mov|mkv)(\?.*)?$/i) || cleanUrl.includes('/uploads/') || cleanUrl.includes('/Media/')) {
+            setVideoDuration('Auto-detecting...');
+            const tempVid = document.createElement('video');
+            tempVid.crossOrigin = 'anonymous';
+            tempVid.preload = 'metadata';
+            tempVid.muted = true;
+            tempVid.src = cleanUrl;
+
+            tempVid.onloadedmetadata = () => {
+                if (tempVid.duration && !isNaN(tempVid.duration)) {
+                    const totalSec = Math.floor(tempVid.duration);
+                    const min = Math.floor(totalSec / 60);
+                    const sec = totalSec % 60;
+                    const formatted = `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+                    setVideoDuration(formatted);
+                    setDurationSeconds(totalSec);
+                }
+                tempVid.currentTime = Math.min(2, (tempVid.duration || 0) * 0.15);
+            };
+
+            tempVid.onseeked = () => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = tempVid.videoWidth || 640;
+                    canvas.height = tempVid.videoHeight || 360;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(tempVid, 0, 0, canvas.width, canvas.height);
+                    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                    setThumbnailPreview(dataUrl);
+                    setIsAutoThumbnail(true);
+                } catch (e) {}
+            };
+
+            tempVid.onerror = () => {
+                setVideoDuration('04:15');
+                setDurationSeconds(255);
+            };
+            return;
+        }
+
+        // 3. Fallback for OneDrive / MS Stream / General Embed Links
+        setThumbnailPreview('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80');
+        setIsAutoThumbnail(true);
+        setVideoDuration('04:45');
+        setDurationSeconds(285);
+    };
+
     const handleUpload = async () => {
         if (!title.trim()) {
             alert("Please enter a video title.");
@@ -165,6 +250,11 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
         const foundKeyword = checkRestrictedContent(textToScan);
         if (foundKeyword) {
             alert(`Video cannot be uploaded. It contains the restricted term: "${foundKeyword}".`);
+            return;
+        }
+
+        if (currentUser?.isActive === false) {
+            alert("Your account is currently suspended by System Administrator. You cannot upload videos for approval.");
             return;
         }
 
@@ -191,11 +281,18 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                 fileSizeMb = Math.round(videoFile.size / (1024 * 1024));
             }
 
-            // 2. Upload Thumbnail if provided
+            // 2. Upload Thumbnail if provided, or use auto-extracted preview thumbnail
             let finalThumbnailUrl = null;
             if (thumbnailFile) {
-                const thumbResult = await apiClient.uploadFile('/Media/upload', thumbnailFile, 'image');
-                finalThumbnailUrl = thumbResult.url;
+                try {
+                    const thumbResult = await apiClient.uploadFile('/Media/upload', thumbnailFile, 'image');
+                    finalThumbnailUrl = thumbResult.url;
+                } catch (e) {
+                    finalThumbnailUrl = thumbnailPreview;
+                }
+            }
+            if (!finalThumbnailUrl && thumbnailPreview) {
+                finalThumbnailUrl = thumbnailPreview;
             }
 
             // 3. Map SourceType
@@ -222,7 +319,8 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                 sourceUrl: finalVideoUrl,
                 fileSizeMb: fileSizeMb,
                 durationSeconds: durationSeconds || null,
-                tags: finalTags
+                tags: finalTags,
+                uploaderUserId: currentUser?.id
             };
 
             if (isCurrentUserAdmin) {
@@ -365,21 +463,21 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                             <>
                                 <span className="material-symbols-outlined text-[48px] text-blue-500 mb-4">cloud</span>
                                 <p className="text-[13px] font-bold text-slate-700 dark:text-slate-300 mb-4">Paste OneDrive sharing link</p>
-                                <input type="text" value={sourceUrlInput} onChange={e => setSourceUrlInput(e.target.value)} placeholder="https://onedrive.live.com/..." className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none" />
+                                <input type="text" value={sourceUrlInput} onChange={e => handleUrlInputChange(e.target.value)} placeholder="https://onedrive.live.com/..." className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none" />
                             </>
                         )}
                         {sourceTab === 'stream' && (
                             <>
                                 <span className="material-symbols-outlined text-[48px] text-pink-500 mb-4">play_circle</span>
                                 <p className="text-[13px] font-bold text-slate-700 dark:text-slate-300 mb-4">Paste Microsoft Stream video link</p>
-                                <input type="text" value={sourceUrlInput} onChange={e => setSourceUrlInput(e.target.value)} placeholder="https://web.microsoftstream.com/video/..." className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none" />
+                                <input type="text" value={sourceUrlInput} onChange={e => handleUrlInputChange(e.target.value)} placeholder="https://web.microsoftstream.com/video/..." className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none" />
                             </>
                         )}
                         {sourceTab === 'embed' && (
                             <>
                                 <span className="material-symbols-outlined text-[48px] text-slate-400 mb-4">link</span>
                                 <p className="text-[13px] font-bold text-slate-700 dark:text-slate-300 mb-4">Paste Embed Code or URL</p>
-                                <input type="text" value={sourceUrlInput} onChange={e => setSourceUrlInput(e.target.value)} placeholder="<iframe src=..." className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none" />
+                                <input type="text" value={sourceUrlInput} onChange={e => handleUrlInputChange(e.target.value)} placeholder="<iframe src=..." className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none" />
                             </>
                         )}
                     </div>

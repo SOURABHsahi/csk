@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import CreatePostModal from '../components/modals/CreatePostModal';
 import PostCard from '../components/widgets/PostCard';
@@ -12,6 +13,7 @@ import { BackgroundPaths } from '../components/ui/background-paths';
 import { dashboardApi, karmaApi, mapFeedItem } from '../utils/apiService';
 
 export default function Dashboard() {
+    const navigate = useNavigate();
     const { currentUser } = useUser();
     const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
     const [posts, setPosts] = useState([]);
@@ -63,7 +65,13 @@ export default function Dashboard() {
         try {
             const data = await dashboardApi.getFeed(filterType);
             if (data && Array.isArray(data)) {
-                setPosts(data.map(mapFeedItem));
+                const mapped = data.map(mapFeedItem);
+                const postsAndArticlesOnly = mapped.filter(item => {
+                    const type = (item.type || item.contentType || '').toLowerCase();
+                    if (type === 'video' || type === 'podcast') return false;
+                    return true;
+                });
+                setPosts(postsAndArticlesOnly);
             } else {
                 setPosts([]);
             }
@@ -91,7 +99,15 @@ export default function Dashboard() {
             });
         }
         dashboardApi.getFeed(activeFilter).then(data => {
-            if (data && Array.isArray(data)) setPosts(data.map(mapFeedItem));
+            if (data && Array.isArray(data)) {
+                const mapped = data.map(mapFeedItem);
+                const postsAndArticlesOnly = mapped.filter(item => {
+                    const type = (item.type || item.contentType || '').toLowerCase();
+                    if (type === 'video' || type === 'podcast') return false;
+                    return true;
+                });
+                setPosts(postsAndArticlesOnly);
+            }
         }).catch(() => {});
     };
 
@@ -138,18 +154,16 @@ export default function Dashboard() {
                             />
                         </div>
                         <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => setShowHero(!showHero)}
-                                className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-indigo-600/10 text-indigo-500 hover:bg-indigo-600/20 border border-indigo-500/20">
-                                <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
-                                {showHero ? 'Close Hero' : 'Explore Hero'}
-                            </button>
                             {!isSysAdmin && (
-                                <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold"
-                                    style={{background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)'}}>
+                                <button 
+                                    onClick={() => navigate('/karma-history')}
+                                    className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold cursor-pointer hover:scale-105 transition-all shadow-xs"
+                                    style={{background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)'}}
+                                    title="View Karma Points & History"
+                                >
                                     <span className="material-symbols-outlined text-[16px] text-amber-500" style={{fontVariationSettings:"'FILL' 1"}}>military_tech</span>
                                     {userKarma.toLocaleString()} Karma Points
-                                </div>
+                                </button>
                             )}
                         </div>
                     </div>
@@ -228,8 +242,8 @@ export default function Dashboard() {
                             <div className="flex items-center border-t px-4 py-2 gap-1" style={{borderColor: 'var(--border-subtle)'}}>
                                 {[
                                     { icon: 'image', label: 'Photo', color: '#10b981' },
-                                    { icon: 'videocam', label: 'Video', color: '#ef4444' },
                                     { icon: 'article', label: 'Article', color: '#8b5cf6' },
+                                    { icon: 'description', label: 'Document', color: '#3b82f6' },
                                     { icon: 'emoji_emotions', label: 'Feeling', color: '#f59e0b' },
                                 ].map(btn => (
                                     <button
@@ -245,30 +259,8 @@ export default function Dashboard() {
                         </div>
                     )}
 
-                    {/* Feed Category Filter Bar (FR-DB-07) */}
-                    <div className="flex items-center gap-1.5 p-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-x-auto custom-scrollbar shadow-xs">
-                        {[
-                            { id: 'All', label: 'All Posts', icon: 'dynamic_feed' },
-                            { id: 'Communities', label: 'Communities', icon: 'forum' },
-                            { id: 'Articles', label: 'Articles', icon: 'article' },
-                            { id: 'Videos', label: 'Videos', icon: 'videocam' },
-                            { id: 'Podcasts', label: 'Podcasts', icon: 'podcasts' },
-                            { id: 'Jobs', label: 'Jobs', icon: 'work' },
-                        ].map(tab => (
-                            <button
-                                key={tab.id}
-                                onClick={() => handleFilterChange(tab.id)}
-                                className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                                    activeFilter === tab.id
-                                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
-                                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
-                                }`}
-                            >
-                                <span className="material-symbols-outlined text-[16px]">{tab.icon}</span>
-                                {tab.label}
-                            </button>
-                        ))}
-                    </div>
+
+
 
                     {/* Post Feed */}
                     <div className="flex flex-col gap-5">

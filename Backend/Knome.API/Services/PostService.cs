@@ -90,12 +90,6 @@ public class PostService : IPostService
     {
         await _suspensionGuard.EnsureNotSuspendedAsync(currentUserId);
 
-        var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
-        if (user != null && user.Roles.Any(r => r.RoleName == Roles.SystemAdmin))
-        {
-            throw new UnauthorizedException("System Administrators are not permitted to create posts.");
-        }
-
         // Security screening (FR-SM-01)
         var secCheck = await _interactionService.ValidateContentSecurityAsync(dto.ContentText, dto.AttachmentUrls.FirstOrDefault());
         if (!secCheck.IsValid)

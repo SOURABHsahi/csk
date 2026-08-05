@@ -1,9 +1,25 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
 import { resolveMediaUrl } from '../../utils/apiService';
 
-const AudioContext = createContext();
+const defaultAudioContext = {
+    currentPodcast: null,
+    isPlaying: false,
+    volume: 1,
+    speed: 1,
+    progress: 0,
+    currentTime: 0,
+    duration: 0,
+    playPodcast: () => {},
+    togglePlay: () => {},
+    closePlayer: () => {},
+    setVolume: () => {},
+    setSpeed: () => {},
+    handleSeek: () => {}
+};
 
-export const useAudio = () => useContext(AudioContext);
+const AudioContext = createContext(defaultAudioContext);
+
+export const useAudio = () => useContext(AudioContext) || defaultAudioContext;
 
 export function AudioProvider({ children }) {
     const [currentPodcast, setCurrentPodcast] = useState(null);

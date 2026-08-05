@@ -6,7 +6,7 @@ import { useUser } from '../contexts/UserContext';
 import { checkRestrictedContent } from '../../utils/restrictedWords';
 
 export default function CreateArticleModal({ isOpen, onClose, onArticleCreated }) {
-    const { currentUser } = useUser();
+    const { currentUser, awardRuleKarma } = useUser();
     const [title, setTitle] = useState('');
     const [category, setCategory] = useState('7');
     const [tags, setTags] = useState('');
@@ -50,6 +50,9 @@ export default function CreateArticleModal({ isOpen, onClose, onArticleCreated }
             };
             
             await saveArticle(dto);
+            if (awardRuleKarma && (currentUser?.userId || currentUser?.id)) {
+                awardRuleKarma(currentUser?.userId || currentUser?.id, 'ARTICLE');
+            }
             if (onArticleCreated) onArticleCreated();
             onClose();
         } catch (error) {

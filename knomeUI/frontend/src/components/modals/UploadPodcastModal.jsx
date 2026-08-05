@@ -203,6 +203,11 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
     };
 
     const handleUpload = async () => {
+        if (currentUser?.isActive === false) {
+            alert("Your account is currently suspended by System Administrator. You cannot upload podcasts for approval.");
+            return;
+        }
+
         if (!title.trim()) {
             alert('Episode title is required.');
             return;
@@ -248,7 +253,8 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                 durationSeconds: parseDuration(duration),
                 seriesId: seriesId ? parseInt(seriesId) : null,
                 categoryName: categoryName || 'General',
-                categoryId: null
+                categoryId: null,
+                uploaderUserId: currentUser?.id
             };
 
             if (isCurrentUserAdmin) {

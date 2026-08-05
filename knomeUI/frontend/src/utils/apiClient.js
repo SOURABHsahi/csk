@@ -1,11 +1,18 @@
+const getHostIp = () => {
+    if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+        return window.location.hostname;
+    }
+    return 'localhost';
+};
+
 // Candidate Backend URLs ordered by priority (Direct Backend API first to avoid 5-10s connection timeouts)
 const CANDIDATES = [
-    'http://localhost:5095/api',                             // Layer 5: Direct Backend API (Primary)
-    'http://localhost:5000/api',                             // Layer 3/4: API Gateway (YARP)
-    window.ENV_BFF_URL || 'http://localhost:3000/api/proxy' // Layer 2: Next.js BFF
+    `http://${getHostIp()}:5095/api`,
+    'http://localhost:5095/api',
+    `http://${getHostIp()}:5000/api`
 ];
 
-let activeBaseUrl = CANDIDATES[0]; // Start with port 5095 directly
+let activeBaseUrl = CANDIDATES[0];
 
 export const apiClient = {
     async request(endpoint, options = {}) {

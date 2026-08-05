@@ -158,6 +158,18 @@ export default function ArticleView() {
         }
     };
 
+    const addReplyToTree = (commentList, parentId, newReply) => {
+        return (commentList || []).map(c => {
+            if (c.id === parentId) {
+                return { ...c, replies: [...(c.replies || []), newReply] };
+            }
+            if (c.replies && c.replies.length > 0) {
+                return { ...c, replies: addReplyToTree(c.replies, parentId, newReply) };
+            }
+            return c;
+        });
+    };
+
     const handleReplyComment = async (parentCommentId, replyText) => {
         if (!replyText || !replyText.trim() || !article?.id) return;
 
@@ -169,25 +181,16 @@ export default function ArticleView() {
             author: authorName,
             avatar: authorAvatar,
             time: 'Just now',
-            text: replyText.trim()
+            text: replyText.trim(),
+            replies: []
         };
 
-        setComments(prev => prev.map(c => {
-            if (c.id === parentCommentId) {
-                return { ...c, replies: [...(c.replies || []), newReply] };
-            }
-            return c;
-        }));
+        setComments(prev => addReplyToTree(prev, parentCommentId, newReply));
 
         try {
             const localKey = `knome_article_comments_${article.id}`;
             const storedLocal = JSON.parse(localStorage.getItem(localKey) || '[]');
-            const updatedLocal = storedLocal.map(c => {
-                if (c.id === parentCommentId) {
-                    return { ...c, replies: [...(c.replies || []), newReply] };
-                }
-                return c;
-            });
+            const updatedLocal = addReplyToTree(storedLocal, parentCommentId, newReply);
             localStorage.setItem(localKey, JSON.stringify(updatedLocal));
         } catch (err) {}
 
@@ -485,18 +488,18 @@ export default function ArticleView() {
                             className={`flex items-center gap-2 group transition-all px-3 py-1.5 rounded-lg ${userLiked ? 'bg-blue-500/15 text-blue-500' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
                         >
                             <span className="material-symbols-outlined text-[20px]" style={{fontVariationSettings: userLiked ? "'FILL' 1" : "'FILL' 0"}}>thumb_up</span>
-                            <span className="text-xs font-bold">Like</span>
+                            <span className="text-xs font-bold">Like ({likes})</span>
                         </button>
                     </div>
                     <div className="flex items-center gap-4">
-                        <span className="text-xs text-slate-500">{likes.toLocaleString()} views • {likes} reactions</span>
+                        <span className="text-xs text-slate-500">{likes.toLocaleString()} views • {likes} reactions • {totalComments} comments</span>
                         <button 
                             onClick={() => setSharingArticleModal(article)}
                             className="px-3.5 py-1.5 bg-blue-500/10 hover:bg-blue-500 text-blue-600 dark:text-blue-400 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
                             title="Share Article"
                         >
                             <span className="material-symbols-outlined text-[18px]">share</span>
-                            <span>Share Article</span>
+                            <span>Share Article ({article?.shares || 0})</span>
                         </button>
                     </div>
                 </section>
@@ -660,21 +663,36 @@ function ArticleCommentThread({ comment, depth = 0, onReply, currentUser }) {
                 
                 <div className="flex items-center gap-4 mt-1.5 ml-2 text-[10px] font-black text-slate-400">
                     <button className="hover:text-blue-500 transition-colors">Like</button>
-                    {depth < 3 && (
-                        <button onClick={() => setIsReplying(!isReplying)} className="hover:text-blue-500 transition-colors">Reply</button>
-                    )}
+                    <button onClick={() => setIsReplying(!isReplying)} className="hover:text-blue-500 transition-colors">Reply</button>
                 </div>
 
                 {isReplying && (
-                    <form onSubmit={submitReply} className="mt-3 relative max-w-sm">
-                        <input 
-                            type="text" 
-                            autoFocus
-                            placeholder={`Reply to ${comment.author}...`} 
-                            value={replyText}
-                            onChange={(e) => setReplyText(e.target.value)}
-                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full pl-4 pr-10 py-1.5 text-xs focus:ring-1 focus:ring-blue-500 outline-none text-slate-900 dark:text-white"
-                        />
+                    <form onSubmit={submitReply} className="mt-3 flex items-center gap-2 max-w-md">
+                        <div className="relative flex-1">
+                            <input 
+                                type="text" 
+                                autoFocus
+                                placeholder={`Reply to ${comment.author}...`} 
+                                value={replyText}
+                                onChange={(e) => setReplyText(e.target.value)}
+                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full pl-4 pr-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 dark:text-white"
+                            />
+                        </div>
+                        <button 
+                            type="submit"
+                            disabled={!replyText.trim()}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-full text-xs font-semibold flex items-center gap-1 transition-all shrink-0 shadow-sm"
+                        >
+                            <span className="material-symbols-outlined text-[14px]">send</span>
+                            <span>Reply</span>
+                        </button>
+                        <button 
+                            type="button"
+                            onClick={() => { setIsReplying(false); setReplyText(''); }}
+                            className="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-medium transition-colors shrink-0"
+                        >
+                            Cancel
+                        </button>
                     </form>
                 )}
 

@@ -47,4 +47,24 @@ public class AuditLogController : KnomeControllerBase
 
         return Ok(ApiResponse<AuditLogDto>.SuccessResponse(200, "Audit log retrieved successfully.", log));
     }
+
+    /// <summary>
+    /// Creates a new audit log entry in database. Restricted to System Administrators.
+    /// </summary>
+    [HttpPost("logs")]
+    [ProducesResponseType(typeof(ApiResponse<string>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> CreateLog([FromBody] CreateAuditEntryDto dto)
+    {
+        int actorUserId = GetCurrentUserId();
+        await _auditLogService.RecordAsync(actorUserId, dto.Action, dto.TargetType ?? "System", dto.TargetId, dto.Reason);
+        return Ok(ApiResponse<string>.SuccessResponse(200, "Audit log saved to database successfully.", "Success"));
+    }
+}
+
+public class CreateAuditEntryDto
+{
+    public string Action { get; set; } = null!;
+    public string? TargetType { get; set; }
+    public long TargetId { get; set; }
+    public string? Reason { get; set; }
 }

@@ -55,7 +55,23 @@ export default function KarmaHistory() {
         fetchKarmaData();
     }, []);
 
-    const activities = (balance.recentTransactions && balance.recentTransactions.length > 0)
+    const localUserKey = currentUser?.userId || currentUser?.id || 'guest';
+    const localHistory = JSON.parse(localStorage.getItem(`knome_karma_history_${localUserKey}`) || '[]');
+    const localKarmaPoints = Number(localStorage.getItem(`knome_user_karma_${localUserKey}`)) || (currentUser?.karmaPoints || currentUser?.karma || 0);
+    
+    const formattedLocalTx = localHistory.map((tx, idx) => ({
+        id: tx.id || `local_tx_${idx}`,
+        date: tx.date || new Date().toLocaleString(),
+        desc: tx.title || tx.activityType || 'Karma Earned',
+        type: tx.category?.toLowerCase() || 'media',
+        points: tx.points || `+${tx.pointsAwarded || 50}`,
+        source: 'Admin Approval',
+        icon: tx.title?.includes('Video') ? 'videocam' : (tx.title?.includes('Podcast') ? 'podcasts' : 'stars'),
+        color: 'text-emerald-500',
+        bg: 'bg-emerald-50 dark:bg-emerald-900/30'
+    }));
+
+    const apiTx = (balance.recentTransactions && balance.recentTransactions.length > 0)
         ? balance.recentTransactions.map((tx, idx) => ({
             id: tx.transactionId || idx,
             date: new Date(tx.createdDate).toLocaleString(),
@@ -67,16 +83,20 @@ export default function KarmaHistory() {
             color: 'text-[#6366f1]',
             bg: 'bg-[#6366f1]/10'
         }))
-        : [
-            { id: 1, date: 'Today, 10:42 AM', desc: 'Published an Article: "Modern UI Design Systems"', type: 'article', points: '+10', source: 'Design Excellence', icon: 'article', color: 'text-indigo-500', bg: 'bg-indigo-50 dark:bg-indigo-900/30' },
-            { id: 2, date: 'Today, 09:15 AM', desc: 'Active Community Participation (Daily)', type: 'community', points: '+5', source: 'Engineering Hub', icon: 'forum', color: 'text-teal-500', bg: 'bg-teal-50 dark:bg-teal-900/30' },
-            { id: 3, date: 'Yesterday, 4:30 PM', desc: 'Received a Share on your video', type: 'share', points: '+3', source: 'Timeline', icon: 'share', color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/30' },
-            { id: 4, date: 'Yesterday, 2:10 PM', desc: 'Received a Comment on your post', type: 'comment', points: '+2', source: 'Frontend Masters', icon: 'chat_bubble', color: 'text-cyan-500', bg: 'bg-cyan-50 dark:bg-cyan-900/30' },
-            { id: 5, date: 'Yesterday, 1:00 PM', desc: 'Received a Like on your post', type: 'like', points: '+1', source: 'Frontend Masters', icon: 'thumb_up', color: 'text-pink-500', bg: 'bg-pink-50 dark:bg-pink-900/30' },
-            { id: 6, date: 'Oct 24, 11:00 AM', desc: 'Uploaded a Video: "Quarterly Review"', type: 'video', points: '+8', source: 'All Company', icon: 'videocam', color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-900/30' },
-            { id: 7, date: 'Oct 23, 03:22 PM', desc: 'Published a Post', type: 'post', points: '+2', source: 'Timeline', icon: 'edit_square', color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/30' },
-            { id: 8, date: 'Oct 23, 10:00 AM', desc: 'Uploaded a Podcast Episode', type: 'podcast', points: '+8', source: 'Tech Talks', icon: 'podcasts', color: 'text-rose-500', bg: 'bg-rose-50 dark:bg-rose-900/30' },
-        ];
+        : [];
+
+    const defaultMockActivities = [
+        { id: 1, date: 'Today, 10:42 AM', desc: 'Published an Article: "Modern UI Design Systems"', type: 'article', points: '+10', source: 'Design Excellence', icon: 'article', color: 'text-indigo-500', bg: 'bg-indigo-50 dark:bg-indigo-900/30' },
+        { id: 2, date: 'Today, 09:15 AM', desc: 'Active Community Participation (Daily)', type: 'community', points: '+5', source: 'Engineering Hub', icon: 'forum', color: 'text-teal-500', bg: 'bg-teal-50 dark:bg-teal-900/30' },
+        { id: 3, date: 'Yesterday, 4:30 PM', desc: 'Received a Share on your video', type: 'share', points: '+3', source: 'Timeline', icon: 'share', color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/30' },
+        { id: 4, date: 'Yesterday, 2:10 PM', desc: 'Received a Comment on your post', type: 'comment', points: '+2', source: 'Frontend Masters', icon: 'chat_bubble', color: 'text-cyan-500', bg: 'bg-cyan-50 dark:bg-cyan-900/30' },
+        { id: 5, date: 'Yesterday, 1:00 PM', desc: 'Received a Like on your post', type: 'like', points: '+1', source: 'Frontend Masters', icon: 'thumb_up', color: 'text-pink-500', bg: 'bg-pink-50 dark:bg-pink-900/30' },
+        { id: 6, date: 'Oct 24, 11:00 AM', desc: 'Uploaded a Video: "Quarterly Review"', type: 'video', points: '+8', source: 'All Company', icon: 'videocam', color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-900/30' },
+        { id: 7, date: 'Oct 23, 03:22 PM', desc: 'Published a Post', type: 'post', points: '+2', source: 'Timeline', icon: 'edit_square', color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/30' },
+        { id: 8, date: 'Oct 23, 10:00 AM', desc: 'Uploaded a Podcast Episode', type: 'podcast', points: '+8', source: 'Tech Talks', icon: 'podcasts', color: 'text-rose-500', bg: 'bg-rose-50 dark:bg-rose-900/30' }
+    ];
+
+    const activities = [...formattedLocalTx, ...apiTx, ...(formattedLocalTx.length === 0 && apiTx.length === 0 ? defaultMockActivities : [])];
 
     const rules = [
         { activity: 'Create and publish a Post', points: '2 pts', cap: 'Max 10 pts/day from posts' },
@@ -117,7 +137,7 @@ export default function KarmaHistory() {
                             <span className="text-[11px] font-black tracking-widest uppercase">Karma Overview</span>
                         </div>
                         <div className="flex items-baseline gap-4 mb-2">
-                            <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-amber-600">{(balance.totalPoints || 0).toLocaleString()}</h1>
+                            <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-amber-600">{(localKarmaPoints || balance.totalPoints || currentUser?.karmaPoints || currentUser?.karma || 0).toLocaleString()}</h1>
                             <span className="bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2.5 py-1 rounded-lg text-[12px] font-bold border border-emerald-200 dark:border-emerald-500/20">
                                 +42 this week
                             </span>

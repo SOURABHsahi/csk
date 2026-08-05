@@ -47,4 +47,7 @@ public interface IContentInteractionRepository
 
     // Author resolution (for notification targeting)
     Task<int?> GetContentAuthorUserIdAsync(string contentType, long contentId);
+
+    // View count resolution
+    Task<long> GetContentViewCountAsync(string contentType, long contentId);
 }

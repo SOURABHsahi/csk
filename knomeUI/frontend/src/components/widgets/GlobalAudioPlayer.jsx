@@ -2,11 +2,12 @@ import React, { useRef } from 'react';
 import { useAudio } from '../contexts/AudioContext';
 
 export default function GlobalAudioPlayer() {
+    const audioCtx = useAudio() || {};
     const { 
         currentPodcast, isPlaying, volume, speed, progress, 
         currentTime, duration, togglePlay, closePlayer, 
         setVolume, setSpeed, handleSeek 
-    } = useAudio();
+    } = audioCtx;
 
     const progressRef = useRef(null);
 

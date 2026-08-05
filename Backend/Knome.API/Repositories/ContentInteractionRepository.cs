@@ -413,4 +413,20 @@ public class ContentInteractionRepository : IContentInteractionRepository
             _ => null
         };
     }
+
+    public async Task<long> GetContentViewCountAsync(string contentType, long contentId)
+    {
+        var norm = ContentTypes.Normalize(contentType);
+        if (norm == ContentTypes.Video)
+        {
+            var video = await _db.Videos.AsNoTracking().FirstOrDefaultAsync(v => v.VideoId == contentId);
+            return video?.ViewCount ?? 0;
+        }
+        else if (norm == ContentTypes.Article)
+        {
+            var article = await _db.Articles.AsNoTracking().FirstOrDefaultAsync(a => a.ArticleId == contentId);
+            return article?.ViewCount ?? 0;
+        }
+        return 0;
+    }
 }

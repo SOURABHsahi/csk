@@ -1,16 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
-import { communitiesApi, mediaApi, resolveMediaUrl } from '../utils/apiService';
+import { communitiesApi, mediaApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages } from '../utils/apiService';
 
 export default function CommunityView() {
-    const { currentUser } = useUser();
+    const { currentUser, awardRuleKarma } = useUser();
     const navigate = useNavigate();
     const location = useLocation();
 
     // Read community details from URL query or state
     const queryParams = new URLSearchParams(location.search);
     const communityId = queryParams.get('id');
+
+    // Award +5 Karma Points for active community participation (Once per community per day)
+    useEffect(() => {
+        if (currentUser && awardRuleKarma && communityId) {
+            const userId = currentUser.userId || currentUser.id;
+            awardRuleKarma(userId, 'COMMUNITY_PARTICIPATION', { communityId: communityId });
+        }
+    }, [communityId, currentUser, awardRuleKarma]);
 
     const [community, setCommunity] = useState(null);
     const [activeTab, setActiveTab] = useState('feed'); // 'feed', 'members', 'admin'
@@ -506,6 +514,7 @@ export default function CommunityView() {
             ]);
             
             if (commData) {
+                const imgs = getCommunityImages(commData.name, commData.categoryName);
                 setCommunity({
                     id: commData.communityId,
                     name: commData.name,
@@ -513,8 +522,8 @@ export default function CommunityView() {
                     category: commData.categoryName || 'Technology',
                     membersCount: commData.membersCount || 1,
                     adminContact: commData.createdByUserName || 'Admin',
-                    banner: commData.bannerUrl || 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200&h=400',
-                    thumbnail: commData.thumbnailUrl || 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=200&h=200',
+                    banner: commData.bannerUrl || imgs.banner,
+                    thumbnail: commData.thumbnailUrl || imgs.thumbnail,
                     description: commData.description || 'Community for MPOnline team members.',
                     rules: commData.rules ? (Array.isArray(commData.rules) ? commData.rules : commData.rules.split('\n')) : ['1. Be respectful and constructive.', '2. Keep discussions relevant.', '3. Follow company guidelines.'],
                     faq: (() => {
@@ -563,9 +572,9 @@ export default function CommunityView() {
                 const savedMembersKey = `knome_community_members_${commData.communityId}`;
                 const localMembersApi = JSON.parse(localStorage.getItem(savedMembersKey) || '[]');
                 let resolvedMembers = Array.isArray(rawMembers) && rawMembers.length > 0 ? rawMembers : (localMembersApi.length > 0 ? localMembersApi : [
-                    { userId: 1, fullName: 'Loveneesh Sharma', employeeId: 'MPO101', designation: 'System Administrator', memberType: 'Admin', status: 'Approved' },
-                    { userId: 2, fullName: 'Vishendra Sharma', employeeId: 'MPO102', designation: 'Community Administrator', memberType: 'Admin', status: 'Approved' },
-                    { userId: 3, fullName: 'Sourabh Sahu', employeeId: 'MPO103', designation: 'HR Administrator', memberType: 'Moderator', status: 'Approved' },
+                    { userId: 1, fullName: 'Loveneesh Sharma', employeeId: 'MPO101', designation: 'IT Operations Manager', memberType: 'Admin', status: 'Approved' },
+                    { userId: 2, fullName: 'Vishendra Sharma', employeeId: 'MPO102', designation: 'Community Experience Specialist', memberType: 'Admin', status: 'Approved' },
+                    { userId: 3, fullName: 'Sourabh Sahu', employeeId: 'MPO103', designation: 'Talent Acquisition Manager', memberType: 'Moderator', status: 'Approved' },
                     { userId: 4, fullName: 'Mayur Verma', employeeId: 'MPO104', designation: 'Senior Software Engineer', memberType: 'Member', status: 'Approved' },
                     { userId: 5, fullName: 'Meghna Tiwari', employeeId: 'MPO105', designation: 'Product Designer', memberType: 'Member', status: 'Approved' },
                     { userId: 6, fullName: 'Rishikesh Ugle', employeeId: 'MPO106', designation: 'Software Engineer', memberType: 'Member', status: 'Approved' },
@@ -663,9 +672,9 @@ export default function CommunityView() {
 
                 const creatorName = found?.createdBy || 'Rishikesh Ugle (Community Admin)';
                 let resolvedMembers = localMembers.length > 0 ? localMembers : [
-                    { userId: 1, fullName: 'Loveneesh Sharma', employeeId: 'MPO101', designation: 'System Administrator', memberType: 'Admin', status: 'Approved' },
-                    { userId: 2, fullName: 'Vishendra Sharma', employeeId: 'MPO102', designation: 'Community Administrator', memberType: 'Admin', status: 'Approved' },
-                    { userId: 3, fullName: 'Sourabh Sahu', employeeId: 'MPO103', designation: 'HR Administrator', memberType: 'Moderator', status: 'Approved' },
+                    { userId: 1, fullName: 'Loveneesh Sharma', employeeId: 'MPO101', designation: 'IT Operations Manager', memberType: 'Admin', status: 'Approved' },
+                    { userId: 2, fullName: 'Vishendra Sharma', employeeId: 'MPO102', designation: 'Community Experience Specialist', memberType: 'Admin', status: 'Approved' },
+                    { userId: 3, fullName: 'Sourabh Sahu', employeeId: 'MPO103', designation: 'Talent Acquisition Manager', memberType: 'Moderator', status: 'Approved' },
                     { userId: 4, fullName: 'Mayur Verma', employeeId: 'MPO104', designation: 'Senior Software Engineer', memberType: 'Member', status: 'Approved' },
                     { userId: 5, fullName: 'Meghna Tiwari', employeeId: 'MPO105', designation: 'Product Designer', memberType: 'Member', status: 'Approved' },
                     { userId: 6, fullName: 'Rishikesh Ugle', employeeId: 'MPO106', designation: 'Software Engineer', memberType: 'Member', status: 'Approved' },
@@ -1679,7 +1688,104 @@ export default function CommunityView() {
                                                 )}
                                                 <p className="text-sm text-slate-700 dark:text-slate-300 mb-4 whitespace-pre-wrap leading-relaxed">{post.content}</p>
                                                 
-                                                {targetComm && (
+                                                {/* Shared Video Player / Card inside Community Feed Post */}
+                                                {(post.sharedVideo || post.type === 'video_share' || post.videoUrl || (post.content && (post.content.includes('Shared Video:') || post.content.includes('📹')))) && (
+                                                    <div className="mb-4 rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-xl">
+                                                        {(() => {
+                                                            const vidObj = post.sharedVideo || {
+                                                                id: post.id || `shared_vid_${Date.now()}`,
+                                                                title: post.title?.replace('📹 Shared Video: ', '').replace(/ — uploaded by.*/, '') || post.content?.replace(/^.*Shared Video: "/, '').replace(/".*/, '') || 'Shared Video',
+                                                                sourceUrl: post.videoUrl || post.sourceUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+                                                                thumbnail: post.thumbnail || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=1200',
+                                                                author: post.authorName || post.author || 'MPOnline Team'
+                                                            };
+                                                            const vUrl = vidObj.sourceUrl || vidObj.videoUrl || post.videoUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+                                                            const isYT = vUrl && (vUrl.includes('youtube.com') || vUrl.includes('youtu.be'));
+
+                                                            return (
+                                                                <div className="flex flex-col">
+                                                                    <div className="relative aspect-video w-full bg-black overflow-hidden group">
+                                                                        {isYT ? (
+                                                                            <iframe
+                                                                                src={vUrl.includes('embed') ? vUrl : `https://www.youtube.com/embed/${(vUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=))((\w|-){11})/) || [])[1] || ''}`}
+                                                                                className="w-full h-full border-0"
+                                                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                                                                                title={vidObj.title}
+                                                                            />
+                                                                        ) : (
+                                                                            <video
+                                                                                src={resolveMediaUrl(vUrl) || vUrl}
+                                                                                poster={getVideoThumbnail(vidObj) || undefined}
+                                                                                preload="metadata"
+                                                                                controls
+                                                                                controlsList="nodownload"
+                                                                                className="w-full h-full object-contain"
+                                                                                onError={(e) => {
+                                                                                    if (e.target && !e.target.src.includes('BigBuckBunny.mp4')) {
+                                                                                        e.target.src = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+                                                                                    }
+                                                                                }}
+                                                                            />
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="p-3.5 bg-slate-900 flex items-center justify-between gap-3 border-t border-slate-800">
+                                                                        <div className="min-w-0">
+                                                                            <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-md inline-flex items-center gap-1">
+                                                                                <span className="material-symbols-outlined text-[12px]">play_circle</span>
+                                                                                SHARED VIDEO
+                                                                            </span>
+                                                                            <h5 className="font-extrabold text-white text-xs sm:text-sm truncate mt-1">
+                                                                                {vidObj.title}
+                                                                            </h5>
+                                                                        </div>
+                                                                        <button
+                                                                            onClick={() => navigate(`/videos?id=${vidObj.id || ''}&title=${encodeURIComponent(vidObj.title || '')}&url=${encodeURIComponent(vUrl)}`)}
+                                                                            className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-600 hover:to-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shrink-0 transition-all shadow-md shadow-cyan-500/20 cursor-pointer"
+                                                                        >
+                                                                            <span className="material-symbols-outlined text-[16px]">play_arrow</span>
+                                                                            <span>Play Full Video</span>
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                )}
+                                                
+                                                {/* Shared Profile Card inside Community Post */}
+                                                {post.sharedProfile && (
+                                                    <div className="mb-4 p-4 rounded-2xl bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 border border-indigo-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+                                                        <div className="flex items-center gap-3.5 min-w-0">
+                                                            <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-black text-lg flex items-center justify-center shrink-0 shadow-md overflow-hidden">
+                                                                {post.sharedProfile.avatar ? (
+                                                                    <img src={post.sharedProfile.avatar} alt={post.sharedProfile.name} className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    (post.sharedProfile.name || 'U').charAt(0).toUpperCase()
+                                                                )}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-extrabold uppercase tracking-wider">
+                                                                    SHARED PROFILE
+                                                                </span>
+                                                                <h4 className="font-extrabold text-slate-900 dark:text-white text-sm truncate mt-0.5">
+                                                                    {post.sharedProfile.name || post.sharedProfile.fullName}
+                                                                </h4>
+                                                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                                                    {post.sharedProfile.designation || 'Contributor'} • {post.sharedProfile.department || 'General'}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => navigate('/profile', { state: { user: post.sharedProfile } })}
+                                                            className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-indigo-500/20 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                                                        >
+                                                            <span className="material-symbols-outlined text-[16px]">visibility</span>
+                                                            View Profile
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                
+                                                {targetComm && !post.sharedVideo && post.type !== 'video_share' && (
                                                     <div 
                                                         onClick={() => navigate(`/community/view?id=${targetComm.id}`)}
                                                         className="mb-4 p-4 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/60 hover:border-indigo-500 dark:hover:border-indigo-400 transition-all flex items-center justify-between gap-4 cursor-pointer group shadow-sm hover:shadow-md"
@@ -1709,11 +1815,15 @@ export default function CommunityView() {
                                     <div className="flex items-center gap-6 pt-4 border-t border-slate-100 dark:border-slate-800 text-slate-500">
                                         <button className="flex items-center gap-2 hover:text-indigo-500 transition-colors text-[13px] font-bold">
                                             <span className="material-symbols-outlined text-[18px]">thumb_up</span>
-                                            {post.likes}
+                                            {post.likes || 0} Likes
                                         </button>
                                         <button className="flex items-center gap-2 hover:text-indigo-500 transition-colors text-[13px] font-bold">
                                             <span className="material-symbols-outlined text-[18px]">chat_bubble</span>
-                                            {post.comments}
+                                            {post.comments || 0} Comments
+                                        </button>
+                                        <button className="flex items-center gap-2 hover:text-indigo-500 transition-colors text-[13px] font-bold">
+                                            <span className="material-symbols-outlined text-[18px]">share</span>
+                                            {post.shares || 0} Shares
                                         </button>
                                     </div>
                                 </div>

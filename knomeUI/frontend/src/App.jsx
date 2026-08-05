@@ -68,6 +68,7 @@ function App() {
                   <Route path="/hr-analytics"    element={<ProtectedPage><HRAnalytics /></ProtectedPage>} />
                   <Route path="/admin-console"   element={<ProtectedPage><AdminConsole /></ProtectedPage>} />
                   <Route path="/profile"         element={<ProtectedPage><Profile /></ProtectedPage>} />
+                  <Route path="/profile/:id"     element={<ProtectedPage><Profile /></ProtectedPage>} />
                   <Route path="/search"          element={<ProtectedPage><Search /></ProtectedPage>} />
                   <Route path="/karma-history"   element={<ProtectedPage><KarmaHistory /></ProtectedPage>} />
                   <Route path="/suggested-people" element={<ProtectedPage><Network /></ProtectedPage>} />

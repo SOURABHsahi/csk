@@ -128,7 +128,7 @@ export default function Search() {
     // Fetch search results from API (Minimum 3 characters required)
     const performSearch = useCallback(async (isLoadMore = false) => {
         const queryTerm = searchQuery.trim();
-        if (queryTerm.length > 0 && queryTerm.length < 3) {
+        if (!queryTerm || queryTerm.length < 3) {
             setResults([]);
             setTotalCount(0);
             setIsSearching(false);
@@ -156,29 +156,33 @@ export default function Search() {
             const total = res?.totalCount || items.length;
 
             if (isLoadMore) {
-                setResults(prev => [...prev, ...items]);
+                setResults(prev => {
+                    const updated = [...prev, ...items];
+                    setHasMore(items.length === 20 && updated.length < total);
+                    return updated;
+                });
                 setPageNumber(pageToFetch);
             } else {
                 setResults(items);
                 setPageNumber(1);
+                setHasMore(items.length === 20 && items.length < total);
             }
 
             setTotalCount(total);
-            setHasMore(items.length === 20 && (isLoadMore ? results.length + items.length : items.length) < total);
         } catch (err) {
             console.error('Error fetching global search results', err);
             setResults([]);
         } finally {
             setIsSearching(false);
         }
-    }, [searchQuery, activeCategory, activeSort, activeDepartment, activeDateRange, pageNumber, results.length]);
+    }, [searchQuery, activeCategory, activeSort, activeDepartment, activeDateRange]);
 
     useEffect(() => {
         const timer = setTimeout(() => {
             performSearch(false);
-        }, 300);
+        }, 200);
         return () => clearTimeout(timer);
-    }, [searchQuery, activeCategory, activeSort, activeDepartment, activeDateRange, performSearch]);
+    }, [performSearch]);
 
     const handleSearchSubmit = (e) => {
         e.preventDefault();
@@ -226,7 +230,7 @@ export default function Search() {
         } else if (type === 'Article') {
             navigate(`/article-view?id=${id}`);
         } else if (type === 'Community') {
-            navigate('/community');
+            navigate(`/community/view?id=${id}`);
         } else if (type === 'Video') {
             navigate('/videos');
         } else if (type === 'Podcast') {

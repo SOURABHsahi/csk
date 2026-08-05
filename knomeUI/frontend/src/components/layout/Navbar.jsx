@@ -347,10 +347,9 @@ export default function Navbar() {
 
             return all
                 .filter(n => {
-                    // Direct notification for this user (e.g. targetUserId or targetCreatorId matches currentUser.id)
+                    if (!['community_invite', 'join_request', 'community_approved', 'community_rejected', 'community', 'invite'].includes(n.type) && !(n.category === 'Community')) return false;
                     if (currentUser?.id && String(n.targetUserId) === String(currentUser.id)) return true;
                     if (currentUser?.id && n.targetCreatorId && String(n.targetCreatorId) === String(currentUser.id)) return true;
-                    // Admin join_request notifs: show to users with admin role or creator
                     if (n.type === 'join_request' && (n.targetUserId === 'admin' || isCurrentUserAdmin)) return true;
                     return false;
                 })
@@ -378,6 +377,68 @@ export default function Navbar() {
         }
     };
 
+    // Read ALL localStorage notifications including video shares, media approvals, etc.
+    const getLocalGenericNotifs = () => {
+        try {
+            const all = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+            return all
+                .filter(n => {
+                    if (!currentUser?.id) return false;
+                    if (String(n.targetUserId) !== String(currentUser.id)) return false;
+                    // Skip community-type notifications (handled by getLocalCommunityNotifs)
+                    if (['community_invite', 'join_request', 'community_approved', 'community_rejected'].includes(n.type)) return false;
+                    if (n.category === 'Community') return false;
+                    return true;
+                })
+                .map(n => {
+                    const isVideo = n.type === 'video_shared' || n.relatedContentType === 'Video' || (n.text || '').toLowerCase().includes('video');
+                    const isPodcast = n.type === 'podcast_shared' || n.relatedContentType === 'Podcast' || (n.text || '').toLowerCase().includes('podcast');
+                    const vTitle = n.videoTitle || n.mediaTitle;
+                    const vId = n.videoId || n.relatedContentId;
+                    const vUrl = n.videoUrl || n.sourceUrl;
+                    
+                    let targetUrl = n.targetUrl || n.actionLink || n.linkUrl;
+                    if (!targetUrl) {
+                        if (isVideo) {
+                            const params = new URLSearchParams();
+                            if (vId) params.set('id', vId);
+                            if (vTitle) params.set('title', vTitle);
+                            if (vUrl) params.set('url', vUrl);
+                            targetUrl = `/videos${params.toString() ? `?${params.toString()}` : ''}`;
+                        } else if (isPodcast) {
+                            targetUrl = n.relatedContentId ? `/podcasts?id=${n.relatedContentId}` : '/podcasts';
+                        } else {
+                            targetUrl = '/posts';
+                        }
+                    }
+
+                    return {
+                        id: n.id,
+                        type: n.type || 'notification',
+                        category: n.category || (isVideo ? 'Social' : 'System'),
+                        icon: isVideo ? 'videocam' : (isPodcast ? 'podcasts' : 'notifications'),
+                        color: isVideo ? 'text-cyan-500' : (isPodcast ? 'text-pink-500' : 'text-slate-400'),
+                        bg: isVideo ? 'bg-cyan-500/10' : (isPodcast ? 'bg-pink-500/10' : 'bg-slate-500/10'),
+                        text: n.text,
+                        message: n.text,
+                        senderName: n.senderName || 'Teammate',
+                        senderAvatar: n.senderAvatar || null,
+                        time: n.time || 'Just now',
+                        unread: n.unread !== false,
+                        isLocalNotif: true,
+                        targetUrl,
+                        relatedContentType: isVideo ? 'Video' : (isPodcast ? 'Podcast' : n.relatedContentType),
+                        relatedContentId: n.relatedContentId || n.videoId,
+                        videoId: n.videoId,
+                        videoTitle: vTitle,
+                        videoUrl: vUrl,
+                    };
+                });
+        } catch (e) {
+            return [];
+        }
+    };
+
     const fetchNotifications = async () => {
         try {
             const res = await notificationsApi.getAll(false);
@@ -387,15 +448,17 @@ export default function Navbar() {
             } else if (res?.items) {
                 apiNotifs = res.items.map(mapNotificationItem);
             }
-            // Merge local community invite notifications
-            const localNotifs = getLocalCommunityNotifs();
+            // Merge local community invite notifications + local video/generic notifications
+            const localCommunityNotifs = getLocalCommunityNotifs();
+            const localGenericNotifs = getLocalGenericNotifs();
             const apiIds = new Set(apiNotifs.map(n => String(n.id)));
-            const freshLocal = localNotifs.filter(n => !apiIds.has(String(n.id)));
-            setAllNotifs([...freshLocal, ...apiNotifs]);
+            const freshCommunity = localCommunityNotifs.filter(n => !apiIds.has(String(n.id)));
+            const freshGeneric = localGenericNotifs.filter(n => !apiIds.has(String(n.id)) && !freshCommunity.some(c => String(c.id) === String(n.id)));
+            setAllNotifs([...freshCommunity, ...freshGeneric, ...apiNotifs]);
         } catch (error) {
             console.error('Failed to fetch notifications', error);
-            // Fallback: at least show local notifs
-            setAllNotifs(getLocalCommunityNotifs());
+            // Fallback: show all local notifs
+            setAllNotifs([...getLocalCommunityNotifs(), ...getLocalGenericNotifs()]);
         }
     };
 
@@ -420,15 +483,17 @@ export default function Navbar() {
             }
         };
 
-        // Also listen for storage changes (multi-tab invite)
+        // Also listen for storage changes (multi-tab invite or video share)
         const handleStorageChange = () => {
-            const localNotifs = getLocalCommunityNotifs();
-            if (localNotifs.length > 0) {
+            const localCommunityNotifs = getLocalCommunityNotifs();
+            const localGenericNotifs = getLocalGenericNotifs();
+            const allLocal = [...localCommunityNotifs, ...localGenericNotifs];
+            if (allLocal.length > 0) {
                 setAllNotifs(prev => {
                     const prevLocalIds = new Set(prev.filter(n => n.isLocalNotif).map(n => String(n.id)));
-                    const newOnes = localNotifs.filter(n => !prevLocalIds.has(String(n.id)));
+                    const newOnes = allLocal.filter(n => !prevLocalIds.has(String(n.id)));
                     if (newOnes.length === 0) return prev;
-                    // Show toast for brand-new invite
+                    // Show toast for brand-new notification
                     if (newOnes[0].unread) {
                         setToastNotification(newOnes[0]);
                         playChimeSound();
@@ -438,7 +503,20 @@ export default function Navbar() {
             }
         };
 
+        // Listen for real-time generic notifications (e.g. profile shares)
+        const handleGenericNotificationReceived = (e) => {
+            const notif = e.detail;
+            if (!notif) return;
+            if (notif.targetUserId && currentUser?.id && String(notif.targetUserId) !== String(currentUser.id)) {
+                return; // Notification meant for another user
+            }
+            setAllNotifs(prev => [notif, ...prev.filter(n => String(n.id) !== String(notif.id))]);
+            setToastNotification(notif);
+            playChimeSound();
+        };
+
         window.addEventListener('community-invite-sent', handleCommunityInviteSent);
+        window.addEventListener('knome_notification_received', handleGenericNotificationReceived);
         window.addEventListener('storage', handleStorageChange);
 
         const token = localStorage.getItem('knome_jwt');
@@ -470,6 +548,7 @@ export default function Navbar() {
 
         return () => {
             window.removeEventListener('community-invite-sent', handleCommunityInviteSent);
+            window.removeEventListener('knome_notification_received', handleGenericNotificationReceived);
             window.removeEventListener('storage', handleStorageChange);
             if (connection.state === signalR.HubConnectionState.Connected) {
                 connection.stop().catch(() => {});
@@ -582,28 +661,67 @@ export default function Navbar() {
         let dest = notif.targetUrl || notif.linkUrl || notif.actionLink;
         const msg = (notif.text || notif.message || '').toLowerCase();
         const relType = (notif.relatedContentType || '').toLowerCase();
-        const refId = notif.relatedContentId || notif.referenceId;
+        const refId = notif.relatedContentId || notif.referenceId || notif.videoId;
+        // isProfileShare must NOT trigger on video notifications
+        const isProfileShare = (relType === 'profile' || notif.type === 'profile_share' || (msg.includes('profile') && !msg.includes('video') && !msg.includes('podcast')))
+            && !msg.includes('video') && !msg.includes('podcast') && notif.type !== 'video_shared' && notif.type !== 'podcast_shared';
+
+        if (isProfileShare) {
+            const targetUser = notif.targetProfileUser || {
+                userId: refId || notif.senderUserId || 1,
+                id: refId || notif.senderUserId || 1,
+                name: notif.senderName || 'Employee',
+                fullName: notif.senderName || 'Employee',
+                avatar: notif.senderAvatar || null
+            };
+            navigate('/profile', { state: { user: targetUser } });
+            return;
+        }
+
         const isCommNotif = notif.category === 'Community' || notif.type?.includes('community') || msg.includes('community') || notif.communityId || notif.communityName;
 
         if (isCommNotif) {
             dest = resolveCommunityTarget(notif);
-        } else if (!dest || dest === '/posts' || dest === '/articles' || dest === '/videos' || dest === '/podcasts') {
-            if (relType === 'post' || msg.includes('post') || notif.type?.includes('post') || notif.type?.includes('share')) {
-                dest = refId ? `/posts?id=${refId}` : '/posts';
-            } else if (relType === 'article' || msg.includes('article') || notif.type?.includes('article')) {
-                dest = refId ? `/article-view?id=${refId}` : '/articles';
-            } else if (relType === 'community' || msg.includes('community') || notif.type?.includes('community')) {
-                dest = resolveCommunityTarget(notif);
-            } else if (relType === 'video' || msg.includes('video') || notif.type?.includes('video')) {
-                dest = refId ? `/videos?id=${refId}` : '/videos';
-            } else if (relType === 'podcast' || msg.includes('podcast') || notif.type?.includes('podcast')) {
-                dest = refId ? `/podcasts?id=${refId}` : '/podcasts';
-            } else if (relType === 'user' || notif.type?.includes('follow') || notif.senderUserId) {
-                const uId = refId || notif.senderUserId;
-                dest = uId ? `/profile?id=${uId}` : '/profile';
-            } else {
-                dest = '/posts';
+        } else if (relType === 'video' || msg.includes('video') || notif.type?.includes('video')) {
+            let vId = refId || notif.videoId;
+            let vTitle = notif.videoTitle || notif.mediaTitle;
+            let videoUrl = notif.videoUrl || notif.sourceUrl;
+            
+            if (!vTitle && !vId) {
+                const titleMatch = (notif.text || notif.message || '').match(/"([^"]+)"|'([^']+)'/);
+                if (titleMatch) {
+                    vTitle = titleMatch[1] || titleMatch[2];
+                }
             }
+
+            const searchParams = new URLSearchParams();
+            if (vId) searchParams.set('id', vId);
+            if (vTitle) searchParams.set('title', vTitle);
+            if (videoUrl) searchParams.set('url', videoUrl);
+
+            const queryString = searchParams.toString();
+            dest = `/videos${queryString ? `?${queryString}` : ''}`;
+            
+            navigate(dest, { 
+                state: { 
+                    videoTitle: vTitle, 
+                    videoId: vId, 
+                    videoUrl: videoUrl,
+                    senderName: notif.senderName 
+                } 
+            });
+            return;
+        } else if (relType === 'podcast' || msg.includes('podcast') || notif.type?.includes('podcast')) {
+            dest = refId ? `/podcasts?id=${refId}` : '/podcasts';
+        } else if (relType === 'article' || msg.includes('article') || notif.type?.includes('article')) {
+            dest = refId ? `/article-view?id=${refId}` : '/articles';
+        } else if (relType === 'post' || msg.includes('post') || notif.type?.includes('post') || notif.type?.includes('share') || msg.includes('shared')) {
+            dest = refId ? `/posts?id=${refId}` : '/posts';
+        } else if (relType === 'user' || notif.type?.includes('follow') || notif.senderUserId) {
+            const uId = refId || notif.senderUserId;
+            dest = uId ? `/profile?id=${uId}` : '/profile';
+        } else if (!dest) {
+            dest = '/posts';
         }
 
         const currentPath = window.location.pathname + window.location.search;
@@ -831,7 +949,7 @@ export default function Navbar() {
                                                             } else if (item.contentType === 'Article') {
                                                                 navigate(`/article-view?id=${item.id}`);
                                                             } else if (item.contentType === 'Community') {
-                                                                navigate('/community');
+                                                                navigate(`/community/view?id=${item.id}`);
                                                             } else {
                                                                 handleSearch(item.title);
                                                             }

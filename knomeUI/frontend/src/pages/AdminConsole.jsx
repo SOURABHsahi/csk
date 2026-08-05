@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
-import { interactionsApi, adminApi, postsApi, podcastsApi, resolveMediaUrl } from '../utils/apiService';
+import { interactionsApi, adminApi, postsApi, podcastsApi, resolveMediaUrl, getVideoThumbnail } from '../utils/apiService';
 import { apiClient } from '../utils/apiClient';
 
 // Default seed data directly matching user's SQL ContentReports table
@@ -13,11 +13,11 @@ const SEED_REPORTS = [
     { reportId: 8, reporterUserId: 3, reporterFullName: 'Sourabh Sahu', reportedUserId: 3, reportedUserName: 'Sourabh Sahu', contentType: 'Post', contentId: 10070, communityName: 'Engineering & Tech', reasonCode: 'Inappropriate', severity: 'Low', aiScore: '45% Toxic', status: 'Pending', moderatorUserId: null, moderatorFullName: null, actionTaken: null, reportedDate: '2026-07-24 11:13', postContentSnippet: 'Inappropriate language in project update discussion.' },
     { reportId: 7, reporterUserId: 1, reporterFullName: 'System Administrator', reportedUserId: 3, reportedUserName: 'Sourabh Sahu', contentType: 'Post', contentId: 10070, communityName: 'Engineering & Tech', reasonCode: 'Inappropriate', severity: 'Medium', aiScore: '60% Toxic', status: 'Pending', moderatorUserId: null, moderatorFullName: null, actionTaken: null, reportedDate: '2026-07-24 10:27', postContentSnippet: 'Inappropriate language in project update discussion.' },
     { reportId: 6, reporterUserId: 3, reporterFullName: 'Rajesh Kumar', reportedUserId: 3, reportedUserName: 'Rajesh Kumar', contentType: 'Post', contentId: 10068, communityName: 'Product Design', reasonCode: 'Inappropriate', severity: 'High', aiScore: '82% Toxic', status: 'Pending', moderatorUserId: null, moderatorFullName: null, actionTaken: null, reportedDate: '2026-07-22 12:07', postContentSnippet: 'Offensive comments regarding team policy.' },
-    { reportId: 5, reporterUserId: 2, reporterFullName: 'Neha Sharma', reportedUserId: 2, reportedUserName: 'Neha Sharma', contentType: 'Post', contentId: 10064, communityName: 'General Discussion', reasonCode: 'Copyright', severity: 'Medium', aiScore: '68% Copy', status: 'Pending', moderatorUserId: null, moderatorFullName: null, actionTaken: null, reportedDate: '2026-07-22 11:32', postContentSnippet: 'Copied internal API documentation sheet.' },
-    { reportId: 4, reporterUserId: 2, reporterFullName: 'Neha Sharma', reportedUserId: 2, reportedUserName: 'Neha Sharma', contentType: 'Post', contentId: 10064, communityName: 'General Discussion', reasonCode: 'Spam', severity: 'Low', aiScore: '90% Spam', status: 'Pending', moderatorUserId: null, moderatorFullName: null, actionTaken: null, reportedDate: '2026-07-22 11:30', postContentSnippet: 'Copied internal API documentation sheet.' },
-    { reportId: 3, reporterUserId: 2, reporterFullName: 'Neha Sharma', reportedUserId: 2, reportedUserName: 'Neha Sharma', contentType: 'Post', contentId: 51, communityName: 'Engineering & Tech', reasonCode: 'Harassment', severity: 'Critical', aiScore: '98% Toxic', status: 'Pending', moderatorUserId: null, moderatorFullName: null, actionTaken: null, reportedDate: '2026-07-22 11:30', postContentSnippet: 'Direct personal targeted harassment in community comments.' },
-    { reportId: 2, reporterUserId: 2, reporterFullName: 'Neha Sharma', reportedUserId: 2, reportedUserName: 'Neha Sharma', contentType: 'Post', contentId: 10060, communityName: 'Product Design', reasonCode: 'Inappropriate', severity: 'Medium', aiScore: '55% Risk', status: 'Pending', moderatorUserId: null, moderatorFullName: null, actionTaken: null, reportedDate: '2026-07-22 11:28', postContentSnippet: 'Inappropriate attachment shared in team channel.' },
-    { reportId: 1, reporterUserId: 6, reporterFullName: 'Loveneesh Sharma', reportedUserId: 6, reportedUserName: 'Loveneesh Sharma', contentType: 'Post', contentId: 1, communityName: 'General Discussion', reasonCode: 'Spam', severity: 'Low', aiScore: '12% Low', status: 'Reviewed', moderatorUserId: 2, moderatorFullName: 'Neha Sharma', actionTaken: 'None', reportedDate: '2026-07-13 06:10', postContentSnippet: 'Automated test post created during setup.' }
+    { reportId: 5, reporterUserId: 5, reporterFullName: 'Priya Verma', reportedUserId: 5, reportedUserName: 'Priya Verma', contentType: 'Post', contentId: 10064, communityName: 'General Discussion', reasonCode: 'Copyright', severity: 'Medium', aiScore: '68% Copy', status: 'Action Taken', moderatorUserId: 1, moderatorFullName: 'System Admin', actionTaken: 'Removed Content', reportedDate: '2026-07-22 11:32', postContentSnippet: 'Copied internal API documentation sheet.' },
+    { reportId: 4, reporterUserId: 5, reporterFullName: 'Priya Verma', reportedUserId: 5, reportedUserName: 'Priya Verma', contentType: 'Post', contentId: 10064, communityName: 'General Discussion', reasonCode: 'Spam', severity: 'Low', aiScore: '90% Spam', status: 'Action Taken', moderatorUserId: 1, moderatorFullName: 'System Admin', actionTaken: 'Removed Content', reportedDate: '2026-07-22 11:30', postContentSnippet: 'Copied internal API documentation sheet.' },
+    { reportId: 3, reporterUserId: 5, reporterFullName: 'Priya Verma', reportedUserId: 5, reportedUserName: 'Priya Verma', contentType: 'Post', contentId: 51, communityName: 'Engineering & Tech', reasonCode: 'Harassment', severity: 'Critical', aiScore: '98% Toxic', status: 'Action Taken', moderatorUserId: 1, moderatorFullName: 'System Admin', actionTaken: 'Removed Content', reportedDate: '2026-07-22 11:30', postContentSnippet: 'Direct personal targeted harassment in community comments.' },
+    { reportId: 2, reporterUserId: 5, reporterFullName: 'Priya Verma', reportedUserId: 5, reportedUserName: 'Priya Verma', contentType: 'Post', contentId: 10060, communityName: 'Product Design', reasonCode: 'Inappropriate', severity: 'Medium', aiScore: '55% Risk', status: 'Action Taken', moderatorUserId: 1, moderatorFullName: 'System Admin', actionTaken: 'Removed Content', reportedDate: '2026-07-22 11:28', postContentSnippet: 'Inappropriate attachment shared in team channel.' },
+    { reportId: 1, reporterUserId: 6, reporterFullName: 'Loveneesh Sharma', reportedUserId: 6, reportedUserName: 'Loveneesh Sharma', contentType: 'Post', contentId: 1, communityName: 'General Discussion', reasonCode: 'Spam', severity: 'Low', aiScore: '12% Low', status: 'Reviewed', moderatorUserId: 1, moderatorFullName: 'System Admin', actionTaken: 'None', reportedDate: '2026-07-13 06:10', postContentSnippet: 'Automated test post created during setup.' }
 ];
 
 // Helper to provide realistic reported post content if live API call returns empty/404
@@ -28,9 +28,9 @@ const getFallbackPostContent = (report) => {
         10071: { authorName: 'Sourabh Sahu', userId: 3, content: 'Please click this external link to complete our mandatory annual feedback survey: http://external-survey-phish.net/form', createdAt: '2026-07-24T12:00:00Z', audienceType: 'Public', likeCount: 1, commentCount: 4, shareCount: 0 },
         10070: { authorName: 'Sourabh Sahu', userId: 3, content: 'This update is completely unacceptable and poorly planned. Using inappropriate language to express frustration with project timelines.', createdAt: '2026-07-24T10:15:00Z', audienceType: 'Public', likeCount: 2, commentCount: 6, shareCount: 0 },
         10068: { authorName: 'Rajesh Kumar', userId: 3, content: 'Discussion post containing offensive language violating community guidelines and employee code of conduct.', createdAt: '2026-07-22T12:00:00Z', audienceType: 'Public', likeCount: 0, commentCount: 2, shareCount: 0 },
-        10064: { authorName: 'Neha Sharma', userId: 2, content: 'Duplicate promotional broadcast message copied repeatedly across multiple community feed groups.', createdAt: '2026-07-22T11:25:00Z', audienceType: 'Public', likeCount: 1, commentCount: 0, shareCount: 0 },
-        51: { authorName: 'Neha Sharma', userId: 2, content: 'Targeted hostile remarks and personal attacks directed toward specific team members in general discussion.', createdAt: '2026-07-22T11:20:00Z', audienceType: 'Public', likeCount: 0, commentCount: 5, shareCount: 0 },
-        10060: { authorName: 'Neha Sharma', userId: 2, content: 'Inappropriate image attachment posted without context in main community wall.', createdAt: '2026-07-22T11:15:00Z', audienceType: 'Public', likeCount: 4, commentCount: 3, shareCount: 1 },
+        10064: { authorName: 'Priya Verma (Removed)', userId: 5, content: '[Content Removed by Admin Governance Policy]', createdAt: '2026-07-22T11:25:00Z', audienceType: 'Public', likeCount: 0, commentCount: 0, shareCount: 0 },
+        51: { authorName: 'Priya Verma (Removed)', userId: 5, content: '[Content Removed by Admin Governance Policy]', createdAt: '2026-07-22T11:20:00Z', audienceType: 'Public', likeCount: 0, commentCount: 0, shareCount: 0 },
+        10060: { authorName: 'Priya Verma (Removed)', userId: 5, content: '[Content Removed by Admin Governance Policy]', createdAt: '2026-07-22T11:15:00Z', audienceType: 'Public', likeCount: 0, commentCount: 0, shareCount: 0 },
         1: { authorName: 'Loveneesh Sharma', userId: 6, content: 'Initial platform test post for content interaction verification.', createdAt: '2026-07-13T06:00:00Z', audienceType: 'Public', likeCount: 10, commentCount: 2, shareCount: 1 }
     };
 
@@ -49,7 +49,7 @@ const getFallbackPostContent = (report) => {
 };
 
 export default function AdminConsole() {
-    const { currentUser } = useUser();
+    const { currentUser, updateUserRoleInList, toggleUserActiveStatus, addKarmaPointsToUser, awardRuleKarma } = useUser();
     const navigate = useNavigate();
 
     // Strict Role Authorization Check — System Administrator Only (HR Admin Excluded)
@@ -108,10 +108,14 @@ export default function AdminConsole() {
 
     // Community Channels Moderation State
     const [communityChannels, setCommunityChannels] = useState([
-        { id: 1, name: 'Engineering & Tech', members: 142, reportsCount: 5, mod: 'System Admin', status: 'Strict', filterKey: 'Engineering' },
-        { id: 2, name: 'HR & People Ops', members: 88, reportsCount: 3, mod: 'Neha Sharma', status: 'Standard', filterKey: 'HR' },
-        { id: 3, name: 'Product Design', members: 64, reportsCount: 2, mod: 'Sourabh Sahu', status: 'Standard', filterKey: 'Product' },
-        { id: 4, name: 'General Discussion', members: 310, reportsCount: 2, mod: 'System Admin', status: 'Strict', filterKey: 'General' }
+        { id: 1, name: 'Engineering & Tech', category: 'Technology & Architecture', members: 142, reportsCount: 5, mod: 'Loveneesh Sharma', status: 'Strict', type: 'Public', filterKey: 'Engineering', icon: 'developer_board' },
+        { id: 2, name: 'HR & People Ops', category: 'Human Resources & Governance', members: 120, reportsCount: 3, mod: 'Sourabh Sahu', status: 'Standard', type: 'Default (Org)', filterKey: 'HR', icon: 'groups' },
+        { id: 3, name: 'Product Design & UX', category: 'UI/UX & Design Systems', members: 64, reportsCount: 2, mod: 'Mayur Verma', status: 'Standard', type: 'Public', filterKey: 'Product', icon: 'palette' },
+        { id: 4, name: 'AI & Data Science Lab', category: 'AI Research & Data Science', members: 58, reportsCount: 4, mod: 'Vishendra Sharma', status: 'Strict', type: 'Private', filterKey: 'AI', icon: 'psychology' },
+        { id: 5, name: 'Finance & Accounting', category: 'Finance, Audit & Payroll', members: 45, reportsCount: 1, mod: 'Sourabh Sahu', status: 'Standard', type: 'Default (Org)', filterKey: 'Finance', icon: 'account_balance' },
+        { id: 6, name: 'Marketing & Brand Strategy', category: 'Marketing, PR & Events', members: 36, reportsCount: 1, mod: 'Meghna Tiwari', status: 'Standard', type: 'Public', filterKey: 'Marketing', icon: 'campaign' },
+        { id: 7, name: 'CTO Leadership Circle', category: 'Executive Leadership & Strategy', members: 18, reportsCount: 0, mod: 'Loveneesh Sharma', status: 'Strict', type: 'Private', filterKey: 'CTO', icon: 'military_tech' },
+        { id: 8, name: 'General Discussion', category: 'Company Open Lounge', members: 310, reportsCount: 2, mod: 'System Admin', status: 'Relaxed', type: 'Public', filterKey: 'General', icon: 'forum' }
     ]);
     const [selectedManageCommunity, setSelectedManageCommunity] = useState(null);
     const [isCommunityModalOpen, setIsCommunityModalOpen] = useState(false);
@@ -150,21 +154,58 @@ export default function AdminConsole() {
         setTimeout(() => setActionToast(''), 4000);
     };
 
-    // Pending Media Approvals State
+    // Pending Media Approvals & Preview State
+    const [previewingMedia, setPreviewingMedia] = useState(null);
+
+    const DEFAULT_SEED_PENDING_MEDIA = [
+        {
+            id: 'seed_pending_video_1',
+            mediaType: 'Video',
+            title: 'Q3 Enterprise AI Strategy & Architecture Townhall',
+            description: 'Employee submitted presentation on AI agent automation, microservice governance, and system security guidelines.',
+            thumbnail: 'https://images.unsplash.com/photo-1540317580384-e5d43616b9aa?auto=format&fit=crop&q=90&w=1200',
+            sourceUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+            sourceType: 'File',
+            duration: '09:45',
+            category: 'Townhalls',
+            authorName: 'Rahul Verma',
+            authorId: 3,
+            submittedDate: new Date(Date.now() - 3600000 * 2).toISOString(),
+            status: 'PendingApproval',
+            dto: { title: 'Q3 Enterprise AI Strategy & Architecture Townhall', videoUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', uploaderUserId: 3 }
+        },
+        {
+            id: 'seed_pending_podcast_1',
+            mediaType: 'Podcast',
+            title: 'Episode 14: Modern Cloud Architecture & Microservices',
+            description: 'In-depth podcast discussion with engineering leads on ASP.NET Core 10, Entity Framework performance, and SQL Server optimization.',
+            thumbnail: 'https://images.unsplash.com/photo-1590602847861-f357a9332bbc?auto=format&fit=crop&q=90&w=1200',
+            audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+            duration: '18:20',
+            category: 'Engineering & Tech',
+            authorName: 'Priya Sharma',
+            authorId: 4,
+            submittedDate: new Date(Date.now() - 3600000 * 5).toISOString(),
+            status: 'PendingApproval',
+            podcastData: { title: 'Episode 14: Modern Cloud Architecture & Microservices', audioUrl: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3', uploaderUserId: 4 }
+        }
+    ];
+
     const [pendingMediaApprovals, setPendingMediaApprovals] = useState(() => {
         try {
-            return JSON.parse(localStorage.getItem('knome_pending_media_approvals') || '[]');
+            const stored = JSON.parse(localStorage.getItem('knome_pending_media_approvals') || '[]');
+            return stored.length > 0 ? stored : DEFAULT_SEED_PENDING_MEDIA;
         } catch (e) {
-            return [];
+            return DEFAULT_SEED_PENDING_MEDIA;
         }
     });
 
     const refreshPendingMedia = () => {
         try {
             const stored = JSON.parse(localStorage.getItem('knome_pending_media_approvals') || '[]');
-            setPendingMediaApprovals(stored);
+            setPendingMediaApprovals(stored.length > 0 ? stored : DEFAULT_SEED_PENDING_MEDIA);
         } catch (e) {
-            setPendingMediaApprovals([]);
+            setPendingMediaApprovals(DEFAULT_SEED_PENDING_MEDIA);
         }
     };
 
@@ -175,26 +216,84 @@ export default function AdminConsole() {
         return () => window.removeEventListener('storage', handleStorage);
     }, []);
 
+    const getMediaUrl = (item) => {
+        if (!item) return '';
+        if (item.mediaType === 'Video') {
+            return item.sourceUrl || item.dto?.videoUrl || item.dto?.sourceUrl || item.videoUrl || item.url || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+        } else {
+            return item.audioUrl || item.podcastData?.audioUrl || item.url || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+        }
+    };
+
+    const getEmbedVideoUrl = (url) => {
+        if (!url || typeof url !== 'string') return null;
+        let match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))((\w|-){11})/);
+        if (match && match[1]) {
+            return `https://www.youtube.com/embed/${match[1]}?autoplay=1`;
+        }
+        if (url.includes('vimeo.com')) {
+            const vimeoId = url.split('/').pop();
+            return `https://player.vimeo.com/video/${vimeoId}?autoplay=1`;
+        }
+        return null;
+    };
+
     const handleApproveMedia = async (mediaItem) => {
         try {
+            const targetAuthorId = mediaItem.authorId || mediaItem.userId || mediaItem.dto?.uploaderUserId || mediaItem.podcastData?.uploaderUserId;
+
             if (mediaItem.mediaType === 'Video' && mediaItem.dto) {
-                await apiClient.post('/videos', mediaItem.dto).catch(() => {});
+                const postDto = {
+                    ...mediaItem.dto,
+                    uploaderUserId: targetAuthorId
+                };
+                await apiClient.post('/videos', postDto).catch(() => {});
             } else if (mediaItem.mediaType === 'Podcast' && mediaItem.podcastData) {
-                await podcastsApi.create(mediaItem.podcastData).catch(() => {});
+                const postPodcast = {
+                    ...mediaItem.podcastData,
+                    uploaderUserId: targetAuthorId
+                };
+                await podcastsApi.create(postPodcast).catch(() => {});
+            } else if (mediaItem.mediaType === 'Series' && mediaItem.seriesData) {
+                if (Array.isArray(mediaItem.customVideos)) {
+                    try {
+                        const existingImp = JSON.parse(localStorage.getItem('knome_imported_yt_videos') || '[]');
+                        localStorage.setItem('knome_imported_yt_videos', JSON.stringify([...mediaItem.customVideos, ...existingImp]));
+                    } catch (e) {}
+                }
+                const approvedSeries = {
+                    ...mediaItem.seriesData,
+                    author: mediaItem.authorName || mediaItem.seriesData.author,
+                    authorId: mediaItem.authorId || mediaItem.seriesData.authorId
+                };
+                savePlaylist(approvedSeries);
             }
+
 
             const updated = pendingMediaApprovals.filter(m => m.id !== mediaItem.id);
             setPendingMediaApprovals(updated);
             localStorage.setItem('knome_pending_media_approvals', JSON.stringify(updated));
+            const ruleKey = mediaItem.mediaType === 'Video' ? 'VIDEO' : 'PODCAST';
+            const defaultPoints = 8; // Official Karma rule: +8 pts per approved Video/Podcast (Max 24 pts/day)
 
-            if (mediaItem.authorId) {
+            // 1. Award Karma Points ONLY to the user who uploaded the video or podcast
+            let pointsAwarded = 8;
+            if (targetAuthorId && awardRuleKarma) {
+                const res = awardRuleKarma(targetAuthorId, ruleKey, { customTitle: `Approved ${mediaItem.mediaType}: "${mediaItem.title}"` });
+                if (typeof res === 'number') pointsAwarded = res;
+            } else if (targetAuthorId && addKarmaPointsToUser) {
+                addKarmaPointsToUser(targetAuthorId, defaultPoints, `Approved ${mediaItem.mediaType}: "${mediaItem.title}"`);
+            }
+
+            // 2. Send Notification to Author
+            if (targetAuthorId) {
                 const authorNotif = {
                     id: `approved_notif_${Date.now()}`,
                     type: 'media_approved',
-                    category: 'System',
-                    text: `🎉 Your ${mediaItem.mediaType} "${mediaItem.title}" was approved by Admin and is now live!`,
+                    category: 'Karma',
+                    text: `🎉 Your ${mediaItem.mediaType} "${mediaItem.title}" was approved by Admin! You earned +${pointsAwarded} Karma Points!`,
                     senderName: 'System Admin',
-                    targetUserId: mediaItem.authorId,
+                    targetUserId: targetAuthorId,
                     targetUrl: mediaItem.mediaType === 'Video' ? '/videos' : '/podcasts',
                     time: 'Just now',
                     unread: true
@@ -203,7 +302,20 @@ export default function AdminConsole() {
                 localStorage.setItem('knome_notifications', JSON.stringify([authorNotif, ...existingNotifs]));
             }
 
-            showToast(`✅ ${mediaItem.mediaType} "${mediaItem.title}" approved & published!`);
+            // 3. Log into Governance Audit Trail
+            setAuditTrail(prev => [
+                {
+                    id: Date.now(),
+                    time: new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
+                    moderator: currentUser?.name || 'System Admin',
+                    action: 'MediaApproved',
+                    target: `Approved ${mediaItem.mediaType} "${mediaItem.title}" by ${mediaItem.authorName || 'Author'} (+${pointsAwarded} Karma awarded to Author ID #${targetAuthorId})`,
+                    color: 'text-emerald-500'
+                },
+                ...prev
+            ]);
+
+            showToast(`✅ ${mediaItem.mediaType} "${mediaItem.title}" approved & published! +${pointsAwarded} Karma awarded to ${mediaItem.authorName || 'Author'}.`);
         } catch (err) {
             console.error("Failed to approve media:", err);
             showToast(`Failed to approve ${mediaItem.mediaType}`);
@@ -241,30 +353,6 @@ export default function AdminConsole() {
         await Promise.all([fetchReports(), fetchUsers(), fetchAuditLogs()]);
         setTimeout(() => setIsRefreshing(false), 500);
         showToast('Console data refreshed successfully.');
-    };
-
-    // Open Post Preview Popup Modal
-    const handleOpenPostPreview = async (report) => {
-        setPreviewReport(report);
-        setPreviewPost(null);
-        setIsPreviewOpen(true);
-        setIsPreviewLoading(true);
-        try {
-            if (report.contentType === 'Post') {
-                const data = await postsApi.getById(report.contentId);
-                if (data && (data.contentText || data.content || data.body || data.text)) {
-                    setPreviewPost(data);
-                } else {
-                    setPreviewPost(getFallbackPostContent(report));
-                }
-            } else {
-                setPreviewPost(getFallbackPostContent(report));
-            }
-        } catch (err) {
-            setPreviewPost(getFallbackPostContent(report));
-        } finally {
-            setIsPreviewLoading(false);
-        }
     };
 
     // 1. Fetch Moderation Reports from Backend API
@@ -323,27 +411,85 @@ export default function AdminConsole() {
         }
     };
 
-    // 3. Fetch Audit Logs
+    // Helper to log audit entries into state, localStorage, and SQL Server DB
+    const logAuditEntry = async (action, targetDetails, color = 'text-indigo-600', targetType = 'System', targetId = 0) => {
+        const newLog = {
+            id: `log_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            time: new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
+            moderator: currentUser?.name || 'System Admin',
+            action: action,
+            target: targetDetails,
+            color: color
+        };
+
+        setAuditTrail(prev => [newLog, ...prev]);
+
+        try {
+            const existing = JSON.parse(localStorage.getItem('knome_audit_trail') || '[]');
+            localStorage.setItem('knome_audit_trail', JSON.stringify([newLog, ...existing]));
+        } catch (e) {
+            console.warn("Failed to persist audit log", e);
+        }
+
+        try {
+            if (adminApi && adminApi.createAuditLog) {
+                await adminApi.createAuditLog(action, targetType, targetId, targetDetails);
+            }
+        } catch (e) {
+            console.warn("Backend audit log record notice:", e);
+        }
+    };
+
+    // 3. Fetch Audit Logs with Rich Target Details
     const fetchAuditLogs = async () => {
         try {
             const res = await adminApi.getAuditLogs();
+            const savedLocalLogs = JSON.parse(localStorage.getItem('knome_audit_trail') || '[]');
+
+            let apiLogs = [];
             if (res && (Array.isArray(res) ? res.length > 0 : (res.items && res.items.length > 0))) {
                 const items = Array.isArray(res) ? res : (res.items || []);
-                setAuditTrail(items.map(log => ({
-                    id: log.logId || Math.random(),
-                    time: new Date(log.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
-                    moderator: log.actorFullName || 'System Admin',
-                    action: log.action,
-                    target: log.details || log.entityName || '',
-                    color: log.action.includes('Delete') || log.action.includes('Suspend') || log.action.includes('Remove') ? 'text-rose-500' : 'text-indigo-500'
-                })));
+                apiLogs = items.map(log => {
+                    let detailsText = log.target || log.details || log.targetDetails || log.entityName;
+                    
+                    if (!detailsText) {
+                        if (log.action === 'ActivateUser' || log.action === 'UserActivated') {
+                            detailsText = `Reactivated Employee ID #${log.targetId || log.entityId || 'User'}`;
+                        } else if (log.action === 'SuspendUser' || log.action === 'UserSuspended') {
+                            detailsText = `Suspended Employee ID #${log.targetId || log.entityId || 'User'}${log.reason ? ` - ${log.reason}` : ''}`;
+                        } else if (log.action === 'SeedData') {
+                            detailsText = 'Initial System Governance & Seed Data Load';
+                        } else if (log.reason) {
+                            detailsText = `${log.targetType || 'Entity'} #${log.targetId || ''}: ${log.reason}`;
+                        } else if (log.targetType) {
+                            detailsText = `Target ${log.targetType} #${log.targetId || ''}`;
+                        } else {
+                            detailsText = `Governance Action on Record #${log.targetId || log.auditId || ''}`;
+                        }
+                    }
+
+                    return {
+                        id: log.auditId || log.logId || Math.random(),
+                        time: log.timestamp ? new Date(log.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
+                        moderator: log.actorName || log.actorFullName || 'System Admin',
+                        action: log.action || 'SystemAction',
+                        target: detailsText,
+                        color: (log.action || '').includes('Delete') || (log.action || '').includes('Suspend') || (log.action || '').includes('Remove') ? 'text-rose-500 font-black' : 'text-indigo-600 font-bold'
+                    };
+                });
             } else {
-                setAuditTrail([
-                    { id: 1, time: '07/27/26, 12:43 PM', moderator: 'System Admin', action: 'ReportLogged', target: 'Logged Copyright Report #10 for Post #10072', color: 'text-amber-500' },
-                    { id: 2, time: '07/24/26, 12:31 PM', moderator: 'Rajesh Kumar', action: 'ContentReport', target: 'Submitted report on Post #10071', color: 'text-slate-500' },
-                    { id: 3, time: '07/13/26, 07:00 AM', moderator: 'Priya Verma', action: 'ReviewReport', target: 'Reviewed Report #1 - Action: None', color: 'text-emerald-500' }
-                ]);
+                apiLogs = [
+                    { id: 101, time: '08/04/26, 05:20 PM', moderator: 'System Admin', action: 'UserActivated', target: 'Reactivated Employee #EMP005 (Priya Verma)', color: 'text-emerald-500 font-bold' },
+                    { id: 102, time: '08/04/26, 05:15 PM', moderator: 'System Admin', action: 'UserSuspended', target: 'Suspended Employee #EMP005 (Priya Verma) - Reason: Compliance Policy Violation', color: 'text-rose-500 font-black' },
+                    { id: 103, time: '07/27/26, 12:43 PM', moderator: 'System Admin', action: 'ReportLogged', target: 'Logged Copyright Report #10 for Post #10072', color: 'text-amber-500 font-bold' },
+                    { id: 104, time: '07/24/26, 12:31 PM', moderator: 'Rajesh Kumar', action: 'ContentReport', target: 'Submitted report on Post #10071', color: 'text-slate-500' },
+                    { id: 105, time: '07/13/26, 07:00 AM', moderator: 'System Admin', action: 'ReviewReport', target: 'Reviewed Report #1 - Action: None', color: 'text-emerald-500 font-bold' }
+                ];
             }
+
+            const existingIds = new Set(apiLogs.map(l => String(l.id)));
+            const merged = [...savedLocalLogs.filter(l => !existingIds.has(String(l.id))), ...apiLogs];
+            setAuditTrail(merged);
         } catch (err) {
             console.error("Failed to load audit logs", err);
         }
@@ -360,15 +506,15 @@ export default function AdminConsole() {
     const handleResolve = async (reportId, actionType, contentId = null, contentType = null) => {
         const isDismiss = actionType === 'Dismiss';
         const newStatus = isDismiss ? 'Reviewed' : 'Action Taken';
-        const actionTakenText = isDismiss ? 'None' : actionType;
+        const actionTakenText = isDismiss ? 'Dismissed (No Action)' : (actionType === 'Removed Content' ? 'Removed Content' : actionType);
 
         try {
             await interactionsApi.resolveReport(reportId, actionType, `Resolved by ${currentUser?.name || 'Admin'}`);
             if (actionType === 'Removed Content' && contentType === 'Post' && contentId) {
                 try {
                     await postsApi.delete(contentId);
-                } catch (delErr) {
-                    console.warn("Delete post notice:", delErr);
+                } catch {
+                    /* Silently handle demo post deletion */
                 }
             }
         } catch (err) {
@@ -384,19 +530,13 @@ export default function AdminConsole() {
             actionDate: new Date().toLocaleString()
         } : r));
 
-        showToast(`Report #${reportId} updated to '${newStatus}' (${actionTakenText}).`);
+        showToast(`Report #${reportId} resolved: Content ${isDismiss ? 'Dismissed' : 'Removed'} & linked to Removed Reviews.`);
 
-        setAuditTrail(prev => [
-            {
-                id: Date.now(),
-                time: new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
-                moderator: currentUser?.name || 'System Admin',
-                action: isDismiss ? 'DismissReport' : 'RemoveContent',
-                target: `Report #${reportId} -> ${actionTakenText}`,
-                color: isDismiss ? 'text-blue-500' : 'text-rose-500'
-            },
-            ...prev
-        ]);
+        logAuditEntry(
+            isDismiss ? 'DismissReport' : 'RemoveContent',
+            `Report #${reportId} (${contentType || 'Content'} #${contentId || ''}) -> ${actionTakenText}`,
+            isDismiss ? 'text-slate-500' : 'text-rose-500 font-bold'
+        );
     };
 
     // Bulk Actions Handler
@@ -426,11 +566,86 @@ export default function AdminConsole() {
         }
     };
 
-    // Toggle Single Row Selection
-    const handleSelectRow = (reportId) => {
-        setSelectedReportIds(prev =>
-            prev.includes(reportId) ? prev.filter(id => id !== reportId) : [...prev, reportId]
-        );
+    // Open Post/Video/Podcast Preview Modal
+    const handleOpenPostPreview = async (report) => {
+        setPreviewReport(report);
+        setIsPreviewOpen(true);
+        setIsPreviewLoading(true);
+        setPreviewPost(null);
+
+        try {
+            const isVideo = report.contentType === 'Video' ||
+                report.reasonCode?.toLowerCase().includes('video') ||
+                (report.postContentSnippet && report.postContentSnippet.toLowerCase().includes('video')) ||
+                (report.contentType === 'Post' && (report.postContentSnippet || '').includes('Video'));
+
+            if (isVideo) {
+                // Fetch the actual reported video from the backend API by contentId (videoId)
+                let foundVid = null;
+                try {
+                    const apiVideos = await apiClient.get('/videos').catch(() => []);
+                    if (Array.isArray(apiVideos)) {
+                        foundVid = apiVideos.find(v =>
+                            String(v.videoId) === String(report.contentId) ||
+                            String(v.id) === String(report.contentId)
+                        );
+                    }
+                } catch (e) {}
+
+                // Fallback: check localStorage if API didn't find it
+                if (!foundVid) {
+                    const allVideos = JSON.parse(localStorage.getItem('knome_custom_videos') || '[]');
+                    foundVid = allVideos.find(v =>
+                        String(v.id) === String(report.contentId) ||
+                        String(v.videoId) === String(report.contentId)
+                    );
+                }
+
+                const rawSrc = foundVid?.sourceUrl || foundVid?.videoUrl || foundVid?.url || '';
+                const vidUrl = rawSrc
+                    ? (rawSrc.startsWith('http://') || rawSrc.startsWith('https://')
+                        ? rawSrc
+                        : resolveMediaUrl(rawSrc))
+                    : 'https://vjs.zencdn.net/v/oceans.mp4';
+
+                setPreviewPost({
+                    authorName: foundVid?.uploaderFullName || report.reportedUserName || report.reporterFullName,
+                    authorFullName: foundVid?.uploaderFullName || report.reportedUserName || report.reporterFullName,
+                    authorUserId: foundVid?.uploaderUserId || report.reportedUserId || report.reporterUserId,
+                    content: `📹 Video #${report.contentId}: "${foundVid?.title || 'Reported Video'}"`,
+                    videoUrl: vidUrl,
+                    sourceUrl: vidUrl,
+                    thumbnail: foundVid?.thumbnailUrl || foundVid?.thumbnail,
+                    title: foundVid?.title || `Video #${report.contentId}`,
+                    isVideo: true,
+                    createdDate: report.reportedDate
+                });
+            } else if (report.contentType === 'Podcast') {
+                const allPodcasts = JSON.parse(localStorage.getItem('knome_custom_podcasts') || '[]');
+                const foundPod = allPodcasts.find(p => String(p.id) === String(report.contentId));
+                setPreviewPost({
+                    authorName: report.reportedUserName || report.reporterFullName,
+                    authorFullName: report.reportedUserName || report.reporterFullName,
+                    authorUserId: report.reportedUserId || report.reporterUserId,
+                    content: `🎙️ Podcast Episode #${report.contentId}: "${foundPod?.title || 'Reported Podcast Episode'}"`,
+                    audioUrl: foundPod?.audioUrl || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',
+                    title: foundPod?.title || `Podcast #${report.contentId}`,
+                    isPodcast: true,
+                    createdDate: report.reportedDate
+                });
+            } else {
+                const res = await postsApi.getById(report.contentId).catch(() => null);
+                if (res) {
+                    setPreviewPost(res);
+                } else {
+                    setPreviewPost(getFallbackPostContent(report));
+                }
+            }
+        } catch (e) {
+            setPreviewPost(getFallbackPostContent(report));
+        } finally {
+            setIsPreviewLoading(false);
+        }
     };
 
     // Handle Suspend User Submission
@@ -442,22 +657,17 @@ export default function AdminConsole() {
             console.warn("Backend suspend API notice:", err);
         }
 
+        if (toggleUserActiveStatus) toggleUserActiveStatus(suspendUserId, false);
         setUsersList(prev => prev.map(u => String(u.userId) === String(suspendUserId) ? { ...u, isActive: false } : u));
         
         setIsSuspendModalOpen(false);
         showToast(`User #${suspendUserId} (${suspendUserName || 'Employee'}) suspended for ${suspendDays} days.`);
 
-        setAuditTrail(prev => [
-            {
-                id: Date.now(),
-                time: new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
-                moderator: currentUser?.name || 'System Admin',
-                action: 'UserSuspended',
-                target: `Suspended User #${suspendUserId} (${suspendReason || 'Policy Violation'})`,
-                color: 'text-rose-500'
-            },
-            ...prev
-        ]);
+        logAuditEntry(
+            'UserSuspended',
+            `Suspended Employee #${suspendUserId} (${suspendUserName || 'Employee'}) - Reason: ${suspendReason || 'Compliance Policy Violation'}`,
+            'text-rose-500 font-black'
+        );
 
         setSuspendUserId('');
         setSuspendUserName('');
@@ -477,20 +687,16 @@ export default function AdminConsole() {
             console.warn("Backend activation notice:", err);
         }
 
-        setUsersList(prev => prev.map(u => u.userId === user.userId ? { ...u, isActive: newActiveState } : u));
-        showToast(`User ${user.fullName} is now ${newActiveState ? 'Active' : 'Suspended'}.`);
+        const targetId = user.userId || user.id;
+        if (toggleUserActiveStatus) toggleUserActiveStatus(targetId, newActiveState);
+        setUsersList(prev => prev.map(u => (u.userId === user.userId || u.id === user.id) ? { ...u, isActive: newActiveState } : u));
+        showToast(`User ${user.fullName || user.name} is now ${newActiveState ? 'Active' : 'Suspended'}.`);
 
-        setAuditTrail(prev => [
-            {
-                id: Date.now(),
-                time: new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
-                moderator: currentUser?.name || 'System Admin',
-                action: newActiveState ? 'UserActivated' : 'UserSuspended',
-                target: `${newActiveState ? 'Activated' : 'Suspended'} ${user.fullName} (ID ${user.userId})`,
-                color: newActiveState ? 'text-emerald-500' : 'text-rose-500'
-            },
-            ...prev
-        ]);
+        logAuditEntry(
+            newActiveState ? 'UserActivated' : 'UserSuspended',
+            `${newActiveState ? 'Reactivated' : 'Suspended'} Employee #${targetId} (${user.fullName || user.name})`,
+            newActiveState ? 'text-emerald-500 font-bold' : 'text-rose-500 font-black'
+        );
     };
 
     // Handle Role Change Submission
@@ -502,21 +708,23 @@ export default function AdminConsole() {
             console.warn("Backend role change notice:", err);
         }
 
+        // Update the local AdminConsole users table
         setUsersList(prev => prev.map(u => String(u.userId) === String(roleUserId) ? { ...u, roleName: selectedRole } : u));
-        setIsRoleModalOpen(false);
-        showToast(`Role for ${roleUserName} changed to '${selectedRole}'.`);
 
-        setAuditTrail(prev => [
-            {
-                id: Date.now(),
-                time: new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
-                moderator: currentUser?.name || 'System Admin',
-                action: 'RoleChanged',
-                target: `Assigned role '${selectedRole}' to ${roleUserName} (ID ${roleUserId})`,
-                color: 'text-indigo-500'
-            },
-            ...prev
-        ]);
+        // ── Update global UserContext usersList so Navbar Switch User dropdown
+        // instantly shows the new role for this user, and if it's the logged-in
+        // user their currentUser state (role guards, Sidebar, HR Analytics) updates too.
+        updateUserRoleInList(roleUserId, selectedRole);
+
+        const isCurrentUser = currentUser?.userId && String(currentUser.userId) === String(roleUserId);
+        setIsRoleModalOpen(false);
+        showToast(`Role for ${roleUserName} changed to '${selectedRole}'.${isCurrentUser ? ' Your permissions have been updated!' : ''}`);
+
+        logAuditEntry(
+            'RoleChanged',
+            `Assigned role '${selectedRole}' to Employee #${roleUserId} (${roleUserName})`,
+            'text-indigo-600 font-bold'
+        );
     };
 
     // Handle System Config Save
@@ -553,34 +761,50 @@ export default function AdminConsole() {
 
     // Filter reports logic
     const filteredReports = reports.filter(r => {
-        const matchesStatus = statusFilter === 'All' || r.status.toLowerCase() === statusFilter.toLowerCase();
-        const matchesReason = reasonFilter === 'All' || r.reasonCode.toLowerCase() === reasonFilter.toLowerCase();
-        const matchesSeverity = severityFilter === 'All' || (r.severity && r.severity.toLowerCase() === severityFilter.toLowerCase());
-        const matchesCommunity = communityFilter === 'All' || (r.communityName && r.communityName.toLowerCase().includes(communityFilter.toLowerCase()));
+        const matchesStatus = statusFilter === 'All' || 
+            (statusFilter === 'Pending' && r.status === 'Pending') ||
+            (statusFilter === 'Reviewed' && (r.status === 'Reviewed' || r.status === 'Action Taken' || r.actionTaken === 'None')) ||
+            (statusFilter === 'Action Taken' && (r.status === 'Action Taken' || r.status === 'Reviewed' || (r.actionTaken && r.actionTaken !== 'None')));
+
+        const matchesReason = reasonFilter === 'All' || (r.reasonCode && r.reasonCode.toLowerCase() === reasonFilter.toLowerCase());
+        
+        const matchesSeverity = severityFilter === 'All' || 
+            (severityFilter === 'High' && (r.severity === 'High' || r.severity === 'Critical')) ||
+            (r.severity && r.severity.toLowerCase() === severityFilter.toLowerCase());
+
+        const matchesCommunity = communityFilter === 'All' || 
+            (r.communityName && r.communityName.toLowerCase().includes(communityFilter.toLowerCase()));
+
         const matchesModerator = moderatorFilter === 'All' || 
-            (moderatorFilter === 'Unassigned' && !r.moderatorUserId) || 
+            (moderatorFilter === 'Unassigned' && (!r.moderatorUserId && !r.moderatorFullName)) || 
             (r.moderatorFullName && r.moderatorFullName.toLowerCase().includes(moderatorFilter.toLowerCase()));
+
+        const matchesDateRange = dateRangeFilter === 'All' ||
+            (dateRangeFilter === 'Today' && (r.reportedDate?.includes('2026-07-28') || r.reportedDate?.includes('2026-07-29') || r.reportedDate?.toLowerCase().includes('today')));
 
         const matchesSearch = !searchQuery || 
                               String(r.reportId).includes(searchQuery) ||
                               String(r.contentId).includes(searchQuery) ||
                               (r.reporterFullName && r.reporterFullName.toLowerCase().includes(searchQuery.toLowerCase())) ||
                               (r.reportedUserName && r.reportedUserName.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                              (r.reasonCode && r.reasonCode.toLowerCase().includes(searchQuery.toLowerCase()));
-        return matchesStatus && matchesReason && matchesSeverity && matchesCommunity && matchesModerator && matchesSearch;
+                              (r.reasonCode && r.reasonCode.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                              (r.communityName && r.communityName.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                              (r.postContentSnippet && r.postContentSnippet.toLowerCase().includes(searchQuery.toLowerCase()));
+
+        return matchesStatus && matchesReason && matchesSeverity && matchesCommunity && matchesModerator && matchesDateRange && matchesSearch;
     });
 
     // 10 Compact Metrics Calculations
     const totalReportsCount = reports.length;
     const pendingCount = reports.filter(r => r.status === 'Pending').length;
-    const reviewedCount = reports.filter(r => r.status === 'Reviewed' || r.status === 'Action Taken').length;
+    const reviewedCount = reports.filter(r => r.status === 'Reviewed' || r.status === 'Action Taken' || (r.actionTaken && r.actionTaken !== 'None')).length;
     const highPriorityCount = reports.filter(r => r.reasonCode === 'Harassment' || r.reasonCode === 'Copyright' || r.severity === 'Critical' || r.severity === 'High').length;
-    const suspendedUsersCount = usersList.filter(u => !u.isActive).length || 2;
-    const activeModeratorsCount = 4;
-    const aiFlaggedCount = reports.filter(r => r.reasonCode === 'Spam' || r.reasonCode === 'Inappropriate').length || 5;
-    const communitiesCount = 8;
-    const activeUsersCount = usersList.filter(u => u.isActive).length || 142;
-    const todayReportsCount = reports.filter(r => r.reportedDate?.includes('2026-07-28') || r.reportedDate?.includes('2026-07-29')).length || 2;
+    const suspendedUsersCount = usersList.filter(u => !u.isActive).length;
+    const activeModeratorsCount = usersList.filter(u => (u.roleName || '').toLowerCase().includes('admin') || (u.role || '').toLowerCase().includes('adm')).length || 4;
+    const aiFlaggedCount = reports.filter(r => r.reasonCode === 'Spam' || r.reasonCode === 'Inappropriate' || (r.aiScore && parseInt(r.aiScore) > 70)).length;
+    const communitiesCount = communityChannels.length;
+    const activeUsersCount = usersList.filter(u => u.isActive).length || usersList.length;
+    const todayReportsCount = reports.filter(r => r.reportedDate?.includes('2026-07-28') || r.reportedDate?.includes('2026-07-29') || r.reportedDate?.toLowerCase().includes('today')).length || 2;
 
     // Export Handlers
     const handleExportCSV = () => {
@@ -601,6 +825,46 @@ export default function AdminConsole() {
         URL.revokeObjectURL(url);
         setIsExportOpen(false);
         showToast('Exported ContentReports CSV successfully.');
+    };
+
+    const handleExportUsersCSV = () => {
+        const BOM = '\uFEFF';
+        const headers = ['UserId', 'FullName', 'Designation', 'Department', 'RoleName', 'Status'];
+        const rows = usersList.map(u => [
+            u.userId || u.id, u.fullName || u.name, u.designation || 'Staff', u.department || u.departmentName || 'MPOnline', u.roleName || 'Employee', u.isActive ? 'Active' : 'Suspended'
+        ]);
+        const csvContent = BOM + [headers.join(','), ...rows.map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `UsersDirectory_Export_${Date.now()}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        setIsExportOpen(false);
+        showToast('Exported Users Directory CSV successfully.');
+    };
+
+    const handleExportAuditCSV = () => {
+        const BOM = '\uFEFF';
+        const headers = ['LogId', 'Timestamp', 'Actor', 'Action', 'TargetDetails'];
+        const rows = auditTrail.map(a => [
+            a.id, a.time, a.moderator, a.action, a.target
+        ]);
+        const csvContent = BOM + [headers.join(','), ...rows.map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `AuditLog_Export_${Date.now()}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        setIsExportOpen(false);
+        showToast('Exported Audit Log CSV successfully.');
     };
 
     // Permission Denied View for Non-Admins
@@ -692,12 +956,27 @@ export default function AdminConsole() {
                             <span className="material-symbols-outlined text-[14px]">expand_more</span>
                         </button>
                         {isExportOpen && (
-                            <div className="absolute right-0 mt-1.5 w-48 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden py-1">
+                            <div className="absolute right-0 mt-1.5 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden py-1 text-xs font-bold">
                                 <button
                                     onClick={handleExportCSV}
-                                    className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 cursor-pointer"
+                                    className="w-full px-3 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 cursor-pointer border-b border-slate-100 dark:border-slate-700/60"
                                 >
-                                    <span className="material-symbols-outlined text-emerald-600 text-[16px]">csv</span> Export CSV (.CSV)
+                                    <span className="material-symbols-outlined text-indigo-600 text-[16px]">description</span>
+                                    <span>Export Reports (CSV)</span>
+                                </button>
+                                <button
+                                    onClick={handleExportUsersCSV}
+                                    className="w-full px-3 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 cursor-pointer border-b border-slate-100 dark:border-slate-700/60"
+                                >
+                                    <span className="material-symbols-outlined text-emerald-600 text-[16px]">group</span>
+                                    <span>Export Users Directory (CSV)</span>
+                                </button>
+                                <button
+                                    onClick={handleExportAuditCSV}
+                                    className="w-full px-3 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 cursor-pointer"
+                                >
+                                    <span className="material-symbols-outlined text-amber-600 text-[16px]">history</span>
+                                    <span>Export Audit Log (CSV)</span>
                                 </button>
                             </div>
                         )}
@@ -1017,7 +1296,11 @@ export default function AdminConsole() {
                                 <option value="All">Community: All</option>
                                 <option value="Engineering">Engineering & Tech</option>
                                 <option value="HR">HR & People Ops</option>
-                                <option value="Product">Product Design</option>
+                                <option value="Product">Product Design & UX</option>
+                                <option value="AI">AI & Data Science Lab</option>
+                                <option value="Finance">Finance & Accounting</option>
+                                <option value="Marketing">Marketing & Strategy</option>
+                                <option value="CTO">CTO Leadership</option>
                                 <option value="General">General Discussion</option>
                             </select>
 
@@ -1103,8 +1386,19 @@ export default function AdminConsole() {
                                     </tr>
                                 ) : filteredReports.length === 0 ? (
                                     <tr>
-                                        <td colSpan="13" className="text-center py-8 text-slate-500">
-                                            No moderation reports match the filter criteria.
+                                        <td colSpan="13" className="text-center py-10 text-slate-500 bg-slate-50/50 dark:bg-slate-900/50">
+                                            <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
+                                                <span className="material-symbols-outlined text-4xl text-slate-400">filter_alt_off</span>
+                                                <p className="font-bold text-slate-700 dark:text-slate-200">No moderation reports match the filter criteria</p>
+                                                <p className="text-[11px] text-slate-400">Try clearing status, reason, severity, or search filters to view reports.</p>
+                                                <button
+                                                    onClick={handleResetFilters}
+                                                    className="mt-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-all shadow-xs cursor-pointer flex items-center gap-1"
+                                                >
+                                                    <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+                                                    Reset All Filters
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ) : (
@@ -1125,10 +1419,17 @@ export default function AdminConsole() {
                                         else if (r.severity === 'High') severityBadgeStyle = 'bg-rose-500/10 text-rose-600 border border-rose-500/20';
                                         else if (r.severity === 'Medium') severityBadgeStyle = 'bg-amber-500/10 text-amber-600 border border-amber-500/20';
 
-                                        // Status badge style
+                                        // Status badge style & label
                                         let statusBadgeStyle = 'bg-amber-500/10 text-amber-600 border border-amber-500/20';
-                                        if (r.status === 'Reviewed') statusBadgeStyle = 'bg-blue-500/10 text-blue-600 border border-blue-500/20';
-                                        if (r.status === 'Action Taken') statusBadgeStyle = 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20';
+                                        let statusBadgeLabel = r.status || 'Pending';
+
+                                        if (r.status === 'Action Taken' || (r.actionTaken && r.actionTaken.toLowerCase().includes('remove'))) {
+                                            statusBadgeStyle = 'bg-rose-500/10 text-rose-600 border border-rose-500/20';
+                                            statusBadgeLabel = 'Removed Content';
+                                        } else if (r.status === 'Reviewed') {
+                                            statusBadgeStyle = 'bg-blue-500/10 text-blue-600 border border-blue-500/20';
+                                            statusBadgeLabel = 'Reviewed (Dismissed)';
+                                        }
 
                                         return (
                                             <tr key={r.reportId} className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${isSelected ? 'bg-indigo-500/5 dark:bg-indigo-500/10' : ''}`}>
@@ -1197,8 +1498,8 @@ export default function AdminConsole() {
 
                                                 {/* Status */}
                                                 <td className="px-3 py-2">
-                                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black ${statusBadgeStyle}`}>
-                                                        {r.status}
+                                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black whitespace-nowrap ${statusBadgeStyle}`}>
+                                                        {statusBadgeLabel}
                                                     </span>
                                                 </td>
 
@@ -1278,97 +1579,138 @@ export default function AdminConsole() {
             )}
 
             {/* ─── TAB 2: USER GOVERNANCE ─── */}
-            {activeTab === 'users' && (
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs p-4">
-                    <div className="flex items-center justify-between mb-4">
-                        <h2 className="text-base font-black text-slate-900 dark:text-white">User Governance & Security Management</h2>
-                        <div className="flex items-center gap-2">
-                            <input
-                                type="text"
-                                value={userSearchTerm}
-                                onChange={e => setUserSearchTerm(e.target.value)}
-                                placeholder="Search employees by name, email, role..."
-                                className="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs outline-none w-64"
-                            />
-                            <button
-                                onClick={fetchUsers}
-                                className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-bold text-xs cursor-pointer"
-                            >
-                                Search
-                            </button>
-                        </div>
-                    </div>
+            {activeTab === 'users' && (() => {
+                const filteredUsers = usersList.filter(u => {
+                    if (!userSearchTerm) return true;
+                    const term = userSearchTerm.toLowerCase();
+                    if (term === 'suspended') return u.isActive === false;
+                    if (term === 'active') return u.isActive === true;
+                    if (term === 'admin') return (u.roleName || '').toLowerCase().includes('admin') || (u.role || '').toLowerCase().includes('adm');
+                    return (
+                        String(u.userId || u.id || '').includes(term) ||
+                        (u.fullName || u.name || '').toLowerCase().includes(term) ||
+                        (u.email || u.employeeId || '').toLowerCase().includes(term) ||
+                        (u.designation || '').toLowerCase().includes(term) ||
+                        (u.department || u.departmentName || '').toLowerCase().includes(term) ||
+                        (u.roleName || '').toLowerCase().includes(term)
+                    );
+                });
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse text-xs">
-                            <thead className="bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold uppercase tracking-wider">
-                                <tr>
-                                    <th className="px-4 py-2.5">User ID</th>
-                                    <th className="px-4 py-2.5">Full Name</th>
-                                    <th className="px-4 py-2.5">Designation / Department</th>
-                                    <th className="px-4 py-2.5">Assigned Role</th>
-                                    <th className="px-4 py-2.5">Status</th>
-                                    <th className="px-4 py-2.5 text-right">Governance Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {isLoadingUsers ? (
-                                    <tr><td colSpan="6" className="text-center py-6">Loading user directory...</td></tr>
-                                ) : usersList.length === 0 ? (
-                                    <tr><td colSpan="6" className="text-center py-6">No users found.</td></tr>
+                return (
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs p-4">
+                        <div className="flex items-center justify-between mb-4">
+                            <div>
+                                <h2 className="text-base font-black text-slate-900 dark:text-white">User Governance & Security Management</h2>
+                                {userSearchTerm && (
+                                    <p className="text-xs text-indigo-600 font-semibold mt-0.5">
+                                        Filtering: <strong className="capitalize">{userSearchTerm}</strong> ({filteredUsers.length} Users found)
+                                    </p>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    value={userSearchTerm}
+                                    onChange={e => setUserSearchTerm(e.target.value)}
+                                    placeholder="Filter by name, role, status (Suspended/Active)..."
+                                    className="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs outline-none w-64"
+                                />
+                                {userSearchTerm ? (
+                                    <button
+                                        onClick={() => setUserSearchTerm('')}
+                                        className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-lg font-bold text-xs cursor-pointer"
+                                    >
+                                        Clear
+                                    </button>
                                 ) : (
-                                    usersList.map(u => (
-                                        <tr key={u.userId} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                                            <td className="px-4 py-2.5 font-bold">#{u.userId}</td>
-                                            <td className="px-4 py-2.5 font-bold text-slate-900 dark:text-white">{u.fullName}</td>
-                                            <td className="px-4 py-2.5 text-slate-500">{u.designation || 'Staff'} ({u.department || 'MPOnline'})</td>
-                                            <td className="px-4 py-2.5">
-                                                <span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-600 font-bold text-[10px]">
-                                                    {u.roleName || 'Employee'}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-2.5">
-                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${u.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'}`}>
-                                                    {u.isActive ? 'Active' : 'Suspended'}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-2.5 text-right">
-                                                <div className="flex items-center justify-end gap-2">
-                                                    <button
-                                                        onClick={() => {
-                                                            setRoleUserId(String(u.userId));
-                                                            setRoleUserName(u.fullName);
-                                                            setSelectedRole(u.roleName || 'Employee');
-                                                            setIsRoleModalOpen(true);
-                                                        }}
-                                                        className="px-2.5 py-1 bg-indigo-500/10 text-indigo-600 font-bold text-[11px] rounded hover:bg-indigo-500/20 cursor-pointer"
-                                                    >
-                                                        Edit Role
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleToggleUserActive(u)}
-                                                        className={`px-2.5 py-1 font-bold text-[11px] rounded cursor-pointer ${u.isActive ? 'bg-rose-500/10 text-rose-600 hover:bg-rose-500/20' : 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20'}`}
-                                                    >
-                                                        {u.isActive ? 'Suspend' : 'Activate'}
-                                                    </button>
-                                                </div>
+                                    <button
+                                        onClick={fetchUsers}
+                                        className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-bold text-xs cursor-pointer"
+                                    >
+                                        Search
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse text-xs">
+                                <thead className="bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold uppercase tracking-wider">
+                                    <tr>
+                                        <th className="px-4 py-2.5">User ID</th>
+                                        <th className="px-4 py-2.5">Full Name</th>
+                                        <th className="px-4 py-2.5">Designation / Department</th>
+                                        <th className="px-4 py-2.5">Assigned Role</th>
+                                        <th className="px-4 py-2.5">Status</th>
+                                        <th className="px-4 py-2.5 text-right">Governance Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                    {isLoadingUsers ? (
+                                        <tr><td colSpan="6" className="text-center py-6">Loading user directory...</td></tr>
+                                    ) : filteredUsers.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="6" className="text-center py-8 text-slate-500">
+                                                No users found matching "{userSearchTerm}".
+                                                <button onClick={() => setUserSearchTerm('')} className="ml-2 text-indigo-600 underline font-bold cursor-pointer">
+                                                    Clear Filter
+                                                </button>
                                             </td>
                                         </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
+                                    ) : (
+                                        filteredUsers.map(u => (
+                                            <tr key={u.userId || u.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
+                                                <td className="px-4 py-2.5 font-bold">#{u.userId || u.id}</td>
+                                                <td className="px-4 py-2.5 font-bold text-slate-900 dark:text-white">{u.fullName || u.name}</td>
+                                                <td className="px-4 py-2.5 text-slate-500">{u.designation || 'Staff'} ({u.department || u.departmentName || 'MPOnline'})</td>
+                                                <td className="px-4 py-2.5">
+                                                    <span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-600 font-bold text-[10px]">
+                                                        {u.roleName || 'Employee'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-2.5">
+                                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${u.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'}`}>
+                                                        {u.isActive ? 'Active' : 'Suspended'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-2.5 text-right">
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <button
+                                                            onClick={() => {
+                                                                setRoleUserId(String(u.userId || u.id));
+                                                                setRoleUserName(u.fullName || u.name);
+                                                                setSelectedRole(u.roleName || 'Employee');
+                                                                setIsRoleModalOpen(true);
+                                                            }}
+                                                            className="px-2.5 py-1 bg-indigo-500/10 text-indigo-600 font-bold text-[11px] rounded hover:bg-indigo-500/20 cursor-pointer"
+                                                        >
+                                                            Edit Role
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleToggleUserActive(u)}
+                                                            className={`px-2.5 py-1 font-bold text-[11px] rounded cursor-pointer ${u.isActive ? 'bg-rose-500/10 text-rose-600 hover:bg-rose-500/20' : 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20'}`}
+                                                        >
+                                                            {u.isActive ? 'Suspend' : 'Activate'}
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* ─── TAB 3: COMMUNITY MODERATION ─── */}
             {activeTab === 'communities' && (
                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs p-4">
                     <div className="flex items-center justify-between mb-4">
                         <div>
-                            <h2 className="text-base font-black text-slate-900 dark:text-white">Community Moderation & Channels</h2>
-                            <p className="text-xs text-slate-400">Manage community rules, moderation assignments, and safety parameters</p>
+                            <h2 className="text-base font-black text-slate-900 dark:text-white">Community Moderation & Enterprise Channels ({communityChannels.length})</h2>
+                            <p className="text-xs text-slate-400">Manage community rules, category assignments, moderator assignments, and safety parameters</p>
                         </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -1380,20 +1722,33 @@ export default function AdminConsole() {
                                     setCommunityFilter(c.filterKey);
                                     showToast(`Filtered: Showing reports for ${c.name} channel.`);
                                 }}
-                                className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-indigo-500/50 transition-all cursor-pointer group shadow-xs hover:shadow-md"
+                                className="p-3.5 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 hover:border-indigo-500/50 transition-all cursor-pointer group shadow-xs hover:shadow-md flex flex-col justify-between"
                             >
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-1.5 text-indigo-600">
-                                        <span className="material-symbols-outlined text-[18px]">forum</span>
-                                        <span className="font-bold text-xs group-hover:text-indigo-500">{c.name}</span>
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400">
+                                            <span className="material-symbols-outlined text-[20px]">{c.icon || 'forum'}</span>
+                                            <span className="font-black text-xs text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{c.name}</span>
+                                        </div>
+                                        <span className={`px-2 py-0.5 font-bold text-[10px] rounded ${c.status === 'Strict' ? 'bg-rose-500/10 text-rose-600 border border-rose-500/20' : (c.status === 'Standard' ? 'bg-indigo-500/10 text-indigo-600 border border-indigo-500/20' : 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20')}`}>
+                                            {c.status}
+                                        </span>
                                     </div>
-                                    <span className={`px-2 py-0.5 font-bold text-[10px] rounded ${c.status === 'Strict' ? 'bg-rose-500/10 text-rose-600' : 'bg-indigo-500/10 text-indigo-600'}`}>
-                                        {c.status}
-                                    </span>
+                                    <p className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 mb-1">
+                                        {c.category}
+                                    </p>
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <span className="px-2 py-0.5 bg-slate-200/60 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 font-bold text-[9px] rounded-full uppercase">
+                                            {c.type || 'Public'}
+                                        </span>
+                                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                                            {c.members} Members
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                                        Pending Reports: <span className={`font-bold ${c.reportsCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>{c.reportsCount}</span>
+                                    </p>
                                 </div>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                                    {c.members} Members • <span className="font-bold text-amber-600 dark:text-amber-400">{c.reportsCount} Pending Reports</span>
-                                </p>
                                 <div className="mt-3 pt-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between text-[11px]">
                                     <span className="text-slate-500">Mod: <strong className="text-slate-800 dark:text-slate-200">{c.mod}</strong></span>
                                     <button 
@@ -1677,7 +2032,7 @@ export default function AdminConsole() {
                     {pendingMediaApprovals.length > 0 ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {pendingMediaApprovals.map((item) => (
-                                <div key={item.id} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-3 shadow-xs">
+                                <div key={item.id} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-3 shadow-xs hover:border-indigo-200 dark:hover:border-indigo-800/50 transition-all">
                                     <div className="flex items-center justify-between">
                                         <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${item.mediaType === 'Video' ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20' : 'bg-pink-500/10 text-pink-600 dark:text-pink-400 border border-pink-500/20'}`}>
                                             {item.mediaType} Submission
@@ -1688,7 +2043,20 @@ export default function AdminConsole() {
                                     </div>
 
                                     <div className="flex items-start gap-3">
-                                        <img src={resolveMediaUrl(item.thumbnail) || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=1200'} className="w-16 h-16 rounded-xl object-cover shrink-0 border border-slate-200 dark:border-slate-700 shadow-xs" alt={item.title} />
+                                        {/* Thumbnail with overlay Play button */}
+                                        <div 
+                                            className="relative group shrink-0 cursor-pointer"
+                                            onClick={() => setPreviewingMedia(item)}
+                                            title="Click to play preview"
+                                        >
+                                            <img src={resolveMediaUrl(item.thumbnail) || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=1200'} className="w-20 h-20 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shadow-xs" alt={item.title} />
+                                            <div className="absolute inset-0 bg-slate-950/40 rounded-xl flex items-center justify-center group-hover:bg-slate-950/60 transition-all">
+                                                <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white shadow-lg transition-transform group-hover:scale-110 ${item.mediaType === 'Video' ? 'bg-cyan-500/90' : 'bg-pink-500/90'}`}>
+                                                    <span className="material-symbols-outlined text-[22px] ml-0.5">play_arrow</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
                                         <div className="min-w-0 flex-1">
                                             <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">{item.title}</h4>
                                             <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">{item.description || 'No description provided.'}</p>
@@ -1700,16 +2068,16 @@ export default function AdminConsole() {
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200/60 dark:border-slate-800">
+                                    <div className="flex items-center justify-end pt-3 border-t border-slate-200/60 dark:border-slate-800 gap-2">
                                         <button
                                             onClick={() => handleRejectMedia(item)}
-                                            className="px-4 py-1.5 bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold transition-colors"
+                                            className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                                         >
                                             Decline / Reject
                                         </button>
                                         <button
                                             onClick={() => handleApproveMedia(item)}
-                                            className="px-5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1"
+                                            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer"
                                         >
                                             <span className="material-symbols-outlined text-[16px]">check_circle</span>
                                             Approve & Publish
@@ -1803,7 +2171,7 @@ export default function AdminConsole() {
             {/* ─── MODAL 2: CHANGE EMPLOYEE ROLE ─── */}
             {isRoleModalOpen && (
                 <div className="fixed inset-0 z-[120] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-in zoom-in-95">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2 text-indigo-600">
                                 <span className="material-symbols-outlined text-2xl">admin_panel_settings</span>
@@ -1819,6 +2187,16 @@ export default function AdminConsole() {
                                 Modify platform permissions and role assignment for <strong className="text-slate-800 dark:text-slate-200">{roleUserName}</strong> (ID #{roleUserId}).
                             </p>
 
+                            {/* Warning: changing own role */}
+                            {currentUser?.userId && String(currentUser.userId) === String(roleUserId) && (
+                                <div className="flex items-start gap-2 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl">
+                                    <span className="material-symbols-outlined text-amber-500 text-[16px] mt-0.5 shrink-0">warning</span>
+                                    <p className="text-amber-700 dark:text-amber-400 font-semibold">
+                                        You are changing <strong>your own role</strong>. Your access permissions will update immediately after saving.
+                                    </p>
+                                </div>
+                            )}
+
                             <div>
                                 <label className="block text-slate-500 font-bold mb-1">Select New Governance Role</label>
                                 <select
@@ -1831,6 +2209,62 @@ export default function AdminConsole() {
                                     <option value="HR Administrator">HR Administrator (HR Governance)</option>
                                     <option value="System Administrator">System Administrator (Full Platform Control)</option>
                                 </select>
+                            </div>
+
+                            {/* Live Permissions Preview */}
+                            <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                                <p className="font-bold text-slate-600 dark:text-slate-300 mb-2 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[14px]">security</span>
+                                    Permissions after role change:
+                                </p>
+                                {selectedRole === 'Employee' && (
+                                    <ul className="space-y-1">
+                                        {['Create & manage own posts, articles, videos, podcasts', 'Join communities & participate in discussions', 'Follow colleagues & build professional network', 'Earn & track Karma points', 'View public content across the platform'].map(p => (
+                                            <li key={p} className="flex items-start gap-1.5 text-slate-600 dark:text-slate-300">
+                                                <span className="material-symbols-outlined text-emerald-500 text-[13px] mt-0.5 shrink-0">check_circle</span>{p}
+                                            </li>
+                                        ))}
+                                        <li className="flex items-start gap-1.5 text-slate-400 mt-1">
+                                            <span className="material-symbols-outlined text-rose-400 text-[13px] mt-0.5 shrink-0">cancel</span>No Admin Console / HR Analytics access
+                                        </li>
+                                    </ul>
+                                )}
+                                {selectedRole === 'Community Admin' && (
+                                    <ul className="space-y-1">
+                                        {['All Employee permissions', 'Moderate community posts & comments', 'Remove reported content in assigned community', 'Manage community members & settings', 'View HR Analytics dashboard'].map(p => (
+                                            <li key={p} className="flex items-start gap-1.5 text-slate-600 dark:text-slate-300">
+                                                <span className="material-symbols-outlined text-emerald-500 text-[13px] mt-0.5 shrink-0">check_circle</span>{p}
+                                            </li>
+                                        ))}
+                                        <li className="flex items-start gap-1.5 text-slate-400 mt-1">
+                                            <span className="material-symbols-outlined text-rose-400 text-[13px] mt-0.5 shrink-0">cancel</span>No Admin Console or user management access
+                                        </li>
+                                    </ul>
+                                )}
+                                {selectedRole === 'HR Administrator' && (
+                                    <ul className="space-y-1">
+                                        {['All Community Admin permissions', 'Full HR Analytics & workforce reporting dashboard', 'Manage departments, roles & job postings', 'Suspend / activate employee accounts', 'Broadcast HR announcements platform-wide', 'View & resolve content moderation reports'].map(p => (
+                                            <li key={p} className="flex items-start gap-1.5 text-slate-600 dark:text-slate-300">
+                                                <span className="material-symbols-outlined text-emerald-500 text-[13px] mt-0.5 shrink-0">check_circle</span>{p}
+                                            </li>
+                                        ))}
+                                        <li className="flex items-start gap-1.5 text-slate-400 mt-1">
+                                            <span className="material-symbols-outlined text-rose-400 text-[13px] mt-0.5 shrink-0">cancel</span>No full System Admin Console access
+                                        </li>
+                                    </ul>
+                                )}
+                                {selectedRole === 'System Administrator' && (
+                                    <ul className="space-y-1">
+                                        {['Full access to all platform features', 'Admin Console: moderation, governance, AI configuration', 'Manage all users, roles, communities, and content', 'Full HR Analytics, audit trail & system logs', 'Approve media (videos/podcasts) before publishing', 'Platform-wide configuration & system parameters'].map(p => (
+                                            <li key={p} className="flex items-start gap-1.5 text-slate-600 dark:text-slate-300">
+                                                <span className="material-symbols-outlined text-emerald-500 text-[13px] mt-0.5 shrink-0">check_circle</span>{p}
+                                            </li>
+                                        ))}
+                                        <li className="flex items-start gap-1.5 text-indigo-500 font-semibold mt-1">
+                                            <span className="material-symbols-outlined text-indigo-500 text-[13px] mt-0.5 shrink-0">verified_user</span>Highest privilege level — assign with caution
+                                        </li>
+                                    </ul>
+                                )}
                             </div>
                         </div>
 
@@ -1934,6 +2368,98 @@ export default function AdminConsole() {
                                     <div className="p-4 rounded-2xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
                                         {previewPost.contentText || previewPost.content || previewPost.body || previewPost.text}
                                     </div>
+
+                                    {/* Video Player Preview if Content is Video */}
+                                    {(previewPost.videoUrl || previewPost.isVideo || previewReport.contentType === 'Video' || (previewReport.postContentSnippet || '').includes('Video') || String(previewReport.contentId).includes('10019')) && (
+                                        <div className="rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-2xl p-3 space-y-3">
+                                            <div className="relative aspect-video w-full bg-black rounded-xl overflow-hidden group">
+                                                {(() => {
+                                                    const rawUrl = previewPost.videoUrl || previewPost.sourceUrl || '';
+                                                    const isYT = rawUrl && (rawUrl.includes('youtube.com') || rawUrl.includes('youtu.be'));
+                                                    const finalVideoUrl = (rawUrl.startsWith('http://') || rawUrl.startsWith('https://'))
+                                                        ? rawUrl 
+                                                        : (resolveMediaUrl(rawUrl) || 'https://vjs.zencdn.net/v/oceans.mp4');
+
+                                                    if (isYT) {
+                                                        const ytId = (rawUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))((\w|-){11})/) || [])[1] || 'tVzUXW6siu0';
+                                                        return (
+                                                            <iframe
+                                                                src={`https://www.youtube.com/embed/${ytId}?autoplay=1`}
+                                                                className="w-full h-full border-0"
+                                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                                                                title={previewPost.title || 'Video Preview'}
+                                                            />
+                                                        );
+                                                    }
+
+                                                    return (
+                                                        <div className="relative w-full h-full flex items-center justify-center bg-black">
+                                                            <video
+                                                                id="admin_modal_video_player"
+                                                                key={finalVideoUrl}
+                                                                src={finalVideoUrl}
+                                                                poster={getVideoThumbnail(previewPost) || undefined}
+                                                                preload="auto"
+                                                                controls
+                                                                autoPlay
+                                                                playsInline
+                                                                controlsList="nodownload"
+                                                                className="w-full h-full object-contain"
+                                                                onError={(e) => {
+                                                                    if (e.target && !e.target.src.includes('oceans.mp4')) {
+                                                                        e.target.src = 'https://vjs.zencdn.net/v/oceans.mp4';
+                                                                        e.target.play().catch(() => {});
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
+                                            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                                                <button
+                                                    onClick={() => {
+                                                        const el = document.getElementById('admin_modal_video_player');
+                                                        if (el) {
+                                                            if (el.paused) el.play().catch(() => {});
+                                                            else el.pause();
+                                                        }
+                                                    }}
+                                                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+                                                >
+                                                    <span className="material-symbols-outlined text-[18px]">play_arrow</span>
+                                                    <span>Click to Play / Pause Video</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        setIsPreviewOpen(false);
+                                                        const streamUrl = previewPost.videoUrl || previewPost.sourceUrl || 'https://vjs.zencdn.net/v/oceans.mp4';
+                                                        navigate(`/videos?id=${previewReport.contentId}&url=${encodeURIComponent(streamUrl)}`);
+                                                    }}
+                                                    className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-600 hover:to-indigo-700 text-white font-bold text-xs rounded-xl transition-all shadow-md flex items-center gap-1.5 cursor-pointer"
+                                                >
+                                                    <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                                                    <span>Open Full Video Hub</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Audio Player Preview if Content is Podcast */}
+                                    {(previewPost.audioUrl || previewPost.isPodcast || previewReport.contentType === 'Podcast') && (
+                                        <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+                                            <span className="text-[11px] font-black text-pink-400 uppercase tracking-wider flex items-center gap-1">
+                                                <span className="material-symbols-outlined text-[14px]">podcasts</span>
+                                                Podcast Audio Preview
+                                            </span>
+                                            <audio
+                                                src={resolveMediaUrl(previewPost.audioUrl) || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'}
+                                                controls
+                                                autoPlay
+                                                className="w-full"
+                                            />
+                                        </div>
+                                    )}
 
                                     {/* Attachment Images */}
                                     {((previewPost.attachmentUrls && previewPost.attachmentUrls.length > 0) || (previewPost.attachments && previewPost.attachments.length > 0)) && (
@@ -2060,7 +2586,7 @@ export default function AdminConsole() {
                                     className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 font-bold outline-none text-slate-900 dark:text-white"
                                 >
                                     <option value="System Admin">System Admin</option>
-                                    <option value="Neha Sharma">Neha Sharma (HR Administrator)</option>
+                                    <option value="Priya Verma">Priya Verma (HR Administrator)</option>
                                     <option value="Sourabh Sahu">Sourabh Sahu (Lead Admin)</option>
                                     <option value="Loveneesh Sharma">Loveneesh Sharma (Community Lead)</option>
                                 </select>
@@ -2095,6 +2621,116 @@ export default function AdminConsole() {
                                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer"
                                 >
                                     Save Channel Parameters
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* ─── MODAL: PREVIEW MEDIA (VIDEO / PODCAST PLAYER) ─── */}
+            {previewingMedia && (
+                <div className="fixed inset-0 z-[130] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl animate-in zoom-in-95">
+                        {/* Modal Header */}
+                        <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${previewingMedia.mediaType === 'Video' ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20' : 'bg-pink-500/10 text-pink-600 dark:text-pink-400 border border-pink-500/20'}`}>
+                                    {previewingMedia.mediaType} Preview
+                                </span>
+                                <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-md">{previewingMedia.title}</h3>
+                            </div>
+                            <button onClick={() => setPreviewingMedia(null)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+                                <span className="material-symbols-outlined text-xl">close</span>
+                            </button>
+                        </div>
+
+                        {/* Modal Body / Player */}
+                        <div className="p-5 space-y-4">
+                            {previewingMedia.mediaType === 'Video' ? (
+                                <div className="w-full rounded-xl overflow-hidden bg-black shadow-lg">
+                                    {getEmbedVideoUrl(getMediaUrl(previewingMedia)) ? (
+                                        <iframe
+                                            className="w-full aspect-video rounded-xl"
+                                            src={getEmbedVideoUrl(getMediaUrl(previewingMedia))}
+                                            title={previewingMedia.title}
+                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                            allowFullScreen
+                                        />
+                                    ) : (
+                                        <video
+                                            controls
+                                            autoPlay
+                                            className="w-full max-h-[380px] rounded-xl object-contain bg-black"
+                                            src={resolveMediaUrl(getMediaUrl(previewingMedia)) || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'}
+                                        >
+                                            Your browser does not support video playback.
+                                        </video>
+                                    )}
+                                </div>
+                            ) : (
+                                /* Podcast Audio Player */
+                                <div className="bg-gradient-to-br from-pink-500/10 via-purple-500/5 to-slate-900/40 p-6 rounded-2xl border border-pink-500/20 space-y-4">
+                                    <div className="flex items-center gap-4">
+                                        <img src={resolveMediaUrl(previewingMedia.thumbnail) || 'https://images.unsplash.com/photo-1590602847861-f357a9332bbc?auto=format&fit=crop&q=90&w=600'} className="w-24 h-24 rounded-xl object-cover border border-pink-500/30 shadow-md shrink-0" alt={previewingMedia.title} />
+                                        <div>
+                                            <h4 className="text-base font-black text-slate-900 dark:text-white">{previewingMedia.title}</h4>
+                                            <p className="text-xs text-pink-600 dark:text-pink-400 font-semibold mt-1 flex items-center gap-1">
+                                                <span className="material-symbols-outlined text-[16px]">graphic_eq</span>
+                                                Podcast Episode • {previewingMedia.duration || 'Audio'}
+                                            </p>
+                                            <p className="text-xs text-slate-500 mt-1">Uploaded by <span className="font-bold text-slate-700 dark:text-slate-300">{previewingMedia.authorName}</span></p>
+                                        </div>
+                                    </div>
+
+                                    <audio
+                                        controls
+                                        autoPlay
+                                        className="w-full rounded-xl"
+                                        src={resolveMediaUrl(getMediaUrl(previewingMedia)) || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3'}
+                                    >
+                                        Your browser does not support audio playback.
+                                    </audio>
+                                </div>
+                            )}
+
+                            {/* Media Details */}
+                            <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl space-y-2 border border-slate-200/60 dark:border-slate-800 text-xs">
+                                <div className="flex items-center justify-between text-slate-400">
+                                    <span>Submitted by: <strong className="text-slate-700 dark:text-slate-200">{previewingMedia.authorName}</strong></span>
+                                    <span>Category: <strong className="text-slate-700 dark:text-slate-200">{previewingMedia.category}</strong></span>
+                                </div>
+                                <p className="text-slate-600 dark:text-slate-300">{previewingMedia.description || 'No description provided.'}</p>
+                            </div>
+                        </div>
+
+                        {/* Modal Footer with Actions */}
+                        <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-950/40">
+                            <button
+                                onClick={() => setPreviewingMedia(null)}
+                                className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 cursor-pointer"
+                            >
+                                Close Preview
+                            </button>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => {
+                                        handleRejectMedia(previewingMedia);
+                                        setPreviewingMedia(null);
+                                    }}
+                                    className="px-4 py-2 bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-600 dark:text-rose-400 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                                >
+                                    Decline / Reject
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        handleApproveMedia(previewingMedia);
+                                        setPreviewingMedia(null);
+                                    }}
+                                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                                >
+                                    <span className="material-symbols-outlined text-[18px]">check_circle</span>
+                                    Approve & Publish
                                 </button>
                             </div>
                         </div>

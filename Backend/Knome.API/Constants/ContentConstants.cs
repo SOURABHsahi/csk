@@ -9,8 +9,9 @@ public static class ContentTypes
     public const string Community = "Community";
     public const string Job = "Job";
     public const string Document = "Document";
+    public const string Profile = "Profile";
 
-    public static readonly string[] All = { Post, Article, Video, Podcast, Community, Job, Document };
+    public static readonly string[] All = { Post, Article, Video, Podcast, Community, Job, Document, Profile };
 
     public static string Normalize(string? contentType)
     {
@@ -23,6 +24,7 @@ public static class ContentTypes
         if (trimmed.Equals(Community, StringComparison.OrdinalIgnoreCase)) return Community;
         if (trimmed.Equals(Job, StringComparison.OrdinalIgnoreCase)) return Job;
         if (trimmed.Equals(Document, StringComparison.OrdinalIgnoreCase)) return Document;
+        if (trimmed.Equals(Profile, StringComparison.OrdinalIgnoreCase)) return Profile;
         return trimmed;
     }
 
@@ -30,7 +32,7 @@ public static class ContentTypes
     {
         if (string.IsNullOrWhiteSpace(contentType)) return false;
         var norm = Normalize(contentType);
-        return norm == Post || norm == Article || norm == Video || norm == Podcast || norm == Community || norm == Job || norm == Document;
+        return norm == Post || norm == Article || norm == Video || norm == Podcast || norm == Community || norm == Job || norm == Document || norm == Profile;
     }
 }
 

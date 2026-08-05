@@ -184,9 +184,19 @@ public class PodcastService : IPodcastService
         if (!secCheck.IsValid)
             throw new BadRequestException("Podcast content or URLs contain blocked domains or restricted keywords per FR-SM-01.");
 
+        int effectiveUploaderUserId = currentUserId;
+        if (dto.UploaderUserId.HasValue && dto.UploaderUserId.Value > 0)
+        {
+            var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
+            if (user != null && user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.CommunityAdmin))
+            {
+                effectiveUploaderUserId = dto.UploaderUserId.Value;
+            }
+        }
+
         var podcast = new Podcast
         {
-            UploaderUserId = currentUserId,
+            UploaderUserId = effectiveUploaderUserId,
             Title = dto.Title,
             Description = dto.Description,
             CoverImageUrl = dto.CoverImageUrl,
@@ -199,7 +209,7 @@ public class PodcastService : IPodcastService
         };
 
         var saved = await _repo.AddPodcastAsync(podcast);
-        await _karmaService.AwardKarmaAsync(currentUserId, KarmaActivityTypes.CreatePodcast, KarmaPoints.CreatePodcastPoints, ContentTypes.Podcast, saved.PodcastId, KarmaCaps.CreatePodcastDailyCap);
+        await _karmaService.AwardKarmaAsync(effectiveUploaderUserId, KarmaActivityTypes.CreatePodcast, KarmaPoints.CreatePodcastPoints, ContentTypes.Podcast, saved.PodcastId, KarmaCaps.CreatePodcastDailyCap);
 
         var resDto = _mapper.Map<PodcastDto>(saved);
         resDto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Podcast, saved.PodcastId, currentUserId);
