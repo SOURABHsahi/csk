@@ -196,7 +196,7 @@ public class UserController : KnomeControllerBase
     [ProducesResponseType(typeof(ApiResponse<List<NetworkUserDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetFollowers(int id)
     {
-        var followers = await _userService.GetFollowersAsync(id);
+        var followers = await _userService.GetFollowersAsync(id, GetCurrentUserId());
         return Ok(ApiResponse<List<NetworkUserDto>>.SuccessResponse(200, "Followers retrieved successfully.", followers));
     }
 
@@ -207,7 +207,7 @@ public class UserController : KnomeControllerBase
     [ProducesResponseType(typeof(ApiResponse<List<NetworkUserDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetFollowing(int id)
     {
-        var following = await _userService.GetFollowingAsync(id);
+        var following = await _userService.GetFollowingAsync(id, GetCurrentUserId());
         return Ok(ApiResponse<List<NetworkUserDto>>.SuccessResponse(200, "Following retrieved successfully.", following));
     }
 
@@ -287,5 +287,67 @@ public class UserController : KnomeControllerBase
     {
         var connections = await _userService.GetConnectionsAsync(GetCurrentUserId(), id);
         return Ok(ApiResponse<List<NetworkUserDto>>.SuccessResponse(200, "Connections retrieved successfully.", connections));
+    }
+
+    /// <summary>
+    /// Retrieves role assignment requests (System Admin only).
+    /// </summary>
+    [HttpGet("role-requests")]
+    [Authorize(Roles = Roles.SystemAdmin + "," + Roles.HRAdmin)]
+    [ProducesResponseType(typeof(ApiResponse<List<KnomeRoleRequestDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetRoleRequests([FromQuery] string? status = null)
+    {
+        var requests = await _userService.GetRoleRequestsAsync(status);
+        return Ok(ApiResponse<List<KnomeRoleRequestDto>>.SuccessResponse(200, "Role requests retrieved successfully.", requests));
+    }
+
+    /// <summary>
+    /// Approves a role assignment request and assigns the specified role (System Admin only).
+    /// </summary>
+    [HttpPost("role-requests/{requestId:int}/approve")]
+    [Authorize(Roles = Roles.SystemAdmin + "," + Roles.HRAdmin)]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ApproveRoleRequest(int requestId, [FromBody] ApproveKnomeRoleRequestDto dto)
+    {
+        var actorUserId = GetCurrentUserId();
+        await _userService.ApproveRoleRequestAsync(actorUserId, requestId, dto);
+        return Ok(ApiResponse<bool>.SuccessResponse(200, "Role assignment request approved successfully.", true));
+    }
+
+    /// <summary>
+    /// Rejects a role assignment request (System Admin only).
+    /// </summary>
+    [HttpPost("role-requests/{requestId:int}/reject")]
+    [Authorize(Roles = Roles.SystemAdmin + "," + Roles.HRAdmin)]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RejectRoleRequest(int requestId, [FromBody] RejectKnomeRoleRequestDto dto)
+    {
+        var actorUserId = GetCurrentUserId();
+        await _userService.RejectRoleRequestAsync(actorUserId, requestId, dto);
+        return Ok(ApiResponse<bool>.SuccessResponse(200, "Role assignment request rejected.", true));
+    }
+
+    /// <summary>
+    /// Registers a pending role request for an unassigned employee (Called on first login from Knome or EmployeeHub).
+    /// </summary>
+    [HttpPost("role-requests/register")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RegisterRoleRequest([FromBody] RegisterRoleRequestDto dto)
+    {
+        var result = await _userService.RegisterPendingRoleRequestAsync(dto.EmployeeId);
+        return Ok(ApiResponse<bool>.SuccessResponse(200, "Role request registered successfully.", result));
+    }
+
+    /// <summary>
+    /// Gets the role request status for an employee (Used by EmployeeHub RolePending page to check if approved in Knome).
+    /// </summary>
+    [HttpGet("role-requests/status/{employeeId}")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(ApiResponse<RoleRequestStatusDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetRoleRequestStatus(string employeeId)
+    {
+        var status = await _userService.GetRoleRequestStatusAsync(employeeId);
+        return Ok(ApiResponse<RoleRequestStatusDto>.SuccessResponse(200, "Role request status retrieved.", status));
     }
 }

@@ -80,6 +80,14 @@ public class PodcastController : KnomeControllerBase
         return Ok(ApiResponse<List<PodcastDto>>.SuccessResponse(200, "User podcasts retrieved successfully.", podcasts));
     }
 
+    [HttpGet("user/{userId:int}")]
+    [ProducesResponseType(typeof(ApiResponse<List<PodcastDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetUserPodcasts(int userId, [FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 20)
+    {
+        var podcasts = await _podcastService.GetUserPodcastsAsync(userId, GetCurrentUserId(), pageNumber, pageSize);
+        return Ok(ApiResponse<List<PodcastDto>>.SuccessResponse(200, "User podcasts retrieved successfully.", podcasts));
+    }
+
     [HttpGet("{podcastId}")]
     [ProducesResponseType(typeof(ApiResponse<PodcastDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetPodcast(long podcastId)

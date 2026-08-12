@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useToast } from '../contexts/ToastContext';
-import { interactionsApi, searchApi, communitiesApi, notificationsApi, resolveMediaUrl } from '../../utils/apiService';
+import { interactionsApi, searchApi, communitiesApi, notificationsApi, adminApi, resolveMediaUrl } from '../../utils/apiService';
 import { useUser } from '../contexts/UserContext';
 
 export default function ShareProfileModal({ isOpen, onClose, user }) {
     const { addToast } = useToast();
-    const { currentUser } = useUser();
+    const { currentUser, users: contextUsers } = useUser();
     const [mode, setMode] = useState('menu'); // 'menu' | 'userSearch' | 'communitySelect'
     const [copied, setCopied] = useState(false);
     
     // User search state
     const [userSearchQuery, setUserSearchQuery] = useState('');
-    const [userSearchResults, setUserSearchResults] = useState([]);
+    const [allPlatformUsers, setAllPlatformUsers] = useState([]);
     const [isUserSearching, setIsUserSearching] = useState(false);
     const [selectedUsers, setSelectedUsers] = useState([]);
     const [isSendingToUsers, setIsSendingToUsers] = useState(false);
@@ -38,30 +38,81 @@ export default function ShareProfileModal({ isOpen, onClose, user }) {
         }
     }, [isOpen]);
 
-    // Live search for users
+    // Load all platform users when opening user search tab
     useEffect(() => {
-        if (mode !== 'userSearch') return;
-        if (!userSearchQuery.trim() || userSearchQuery.trim().length < 3) {
-            setUserSearchResults([]);
-            return;
-        }
-        const timer = setTimeout(async () => {
+        if (!isOpen || mode !== 'userSearch') return;
+
+        const loadAllUsers = async () => {
             setIsUserSearching(true);
             try {
-                const res = await searchApi.search(userSearchQuery.trim(), 'User', 1, 20);
-                const list = (res?.items || res?.results || res || []).filter(item => 
-                    item.type === 'User' || item.contentType === 'User' || item.designation || item.fullName
-                );
-                setUserSearchResults(list);
-            } catch (e) {
-                console.error("Failed user search for share", e);
+                let merged = [...(contextUsers || [])];
+                try {
+                    const apiRes = await adminApi.getUsers(1, 100).catch(() => null);
+                    const apiList = apiRes?.data?.items || apiRes?.items || (Array.isArray(apiRes) ? apiRes : []);
+                    apiList.forEach(u => {
+                        const uId = u.userId || u.id;
+                        if (uId && !merged.some(m => String(m.userId || m.id) === String(uId))) {
+                            merged.push({
+                                id: uId,
+                                userId: uId,
+                                employeeId: u.employeeId,
+                                name: u.fullName || u.name,
+                                fullName: u.fullName || u.name,
+                                role: u.roleName || u.role || u.designation || 'Employee',
+                                roleName: u.roleName || u.role || 'Employee',
+                                designation: u.designation || u.roleName || 'Employee',
+                                department: u.departmentName || u.department || 'MPOnline',
+                                avatar: u.profilePhotoUrl || u.avatar || null
+                            });
+                        }
+                    });
+                } catch { /* keep context users */ }
+
+                const currentId = String(currentUser?.userId || currentUser?.id || '');
+                const currentEmpId = String(currentUser?.employeeId || '').toLowerCase();
+
+                const filtered = merged.filter(u => {
+                    const idMatch = String(u.userId || u.id) === currentId;
+                    const empMatch = currentEmpId && String(u.employeeId || '').toLowerCase() === currentEmpId;
+                    return !idMatch && !empMatch;
+                });
+
+                setAllPlatformUsers(filtered);
             } finally {
                 setIsUserSearching(false);
             }
-        }, 300);
+        };
 
-        return () => clearTimeout(timer);
-    }, [userSearchQuery, mode]);
+        loadAllUsers();
+    }, [isOpen, mode, contextUsers, currentUser]);
+
+    // Filter & Sort users with exact/starts-with matches prioritized at the VERY TOP!
+    const displayedUserList = React.useMemo(() => {
+        if (!userSearchQuery.trim()) {
+            return allPlatformUsers;
+        }
+
+        const query = userSearchQuery.trim().toLowerCase();
+
+        const matches = allPlatformUsers.filter(u => {
+            const name = (u.name || u.fullName || '').toLowerCase();
+            const empId = (u.employeeId || '').toLowerCase();
+            const role = (u.role || u.roleName || u.designation || '').toLowerCase();
+            const dept = (u.department || '').toLowerCase();
+            return name.includes(query) || empId.includes(query) || role.includes(query) || dept.includes(query);
+        });
+
+        return matches.sort((a, b) => {
+            const aName = (a.name || a.fullName || '').toLowerCase();
+            const bName = (b.name || b.fullName || '').toLowerCase();
+
+            const aStarts = aName.startsWith(query) ? 0 : (aName.includes(query) ? 1 : 2);
+            const bStarts = bName.startsWith(query) ? 0 : (bName.includes(query) ? 1 : 2);
+
+            if (aStarts !== bStarts) return aStarts - bStarts;
+            return aName.localeCompare(bName);
+        });
+    }, [allPlatformUsers, userSearchQuery]);
 
     if (!isOpen || !user) return null;
 
@@ -393,35 +444,60 @@ export default function ShareProfileModal({ isOpen, onClose, user }) {
                                 {isUserSearching ? (
                                     <div className="text-center py-6 text-slate-500 text-xs font-medium flex items-center justify-center gap-2">
                                         <span className="material-symbols-outlined text-[18px] animate-spin text-purple-500">progress_activity</span>
-                                        Searching colleagues...
+                                        Loading colleagues...
                                     </div>
-                                ) : userSearchResults.length > 0 ? (
-                                    userSearchResults.map(targetUser => {
+                                ) : displayedUserList.length > 0 ? (
+                                    displayedUserList.map(targetUser => {
                                         const targetId = targetUser.id || targetUser.userId;
                                         const targetName = targetUser.title || targetUser.fullName || targetUser.name || 'User';
-                                        const targetRole = targetUser.summary || targetUser.designation || targetUser.roleName || 'Employee';
-                                        const targetAvatar = resolveMediaUrl(targetUser.authorProfilePhotoUrl || targetUser.profilePhotoUrl || targetUser.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(targetName)}&background=6366f1&color=fff`;
-                                        const isSelected = selectedUsers.some(u => (u.id || u.userId) === targetId);
+                                        const targetRole = targetUser.summary || targetUser.designation || targetUser.roleName || targetUser.role || 'Employee';
+                                        const targetDept = targetUser.department || targetUser.departmentName || 'MPOnline';
+                                        const targetEmpId = targetUser.employeeId || '';
+                                        const targetAvatar = resolveMediaUrl(targetUser.authorProfilePhotoUrl || targetUser.profilePhotoUrl || targetUser.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(targetName)}&background=6366f1&color=fff&bold=true`;
+                                        const isSelected = selectedUsers.some(u => String(u.id || u.userId) === String(targetId));
 
                                         return (
-                                            <label key={targetId} className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50/60 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer transition-all border border-slate-200/50 dark:border-slate-700/50">
-                                                <input 
-                                                    type="checkbox" 
-                                                    className="rounded text-purple-600 focus:ring-purple-500 bg-slate-100 border-slate-300 dark:border-slate-600 dark:bg-slate-700 w-4 h-4 cursor-pointer"
-                                                    checked={isSelected}
-                                                    onChange={() => toggleSelectUser(targetUser)}
-                                                />
-                                                <img src={targetAvatar} alt={targetName} className="w-8 h-8 rounded-full object-cover shrink-0" />
-                                                <div className="min-w-0 flex-1">
-                                                    <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{targetName}</p>
-                                                    <p className="text-[10px] text-slate-500 truncate">{targetRole}</p>
+                                            <div 
+                                                key={targetId} 
+                                                onClick={() => toggleSelectUser(targetUser)}
+                                                className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all border ${
+                                                    isSelected 
+                                                        ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800/60 text-purple-600 dark:text-purple-300' 
+                                                        : 'bg-slate-50/60 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200/50 dark:border-slate-700/50'
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-3 min-w-0 flex-1 pr-2">
+                                                    <img src={targetAvatar} alt={targetName} className="w-8 h-8 rounded-full object-cover shrink-0 shadow-xs" />
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{targetName}</p>
+                                                            {targetEmpId && (
+                                                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-semibold shrink-0">
+                                                                    {targetEmpId}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">{targetRole} • {targetDept}</p>
+                                                    </div>
                                                 </div>
-                                            </label>
+
+                                                <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all shrink-0 ${
+                                                    isSelected 
+                                                        ? 'bg-purple-600 border-purple-600 text-white shadow-xs' 
+                                                        : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                                                }`}>
+                                                    {isSelected && (
+                                                        <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="3" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                    )}
+                                                </div>
+                                            </div>
                                         );
                                     })
                                 ) : (
                                     <div className="text-center py-6 text-slate-400 text-xs font-medium">
-                                        {userSearchQuery.trim() ? 'No users found matching query' : 'Type name above to search employees'}
+                                        No users found matching "{userSearchQuery}"
                                     </div>
                                 )}
                             </div>

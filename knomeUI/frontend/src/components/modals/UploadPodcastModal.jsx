@@ -161,11 +161,20 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
             setAudioFile(file);
             
             // Auto detect duration if possible
-            const audioObj = new Audio(URL.createObjectURL(file));
+            const audioUrl = URL.createObjectURL(file);
+            const audioObj = new Audio(audioUrl);
             audioObj.onloadedmetadata = () => {
                 if (audioObj.duration && !isNaN(audioObj.duration)) {
                     setDuration(formatTime(Math.floor(audioObj.duration)));
                 }
+                setTimeout(() => {
+                    try { URL.revokeObjectURL(audioUrl); } catch (e) {}
+                }, 2000);
+            };
+            audioObj.onerror = () => {
+                setTimeout(() => {
+                    try { URL.revokeObjectURL(audioUrl); } catch (e) {}
+                }, 2000);
             };
         }
     };
@@ -245,6 +254,16 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                 }
             }
 
+            if (!coverImageUrl) {
+                const defaultCovers = {
+                    Tech: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&q=90&w=800',
+                    Leadership: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&q=90&w=800',
+                    Engineering: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=90&w=800',
+                    General: 'https://images.unsplash.com/photo-1478737270239-2f02b77fc618?auto=format&fit=crop&q=90&w=800'
+                };
+                coverImageUrl = defaultCovers[categoryName] || defaultCovers.General;
+            }
+
             const currentAuthorId = currentUser?.id || currentUser?.userId;
             const currentAuthorName = currentUser?.fullName || currentUser?.name || 'Employee';
 
@@ -252,7 +271,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                 title: title.trim(),
                 description: description.trim(),
                 audioUrl: audioUrl || null,
-                coverImageUrl: coverImageUrl || null,
+                coverImageUrl: coverImageUrl,
                 durationSeconds: parseDuration(duration),
                 seriesId: seriesId ? parseInt(seriesId) : null,
                 categoryName: categoryName || 'General',

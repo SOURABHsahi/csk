@@ -84,9 +84,34 @@ export const profileApi = {
 
     /** GET /users/{userId}/connections */
     getConnections: (userId) => apiClient.get(`/users/${userId}/connections`),
+
+    /** User Content for Profile View */
+    getUserPosts: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/posts/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+    getUserArticles: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/articles/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+    getUserVideos: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/videos/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+    getUserPodcasts: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/podcasts/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+    getUserCommunities: (userId) => apiClient.get(`/communities/user/${userId}`),
 };
 
 export const userApi = profileApi;
+
+// ─────────────────────────────────────────────
+//  ROLE ASSIGNMENT REQUESTS
+// ─────────────────────────────────────────────
+export const roleRequestsApi = {
+    /** GET /users/role-requests?status= */
+    getAll: (status) => {
+        const params = new URLSearchParams();
+        if (status) params.append('status', status);
+        return apiClient.get(`/users/role-requests?${params}`);
+    },
+    /** POST /users/role-requests/{id}/approve */
+    approve: (requestId, roleName = 'Employee', comment = '') =>
+        apiClient.post(`/users/role-requests/${requestId}/approve`, { roleName, comment }),
+    /** POST /users/role-requests/{id}/reject */
+    reject: (requestId, reason = '') =>
+        apiClient.post(`/users/role-requests/${requestId}/reject`, { reason }),
+};
 
 // ─────────────────────────────────────────────
 //  FEED & DASHBOARD
@@ -125,7 +150,7 @@ export const dashboardApi = {
 //  POSTS
 // ─────────────────────────────────────────────
 export const postsApi = {
-    getAll: () => apiClient.get('/posts'),
+    getAll: (pageNumber = 1, pageSize = 20) => apiClient.get(`/posts?pageNumber=${pageNumber}&pageSize=${pageSize}`),
     getPosts: (audienceType = null, search = null, pageNumber = 1, pageSize = 100) => {
         let endpoint = `/posts?pageNumber=${pageNumber}&pageSize=${pageSize}`;
         if (audienceType) endpoint += `&audienceType=${audienceType}`;
@@ -133,6 +158,7 @@ export const postsApi = {
         return apiClient.get(endpoint);
     },
     getMyPosts: (pageNumber = 1, pageSize = 20) => apiClient.get(`/posts/my?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+    getByUserId: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/posts/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
     getById: (id) => apiClient.get(`/posts/${id}`),
     getPost: (postId) => apiClient.get(`/posts/${postId}`),
     create: (data) => apiClient.post('/posts', data),
@@ -164,8 +190,11 @@ export const articlesApi = {
     /** GET /Articles/{id} */
     getById: (id) => apiClient.get(`/Articles/${id}`),
 
-    /** GET /Articles?authorId={id} (mock implementation using getAll) */
-    getMyArticles: () => apiClient.get('/Articles?authorId=me'),
+    /** GET /Articles/my */
+    getMyArticles: (pageNumber = 1, pageSize = 20) => apiClient.get(`/Articles/my?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+
+    /** GET /Articles/user/{userId} */
+    getByUserId: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/Articles/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
 
     /** POST /Articles */
     create: (data) => apiClient.post('/Articles', data),
@@ -187,6 +216,9 @@ export const videosApi = {
     /** GET /Videos/my */
     getMyVideos: (pageNumber = 1, pageSize = 20) => apiClient.get(`/Videos/my?pageNumber=${pageNumber}&pageSize=${pageSize}`),
 
+    /** GET /Videos/user/{userId} */
+    getByUserId: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/Videos/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+
     /** GET /Videos/{id} */
     getById: (id) => apiClient.get(`/Videos/${id}`),
 
@@ -207,6 +239,8 @@ export const podcastsApi = {
     getAll: () => apiClient.get('/Podcasts'),
     /** GET /Podcasts/my */
     getMyPodcasts: (pageNumber = 1, pageSize = 20) => apiClient.get(`/Podcasts/my?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+    /** GET /Podcasts/user/{userId} */
+    getByUserId: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/Podcasts/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
     /** GET /Podcasts/{id} */
     getById: (id) => apiClient.get(`/Podcasts/${id}`),
     /** POST /Podcasts */
@@ -221,6 +255,7 @@ export const podcastsApi = {
 export const communitiesApi = {
     getAll: () => apiClient.get('/Communities'),
     getMyCommunities: () => apiClient.get('/Communities/my'),
+    getByUserId: (userId) => apiClient.get(`/Communities/user/${userId}`),
     getById: (id) => apiClient.get(`/Communities/${id}`),
     create: (data) => apiClient.post('/Communities', data),
     update: (id, data) => apiClient.put(`/Communities/${id}`, data),
@@ -462,6 +497,10 @@ export const clearLocalRecentSearches = (term = null) => {
 //  ADMIN & MODERATION
 // ─────────────────────────────────────────────
 export const adminApi = {
+    getRoleRequests: (status) => roleRequestsApi.getAll(status),
+    approveRoleRequest: (requestId, roleName, comment) => roleRequestsApi.approve(requestId, roleName, comment),
+    rejectRoleRequest: (requestId, reason) => roleRequestsApi.reject(requestId, reason),
+
     /** GET /users */
     getUsers: (pageNumber = 1, pageSize = 20, search = '') => {
         const params = new URLSearchParams({ pageNumber, pageSize });
@@ -505,8 +544,8 @@ export const adminApi = {
     /** POST /notifications/broadcast */
     createAnnouncement: (data) => apiClient.post('/notifications/broadcast', data),
 
-    /** DELETE /Admin/announcements/{id} */
-    deleteAnnouncement: (id) => Promise.resolve(true),
+    /** DELETE /notifications/{id} */
+    deleteAnnouncement: (id) => apiClient.delete(`/notifications/${id}`),
 };
 
 // ─────────────────────────────────────────────
@@ -541,8 +580,9 @@ export const mediaApi = {
             formData.append('file', file);
             if (type) formData.append('type', type);
 
+            const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : 'localhost';
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', 'http://localhost:5095/api/media/upload', true);
+            xhr.open('POST', `http://${host}:5095/api/media/upload`, true);
             
             const token = localStorage.getItem('knome_jwt');
             if (token) {
@@ -708,7 +748,7 @@ export const mapArticle = (article) => ({
     content: article.contentBody || '',
     category: article.category || 'General',
     tags: article.tags || [],
-    image: article.thumbnailUrl?.startsWith('/') ? `http://localhost:5095${article.thumbnailUrl}` : (article.thumbnailUrl || ''),
+    image: resolveMediaUrl(article.thumbnailUrl) || (article.thumbnailUrl || ''),
     author: {
         id: article.authorId,
         name: article.authorFullName,
@@ -828,11 +868,11 @@ export const mapFeedItem = (item) => {
         base.attachments = item.attachmentUrl ? [{
             id: 1,
             type: 'image', // simplified for feed item mapping
-            url: item.attachmentUrl.startsWith('/') ? `http://localhost:5095${item.attachmentUrl}` : item.attachmentUrl,
+            url: resolveMediaUrl(item.attachmentUrl) || item.attachmentUrl,
             name: 'attachment'
         }] : [];
     } else if (item.contentType === 'Article') {
-        base.image = item.attachmentUrl?.startsWith('/') ? `http://localhost:5095${item.attachmentUrl}` : (item.attachmentUrl || '');
+        base.image = resolveMediaUrl(item.attachmentUrl) || (item.attachmentUrl || '');
         base.readTime = '5 min read'; // Default fallback
         base.subtitle = item.textSummary;
     } else if (item.contentType === 'Video') {
@@ -914,7 +954,7 @@ export const getPersonalizedRecommendations = (items = [], currentUser = null) =
         const likes = item.likes || item.reactionCount || item.views || 0;
         if (likes > 5) score += 5;
 
-        const matchPercent = Math.min(Math.max(score, 78), 99);
+        const matchPercent = Math.min(Math.max(score, 50), 99);
         const reasonText = matchReasons[0] || (category ? `Popular in ${category}` : `Top pick for your profile`);
 
         return {

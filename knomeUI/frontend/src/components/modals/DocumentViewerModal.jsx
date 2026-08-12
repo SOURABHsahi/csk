@@ -22,10 +22,18 @@ export default function DocumentViewerModal({ document, onClose }) {
 
     useEffect(() => {
         let isMounted = true;
+        let createdUrl = null;
         setLoading(true);
         setHasError(false);
 
         if (!fileUrl || isImage) {
+            setLoading(false);
+            return;
+        }
+
+        // If fileUrl is already a direct valid URL, use it directly without fragile blob conversion
+        if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+            setBlobUrl(fileUrl);
             setLoading(false);
             return;
         }
@@ -38,8 +46,8 @@ export default function DocumentViewerModal({ document, onClose }) {
             .then(blob => {
                 if (!isMounted) return;
                 const pdfBlob = new Blob([blob], { type: isPdf ? 'application/pdf' : blob.type });
-                const localUrl = URL.createObjectURL(pdfBlob);
-                setBlobUrl(localUrl);
+                createdUrl = URL.createObjectURL(pdfBlob);
+                setBlobUrl(createdUrl);
                 setLoading(false);
             })
             .catch(err => {
@@ -52,8 +60,10 @@ export default function DocumentViewerModal({ document, onClose }) {
 
         return () => {
             isMounted = false;
-            if (blobUrl) {
-                URL.revokeObjectURL(blobUrl);
+            if (createdUrl && createdUrl.startsWith('blob:')) {
+                setTimeout(() => {
+                    try { URL.revokeObjectURL(createdUrl); } catch (e) {}
+                }, 2000);
             }
         };
     }, [fileUrl, isPdf, isImage]);

@@ -84,7 +84,12 @@ public class ArticleService : IArticleService
 
     public async Task<List<ArticleDto>> GetMyArticlesAsync(int currentUserId, int pageNumber = 1, int pageSize = 20)
     {
-        var articles = await _repo.GetMyArticlesAsync(currentUserId, pageNumber, pageSize);
+        return await GetUserArticlesAsync(currentUserId, currentUserId, pageNumber, pageSize);
+    }
+
+    public async Task<List<ArticleDto>> GetUserArticlesAsync(int authorUserId, int currentUserId, int pageNumber = 1, int pageSize = 20)
+    {
+        var articles = await _repo.GetMyArticlesAsync(authorUserId, pageNumber, pageSize);
         var dtos = new List<ArticleDto>();
 
         foreach (var a in articles)

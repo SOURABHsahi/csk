@@ -47,7 +47,18 @@ export default function AuthGuard({ children }) {
     }
 
     if (!isAuthenticated) {
-        return <Navigate to="/login" replace />;
+        // Automatic Single Sign-On Redirect to Employee Hub
+        window.location.href = 'http://localhost:5001/?client_id=knome-web-portal&redirect_uri=http%3A%2F%2Flocalhost%3A5173';
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
+                <div className="flex flex-col items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center animate-pulse">
+                        <span className="material-symbols-outlined text-indigo-400 text-2xl">lock_open</span>
+                    </div>
+                    <p className="text-sm font-bold text-slate-300">Redirecting to Employee Hub Single Sign-On...</p>
+                </div>
+            </div>
+        );
     }
 
     // Strict Account Suspension Guard — Block Posts, Articles, Videos, Podcasts & Community Access

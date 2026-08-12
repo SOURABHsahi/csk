@@ -38,6 +38,14 @@ public class CommunityController : KnomeControllerBase
         return Ok(ApiResponse<List<CommunityDto>>.SuccessResponse(200, "User communities retrieved successfully.", dtos));
     }
 
+    [HttpGet("user/{userId:int}")]
+    [ProducesResponseType(typeof(ApiResponse<List<CommunityDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetUserCommunities(int userId)
+    {
+        var dtos = await _communityService.GetUserCommunitiesAsync(userId);
+        return Ok(ApiResponse<List<CommunityDto>>.SuccessResponse(200, "User communities retrieved successfully.", dtos));
+    }
+
     [HttpGet("{communityId}")]
     [ProducesResponseType(typeof(ApiResponse<CommunityDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCommunity(int communityId)

@@ -209,24 +209,8 @@ export default function Videos() {
             let detectedEpisodes = 10; // Default smart guess
 
             if (listId) {
-                try {
-                    const proxyRes = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(`https://www.youtube.com/playlist?list=${listId}`)}`);
-                    if (proxyRes.ok) {
-                        const html = await proxyRes.text();
-                        const countMatch = html.match(/"stats":\[{"runs":\[{"text":"([\d,]+)"}/) ||
-                                           html.match(/"videoCountText":\{"runs":\[\{"text":"([\d,]+)"\}/) ||
-                                           html.match(/"itemCount":"(\d+)"/) ||
-                                           html.match(/(\d+)\s+videos/i);
-                        if (countMatch && countMatch[1]) {
-                            const parsedCount = parseInt(countMatch[1].replace(/,/g, ''), 10);
-                            if (!isNaN(parsedCount) && parsedCount > 0) {
-                                detectedEpisodes = parsedCount;
-                            }
-                        }
-                    }
-                } catch (err) {
-                    console.warn('CORS proxy episode count fetch warning:', err);
-                }
+                // Smart default episode count for YouTube playlists
+                detectedEpisodes = 12;
             }
 
             if (data && data.title) {

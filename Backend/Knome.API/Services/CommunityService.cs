@@ -131,14 +131,19 @@ public class CommunityService : ICommunityService
 
     public async Task<List<CommunityDto>> GetMyCommunitiesAsync(int currentUserId)
     {
-        var communities = await _repo.GetUserCommunitiesAsync(currentUserId);
+        return await GetUserCommunitiesAsync(currentUserId);
+    }
+
+    public async Task<List<CommunityDto>> GetUserCommunitiesAsync(int targetUserId)
+    {
+        var communities = await _repo.GetUserCommunitiesAsync(targetUserId);
         var dtos = new List<CommunityDto>();
 
         foreach (var c in communities)
         {
             var dto = _mapper.Map<CommunityDto>(c);
-            dto.IsCurrentUserAdmin = await _repo.IsCommunityAdminAsync(c.CommunityId, currentUserId);
-            var member = await _repo.GetMemberAsync(c.CommunityId, currentUserId);
+            dto.IsCurrentUserAdmin = await _repo.IsCommunityAdminAsync(c.CommunityId, targetUserId);
+            var member = await _repo.GetMemberAsync(c.CommunityId, targetUserId);
             dto.CurrentUserMembershipStatus = member?.Status ?? (dto.IsCurrentUserAdmin ? CommunityMemberStatuses.Approved : null);
             dtos.Add(dto);
         }

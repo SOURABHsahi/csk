@@ -235,14 +235,21 @@ public class ContentInteractionService : IContentInteractionService
     // --- Reactions (FR-CI-01) ---
     public async Task<(ReactionSummaryDto Summary, bool IsCreated)> ToggleReactionAsync(string contentType, long contentId, int userId, ToggleReactionDto dto)
     {
+        ArgumentNullException.ThrowIfNull(dto);
         await _suspensionGuard.EnsureNotSuspendedAsync(userId);
         ValidateContentType(contentType);
+
+        if (!string.IsNullOrEmpty(dto.ReactionType))
+        {
+            var match = ReactionTypes.All.FirstOrDefault(a => a.Equals(dto.ReactionType, StringComparison.OrdinalIgnoreCase));
+            if (match != null) dto.ReactionType = match;
+        }
 
         bool isCreated = false;
         var existing = await _repo.GetUserReactionAsync(contentType, contentId, userId);
         if (existing != null)
         {
-            if (existing.ReactionType == dto.ReactionType)
+            if (string.Equals(existing.ReactionType ?? string.Empty, dto.ReactionType ?? string.Empty, StringComparison.OrdinalIgnoreCase))
             {
                 // Same reaction toggled -> remove reaction (Un-react)
                 await _repo.RemoveReactionAsync(existing);
@@ -250,7 +257,7 @@ public class ContentInteractionService : IContentInteractionService
             else
             {
                 // Different reaction -> update type
-                existing.ReactionType = dto.ReactionType;
+                existing.ReactionType = dto.ReactionType ?? string.Empty;
                 existing.CreatedDate = DateTime.UtcNow;
                 await _repo.UpdateReactionAsync(existing);
             }
@@ -263,7 +270,7 @@ public class ContentInteractionService : IContentInteractionService
                 ContentType = contentType,
                 ContentId = contentId,
                 UserId = userId,
-                ReactionType = dto.ReactionType,
+                ReactionType = dto.ReactionType ?? string.Empty,
                 CreatedDate = DateTime.UtcNow
             };
             await _repo.AddReactionAsync(reaction);

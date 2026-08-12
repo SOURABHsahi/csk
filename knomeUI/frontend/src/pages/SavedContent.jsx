@@ -192,8 +192,9 @@ export default function SavedContent() {
         const token = localStorage.getItem('knome_jwt');
         if (!token) return;
 
+        const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : 'localhost';
         const connection = new signalR.HubConnectionBuilder()
-            .withUrl('http://localhost:5095/hubs/notifications', {
+            .withUrl(`http://${host}:5095/hubs/notifications`, {
                 accessTokenFactory: () => token,
             })
             .withAutomaticReconnect()

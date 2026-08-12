@@ -3,6 +3,7 @@ using System.Text;
 using System.Threading.RateLimiting;
 using FluentValidation;
 using Knome.API.Configuration;
+using Knome.API.Configurations;
 using Knome.API.Constants;
 using Knome.API.Data;
 using Knome.API.Filters;
@@ -32,7 +33,7 @@ public static class ServiceCollectionExtensions
         AddAuthentication(services, configuration);
         AddAuthorization(services);
         AddRateLimiting(services);
-        AddApplicationServices(services);
+        AddApplicationServices(services, configuration);
         AddSwagger(services);
         services.AddSignalR();
 
@@ -51,7 +52,7 @@ public static class ServiceCollectionExtensions
         {
             options.AddPolicy(ApiConstants.CorsPolicyName, builder =>
             {
-                builder.WithOrigins(corsSettings.AllowedOrigins)
+                builder.SetIsOriginAllowed(origin => true)
                        .AllowAnyMethod()
                        .AllowAnyHeader()
                        .AllowCredentials();
@@ -101,8 +102,8 @@ public static class ServiceCollectionExtensions
                 ValidateAudience = true,
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
-                ValidIssuer = jwtSettings.Issuer,
-                ValidAudience = jwtSettings.Audience,
+                ValidIssuers = new[] { jwtSettings.Issuer, "EmployeeHub.Identity", "Knome.API" },
+                ValidAudiences = new[] { jwtSettings.Audience, "Knome.Client", "EmployeeHub.Client" },
                 IssuerSigningKey = new SymmetricSecurityKey(key),
                 ClockSkew = System.TimeSpan.Zero
             };
@@ -142,13 +143,13 @@ public static class ServiceCollectionExtensions
                     factory: _ => new FixedWindowRateLimiterOptions
                     {
                         AutoReplenishment = true,
-                        PermitLimit = 5,
+                        PermitLimit = 30,
                         Window = System.TimeSpan.FromMinutes(1)
                     }));
         });
     }
 
-    private static void AddApplicationServices(IServiceCollection services)
+    private static void AddApplicationServices(IServiceCollection services, IConfiguration configuration)
     {
         services.AddControllers(options =>
         {
@@ -235,6 +236,10 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IJobService, JobService>();
         services.AddScoped<INotificationRepository, NotificationRepository>();
         services.AddScoped<INotificationService, NotificationService>();
+
+        // SMTP & Email Notification Service
+        services.Configure<SmtpSettings>(configuration.GetSection("SmtpSettings"));
+        services.AddScoped<IEmailService, EmailService>();
     }
 
     private static void AddSwagger(IServiceCollection services)

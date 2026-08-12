@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
+import { apiClient } from '../utils/apiClient';
 import { communitiesApi, mediaApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages } from '../utils/apiService';
 
 export default function CommunityView() {
-    const { currentUser, awardRuleKarma } = useUser();
+    const { currentUser, users: contextUsers, awardRuleKarma } = useUser();
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -75,17 +76,22 @@ export default function CommunityView() {
     };
 
     useEffect(() => {
+        let currentBlobUrl = null;
         if (previewModalFile) {
-            const blobUrl = getPdfBlobUrl(previewModalFile.url);
-            setActivePdfBlobUrl(blobUrl);
-            return () => {
-                if (blobUrl && typeof blobUrl === 'string' && blobUrl.startsWith('blob:')) {
-                    URL.revokeObjectURL(blobUrl);
-                }
-            };
+            currentBlobUrl = getPdfBlobUrl(previewModalFile.url);
+            setActivePdfBlobUrl(currentBlobUrl);
         } else {
             setActivePdfBlobUrl(null);
         }
+
+        return () => {
+            if (currentBlobUrl && typeof currentBlobUrl === 'string' && currentBlobUrl.startsWith('blob:')) {
+                // Delay revocation so active iframes/objects do not throw ERR_FILE_NOT_FOUND
+                setTimeout(() => {
+                    try { URL.revokeObjectURL(currentBlobUrl); } catch (e) {}
+                }, 2000);
+            }
+        };
     }, [previewModalFile]);
 
     // Load all available communities for share dropdown
@@ -108,25 +114,21 @@ export default function CommunityView() {
             }));
             // Try to also load from API
             try {
-                const token = localStorage.getItem('knome_jwt');
-                const res = await fetch('http://localhost:5095/api/communities', {
-                    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+                const apiRes = await communitiesApi.getAll();
+                const apiData = apiRes?.data || apiRes || [];
+                const apiComms = (Array.isArray(apiData) ? apiData : []).map(c => ({
+                    id: String(c.communityId || c.id),
+                    name: c.communityName || c.name,
+                    emoji: '🏘️'
+                }));
+                const merged = [...apiComms];
+                [...seedCommunities, ...customMapped].forEach(s => {
+                    if (!merged.some(a => a.id === s.id)) merged.push(s);
                 });
-                if (res.ok) {
-                    const json = await res.json();
-                    const apiComms = (json.data || json || []).map(c => ({
-                        id: String(c.communityId || c.id),
-                        name: c.communityName || c.name,
-                        emoji: '🏘️'
-                    }));
-                    const merged = [...apiComms];
-                    [...seedCommunities, ...customMapped].forEach(s => {
-                        if (!merged.some(a => a.id === s.id)) merged.push(s);
-                    });
-                    setAllCommunities(merged.filter(c => String(c.id) !== String(communityId)));
-                    return;
-                }
+                setAllCommunities(merged.filter(c => String(c.id) !== String(communityId)));
+                return;
             } catch (_) { /* ignore API error, fall back to local */ }
+
             const merged = [...seedCommunities, ...customMapped];
             const deduped = Array.from(new Map(merged.map(c => [c.id, c])).values());
             setAllCommunities(deduped.filter(c => String(c.id) !== String(communityId)));
@@ -859,19 +861,12 @@ export default function CommunityView() {
         if (!postText.trim()) return;
         
         try {
-            const newPost = await fetch(`http://localhost:5095/api/communities/${communityId}/posts`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${localStorage.getItem('knome_jwt')}`
-                },
-                body: JSON.stringify({ contentText: postText.trim(), audienceType: 'Community' })
-            }).then(res => res.json());
+            const res = await apiClient.post(`/communities/${communityId}/posts`, { contentText: postText.trim(), audienceType: 'Community' });
+            const p = res?.data || res;
 
-            if (newPost && newPost.data) {
-                const p = newPost.data;
+            if (p && (p.postId || p.id)) {
                 setPosts([{
-                    id: p.postId,
+                    id: p.postId || p.id,
                     author: p.authorFullName,
                     role: p.authorDesignation || 'Member',
                     time: new Date(p.createdDate).toLocaleString(),
@@ -2654,40 +2649,59 @@ export default function CommunityView() {
                                         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
                                             Select MPOnline Team Members *
                                         </label>
-                                        <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-xl p-3 bg-slate-50 dark:bg-slate-800">
-                                            {[
-                                                { id: 1, name: 'Loveneesh Sharma', role: 'System Administrator', idCode: 'MPO101' },
-                                                { id: 2, name: 'Vishendra Sharma', role: 'Community Administrator', idCode: 'MPO102' },
-                                                { id: 3, name: 'Sourabh Sahu', role: 'HR Administrator', idCode: 'MPO103' },
-                                                { id: 4, name: 'Mayur Verma', role: 'Senior Software Engineer', idCode: 'MPO104' },
-                                                { id: 5, name: 'Meghna Tiwari', role: 'Product Designer', idCode: 'MPO105' },
-                                                { id: 6, name: 'Rishikesh Ugle', role: 'Software Engineer', idCode: 'MPO106' }
-                                            ].map(userItem => (
-                                                <label
-                                                    key={userItem.id}
-                                                    className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/50 cursor-pointer text-xs"
-                                                >
-                                                    <div className="flex items-center gap-2.5">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={shareSelectedUsers.includes(userItem.id)}
-                                                            onChange={(e) => {
-                                                                if (e.target.checked) {
-                                                                    setShareSelectedUsers(prev => [...prev, userItem.id]);
-                                                                } else {
-                                                                    setShareSelectedUsers(prev => prev.filter(id => id !== userItem.id));
-                                                                }
-                                                            }}
-                                                            className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 cursor-pointer"
-                                                        />
-                                                        <div>
-                                                            <div className="font-bold text-slate-900 dark:text-white">{userItem.name}</div>
-                                                            <div className="text-[11px] text-slate-400">{userItem.role} • {userItem.idCode}</div>
-                                                        </div>
-                                                    </div>
-                                                </label>
-                                            ))}
-                                        </div>
+                                        <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-xl p-2 bg-slate-50 dark:bg-slate-800">
+                                             {(contextUsers || [])
+                                                 .filter(u => String(u.userId || u.id) !== String(currentUser?.userId || currentUser?.id))
+                                                 .map(userItem => {
+                                                     const uId = userItem.id || userItem.userId;
+                                                     const isSelected = shareSelectedUsers.includes(uId);
+                                                     const uName = userItem.name || userItem.fullName || 'User';
+                                                     const uRole = userItem.roleName || userItem.designation || userItem.role || 'Employee';
+                                                     const uEmp = userItem.employeeId || '';
+                                                     const uAvatar = resolveMediaUrl(userItem.avatar || userItem.profilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(uName)}&background=6366f1&color=fff&bold=true`;
+
+                                                     return (
+                                                         <div
+                                                             key={uId}
+                                                             onClick={() => {
+                                                                 if (isSelected) {
+                                                                     setShareSelectedUsers(prev => prev.filter(id => id !== uId));
+                                                                 } else {
+                                                                     setShareSelectedUsers(prev => [...prev, uId]);
+                                                                 }
+                                                             }}
+                                                             className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-all border ${
+                                                                 isSelected 
+                                                                     ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800/60 text-purple-600 dark:text-purple-300' 
+                                                                     : 'hover:bg-slate-100 dark:hover:bg-slate-700/50 border-transparent text-slate-700 dark:text-slate-300'
+                                                             }`}
+                                                         >
+                                                             <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
+                                                                 <img src={uAvatar} alt={uName} className="w-7 h-7 rounded-full object-cover shrink-0" />
+                                                                 <div className="min-w-0 flex-1">
+                                                                     <div className="flex items-center gap-1.5">
+                                                                         <span className="font-bold text-slate-900 dark:text-white truncate">{uName}</span>
+                                                                         {uEmp && <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-semibold">{uEmp}</span>}
+                                                                     </div>
+                                                                     <div className="text-[11px] text-slate-400 truncate">{uRole}</div>
+                                                                 </div>
+                                                             </div>
+
+                                                             <div className={`w-4 h-4 rounded flex items-center justify-center border transition-all shrink-0 ${
+                                                                 isSelected 
+                                                                     ? 'bg-purple-600 border-purple-600 text-white' 
+                                                                     : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700'
+                                                             }`}>
+                                                                 {isSelected && (
+                                                                     <svg className="w-3 h-3 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="3" stroke="currentColor">
+                                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                                     </svg>
+                                                                 )}
+                                                             </div>
+                                                         </div>
+                                                     );
+                                                 })}
+                                         </div>
                                     </div>
 
                                     <div>

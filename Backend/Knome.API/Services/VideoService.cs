@@ -73,7 +73,12 @@ public class VideoService : IVideoService
 
     public async Task<List<VideoDto>> GetMyVideosAsync(int currentUserId, int pageNumber = 1, int pageSize = 20)
     {
-        var videos = await _repo.GetMyVideosAsync(currentUserId, pageNumber, pageSize);
+        return await GetUserVideosAsync(currentUserId, currentUserId, pageNumber, pageSize);
+    }
+
+    public async Task<List<VideoDto>> GetUserVideosAsync(int uploaderUserId, int currentUserId, int pageNumber = 1, int pageSize = 20)
+    {
+        var videos = await _repo.GetMyVideosAsync(uploaderUserId, pageNumber, pageSize);
         var dtos = new List<VideoDto>();
 
         foreach (var v in videos)
@@ -108,8 +113,8 @@ public class VideoService : IVideoService
         int effectiveUploaderUserId = currentUserId;
         if (dto.UploaderUserId.HasValue && dto.UploaderUserId.Value > 0)
         {
-            var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
-            if (user != null && user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.CommunityAdmin))
+            var userExists = await _db.Users.AnyAsync(u => u.UserId == dto.UploaderUserId.Value);
+            if (userExists)
             {
                 effectiveUploaderUserId = dto.UploaderUserId.Value;
             }

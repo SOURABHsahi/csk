@@ -48,7 +48,7 @@ public static class ReactionTypes
     public static bool IsValid(string? reactionType)
     {
         if (string.IsNullOrWhiteSpace(reactionType)) return false;
-        return reactionType == Like || reactionType == Celebrate || reactionType == Support || reactionType == Heart;
+        return All.Any(a => a.Equals(reactionType, StringComparison.OrdinalIgnoreCase));
     }
 }
 

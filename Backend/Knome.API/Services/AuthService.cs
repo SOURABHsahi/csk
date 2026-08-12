@@ -9,6 +9,7 @@ using Knome.API.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
+using Knome.API.Models;
 
 namespace Knome.API.Services;
 
@@ -21,11 +22,15 @@ public class AuthService : IAuthService
 {
     private readonly KnomeDbContext _db;
     private readonly JwtSettings _jwt;
+    private readonly IEmailService _emailService;
+    private readonly ILogger<AuthService> _logger;
 
-    public AuthService(KnomeDbContext db, IOptions<JwtSettings> jwtOptions)
+    public AuthService(KnomeDbContext db, IOptions<JwtSettings> jwtOptions, IEmailService emailService, ILogger<AuthService> logger)
     {
         _db = db;
         _jwt = jwtOptions.Value;
+        _emailService = emailService;
+        _logger = logger;
     }
 
     public async Task<LoginResponseDto> LoginAsync(LoginRequestDto request)
@@ -35,8 +40,20 @@ public class AuthService : IAuthService
             .Include(u => u.UserCredential)
             .Include(u => u.Department)
             .Include(u => u.Roles)
-            .Where(u => u.EmployeeId == request.EmployeeId)
+            .Where(u => u.EmployeeId == request.EmployeeId || u.Email == request.EmployeeId)
             .FirstOrDefaultAsync();
+
+        // If user not yet in Knome, attempt auto-sync from EmployeeHubDb
+        if (user is null)
+        {
+            await SyncUserFromEmployeeHubIfAvailableAsync(request.EmployeeId);
+            user = await _db.Users
+                .Include(u => u.UserCredential)
+                .Include(u => u.Department)
+                .Include(u => u.Roles)
+                .Where(u => u.EmployeeId == request.EmployeeId || u.Email == request.EmployeeId)
+                .FirstOrDefaultAsync();
+        }
 
         if (user is null || user.UserCredential is null)
             throw new BadRequestException("Invalid Employee ID or password.");
@@ -52,6 +69,11 @@ public class AuthService : IAuthService
             throw new BadRequestException("Invalid Employee ID or password.");
 
         var roles = user.Roles.Select(r => r.RoleName).ToList();
+        if (roles.Count == 0)
+        {
+            await EnsurePendingRoleRequestInDbAsync(user);
+        }
+
         var expiry = DateTime.UtcNow.AddMinutes(_jwt.ExpiryMinutes);
         var token = GenerateJwtToken(user.UserId, user.EmployeeId, user.FullName, roles, expiry);
 
@@ -61,6 +83,74 @@ public class AuthService : IAuthService
             ExpiresAt = expiry,
             User = MapToCurrentUser(user, roles)
         };
+    }
+
+    private async Task EnsurePendingRoleRequestInDbAsync(User user)
+    {
+        try
+        {
+            using var conn = _db.Database.GetDbConnection();
+            if (conn.State != System.Data.ConnectionState.Open)
+                await conn.OpenAsync();
+
+            using var checkCmd = conn.CreateCommand();
+            checkCmd.CommandText = "SELECT COUNT(1) FROM [RoleRequests] WHERE EmployeeId = @empId";
+            var pEmp = checkCmd.CreateParameter();
+            pEmp.ParameterName = "@empId";
+            pEmp.Value = user.EmployeeId;
+            checkCmd.Parameters.Add(pEmp);
+
+            var countObj = await checkCmd.ExecuteScalarAsync();
+            int count = Convert.ToInt32(countObj);
+
+            if (count == 0)
+            {
+                using var insCmd = conn.CreateCommand();
+                insCmd.CommandText = @"
+                    INSERT INTO [RoleRequests] ([EmployeeId], [FullName], [Email], [DepartmentId], [DepartmentName], [Designation], [RequestedRoleCode], [Status], [CreatedAt])
+                    VALUES (@empId, @fullName, @email, @deptId, @deptName, @desig, 'EMP', 'Pending', GETUTCDATE());
+                ";
+                var p1 = insCmd.CreateParameter(); p1.ParameterName = "@empId"; p1.Value = user.EmployeeId; insCmd.Parameters.Add(p1);
+                var p2 = insCmd.CreateParameter(); p2.ParameterName = "@fullName"; p2.Value = user.FullName; insCmd.Parameters.Add(p2);
+                var p3 = insCmd.CreateParameter(); p3.ParameterName = "@email"; p3.Value = user.Email; insCmd.Parameters.Add(p3);
+                var p4 = insCmd.CreateParameter(); p4.ParameterName = "@deptId"; p4.Value = (object?)user.DepartmentId ?? 1; insCmd.Parameters.Add(p4);
+                var p5 = insCmd.CreateParameter(); p5.ParameterName = "@deptName"; p5.Value = (object?)user.Department?.Name ?? "Development"; insCmd.Parameters.Add(p5);
+                var p6 = insCmd.CreateParameter(); p6.ParameterName = "@desig"; p6.Value = (object?)user.Designation ?? "Staff"; insCmd.Parameters.Add(p6);
+
+                await insCmd.ExecuteNonQueryAsync();
+
+                // Send professional Welcome & Role Pending Email (fire-and-forget)
+                if (!string.IsNullOrWhiteSpace(user.Email))
+                {
+                    var recipientEmail = user.Email;
+                    var recipientName = user.FullName;
+                    var recipientEmpId = user.EmployeeId;
+                    var recipientDept = user.Department?.Name ?? "General";
+                    var recipientDesig = user.Designation ?? "Employee";
+
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _emailService.SendRolePendingEmailAsync(
+                                recipientEmail,
+                                recipientName,
+                                recipientEmpId,
+                                recipientDept,
+                                recipientDesig);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to send role pending email to {Email}", recipientEmail);
+                        }
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in EnsurePendingRoleRequestInDbAsync for {EmpId}", user.EmployeeId);
+        }
     }
 
     public async Task<CurrentUserDto> GetCurrentUserAsync(int userId)
@@ -79,6 +169,58 @@ public class AuthService : IAuthService
     }
 
     // ------------------------------------------------------------------ //
+
+    private async Task SyncUserFromEmployeeHubIfAvailableAsync(string employeeIdOrEmail)
+    {
+        try
+        {
+            using var conn = _db.Database.GetDbConnection();
+            if (conn.State != System.Data.ConnectionState.Open)
+                await conn.OpenAsync();
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                IF EXISTS (SELECT 1 FROM sys.databases WHERE name = 'EmployeeHubDb')
+                BEGIN
+                    DECLARE @ehEmpId NVARCHAR(30), @ehName NVARCHAR(150), @ehEmail NVARCHAR(150), @ehDeptId INT, @ehDesig NVARCHAR(100), @ehLoc NVARCHAR(100);
+
+                    SELECT TOP 1 
+                        @ehEmpId = EmployeeId, 
+                        @ehName = FullName, 
+                        @ehEmail = Email, 
+                        @ehDeptId = DepartmentId, 
+                        @ehDesig = Designation, 
+                        @ehLoc = Location
+                    FROM [EmployeeHubDb].[dbo].[Employees]
+                    WHERE EmployeeId = @searchId OR Email = @searchId;
+
+                    IF @ehEmpId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [Users] WHERE EmployeeId = @ehEmpId)
+                    BEGIN
+                        INSERT INTO [Users] ([EmployeeId], [FullName], [Email], [DepartmentId], [Designation], [Location], [IsActive], [CreatedDate], [ProfileCompletion], [BioVisibility], [NetworkVisibility], [PhotosVisibility], [InterestsVisibility])
+                        VALUES (@ehEmpId, @ehName, @ehEmail, ISNULL(@ehDeptId, 1), ISNULL(@ehDesig, 'Staff'), ISNULL(@ehLoc, 'Bhopal'), 1, GETUTCDATE(), 50, 'Everyone', 'Everyone', 'Everyone', 'Everyone');
+
+                        DECLARE @newUserId INT = SCOPE_IDENTITY();
+                        DECLARE @defaultHash NVARCHAR(255) = (SELECT TOP 1 PasswordHash FROM [UserCredentials] WHERE PasswordHash LIKE '$2%');
+                        IF @defaultHash IS NULL
+                            SET @defaultHash = '$2a$11$CS8Szl.LS4r1zinkLjKb8ucRdww25eHjSGhqc6my/hQXCbb9DW0Nm';
+
+                        INSERT INTO [UserCredentials] ([UserId], [PasswordHash], [PasswordSalt], [LastUpdated])
+                        VALUES (@newUserId, @defaultHash, '', GETUTCDATE());
+                    END
+                END
+            ";
+            var p = cmd.CreateParameter();
+            p.ParameterName = "@searchId";
+            p.Value = employeeIdOrEmail;
+            cmd.Parameters.Add(p);
+
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to auto-sync user {SearchId} from EmployeeHubDb", employeeIdOrEmail);
+        }
+    }
 
     private string GenerateJwtToken(int userId, string employeeId, string fullName, List<string> roles, DateTime expiry)
     {

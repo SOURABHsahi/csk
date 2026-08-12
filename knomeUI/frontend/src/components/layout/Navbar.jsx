@@ -8,7 +8,7 @@ import { notificationsApi, profileApi, searchApi, karmaApi, resolveMediaUrl, sav
 import * as signalR from '@microsoft/signalr';
 
 export default function Navbar() {
-    const { currentUser, setCurrentUser, users } = useUser();
+    const { currentUser, setCurrentUser, users, logout } = useUser();
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
     const { pathname } = useLocation();
     const navigate = useNavigate();
@@ -257,7 +257,7 @@ export default function Navbar() {
         const isReaction = type.includes('reaction') || type.includes('like');
         const isComment = type.includes('comment');
         const isMention = type.includes('mention');
-
+        const msg = (n.message || n.text || n.title || '').toLowerCase();
         const isShare = type.includes('share') || msg.includes('shared');
 
         let icon = 'notifications';
@@ -303,7 +303,6 @@ export default function Navbar() {
         }
         const senderAvatar = resolveMediaUrl(n.senderAvatar) || (senderName && senderName !== 'System' ? `https://ui-avatars.com/api/?name=${encodeURIComponent(senderName)}&background=6366f1&color=fff` : null);
         const dateVal = n.createdAt || n.createdDate;
-        const msg = (n.message || '').toLowerCase();
         const refId = n.relatedContentId || n.referenceId;
 
         let targetUrl = n.targetUrl;
@@ -529,8 +528,9 @@ export default function Navbar() {
         const token = localStorage.getItem('knome_jwt');
         if (!token) return;
 
+        const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : 'localhost';
         const connection = new signalR.HubConnectionBuilder()
-            .withUrl("http://localhost:5095/hubs/notifications", {
+            .withUrl(`http://${host}:5095/hubs/notifications`, {
                 accessTokenFactory: () => token
             })
             .configureLogging(signalR.LogLevel.None)
@@ -719,12 +719,12 @@ export default function Navbar() {
             });
             return;
         } else if (relType === 'podcast' || msg.includes('podcast') || notif.type?.includes('podcast')) {
-            dest = refId ? `/podcasts?id=${refId}` : '/podcasts';
+            dest = refId ? `/podcasts?id=${refId}` : (dest || '/podcasts');
         } else if (relType === 'article' || msg.includes('article') || notif.type?.includes('article')) {
-            dest = refId ? `/article-view?id=${refId}` : '/articles';
-        } else if (relType === 'post' || msg.includes('post') || notif.type?.includes('post') || notif.type?.includes('share') || msg.includes('shared')) {
-            dest = refId ? `/posts?id=${refId}` : '/posts';
-        } else if (relType === 'user' || notif.type?.includes('follow') || notif.senderUserId) {
+            dest = refId ? `/article-view?id=${refId}` : (dest || '/articles');
+        } else if (relType === 'post' || msg.includes('post') || notif.type?.includes('post')) {
+            dest = refId ? `/posts?id=${refId}` : (dest || '/posts');
+        } else if (relType === 'user' || notif.type?.includes('follow')) {
             const uId = refId || notif.senderUserId;
             dest = uId ? `/profile?id=${uId}` : '/profile';
         } else if (!dest) {
@@ -1320,30 +1320,16 @@ export default function Navbar() {
                                     <p className="text-[12px] text-slate-500 dark:text-slate-400 truncate">{currentUser.roleName}</p>
                                 </div>
                                 <div className="py-1.5">
-                                    <div className="px-3 py-1 mb-1">
-                                        <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1">Switch User (Demo)</p>
-                                        {users.map(u => (
-                                            <button
-                                                key={u.id}
-                                                onClick={() => { 
-                                                    setCurrentUser(u); 
-                                                    setIsUserMenuOpen(false); 
-                                                    navigate('/');
-                                                }}
-                                                className={`w-full text-left px-2 py-1.5 rounded-lg text-[12px] font-semibold transition-colors flex items-center gap-2 ${currentUser.employeeId === u.employeeId ? 'text-blue-600 dark:text-blue-400 bg-blue-500/10' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-800 dark:hover:text-slate-200'}`}
-                                            >
-                                                <div className="w-5 h-5 rounded-md flex items-center justify-center text-white text-[10px] font-black"
-                                                    style={{background: 'linear-gradient(135deg, #3b7fff, #00d4ff)'}}>
-                                                    {u.name.charAt(0)}
-                                                </div>
-                                                {u.name.split(' ')[0]} <span className="text-slate-600">({u.roleName})</span>
-                                            </button>
-                                        ))}
-                                    </div>
                                     <div className="border-t px-3 py-2" style={{borderColor: 'var(--border-mid)'}}>
                                         <Link to="/profile" onClick={() => setIsUserMenuOpen(false)} className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
                                             <span className="material-symbols-outlined text-[16px]">person</span> My Profile
                                         </Link>
+                                        <button
+                                            onClick={() => { setIsUserMenuOpen(false); logout(); }}
+                                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] font-semibold text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors mt-0.5"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">logout</span> Log Out
+                                        </button>
                                     </div>
                                 </div>
                             </div>

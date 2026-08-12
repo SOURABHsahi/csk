@@ -39,6 +39,14 @@ public class ArticleController : KnomeControllerBase
         return Ok(ApiResponse<List<ArticleDto>>.SuccessResponse(200, "User articles retrieved successfully.", articles));
     }
 
+    [HttpGet("user/{userId:int}")]
+    [ProducesResponseType(typeof(ApiResponse<List<ArticleDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetUserArticles(int userId, [FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 20)
+    {
+        var articles = await _articleService.GetUserArticlesAsync(userId, GetCurrentUserId(), pageNumber, pageSize);
+        return Ok(ApiResponse<List<ArticleDto>>.SuccessResponse(200, "User articles retrieved successfully.", articles));
+    }
+
     [HttpGet("{articleId}")]
     [ProducesResponseType(typeof(ApiResponse<ArticleDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetArticle(long articleId)

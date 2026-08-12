@@ -145,7 +145,12 @@ public class PodcastService : IPodcastService
 
     public async Task<List<PodcastDto>> GetMyPodcastsAsync(int currentUserId, int pageNumber = 1, int pageSize = 20)
     {
-        var podcasts = await _repo.GetMyPodcastsAsync(currentUserId, pageNumber, pageSize);
+        return await GetUserPodcastsAsync(currentUserId, currentUserId, pageNumber, pageSize);
+    }
+
+    public async Task<List<PodcastDto>> GetUserPodcastsAsync(int hostUserId, int currentUserId, int pageNumber = 1, int pageSize = 20)
+    {
+        var podcasts = await _repo.GetMyPodcastsAsync(hostUserId, pageNumber, pageSize);
         var dtos = new List<PodcastDto>();
 
         foreach (var p in podcasts)
@@ -187,11 +192,17 @@ public class PodcastService : IPodcastService
         int effectiveUploaderUserId = currentUserId;
         if (dto.UploaderUserId.HasValue && dto.UploaderUserId.Value > 0)
         {
-            var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
-            if (user != null && user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.CommunityAdmin))
+            var userExists = await _db.Users.AnyAsync(u => u.UserId == dto.UploaderUserId.Value);
+            if (userExists)
             {
                 effectiveUploaderUserId = dto.UploaderUserId.Value;
             }
+        }
+
+        string coverUrl = dto.CoverImageUrl ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(coverUrl))
+        {
+            coverUrl = "https://images.unsplash.com/photo-1478737270239-2f02b77fc618?auto=format&fit=crop&q=90&w=800";
         }
 
         var podcast = new Podcast
@@ -199,7 +210,7 @@ public class PodcastService : IPodcastService
             UploaderUserId = effectiveUploaderUserId,
             Title = dto.Title,
             Description = dto.Description,
-            CoverImageUrl = dto.CoverImageUrl,
+            CoverImageUrl = coverUrl,
             AudioUrl = dto.AudioUrl,
             DurationSeconds = dto.DurationSeconds,
             CategoryId = dto.CategoryId,

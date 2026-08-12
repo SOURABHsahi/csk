@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { interactionsApi, searchApi, communitiesApi, resolveMediaUrl } from '../../utils/apiService';
+import { interactionsApi, searchApi, communitiesApi, adminApi, resolveMediaUrl } from '../../utils/apiService';
 import { useUser } from '../contexts/UserContext';
 
-export default function ArticleShareModal({ isOpen, onClose, article, onShared }) {
-    const { currentUser } = useUser();
+export default function ArticleShareModal({ isOpen, onClose, article, contentType: propContentType, onShared }) {
+    const { currentUser, users: contextUsers } = useUser();
     const [shareTab, setShareTab] = useState('menu'); // 'menu' | 'community' | 'users'
     const [searchQuery, setSearchQuery] = useState('');
-    const [searchResults, setSearchResults] = useState([]);
+    const [allPlatformUsers, setAllPlatformUsers] = useState([]);
     const [selectedUsers, setSelectedUsers] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
 
@@ -19,53 +19,101 @@ export default function ArticleShareModal({ isOpen, onClose, article, onShared }
 
     const backdropRef = useRef(null);
 
-    useEffect(() => {
-        if (!isOpen || !article) return;
-        setShareTab('menu');
-        setSearchQuery('');
-        setSearchResults([]);
-        setSelectedUsers([]);
-        setCopied(false);
-        setIsSharing(false);
+    const isPodcast = propContentType === 'Podcast' || article?.audioUrl || article?.series || article?.podcastId || article?.type === 'Podcast';
+    const contentTypeStr = isPodcast ? 'Podcast' : 'Article';
+    const itemTitle = article?.title || (isPodcast ? 'Podcast Episode' : 'Article');
 
-        // Fetch communities list for selection
-        const fetchCommunities = async () => {
-            try {
-                const res = await communitiesApi.getAll();
-                const list = Array.isArray(res) ? res : (res?.data || []);
-                setCommunities(list);
-                if (list.length > 0) {
-                    setSelectedCommunityId(list[0].communityId || list[0].id);
-                }
-            } catch (err) {
-                console.error('Failed to load communities for share modal', err);
-            }
-        };
-        fetchCommunities();
-    }, [isOpen, article]);
-
-    // Handle User Search
     useEffect(() => {
-        if (shareTab !== 'users' || !searchQuery.trim()) {
-            setSearchResults([]);
-            return;
+        if (isOpen) {
+            setShareTab('menu');
+            setSelectedUsers([]);
+            setSearchQuery('');
+            communitiesApi.getAll()
+                .then(data => {
+                    const list = Array.isArray(data) ? data : (data?.data || []);
+                    setCommunities(list);
+                    if (list.length > 0) setSelectedCommunityId(String(list[0].communityId || list[0].id));
+                })
+                .catch(() => {});
         }
+    }, [isOpen]);
 
-        const timer = setTimeout(async () => {
+    // Load all platform users (context + API) when opening share with users tab
+    useEffect(() => {
+        if (!isOpen || shareTab !== 'users') return;
+
+        const loadAllUsers = async () => {
             setIsSearching(true);
             try {
-                const res = await searchApi.searchUsers(searchQuery.trim());
-                const list = Array.isArray(res) ? res : (res?.items || []);
-                setSearchResults(list.filter(u => u.userId !== currentUser?.userId && u.id !== currentUser?.id));
-            } catch (err) {
-                console.error('Failed to search users for share', err);
+                let merged = [...(contextUsers || [])];
+
+                try {
+                    const apiRes = await adminApi.getUsers(1, 100).catch(() => null);
+                    const apiList = apiRes?.data?.items || apiRes?.items || (Array.isArray(apiRes) ? apiRes : []);
+                    apiList.forEach(u => {
+                        const uId = u.userId || u.id;
+                        if (uId && !merged.some(m => String(m.userId || m.id) === String(uId))) {
+                            merged.push({
+                                id: uId,
+                                userId: uId,
+                                employeeId: u.employeeId,
+                                name: u.fullName || u.name,
+                                fullName: u.fullName || u.name,
+                                role: u.roleName || u.role || u.designation || 'Employee',
+                                roleName: u.roleName || u.role || 'Employee',
+                                designation: u.designation || u.roleName || 'Employee',
+                                department: u.departmentName || u.department || 'MPOnline',
+                                avatar: u.profilePhotoUrl || u.avatar || null
+                            });
+                        }
+                    });
+                } catch { /* keep context users */ }
+
+                const currentId = String(currentUser?.userId || currentUser?.id || '');
+                const currentEmpId = String(currentUser?.employeeId || '').toLowerCase();
+
+                const filtered = merged.filter(u => {
+                    const idMatch = String(u.userId || u.id) === currentId;
+                    const empMatch = currentEmpId && String(u.employeeId || '').toLowerCase() === currentEmpId;
+                    return !idMatch && !empMatch;
+                });
+
+                setAllPlatformUsers(filtered);
             } finally {
                 setIsSearching(false);
             }
-        }, 300);
+        };
 
-        return () => clearTimeout(timer);
-    }, [searchQuery, shareTab, currentUser?.userId, currentUser?.id]);
+        loadAllUsers();
+    }, [isOpen, shareTab, contextUsers, currentUser]);
+
+    // Filter & Sort users with exact/starts-with matches prioritized at the VERY TOP!
+    const displayedUserList = React.useMemo(() => {
+        if (!searchQuery.trim()) {
+            return allPlatformUsers;
+        }
+
+        const query = searchQuery.trim().toLowerCase();
+
+        const matches = allPlatformUsers.filter(u => {
+            const name = (u.name || u.fullName || '').toLowerCase();
+            const empId = (u.employeeId || '').toLowerCase();
+            const role = (u.role || u.roleName || u.designation || '').toLowerCase();
+            const dept = (u.department || '').toLowerCase();
+            return name.includes(query) || empId.includes(query) || role.includes(query) || dept.includes(query);
+        });
+
+        return matches.sort((a, b) => {
+            const aName = (a.name || a.fullName || '').toLowerCase();
+            const bName = (b.name || b.fullName || '').toLowerCase();
+
+            const aStarts = aName.startsWith(query) ? 0 : (aName.includes(query) ? 1 : 2);
+            const bStarts = bName.startsWith(query) ? 0 : (bName.includes(query) ? 1 : 2);
+
+            if (aStarts !== bStarts) return aStarts - bStarts;
+            return aName.localeCompare(bName);
+        });
+    }, [allPlatformUsers, searchQuery]);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -83,10 +131,12 @@ export default function ArticleShareModal({ isOpen, onClose, article, onShared }
 
     if (!isOpen || !article) return null;
 
-    const articleUrl = `${window.location.origin}/article-view?id=${article.id}`;
+    const shareUrl = isPodcast 
+        ? `${window.location.origin}/podcasts?id=${article.id}`
+        : `${window.location.origin}/article-view?id=${article.id}`;
 
     const handleCopyLink = () => {
-        navigator.clipboard.writeText(articleUrl);
+        navigator.clipboard.writeText(shareUrl);
         setCopied(true);
         setTimeout(() => setCopied(false), 2500);
     };
@@ -97,7 +147,7 @@ export default function ArticleShareModal({ isOpen, onClose, article, onShared }
                 await navigator.share({
                     title: article.title,
                     text: article.subtitle || article.description || article.title,
-                    url: articleUrl
+                    url: shareUrl
                 });
                 onClose();
             } catch (err) {
@@ -112,13 +162,13 @@ export default function ArticleShareModal({ isOpen, onClose, article, onShared }
         if (!selectedCommunityId) return;
         setIsSharing(true);
         try {
-            await interactionsApi.shareContent('Article', article.id, 'Community', parseInt(selectedCommunityId));
+            await interactionsApi.shareContent(contentTypeStr, article.id, 'Community', parseInt(selectedCommunityId));
             if (onShared) onShared('community');
-            alert(`Article successfully shared to community!`);
+            alert(`${contentTypeStr} successfully shared to community!`);
             onClose();
         } catch (err) {
-            console.error('Failed to share article to community', err);
-            alert('Failed to share article to community. Please try again.');
+            console.error(`Failed to share ${contentTypeStr.toLowerCase()} to community`, err);
+            alert(`Failed to share ${contentTypeStr.toLowerCase()} to community. Please try again.`);
         } finally {
             setIsSharing(false);
         }
@@ -129,23 +179,33 @@ export default function ArticleShareModal({ isOpen, onClose, article, onShared }
         setIsSharing(true);
         try {
             await Promise.all(selectedUsers.map(u => 
-                interactionsApi.shareContent('Article', article.id, 'User', u.id || u.userId)
+                interactionsApi.shareContent(contentTypeStr, article.id, 'User', u.id || u.userId)
             ));
+            const senderName = currentUser?.fullName || currentUser?.name || 'Someone';
+            const icon = isPodcast ? 'podcasts' : 'article';
+            const color = isPodcast ? 'text-pink-500' : 'text-emerald-500';
+            const bg = isPodcast ? 'bg-pink-500/10' : 'bg-emerald-500/10';
+            const textMsg = isPodcast 
+                ? `🎙️ ${senderName} shared a podcast with you: "${itemTitle}"`
+                : `📄 ${senderName} shared an article with you: "${itemTitle}"`;
+
             const notifsToStore = selectedUsers.map(u => ({
-                id: `local_share_${article.id}_${u.id || u.userId}_${Date.now()}`,
-                type: 'share',
+                id: `local_share_${contentTypeStr.toLowerCase()}_${article.id}_${u.id || u.userId}_${Date.now()}`,
+                type: isPodcast ? 'podcast_shared' : 'share',
                 category: 'Shares',
-                icon: 'share',
-                color: 'text-emerald-500',
-                bg: 'bg-emerald-500/10',
-                text: `${currentUser?.fullName || 'Someone'} shared an article with you.`,
-                senderName: currentUser?.fullName || 'Colleague',
+                icon,
+                color,
+                bg,
+                text: textMsg,
+                message: textMsg,
+                senderName,
                 senderAvatar: currentUser?.profilePhotoUrl || currentUser?.avatar || null,
                 targetUserId: u.id || u.userId,
                 time: 'Just now',
                 unread: true,
-                targetUrl: `/article-view?id=${article.id}`,
-                relatedContentType: 'Article',
+                targetUrl: shareUrl,
+                actionLink: shareUrl,
+                relatedContentType: contentTypeStr,
                 relatedContentId: article.id
             }));
             const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
@@ -155,11 +215,11 @@ export default function ArticleShareModal({ isOpen, onClose, article, onShared }
             }
 
             if (onShared) onShared('users');
-            alert(`Article successfully shared with ${selectedUsers.length} team member(s)!`);
+            alert(`${contentTypeStr} successfully shared with ${selectedUsers.length} team member(s)!`);
             onClose();
         } catch (err) {
-            console.error('Failed to share article with users', err);
-            alert('Failed to share article with some users.');
+            console.error(`Failed to share ${contentTypeStr.toLowerCase()} with users`, err);
+            alert(`Failed to share ${contentTypeStr.toLowerCase()} with some users.`);
         } finally {
             setIsSharing(false);
         }
@@ -255,13 +315,13 @@ export default function ArticleShareModal({ isOpen, onClose, article, onShared }
                             {/* Copy Link Section */}
                             <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
                                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                                    Direct Article URL
+                                    Direct {contentTypeStr} URL
                                 </label>
                                 <div className="flex items-center gap-2">
                                     <input
                                         type="text"
                                         readOnly
-                                        value={articleUrl}
+                                        value={shareUrl}
                                         className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-600 dark:text-slate-300 outline-none font-mono truncate"
                                     />
                                     <button
@@ -355,43 +415,70 @@ export default function ArticleShareModal({ isOpen, onClose, article, onShared }
                             )}
 
                             {/* Search Results List */}
-                            <div className="max-h-48 overflow-y-auto space-y-1 border border-slate-100 dark:border-slate-800 rounded-xl p-2 bg-slate-50/50 dark:bg-slate-800/30">
+                            {/* Search Results List */}
+                            <div className="max-h-56 overflow-y-auto space-y-1.5 border border-slate-100 dark:border-slate-800/80 rounded-xl p-2 bg-slate-50/50 dark:bg-slate-800/30">
                                 {isSearching ? (
-                                    <div className="py-6 text-center text-xs text-slate-400 font-bold">Searching team members...</div>
-                                ) : searchResults.length > 0 ? (
-                                    searchResults.map(u => {
+                                    <div className="py-6 text-center text-xs text-slate-400 font-bold flex items-center justify-center gap-2">
+                                        <span className="material-symbols-outlined text-[18px] animate-spin text-indigo-500">progress_activity</span>
+                                        Loading teammates...
+                                    </div>
+                                ) : displayedUserList.length > 0 ? (
+                                    displayedUserList.map(u => {
                                         const uId = u.id || u.userId;
-                                        const isSelected = selectedUsers.some(sel => (sel.id || sel.userId) === uId);
+                                        const isSelected = selectedUsers.some(sel => String(sel.id || sel.userId) === String(uId));
                                         return (
                                             <div
                                                 key={uId}
                                                 onClick={() => toggleSelectUser(u)}
-                                                className={`p-2.5 rounded-xl flex items-center justify-between cursor-pointer transition-colors ${
-                                                    isSelected ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                                className={`p-2.5 rounded-xl flex items-center justify-between cursor-pointer transition-all border ${
+                                                    isSelected 
+                                                        ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/60 text-indigo-600 dark:text-indigo-300' 
+                                                        : 'hover:bg-slate-100 dark:hover:bg-slate-800/80 border-transparent text-slate-700 dark:text-slate-300'
                                                 }`}
                                             >
-                                                <div className="flex items-center gap-2.5">
+                                                <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
                                                     <img
                                                         src={resolveMediaUrl(u.avatar || u.profilePhotoUrl)}
-                                                        onError={(e) => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name || 'User')}&background=6366f1&color=fff`; }}
-                                                        className="w-8 h-8 rounded-full object-cover"
-                                                        alt={u.name}
+                                                        onError={(e) => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name || u.fullName || 'User')}&background=6366f1&color=fff&bold=true`; }}
+                                                        className="w-8 h-8 rounded-full object-cover shrink-0 shadow-xs"
+                                                        alt={u.name || u.fullName}
                                                     />
-                                                    <div>
-                                                        <p className="text-xs font-bold leading-tight">{u.name || u.fullName}</p>
-                                                        <p className="text-[10px] text-slate-400">{u.role || u.department || 'Employee'}</p>
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <p className="text-xs font-bold leading-tight text-slate-900 dark:text-white truncate">
+                                                                {u.name || u.fullName}
+                                                            </p>
+                                                            {u.employeeId && (
+                                                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-semibold shrink-0">
+                                                                    {u.employeeId}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                                                            {u.roleName || u.role || u.designation || 'Employee'} • {u.department || 'MPOnline'}
+                                                        </p>
                                                     </div>
                                                 </div>
-                                                <span className="material-symbols-outlined text-[18px]">
-                                                    {isSelected ? 'check_box' : 'checkbox_outline_blank'}
-                                                </span>
+
+                                                {/* Clean SVG Checkbox - never breaks into ligature text */}
+                                                <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all shrink-0 ${
+                                                    isSelected 
+                                                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs' 
+                                                        : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                                                }`}>
+                                                    {isSelected && (
+                                                        <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="3" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                    )}
+                                                </div>
                                             </div>
                                         );
                                     })
-                                ) : searchQuery ? (
-                                    <div className="py-6 text-center text-xs text-slate-400 font-bold">No users found matching "{searchQuery}"</div>
                                 ) : (
-                                    <div className="py-6 text-center text-xs text-slate-400 font-bold">Type a name above to search employees</div>
+                                    <div className="py-6 text-center text-xs text-slate-400 font-bold">
+                                        No users found matching "{searchQuery}"
+                                    </div>
                                 )}
                             </div>
 

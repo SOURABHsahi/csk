@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useUser } from '../components/contexts/UserContext';
 import { Link, useNavigate } from 'react-router-dom';
 import { getArticles, saveArticle, deleteArticle } from '../utils/articleService';
-import { savedContentApi, getPersonalizedRecommendations } from '../utils/apiService';
+import { savedContentApi, getPersonalizedRecommendations, resolveMediaUrl } from '../utils/apiService';
 import { apiClient } from '../utils/apiClient';
 import { checkRestrictedContent } from '../utils/restrictedWords';
 import ReportModal from '../components/modals/ReportModal';
@@ -691,7 +691,7 @@ export default function Articles() {
                                         <div key={att.id} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 group">
                                             <div className="flex items-center gap-2 overflow-hidden">
                                                 {att.type === 'image' && (att.backendUrl || att.url) ? (
-                                                    <img src={att.backendUrl ? `http://localhost:5095${att.backendUrl}` : att.url} alt="preview" className="w-8 h-8 rounded object-cover shrink-0" />
+                                                    <img src={resolveMediaUrl(att.backendUrl) || att.url} alt="preview" className="w-8 h-8 rounded object-cover shrink-0" />
                                                 ) : (
                                                     <span className="material-symbols-outlined text-[18px] text-purple-500 shrink-0">
                                                         {att.type === 'doc' ? 'description' : att.type === 'image' ? 'image' : att.type === 'video' ? 'videocam' : 'mic'}

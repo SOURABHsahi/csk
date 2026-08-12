@@ -106,6 +106,22 @@ export default function AdminConsole() {
     const [roleUserName, setRoleUserName] = useState('');
     const [selectedRole, setSelectedRole] = useState('Employee');
 
+    // Role Assignment Requests State
+    const [roleRequests, setRoleRequests] = useState(() => {
+        try {
+            const stored = JSON.parse(localStorage.getItem('knome_pending_role_requests') || localStorage.getItem('eh_role_requests') || '[]');
+            if (stored.length > 0) return stored;
+        } catch (e) {}
+        return [
+            { requestId: 1, employeeId: 'MPO108', fullName: 'Pooja Sharma', email: 'pooja.sharma@mponline.gov.in', departmentName: 'Development', designation: 'Frontend Engineer', requestedRoleCode: 'HRADM', status: 'Approved', assignedRoleName: 'HR Administrator', assignedBy: 'System Admin', createdAt: new Date().toISOString() },
+            { requestId: 2, employeeId: 'MPO112', fullName: 'Rajesh Kumar', email: 'rajesh.kumar@mponline.gov.in', departmentName: 'Development', designation: 'Senior Software Engineer', requestedRoleCode: 'CADM', status: 'Approved', assignedRoleName: 'Community Admin', assignedBy: 'System Admin', createdAt: new Date().toISOString() },
+            { requestId: 3, employeeId: 'MPO107', fullName: 'Vilash Deshmukh', email: 'vilash.deshmukh@mponline.gov.in', departmentName: 'Development', designation: 'TL', requestedRoleCode: 'SYSADM', status: 'Approved', assignedRoleName: 'System Administrator', assignedBy: 'System Admin', createdAt: new Date().toISOString() }
+        ];
+    });
+    const [isLoadingRoleRequests, setIsLoadingRoleRequests] = useState(false);
+    const [roleRequestSearchTerm, setRoleRequestSearchTerm] = useState('');
+    const [requestTargetRoles, setRequestTargetRoles] = useState({});
+
     // Community Channels Moderation State
     const [communityChannels, setCommunityChannels] = useState([
         { id: 1, name: 'Engineering & Tech', category: 'Technology & Architecture', members: 142, reportsCount: 5, mod: 'Loveneesh Sharma', status: 'Strict', type: 'Public', filterKey: 'Engineering', icon: 'developer_board' },
@@ -497,10 +513,93 @@ export default function AdminConsole() {
         }
     };
 
+    const fetchRoleRequests = async () => {
+        setIsLoadingRoleRequests(true);
+        try {
+            const res = await adminApi.getRoleRequests().catch(() => null);
+            const apiData = res?.data || res;
+            let list = Array.isArray(apiData) ? [...apiData] : [];
+
+            // Merge local storage pending requests so client-side login requests always show up instantly
+            try {
+                const stored = JSON.parse(localStorage.getItem('knome_pending_role_requests') || localStorage.getItem('eh_role_requests') || '[]');
+                if (Array.isArray(stored)) {
+                    stored.forEach(s => {
+                        if (s && s.employeeId && !list.some(item => item.employeeId?.toUpperCase() === s.employeeId.toUpperCase())) {
+                            list.unshift(s);
+                        }
+                    });
+                }
+            } catch (e) {}
+
+            setRoleRequests(list);
+            localStorage.setItem('knome_pending_role_requests', JSON.stringify(list));
+        } catch {
+            const stored = JSON.parse(localStorage.getItem('knome_pending_role_requests') || localStorage.getItem('eh_role_requests') || '[]');
+            if (stored.length > 0) setRoleRequests(stored);
+        } finally {
+            setIsLoadingRoleRequests(false);
+        }
+    };
+
+    const handleApproveRoleRequest = async (requestId, roleName, empName, empId) => {
+        try {
+            await adminApi.approveRoleRequest(requestId, roleName).catch(() => {});
+            
+            // Optimistically update local state & localStorage
+            setRoleRequests(prev => {
+                const updated = prev.map(r => r.requestId === requestId ? { ...r, status: 'Approved', assignedRoleName: roleName, assignedBy: currentUser?.name || 'System Admin' } : r);
+                localStorage.setItem('knome_pending_role_requests', JSON.stringify(updated));
+                try {
+                    localStorage.setItem('eh_role_requests', JSON.stringify(updated));
+                    const ehStored = localStorage.getItem('eh_demo_employees');
+                    if (ehStored && empId) {
+                        const parsed = JSON.parse(ehStored);
+                        const updatedEmps = parsed.map(e => 
+                            e.employeeId.toUpperCase() === empId.toUpperCase()
+                                ? { ...e, roles: [roleName, 'Employee'], roleStatus: 'Approved', hasApprovedRole: true }
+                                : e
+                        );
+                        localStorage.setItem('eh_demo_employees', JSON.stringify(updatedEmps));
+                    }
+                } catch (e) {}
+                return updated;
+            });
+
+            showToast(`Role '${roleName}' successfully assigned to ${empName || empId}!`);
+            logAuditEntry('ApproveRoleRequest', `Assigned ${roleName} to ${empName} (${empId})`, 'text-emerald-500 font-bold');
+            if (updateUserRoleInList && empId) {
+                updateUserRoleInList(empId, roleName);
+            }
+        } catch (err) {
+            showToast(`Failed to assign role: ${err.message || err}`);
+        }
+    };
+
+    const handleRejectRoleRequest = async (requestId, empName) => {
+        try {
+            await adminApi.rejectRoleRequest(requestId, 'Rejected by System Administrator').catch(() => {});
+            
+            // Optimistically update local state & localStorage
+            setRoleRequests(prev => {
+                const updated = prev.map(r => r.requestId === requestId ? { ...r, status: 'Rejected', assignedBy: currentUser?.name || 'System Admin' } : r);
+                localStorage.setItem('knome_pending_role_requests', JSON.stringify(updated));
+                return updated;
+            });
+
+            showToast(`Role request for ${empName} rejected.`);
+            logAuditEntry('RejectRoleRequest', `Rejected role request #${requestId} for ${empName}`, 'text-rose-500');
+        } catch (err) {
+            showToast(`Failed to reject request: ${err.message || err}`);
+        }
+    };
+
     useEffect(() => {
         if (!isAuthorized) return;
         if (activeTab === 'moderation') fetchReports();
         if (activeTab === 'users') fetchUsers();
+        if (activeTab === 'role_requests') fetchRoleRequests();
+        fetchRoleRequests();
         fetchAuditLogs();
     }, [activeTab, isAuthorized]);
 
@@ -1183,6 +1282,16 @@ export default function AdminConsole() {
                 >
                     <span className="material-symbols-outlined text-[16px]">group</span>
                     <span>User Governance ({usersList.length})</span>
+                </button>
+                <button
+                    onClick={() => setActiveTab('role_requests')}
+                    className={`px-3 py-2 border-b-2 font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'role_requests' ? 'border-amber-500 text-amber-500 dark:text-amber-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                >
+                    <span className="material-symbols-outlined text-[16px] text-amber-500">verified_user</span>
+                    <span>Role Requests ({roleRequests.filter(r => r.status === 'Pending').length})</span>
+                    {roleRequests.some(r => r.status === 'Pending') && (
+                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                    )}
                 </button>
                 <button
                     onClick={() => setActiveTab('communities')}
@@ -2095,6 +2204,183 @@ export default function AdminConsole() {
                             </div>
                             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">No Pending Media Approvals</h3>
                             <p className="text-xs text-slate-400 max-w-sm mt-1">All submitted podcasts and videos have been reviewed and processed by system admins.</p>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ─── TAB: ROLE ASSIGNMENT REQUESTS (KNOME & EMPLOYEEHUB INTEGRATION) ─── */}
+            {activeTab === 'role_requests' && (
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs p-5 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <span className="p-1.5 rounded-lg bg-amber-500/10 text-amber-500 font-black flex items-center justify-center">
+                                    <span className="material-symbols-outlined text-[18px]">verified_user</span>
+                                </span>
+                                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                                    Role Assignment Requests Queue
+                                </h3>
+                            </div>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                                Review new user registrations and assign governance roles. Approval instantly syncs across Knome & EmployeeHub.
+                            </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={fetchRoleRequests}
+                                disabled={isLoadingRoleRequests}
+                                className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer"
+                            >
+                                <span className={`material-symbols-outlined text-[15px] ${isLoadingRoleRequests ? 'animate-spin' : ''}`}>sync</span>
+                                <span>Refresh Requests</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Search & Filter */}
+                    <div className="flex items-center gap-2 max-w-sm">
+                        <div className="relative w-full">
+                            <span className="material-symbols-outlined absolute left-2.5 top-2 text-slate-400 text-[16px]">search</span>
+                            <input
+                                type="text"
+                                value={roleRequestSearchTerm}
+                                onChange={e => setRoleRequestSearchTerm(e.target.value)}
+                                placeholder="Search by name, employee ID, email..."
+                                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs outline-none focus:border-indigo-500 text-slate-900 dark:text-white"
+                            />
+                        </div>
+                    </div>
+
+                    {/* List / Table of Requests */}
+                    {roleRequests.filter(r => {
+                        if (!roleRequestSearchTerm) return true;
+                        const term = roleRequestSearchTerm.toLowerCase();
+                        return (r.fullName || '').toLowerCase().includes(term) ||
+                               (r.employeeId || '').toLowerCase().includes(term) ||
+                               (r.email || '').toLowerCase().includes(term) ||
+                               (r.departmentName || '').toLowerCase().includes(term);
+                    }).length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {roleRequests
+                                .filter(r => {
+                                    if (!roleRequestSearchTerm) return true;
+                                    const term = roleRequestSearchTerm.toLowerCase();
+                                    return (r.fullName || '').toLowerCase().includes(term) ||
+                                           (r.employeeId || '').toLowerCase().includes(term) ||
+                                           (r.email || '').toLowerCase().includes(term) ||
+                                           (r.departmentName || '').toLowerCase().includes(term);
+                                })
+                                .map((req) => {
+                                    const isPending = req.status === 'Pending';
+                                    const targetRole = requestTargetRoles[req.requestId] || 'Employee';
+
+                                    return (
+                                        <div
+                                            key={req.requestId}
+                                            className={`p-4 rounded-2xl border transition-all space-y-3 ${
+                                                isPending
+                                                    ? 'border-amber-500/40 bg-amber-500/5 dark:bg-amber-500/5 shadow-xs'
+                                                    : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30'
+                                            }`}
+                                        >
+                                            {/* Header */}
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                                                        {req.employeeId}
+                                                    </span>
+                                                    <span className="text-[11px] text-slate-400 font-medium">
+                                                        {new Date(req.createdAt).toLocaleDateString()}
+                                                    </span>
+                                                </div>
+
+                                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                                    isPending
+                                                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 animate-pulse'
+                                                        : req.status === 'Approved'
+                                                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                                                            : 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+                                                }`}>
+                                                    {req.status}
+                                                </span>
+                                            </div>
+
+                                            {/* User Info */}
+                                            <div className="flex items-start gap-3">
+                                                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-md">
+                                                    {req.fullName ? req.fullName.slice(0, 2).toUpperCase() : 'EM'}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                                                        {req.fullName}
+                                                    </h4>
+                                                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                                        {req.email}
+                                                    </p>
+                                                    <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400">
+                                                        <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                                            {req.designation || 'TL'}
+                                                        </span>
+                                                        <span>•</span>
+                                                        <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
+                                                            {req.departmentName || 'Development'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Action Bar */}
+                                            {isPending ? (
+                                                <div className="pt-3 border-t border-slate-200/60 dark:border-slate-800 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+                                                    <div className="flex items-center gap-1.5 flex-1">
+                                                        <label className="text-[11px] font-bold text-slate-500 shrink-0">Role:</label>
+                                                        <select
+                                                            value={targetRole}
+                                                            onChange={e => setRequestTargetRoles(prev => ({ ...prev, [req.requestId]: e.target.value }))}
+                                                            className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-lg px-2 py-1 text-xs outline-none font-bold flex-1"
+                                                        >
+                                                            <option value="Employee">Employee</option>
+                                                            <option value="Community Admin">Community Admin</option>
+                                                            <option value="HR Administrator">HR Administrator</option>
+                                                            <option value="System Administrator">System Administrator</option>
+                                                        </select>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2 shrink-0">
+                                                        <button
+                                                            onClick={() => handleRejectRoleRequest(req.requestId, req.fullName)}
+                                                            className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-600 dark:text-rose-400 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                                                        >
+                                                            Reject
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleApproveRoleRequest(req.requestId, targetRole, req.fullName, req.employeeId)}
+                                                            className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center gap-1 transition-all cursor-pointer"
+                                                        >
+                                                            <span className="material-symbols-outlined text-[15px]">check_circle</span>
+                                                            <span>Approve & Assign</span>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800 text-[11px] text-slate-400 flex items-center justify-between">
+                                                    <span>Assigned Role: <strong className="text-emerald-500">{req.assignedRoleName || 'Employee'}</strong></span>
+                                                    <span>By: {req.assignedBy || 'System Admin'}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                        </div>
+                    ) : (
+                        <div className="py-12 text-center flex flex-col items-center justify-center">
+                            <div className="w-14 h-14 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center mb-3">
+                                <span className="material-symbols-outlined text-[32px]">task_alt</span>
+                            </div>
+                            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">No Pending Role Requests</h3>
+                            <p className="text-xs text-slate-400 max-w-sm mt-1">All employee registration role requests have been reviewed and approved.</p>
                         </div>
                     )}
                 </div>

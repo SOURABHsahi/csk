@@ -39,7 +39,7 @@ public class AuthController : KnomeControllerBase
     [HttpPost("logout")]
     [Authorize]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
-    public IActionResult Logout()
+    public IActionResult Logout([FromBody] LogoutRequestDto? request = null)
     {
         // JWT is stateless — logout is handled client-side by discarding the token.
         // When HRMS SSO is integrated, this endpoint will call the SSO logout flow.

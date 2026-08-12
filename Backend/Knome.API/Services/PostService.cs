@@ -73,7 +73,12 @@ public class PostService : IPostService
 
     public async Task<List<PostDto>> GetMyPostsAsync(int currentUserId, int pageNumber = 1, int pageSize = 20)
     {
-        var posts = await _repo.GetMyPostsAsync(currentUserId, pageNumber, pageSize);
+        return await GetUserPostsAsync(currentUserId, currentUserId, pageNumber, pageSize);
+    }
+
+    public async Task<List<PostDto>> GetUserPostsAsync(int authorUserId, int currentUserId, int pageNumber = 1, int pageSize = 20)
+    {
+        var posts = await _repo.GetMyPostsAsync(authorUserId, pageNumber, pageSize);
         var dtos = new List<PostDto>();
 
         foreach (var p in posts)

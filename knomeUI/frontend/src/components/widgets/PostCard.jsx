@@ -364,28 +364,72 @@ export default function PostCard({ post, onPostDeleted }) {
         }
     };
 
-    useEffect(() => {
-        if (shareMode !== 'userSearch') return;
-        let isMounted = true;
+    const { users: contextUsers } = useUser();
+    const [allPlatformUsers, setAllPlatformUsers] = useState([]);
 
-        const fetchUsers = async () => {
+    useEffect(() => {
+        if (!isShareOpen || shareMode !== 'userSearch') return;
+
+        const loadUsers = async () => {
             setIsShareSearching(true);
             try {
-                const res = await searchApi.searchUsers(shareSearchQuery.trim());
-                if (res && isMounted) {
-                    const rawList = Array.isArray(res) ? res : (res.items || []);
-                    setShareSearchResults(rawList);
-                }
-            } catch (error) {
-                console.error("Failed to search users", error);
+                let merged = [...(contextUsers || [])];
+                try {
+                    const res = await searchApi.searchUsers(shareSearchQuery.trim()).catch(() => null);
+                    const apiList = Array.isArray(res) ? res : (res?.items || []);
+                    apiList.forEach(u => {
+                        const uId = u.userId || u.id;
+                        if (uId && !merged.some(m => String(m.userId || m.id) === String(uId))) {
+                            merged.push({
+                                id: uId,
+                                userId: uId,
+                                employeeId: u.employeeId,
+                                name: u.fullName || u.name || u.title,
+                                fullName: u.fullName || u.name || u.title,
+                                role: u.roleName || u.role || u.designation || u.summary || 'Employee',
+                                department: u.departmentName || u.department || 'MPOnline',
+                                avatar: u.profilePhotoUrl || u.avatar || null
+                            });
+                        }
+                    });
+                } catch {}
+
+                const currentId = String(currentUser?.userId || currentUser?.id || '');
+                const currentEmpId = String(currentUser?.employeeId || '').toLowerCase();
+                const filtered = merged.filter(u => {
+                    const idMatch = String(u.userId || u.id) === currentId;
+                    const empMatch = currentEmpId && String(u.employeeId || '').toLowerCase() === currentEmpId;
+                    return !idMatch && !empMatch;
+                });
+                setAllPlatformUsers(filtered);
             } finally {
-                if (isMounted) setIsShareSearching(false);
+                setIsShareSearching(false);
             }
         };
 
-        const timer = setTimeout(fetchUsers, shareSearchQuery ? 300 : 0);
-        return () => { isMounted = false; clearTimeout(timer); };
-    }, [shareSearchQuery, shareMode]);
+        loadUsers();
+    }, [isShareOpen, shareMode, contextUsers, currentUser, shareSearchQuery]);
+
+    const displayedShareUsers = React.useMemo(() => {
+        if (!shareSearchQuery.trim()) return allPlatformUsers;
+        const query = shareSearchQuery.trim().toLowerCase();
+        const matches = allPlatformUsers.filter(u => {
+            const name = (u.name || u.fullName || '').toLowerCase();
+            const empId = (u.employeeId || '').toLowerCase();
+            const role = (u.role || u.roleName || u.designation || '').toLowerCase();
+            const dept = (u.department || '').toLowerCase();
+            return name.includes(query) || empId.includes(query) || role.includes(query) || dept.includes(query);
+        });
+
+        return matches.sort((a, b) => {
+            const aName = (a.name || a.fullName || '').toLowerCase();
+            const bName = (b.name || b.fullName || '').toLowerCase();
+            const aStarts = aName.startsWith(query) ? 0 : (aName.includes(query) ? 1 : 2);
+            const bStarts = bName.startsWith(query) ? 0 : (bName.includes(query) ? 1 : 2);
+            if (aStarts !== bStarts) return aStarts - bStarts;
+            return aName.localeCompare(bName);
+        });
+    }, [allPlatformUsers, shareSearchQuery]);
 
     // Fetch communities when entering community share mode
     useEffect(() => {
@@ -1065,50 +1109,76 @@ export default function PostCard({ post, onPostDeleted }) {
                                         </div>
                                         <div className="max-h-60 overflow-y-auto space-y-1 pr-1">
                                             {isShareSearching ? (
-                                                <div className="text-center py-4 text-slate-500 text-sm">Searching...</div>
-                                            ) : shareSearchResults.length > 0 ? (
-                                                shareSearchResults.map(user => {
+                                                <div className="text-center py-4 text-slate-500 text-sm flex items-center justify-center gap-2">
+                                                    <span className="material-symbols-outlined text-[18px] animate-spin text-indigo-500">progress_activity</span>
+                                                    Searching teammates...
+                                                </div>
+                                            ) : displayedShareUsers.length > 0 ? (
+                                                displayedShareUsers.map(user => {
                                                     const userId = user.id || user.userId;
                                                     const userName = user.title || user.fullName || user.name || 'User';
-                                                    const userRole = user.summary || user.designation || user.roleName || 'Employee';
+                                                    const userRole = user.summary || user.designation || user.roleName || user.role || 'Employee';
+                                                    const userDept = user.department || user.departmentName || 'MPOnline';
+                                                    const userEmpId = user.employeeId || '';
                                                     const rawPhoto = user.authorProfilePhotoUrl || user.profilePhotoUrl || user.thumbnailUrl || user.avatar;
-                                                    const userAvatar = resolveMediaUrl(rawPhoto) || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=6366f1&color=fff`;
-                                                    const isSelected = selectedShareUsers.some(u => (u.id || u.userId) === userId);
+                                                    const userAvatar = resolveMediaUrl(rawPhoto) || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=6366f1&color=fff&bold=true`;
+                                                    const isSelected = selectedShareUsers.some(u => String(u.id || u.userId) === String(userId));
 
                                                     return (
-                                                        <label key={userId} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 cursor-pointer transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
-                                                            <input 
-                                                                type="checkbox" 
-                                                                className="rounded text-indigo-500 focus:ring-indigo-500 bg-slate-100 border-slate-300 dark:border-slate-600 dark:bg-slate-700 w-4 h-4 cursor-pointer"
-                                                                checked={isSelected}
-                                                                onChange={() => {
-                                                                    if (isSelected) {
-                                                                        setSelectedShareUsers(prev => prev.filter(u => (u.id || u.userId) !== userId));
-                                                                    } else {
-                                                                        setSelectedShareUsers(prev => [...prev, { ...user, id: userId }]);
-                                                                    }
-                                                                }}
-                                                            />
-                                                            <img 
-                                                                src={userAvatar} 
-                                                                alt={userName} 
-                                                                className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700 shadow-sm"
-                                                                onError={(e) => {
-                                                                    e.target.onerror = null; 
-                                                                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=6366f1&color=fff`;
-                                                                }}
-                                                            />
-                                                            <div className="flex-1 min-w-0">
-                                                                <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{userName}</p>
-                                                                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{userRole}</p>
+                                                        <div 
+                                                            key={userId} 
+                                                            onClick={() => {
+                                                                if (isSelected) {
+                                                                    setSelectedShareUsers(prev => prev.filter(u => String(u.id || u.userId) !== String(userId)));
+                                                                } else {
+                                                                    setSelectedShareUsers(prev => [...prev, { ...user, id: userId }]);
+                                                                }
+                                                            }}
+                                                            className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all border ${
+                                                                isSelected 
+                                                                    ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/60 text-indigo-600 dark:text-indigo-300' 
+                                                                    : 'hover:bg-slate-50 dark:hover:bg-slate-800/80 border-transparent text-slate-700 dark:text-slate-300'
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
+                                                                <img 
+                                                                    src={userAvatar} 
+                                                                    alt={userName} 
+                                                                    className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700 shadow-xs"
+                                                                    onError={(e) => {
+                                                                        e.target.onerror = null; 
+                                                                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=6366f1&color=fff&bold=true`;
+                                                                    }}
+                                                                />
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{userName}</p>
+                                                                        {userEmpId && (
+                                                                            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-semibold shrink-0">
+                                                                                {userEmpId}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{userRole} • {userDept}</p>
+                                                                </div>
                                                             </div>
-                                                        </label>
+
+                                                            <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all shrink-0 ${
+                                                                isSelected 
+                                                                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs' 
+                                                                    : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                                                            }`}>
+                                                                {isSelected && (
+                                                                    <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="3" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                                    </svg>
+                                                                )}
+                                                            </div>
+                                                        </div>
                                                     );
                                                 })
-                                            ) : shareSearchQuery ? (
-                                                <div className="text-center py-4 text-slate-500 text-sm">No users found.</div>
                                             ) : (
-                                                <div className="text-center py-4 text-slate-500 text-sm">Type a name to search.</div>
+                                                <div className="text-center py-4 text-slate-500 text-sm">No users found matching "{shareSearchQuery}".</div>
                                             )}
                                         </div>
                                         {selectedShareUsers.length > 0 && (

@@ -39,6 +39,36 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
     const [userSearchQuery, setUserSearchQuery] = useState('');
     const [selectedUserIds, setSelectedUserIds] = useState([]);
 
+    // Filter & Sort users with exact/starts-with matches prioritized at the VERY TOP!
+    const activeUsersList = React.useMemo(() => {
+        const allList = (users || []).filter(u => 
+            String(u.userId || u.id) !== String(currentUser?.userId || currentUser?.id) &&
+            String(u.employeeId || '').toLowerCase() !== String(currentUser?.employeeId || '').toLowerCase()
+        );
+
+        if (!userSearchQuery.trim()) {
+            return allList;
+        }
+
+        const query = userSearchQuery.trim().toLowerCase();
+        const matches = allList.filter(u => {
+            const name = (u.name || u.fullName || '').toLowerCase();
+            const empId = (u.employeeId || '').toLowerCase();
+            const role = (u.role || u.roleName || u.designation || '').toLowerCase();
+            const dept = (u.department || '').toLowerCase();
+            return name.includes(query) || empId.includes(query) || role.includes(query) || dept.includes(query);
+        });
+
+        return matches.sort((a, b) => {
+            const aName = (a.name || a.fullName || '').toLowerCase();
+            const bName = (b.name || b.fullName || '').toLowerCase();
+            const aStarts = aName.startsWith(query) ? 0 : (aName.includes(query) ? 1 : 2);
+            const bStarts = bName.startsWith(query) ? 0 : (bName.includes(query) ? 1 : 2);
+            if (aStarts !== bStarts) return aStarts - bStarts;
+            return aName.localeCompare(bName);
+        });
+    }, [users, currentUser, userSearchQuery]);
+
     useEffect(() => {
         if (video) {
             setLiked(localStorage.getItem(`knome_liked_video_${video.id}`) === 'true');
@@ -587,31 +617,44 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
                                             activeUsersList.map(u => {
                                                 const uId = u.id || u.userId;
                                                 const isChecked = selectedUserIds.includes(uId);
+                                                const avatarUrl = resolveMediaUrl(u.avatar || u.profilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name || u.fullName || 'U')}&background=6366f1&color=fff&bold=true`;
                                                 return (
-                                                    <label 
+                                                    <div 
                                                         key={uId} 
-                                                        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${isChecked ? 'bg-purple-500/20 border border-purple-500/30' : 'hover:bg-slate-800'}`}
+                                                        onClick={() => {
+                                                            setSelectedUserIds(prev => 
+                                                                prev.includes(uId) ? prev.filter(id => id !== uId) : [...prev, uId]
+                                                            );
+                                                        }}
+                                                        className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all border ${isChecked ? 'bg-purple-500/20 border-purple-500/40 text-purple-300' : 'hover:bg-slate-800 border-transparent text-slate-300'}`}
                                                     >
-                                                        <div className="flex items-center gap-2.5">
-                                                            <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-white font-bold text-[11px]">
-                                                                {(u.name || u.fullName || 'U').charAt(0).toUpperCase()}
-                                                            </div>
-                                                            <div>
-                                                                <p className="text-xs font-bold text-slate-200">{u.name || u.fullName}</p>
-                                                                <p className="text-[10px] text-slate-400">{u.roleName || u.department || 'MPOnline'}</p>
+                                                        <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
+                                                            <img src={avatarUrl} alt={u.name || u.fullName} className="w-8 h-8 rounded-full object-cover shrink-0 shadow-xs" />
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <p className="text-xs font-bold text-slate-100 truncate">{u.name || u.fullName}</p>
+                                                                    {u.employeeId && (
+                                                                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-semibold shrink-0">
+                                                                            {u.employeeId}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <p className="text-[10px] text-slate-400 truncate mt-0.5">{u.roleName || u.role || u.designation || 'Employee'} • {u.department || 'MPOnline'}</p>
                                                             </div>
                                                         </div>
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={isChecked}
-                                                            onChange={() => {
-                                                                setSelectedUserIds(prev => 
-                                                                    prev.includes(uId) ? prev.filter(id => id !== uId) : [...prev, uId]
-                                                                );
-                                                            }}
-                                                            className="rounded accent-purple-500 cursor-pointer"
-                                                        />
-                                                    </label>
+
+                                                        <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all shrink-0 ${
+                                                            isChecked 
+                                                                ? 'bg-purple-600 border-purple-600 text-white shadow-xs' 
+                                                                : 'border-slate-600 bg-slate-800'
+                                                        }`}>
+                                                            {isChecked && (
+                                                                <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="3" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                                </svg>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 );
                                             })
                                         )}

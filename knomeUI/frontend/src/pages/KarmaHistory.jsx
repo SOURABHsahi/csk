@@ -18,13 +18,16 @@ export default function KarmaHistory() {
         }
     }, [isSysAdmin, navigate]);
 
-    const [balance, setBalance] = useState({ totalPoints: currentUser?.karma || 0, badgeLevel: 'Bronze', recentTransactions: [] });
+    const [balance, setBalance] = useState({ 
+        totalPoints: currentUser?.karmaPoints ?? currentUser?.karma ?? 0, 
+        badgeLevel: 'Bronze', 
+        recentTransactions: [] 
+    });
     const [leaderboard, setLeaderboard] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    if (isSysAdmin) return null;
-
     useEffect(() => {
+        let isMounted = true;
         async function fetchKarmaData() {
             try {
                 const [balData, lbData] = await Promise.all([
@@ -32,50 +35,45 @@ export default function KarmaHistory() {
                     karmaApi.getLeaderboard(10).catch(() => null)
                 ]);
 
-                if (balData) {
-                    setBalance(balData);
-                }
-                if (lbData && Array.isArray(lbData) && lbData.length > 0) {
-                    const mappedLb = lbData.map((item, idx) => ({
-                        rank: item.rank || idx + 1,
-                        userId: item.userId,
-                        name: item.fullName || item.userName || 'Employee',
-                        role: item.designation || 'Contributor',
-                        points: item.totalPoints || 0,
-                        avatar: resolveMediaUrl(item.profilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.fullName || item.userName || 'Employee')}&background=6366f1&color=fff`
-                    }));
-                    setLeaderboard(mappedLb);
+                if (isMounted) {
+                    if (balData) {
+                        setBalance(balData);
+                    }
+                    if (lbData && Array.isArray(lbData) && lbData.length > 0) {
+                        const mappedLb = lbData.map((item, idx) => ({
+                            rank: item.rank || idx + 1,
+                            userId: item.userId,
+                            name: item.fullName || item.userName || 'Employee',
+                            role: item.designation || 'Contributor',
+                            points: item.totalPoints || 0,
+                            avatar: resolveMediaUrl(item.profilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.fullName || item.userName || 'Employee')}&background=6366f1&color=fff`
+                        }));
+                        setLeaderboard(mappedLb);
+                    }
                 }
             } catch (err) {
                 console.error("Failed to load karma data", err);
             } finally {
-                setIsLoading(false);
+                if (isMounted) setIsLoading(false);
             }
         }
         fetchKarmaData();
+        return () => { isMounted = false; };
     }, []);
 
-    const localUserKey = currentUser?.userId || currentUser?.id || 'guest';
-    const localHistory = JSON.parse(localStorage.getItem(`knome_karma_history_${localUserKey}`) || '[]');
-    const localKarmaPoints = Number(localStorage.getItem(`knome_user_karma_${localUserKey}`)) || (currentUser?.karmaPoints || currentUser?.karma || 0);
-    
-    const formattedLocalTx = localHistory.map((tx, idx) => ({
-        id: tx.id || `local_tx_${idx}`,
-        date: tx.date || new Date().toLocaleString(),
-        desc: tx.title || tx.activityType || 'Karma Earned',
-        type: tx.category?.toLowerCase() || 'media',
-        points: tx.points || `+${tx.pointsAwarded || 50}`,
-        source: 'Admin Approval',
-        icon: tx.title?.includes('Video') ? 'videocam' : (tx.title?.includes('Podcast') ? 'podcasts' : 'stars'),
-        color: 'text-emerald-500',
-        bg: 'bg-emerald-50 dark:bg-emerald-900/30'
-    }));
+    if (isSysAdmin) return null;
+
+    const realKarmaPoints = Number(balance.totalPoints ?? currentUser?.karmaPoints ?? currentUser?.karma ?? 0);
+    const karmaBadge = getKarmaBadge(realKarmaPoints);
+    const currentLevel = Math.max(1, Math.floor(realKarmaPoints / 100) + 1);
+    const nextLevelTarget = currentLevel * 100;
+    const progressPercent = realKarmaPoints % 100;
 
     const apiTx = (balance.recentTransactions && balance.recentTransactions.length > 0)
         ? balance.recentTransactions.map((tx, idx) => ({
             id: tx.transactionId || idx,
-            date: new Date(tx.createdDate).toLocaleString(),
-            desc: `${tx.activityType}: ${tx.relatedContentType ? tx.relatedContentType + ' #' + tx.relatedContentId : 'Activity'}`,
+            date: new Date(tx.createdDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
+            desc: `${tx.activityType}${tx.relatedContentType ? ' (' + tx.relatedContentType + ')' : ''}`,
             type: tx.activityType?.toLowerCase() || 'general',
             points: `+${tx.pointsAwarded}`,
             source: tx.relatedContentType || 'System',
@@ -86,17 +84,12 @@ export default function KarmaHistory() {
         : [];
 
     const defaultMockActivities = [
-        { id: 1, date: 'Today, 10:42 AM', desc: 'Published an Article: "Modern UI Design Systems"', type: 'article', points: '+10', source: 'Design Excellence', icon: 'article', color: 'text-indigo-500', bg: 'bg-indigo-50 dark:bg-indigo-900/30' },
-        { id: 2, date: 'Today, 09:15 AM', desc: 'Active Community Participation (Daily)', type: 'community', points: '+5', source: 'Engineering Hub', icon: 'forum', color: 'text-teal-500', bg: 'bg-teal-50 dark:bg-teal-900/30' },
-        { id: 3, date: 'Yesterday, 4:30 PM', desc: 'Received a Share on your video', type: 'share', points: '+3', source: 'Timeline', icon: 'share', color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/30' },
-        { id: 4, date: 'Yesterday, 2:10 PM', desc: 'Received a Comment on your post', type: 'comment', points: '+2', source: 'Frontend Masters', icon: 'chat_bubble', color: 'text-cyan-500', bg: 'bg-cyan-50 dark:bg-cyan-900/30' },
-        { id: 5, date: 'Yesterday, 1:00 PM', desc: 'Received a Like on your post', type: 'like', points: '+1', source: 'Frontend Masters', icon: 'thumb_up', color: 'text-pink-500', bg: 'bg-pink-50 dark:bg-pink-900/30' },
-        { id: 6, date: 'Oct 24, 11:00 AM', desc: 'Uploaded a Video: "Quarterly Review"', type: 'video', points: '+8', source: 'All Company', icon: 'videocam', color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-900/30' },
-        { id: 7, date: 'Oct 23, 03:22 PM', desc: 'Published a Post', type: 'post', points: '+2', source: 'Timeline', icon: 'edit_square', color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/30' },
-        { id: 8, date: 'Oct 23, 10:00 AM', desc: 'Uploaded a Podcast Episode', type: 'podcast', points: '+8', source: 'Tech Talks', icon: 'podcasts', color: 'text-rose-500', bg: 'bg-rose-50 dark:bg-rose-900/30' }
+        { id: 1, date: 'Recent', desc: 'Published an Article', type: 'article', points: '+10', source: 'Knowledge Hub', icon: 'article', color: 'text-indigo-500', bg: 'bg-indigo-50 dark:bg-indigo-900/30' },
+        { id: 2, date: 'Recent', desc: 'Active Community Participation', type: 'community', points: '+5', source: 'Communities', icon: 'forum', color: 'text-teal-500', bg: 'bg-teal-50 dark:bg-teal-900/30' },
+        { id: 3, date: 'Recent', desc: 'Published a Post', type: 'post', points: '+2', source: 'Timeline', icon: 'edit_square', color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/30' }
     ];
 
-    const activities = [...formattedLocalTx, ...apiTx, ...(formattedLocalTx.length === 0 && apiTx.length === 0 ? defaultMockActivities : [])];
+    const activities = apiTx.length > 0 ? apiTx : defaultMockActivities;
 
     const rules = [
         { activity: 'Create and publish a Post', points: '2 pts', cap: 'Max 10 pts/day from posts' },
@@ -115,9 +108,6 @@ export default function KarmaHistory() {
         { rank: 3, userId: 3, name: 'Mayur Verma', role: 'Tech Lead', points: 1950, avatar: `https://ui-avatars.com/api/?name=Mayur+Verma&background=10b981&color=fff` },
         { rank: 4, userId: 4, name: 'Meghna Tiwari', role: 'Design Lead', points: 5150, avatar: `https://ui-avatars.com/api/?name=Meghna+Tiwari&background=ec4899&color=fff` },
         { rank: 5, userId: 5, name: 'Rishikesh Ugle', role: 'Product Manager', points: 3200, avatar: `https://ui-avatars.com/api/?name=Rishikesh+Ugle&background=f59e0b&color=fff` },
-        { rank: 6, userId: 6, name: 'Loveneesh Sharma', role: 'System Admin', points: 2800, avatar: `https://ui-avatars.com/api/?name=Loveneesh+Sharma&background=8b5cf6&color=fff` },
-        { rank: 7, userId: 7, name: 'Aditi Sharma', role: 'HR Specialist', points: 1250, avatar: `https://ui-avatars.com/api/?name=Aditi+Sharma&background=06b6d4&color=fff` },
-        { rank: 8, userId: 8, name: 'Rahul Kumar', role: 'Developer', points: 890, avatar: `https://ui-avatars.com/api/?name=Rahul+Kumar&background=64748b&color=fff` },
     ];
 
     return (
@@ -137,27 +127,29 @@ export default function KarmaHistory() {
                             <span className="text-[11px] font-black tracking-widest uppercase">Karma Overview</span>
                         </div>
                         <div className="flex items-baseline gap-4 mb-2">
-                            <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-amber-600">{(localKarmaPoints || balance.totalPoints || currentUser?.karmaPoints || currentUser?.karma || 0).toLocaleString()}</h1>
-                            <span className="bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2.5 py-1 rounded-lg text-[12px] font-bold border border-emerald-200 dark:border-emerald-500/20">
-                                +42 this week
+                            <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-500 to-amber-600">
+                                {realKarmaPoints.toLocaleString()}
+                            </h1>
+                            <span className="bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2.5 py-1 rounded-lg text-[12px] font-bold border border-amber-200 dark:border-amber-500/20">
+                                {karmaBadge.name} Tier
                             </span>
                         </div>
                         <p className="text-[13px] font-medium text-slate-500 max-w-md leading-relaxed mb-8">
-                            Karma is awarded for sharing knowledge and engaging with the community. Your points unlock premium badges and organizational visibility.
+                            Karma is awarded automatically from SQL Server for sharing knowledge and engaging with the community. Your points unlock premium badges and organizational visibility.
                         </p>
                         
                         <div className="grid grid-cols-3 gap-6">
                             <div className="flex flex-col">
-                                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Global Rank</span>
-                                <span className="text-xl font-black text-slate-900 dark:text-white">#422</span>
+                                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Platform Level</span>
+                                <span className="text-xl font-black text-indigo-500">Level {currentLevel}</span>
                             </div>
                             <div className="flex flex-col border-l border-slate-200 dark:border-slate-700 pl-6">
-                                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Top Category</span>
-                                <span className="text-xl font-black text-slate-900 dark:text-white truncate">Knowledge Sharing</span>
+                                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Badge Status</span>
+                                <span className="text-xl font-black text-slate-900 dark:text-white truncate">{karmaBadge.name}</span>
                             </div>
                             <div className="flex flex-col border-l border-slate-200 dark:border-slate-700 pl-6">
-                                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Next Level</span>
-                                <span className="text-xl font-black text-slate-900 dark:text-white">1,500</span>
+                                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Goal for Level {currentLevel + 1}</span>
+                                <span className="text-xl font-black text-slate-900 dark:text-white">{nextLevelTarget.toLocaleString()} pts</span>
                             </div>
                         </div>
                     </div>
@@ -174,19 +166,22 @@ export default function KarmaHistory() {
                             <span className="text-[11px] font-black text-indigo-100 tracking-widest uppercase">Current Rank</span>
                             <span className="material-symbols-outlined text-yellow-300" style={{fontVariationSettings: "'FILL' 1"}}>workspace_premium</span>
                         </div>
-                        <h2 className="text-2xl font-black text-white leading-tight mb-2">Elite Contributor</h2>
+                        <h2 className="text-2xl font-black text-white leading-tight mb-2">{karmaBadge.name} Contributor</h2>
                         <p className="text-[13px] font-medium text-indigo-100 leading-relaxed">
-                            You are in the top 5% of knowledge creators this quarter. Keep pushing!
+                            Keep publishing posts, articles, and engaging with peers to level up!
                         </p>
                     </div>
 
                     <div className="relative z-10 mt-8">
                         <div className="flex justify-between mb-2 text-[12px] font-bold text-white">
-                            <span>Progress to Master</span>
-                            <span>83%</span>
+                            <span>Progress to Level {currentLevel + 1}</span>
+                            <span>{progressPercent}%</span>
                         </div>
                         <div className="w-full bg-black/20 h-2.5 rounded-full overflow-hidden backdrop-blur-sm border border-white/10">
-                            <div className="bg-gradient-to-r from-yellow-300 to-amber-500 h-full rounded-full w-[83%] shadow-[0_0_10px_rgba(252,211,77,0.8)] relative overflow-hidden">
+                            <div 
+                                className="bg-gradient-to-r from-yellow-300 to-amber-500 h-full rounded-full shadow-[0_0_10px_rgba(252,211,77,0.8)] relative overflow-hidden transition-all duration-500" 
+                                style={{ width: `${progressPercent}%` }}
+                            >
                                 <div className="absolute inset-0 bg-white/20 w-full animate-[shimmer_2s_infinite]" style={{transform: 'skewX(-20deg)'}}></div>
                             </div>
                         </div>
@@ -195,16 +190,16 @@ export default function KarmaHistory() {
 
             </div>
 
-            {/* Global Leaderboard (FR-KP-02) */}
+            {/* Global Leaderboard */}
             <div className="glass card-lift bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col">
                 <div className="p-6 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-indigo-500/10 to-transparent flex justify-between items-center">
                     <div>
                         <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
                             <span className="material-symbols-outlined text-indigo-500" style={{fontVariationSettings:"'FILL' 1"}}>trophy</span>
-                            Global Top 10 Leaderboard
+                            Global Top Contributors Leaderboard
                         </h3>
                         <p className="text-[12px] font-medium text-slate-500 mt-1">
-                            The most active and helpful contributors on the platform.
+                            The most active and helpful contributors on the platform based on real Karma points.
                         </p>
                     </div>
                 </div>
@@ -221,7 +216,9 @@ export default function KarmaHistory() {
                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
                             {displayLeaderboard.map((user) => {
                                 const badge = getKarmaBadge(user.points);
-                                const isCurrentUser = user.userId === currentUser.id || user.name === currentUser.name;
+                                const isCurrentUser = (currentUser?.userId && user.userId === currentUser.userId) || 
+                                                      (currentUser?.id && user.userId === currentUser.id) ||
+                                                      user.name === (currentUser?.fullName || currentUser?.name);
                                 return (
                                     <tr key={user.rank} className={`transition-colors group ${isCurrentUser ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/30'}`}>
                                         <td className="px-6 py-4">
@@ -263,7 +260,7 @@ export default function KarmaHistory() {
                 </div>
             </div>
 
-            {/* How to Earn (FR-KP logic table) & Activity Feed */}
+            {/* How to Earn & Activity Feed */}
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 
                 {/* Left Column: Activity Feed */}
@@ -271,11 +268,8 @@ export default function KarmaHistory() {
                     <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
                         <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
                             <span className="material-symbols-outlined text-indigo-500">history</span>
-                            Recent Activity
+                            Recent Karma Ledger
                         </h3>
-                        <button className="text-[12px] font-bold text-slate-500 hover:text-indigo-500 transition-colors flex items-center gap-1">
-                            Filter <span className="material-symbols-outlined text-[16px]">filter_list</span>
-                        </button>
                     </div>
                     
                     <div className="flex-1 overflow-x-auto">
@@ -315,13 +309,9 @@ export default function KarmaHistory() {
                             </tbody>
                         </table>
                     </div>
-                    
-                    <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-center">
-                        <button className="text-[12px] font-bold text-indigo-500 hover:underline">Load More History</button>
-                    </div>
                 </div>
 
-                {/* Right Column: How to Earn Points (PRD Rules) */}
+                {/* Right Column: How to Earn Points */}
                 <div className="glass card-lift bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col">
                     <div className="p-6 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-amber-500/10 to-transparent">
                         <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">

@@ -117,7 +117,6 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
             const objectUrl = URL.createObjectURL(file);
             tempVideo.src = objectUrl;
             tempVideo.onloadedmetadata = () => {
-                URL.revokeObjectURL(objectUrl);
                 if (tempVideo.duration && !isNaN(tempVideo.duration)) {
                     const totalSeconds = Math.floor(tempVideo.duration);
                     const minutes = Math.floor(totalSeconds / 60);
@@ -128,9 +127,14 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                 } else {
                     setVideoDuration('00:00');
                 }
+                setTimeout(() => {
+                    try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+                }, 2000);
             };
             tempVideo.onerror = () => {
-                URL.revokeObjectURL(objectUrl);
+                setTimeout(() => {
+                    try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+                }, 2000);
                 setVideoDuration('Unknown');
             };
 

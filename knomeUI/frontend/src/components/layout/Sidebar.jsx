@@ -40,7 +40,7 @@ export default function Sidebar() {
     ];
 
     return (
-        <aside className="w-58 h-[calc(100vh-6rem)] sticky top-24 hidden md:flex flex-col gap-3 shrink-0" style={{width: '228px'}}>
+        <aside className="w-58 sticky top-24 hidden md:flex flex-col gap-3 shrink-0" style={{width: '228px'}}>
 
             {/* User Profile Card */}
             <Link to="/profile" className="block">
@@ -67,24 +67,24 @@ export default function Sidebar() {
                     <div className={`relative z-10 grid ${currentUser.role === 'SYSADM' ? 'grid-cols-2' : 'grid-cols-3'} gap-2 pt-2.5 border-t border-theme-30`}>
                         {currentUser.role !== 'SYSADM' && (
                             <div className="text-center">
-                                <p className="text-[13px] font-black text-slate-900 dark:text-white">{(currentUser.karma || 0).toLocaleString()}</p>
+                                <p className="text-[13px] font-black text-slate-900 dark:text-white">{(currentUser.karmaPoints ?? currentUser.karma ?? 0).toLocaleString()}</p>
                                 <p className="text-[9px] uppercase tracking-wider font-bold text-theme-30-text">Points</p>
                             </div>
                         )}
                         <div className={`text-center ${currentUser.role !== 'SYSADM' ? 'border-x border-theme-30' : ''}`}>
-                            <p className="text-[13px] font-black text-slate-900 dark:text-white">84</p>
+                            <p className="text-[13px] font-black text-slate-900 dark:text-white">{currentUser.postsCount ?? 0}</p>
                             <p className="text-[9px] uppercase tracking-wider font-bold text-theme-30-text">Posts</p>
                         </div>
                         <div className={`text-center ${currentUser.role === 'SYSADM' ? 'border-l border-theme-30' : ''}`}>
-                            <p className="text-[13px] font-black text-slate-900 dark:text-white">312</p>
-                            <p className="text-[9px] uppercase tracking-wider font-bold text-theme-30-text">Network</p>
+                            <p className="text-[13px] font-black text-slate-900 dark:text-white">{currentUser.followersCount ?? 0}</p>
+                            <p className="text-[9px] uppercase tracking-wider font-bold text-theme-30-text">Followers</p>
                         </div>
                     </div>
                 </div>
             </Link>
 
             {/* Navigation */}
-            <nav className="flex flex-col gap-0.5 flex-1">
+            <nav className="flex flex-col gap-0.5">
                 <p className="text-[10px] font-black uppercase tracking-widest px-3 mb-1" style={{color: 'var(--text-muted)'}}>Menu</p>
                 {navItems.map(item => {
                     const isActive = pathname === item.to;

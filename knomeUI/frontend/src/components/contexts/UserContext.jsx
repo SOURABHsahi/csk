@@ -14,17 +14,29 @@ export const roleNameToCode = {
     'HR Admin': 'HRADM',
     'System Administrator': 'SYSADM',
     'System Admin': 'SYSADM',
+    'Pending Role Assignment': 'PENDING',
+    'PENDING': 'PENDING',
 };
 
 // Static employee roster for demo login (matches HrmsService.cs mock data)
 // This is the seed — the live state is managed inside UserProvider via useState.
 export const INITIAL_USERS = [
-    { id: 1, employeeId: 'MPO101', name: 'Loveneesh Sharma', role: 'SYSADM', roleName: 'System Administrator', designation: 'IT Operations Manager', department: 'IT Operations', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/40.jpg' },
-    { id: 2, employeeId: 'MPO102', name: 'Vishendra Sharma', role: 'CADM', roleName: 'Community Administrator', designation: 'Community Experience Specialist', department: 'Employee Experience', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/11.jpg' },
-    { id: 3, employeeId: 'MPO103', name: 'Sourabh Sahu', role: 'HRADM', roleName: 'HR Administrator', designation: 'Talent Acquisition Manager', department: 'Human Resources', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/22.jpg' },
-    { id: 4, employeeId: 'MPO104', name: 'Rishikesh Ugle', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Product Design', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/33.jpg' },
-    { id: 5, employeeId: 'MPO105', name: 'Meghna Tiwari', role: 'EMP', roleName: 'Employee', designation: 'Business Analyst', department: 'Product Design', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/women/44.jpg' },
-    { id: 6, employeeId: 'MPO106', name: 'Mayur Verma', role: 'EMP', roleName: 'Employee', designation: 'UI Designer', department: 'Engineering', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/55.jpg' },
+    { id: 1, employeeId: 'MPO101', name: 'Loveneesh Sharma', role: 'SYSADM', roleName: 'System Administrator', designation: 'IT Operations Manager', department: 'IT Operations', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/40.jpg', isActive: true },
+    { id: 2, employeeId: 'MPO102', name: 'Vishendra Sharma', role: 'CADM', roleName: 'Community Administrator', designation: 'Community Experience Specialist', department: 'Employee Experience', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/11.jpg', isActive: true },
+    { id: 3, employeeId: 'MPO103', name: 'Sourabh Sahu', role: 'HRADM', roleName: 'HR Administrator', designation: 'Talent Acquisition Manager', department: 'Human Resources', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/22.jpg', isActive: true },
+    { id: 4, employeeId: 'MPO104', name: 'Rishikesh Ugle', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Product Design', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/33.jpg', isActive: true },
+    { id: 5, employeeId: 'MPO105', name: 'Meghna Tiwari', role: 'EMP', roleName: 'Employee', designation: 'Business Analyst', department: 'Product Design', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/women/44.jpg', isActive: true },
+    { id: 6, employeeId: 'MPO106', name: 'Mayur Verma', role: 'EMP', roleName: 'Employee', designation: 'UI Designer', department: 'Engineering', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/55.jpg', isActive: true },
+    { id: 7, employeeId: 'MPO107', name: 'Vilash Deshmukh', role: 'SYSADM', roleName: 'System Administrator', designation: 'TL', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/66.jpg', isActive: true },
+    { id: 8, employeeId: 'MPO112', name: 'Rajesh Kumar', role: 'CADM', roleName: 'Community Administrator', designation: 'Senior Software Engineer', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/72.jpg', isActive: true },
+    { id: 9, employeeId: 'MPO108', name: 'Pooja Sharma', role: 'HRADM', roleName: 'HR Administrator', designation: 'Frontend Engineer', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/women/68.jpg', isActive: true },
+    { id: 10, employeeId: 'MPO109', name: 'Amit Patel', role: 'PENDING', roleName: 'Pending Role Assignment', designation: 'DevOps Engineer', department: 'IT Operations', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/52.jpg', isActive: true },
+    { id: 11, employeeId: 'MPO110', name: 'Neha Gupta', role: 'PENDING', roleName: 'Pending Role Assignment', designation: 'HR Executive', department: 'Human Resources', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/women/50.jpg', isActive: true },
+    { id: 12, employeeId: 'MPO111', name: 'Sanjay Mishra', role: 'PENDING', roleName: 'Pending Role Assignment', designation: 'Community Coordinator', department: 'Employee Experience', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/46.jpg', isActive: true },
+    { id: 13, employeeId: 'MPO113', name: 'Deepak Chouhan', role: 'PENDING', roleName: 'Pending Role Assignment', designation: 'Database Administrator', department: 'IT Operations', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/32.jpg', isActive: true },
+    { id: 14, employeeId: 'MPO114', name: 'Priyanka Patel', role: 'PENDING', roleName: 'Pending Role Assignment', designation: 'Quality Assurance Engineer', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/women/36.jpg', isActive: true },
+    { id: 15, employeeId: 'MPO115', name: 'Sourabh Sahu', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/75.jpg', isActive: true },
+    { id: 16, employeeId: 'MPO116', name: 'Sourabh Sahu', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/76.jpg', isActive: true },
 ];
 
 // Keep the named export `users` for any legacy imports
@@ -54,10 +66,61 @@ export const UserProvider = ({ children }) => {
     // Merge backend profile data on top of local user shape
     const mergeProfile = useCallback((localUser, profile) => {
         if (!profile) return localUser;
+
+        const roleCodeMap = {
+            'System Administrator': 'SYSADM',
+            'HR Administrator': 'HRADM',
+            'Community Admin': 'CADM',
+            'Community Administrator': 'CADM',
+            'Employee': 'EMP'
+        };
+
+        let derivedRole = localUser.role || 'EMP';
+        let derivedRoleName = localUser.roleName || 'Employee';
+
+        if (Array.isArray(profile.roles) && profile.roles.length > 0) {
+            const rolePriority = ['System Administrator', 'HR Administrator', 'Community Admin', 'Community Administrator', 'Employee'];
+            const highestRole = rolePriority.find(r => profile.roles.includes(r)) || profile.roles[0];
+            derivedRoleName = highestRole;
+            derivedRole = roleCodeMap[highestRole] || 'EMP';
+        } else if (Array.isArray(profile.roles) && profile.roles.length === 0) {
+            derivedRole = 'PENDING';
+            derivedRoleName = 'Pending Role Assignment';
+        }
+
+        const resolvedName = profile.fullName || localUser.name;
+        const resolvedEmpId = profile.employeeId || localUser.employeeId;
+
+        setUsersList(prev => {
+            const exists = prev.some(u => u.employeeId?.toUpperCase() === resolvedEmpId?.toUpperCase());
+            if (exists) {
+                return prev.map(u => 
+                    u.employeeId?.toUpperCase() === resolvedEmpId?.toUpperCase()
+                        ? { ...u, role: derivedRole, roleName: derivedRoleName, name: resolvedName, fullName: resolvedName }
+                        : u
+                );
+            }
+            return [...prev, {
+                ...localUser,
+                employeeId: resolvedEmpId,
+                name: resolvedName,
+                fullName: resolvedName,
+                role: derivedRole,
+                roleName: derivedRoleName,
+                designation: profile.designation || localUser.designation,
+                department: profile.departmentName || localUser.department,
+            }];
+        });
+
         return {
             ...localUser,
+            employeeId: resolvedEmpId,
             // Override with backend data where available
-            name: profile.fullName || localUser.name,
+            name: resolvedName,
+            fullName: resolvedName,
+            role: derivedRole,
+            roleName: derivedRoleName,
+            roles: profile.roles && profile.roles.length > 0 ? profile.roles : [derivedRoleName],
             designation: profile.designation || localUser.designation,
             department: profile.departmentName || localUser.department,
             location: profile.location || localUser.location,
@@ -66,6 +129,7 @@ export const UserProvider = ({ children }) => {
             skills: profile.skills || [],
             interests: profile.interests || [],
             karma: profile.karmaPoints || 0,
+            karmaPoints: profile.karmaPoints || 0,
             followersCount: profile.followersCount || 0,
             followingCount: profile.followingCount || 0,
             postsCount: profile.postsCount || 0,
@@ -87,17 +151,27 @@ export const UserProvider = ({ children }) => {
             const data = await authApi.login(localUser.employeeId);
             if (data?.token) {
                 localStorage.setItem('knome_jwt', data.token);
+                localStorage.setItem('knome_employeeId', localUser.employeeId);
                 if (data.refreshToken) {
                     localStorage.setItem('knome_refresh', data.refreshToken);
                 }
             }
 
+            const returnedUser = data?.user || data?.data?.user;
+            const enrichedLocal = {
+                ...localUser,
+                name: returnedUser?.fullName || localUser.name,
+                fullName: returnedUser?.fullName || localUser.name,
+                designation: returnedUser?.designation || localUser.designation,
+                department: returnedUser?.department || localUser.department,
+            };
+
             // 2. Fetch real profile from backend
             try {
                 const profile = await profileApi.getMe();
-                setCurrentUser(mergeProfile(localUser, profile));
+                setCurrentUser(mergeProfile(enrichedLocal, profile));
             } catch {
-                setCurrentUser(localUser);
+                setCurrentUser(mergeProfile(enrichedLocal, returnedUser));
             }
 
             setIsAuthenticated(true);
@@ -118,73 +192,144 @@ export const UserProvider = ({ children }) => {
     }, [mergeProfile]);
 
     /**
-     * On mount: check if a valid JWT exists and restore session.
+     * On mount: check if a valid JWT exists, or if redirected from Employee Hub SSO, and restore session.
      */
     useEffect(() => {
         const restoreSession = async () => {
+            // Check for incoming SSO query parameters from Employee Hub
+            const urlParams = new URLSearchParams(window.location.search);
+            const ssoToken = urlParams.get('sso_token') || urlParams.get('token');
+            const ssoEmpId = urlParams.get('employeeId') || urlParams.get('employee_id');
+
+            if (ssoEmpId) {
+                const tokenToStore = ssoToken || `sso_token_${ssoEmpId}_${Date.now()}`;
+                localStorage.setItem('knome_jwt', tokenToStore);
+                localStorage.setItem('knome_employeeId', ssoEmpId);
+                // Clean URL query parameters cleanly from address bar
+                const cleanUrl = window.location.pathname;
+                window.history.replaceState({}, document.title, cleanUrl);
+
+                let localUser = usersList.find(u => u.employeeId?.toUpperCase() === ssoEmpId.toUpperCase());
+                if (!localUser) {
+                    localUser = {
+                        id: Date.now(),
+                        employeeId: ssoEmpId.toUpperCase(),
+                        name: ssoEmpId,
+                        role: 'EMP',
+                        roleName: 'Employee',
+                        designation: 'Staff',
+                        department: 'Development',
+                        location: 'Bhopal',
+                        avatar: 'https://randomuser.me/api/portraits/men/75.jpg',
+                        isActive: true,
+                    };
+                }
+
+                await authenticateUser(localUser);
+                return;
+            }
+
             const existingToken = localStorage.getItem('knome_jwt');
             const savedEmployeeId = localStorage.getItem('knome_employeeId');
 
-            if (existingToken && savedEmployeeId) {
+            if (savedEmployeeId) {
                 // Try to restore from stored employee ID
-                const localUser = usersList.find(u => u.employeeId === savedEmployeeId);
-                if (localUser) {
-                    if (localUser.isActive === false) {
-                        console.warn('Suspended user session blocked');
-                        localStorage.removeItem('knome_jwt');
-                        localStorage.removeItem('knome_refresh');
-                        localStorage.removeItem('knome_employeeId');
-                        setCurrentUser(null);
-                        setIsAuthenticated(false);
-                        setIsAuthLoading(false);
-                        return;
-                    }
+                let localUser = usersList.find(u => u.employeeId?.toUpperCase() === savedEmployeeId.toUpperCase());
+                if (!localUser) {
+                    localUser = {
+                        id: Date.now(),
+                        employeeId: savedEmployeeId.toUpperCase(),
+                        name: savedEmployeeId,
+                        role: 'EMP',
+                        roleName: 'Employee',
+                        designation: 'Staff',
+                        department: 'Development',
+                        location: 'Bhopal',
+                        avatar: 'https://randomuser.me/api/portraits/men/75.jpg',
+                        isActive: true,
+                    };
+                }
+
+                if (localUser.isActive === false) {
+                    console.warn('Suspended user session blocked');
+                    localStorage.removeItem('knome_jwt');
+                    localStorage.removeItem('knome_refresh');
+                    localStorage.removeItem('knome_employeeId');
+                    setCurrentUser(null);
+                    setIsAuthenticated(false);
+                    setIsAuthLoading(false);
+                    return;
+                }
+
+                // If existing token is valid, verify it with getMe; otherwise re-authenticate to get a fresh token
+                if (existingToken) {
                     try {
                         const profile = await profileApi.getMe();
-                        setCurrentUser(mergeProfile(localUser, profile));
-                        setIsAuthenticated(true);
-                        setIsAuthLoading(false);
-                        return;
-                    } catch (err) {
-                        console.warn('Session expired or token invalid — resetting session:', err?.message || err);
-                        // Token expired or 401 — clear stored session
-                        localStorage.removeItem('knome_jwt');
-                        localStorage.removeItem('knome_refresh');
-                        localStorage.removeItem('knome_employeeId');
-                        setCurrentUser(null);
-                        setIsAuthenticated(false);
-                        setIsAuthLoading(false);
-                        return;
+                        if (profile && (profile.employeeId?.toUpperCase() === savedEmployeeId.toUpperCase() || !profile.employeeId)) {
+                            setCurrentUser(mergeProfile(localUser, profile));
+                            setIsAuthenticated(true);
+                            setIsAuthLoading(false);
+                            return;
+                        }
+                    } catch {
+                        console.info('Refreshing session token with backend...');
                     }
+                }
+
+                // Re-authenticate with backend to get fresh JWT token
+                try {
+                    await authenticateUser(localUser);
+                    return;
+                } catch (err) {
+                    console.warn('Auto-authenticate fallback:', err?.message || err);
+                    setCurrentUser(localUser);
+                    setIsAuthenticated(true);
+                    setIsAuthLoading(false);
+                    return;
                 }
             }
 
-            // No valid session — show login page
-            setCurrentUser(null);
-            setIsAuthenticated(false);
-            setIsAuthLoading(false);
+            // Default initial login as MPO101 only if no prior session exists
+            const defaultUser = usersList[0];
+            await authenticateUser(defaultUser);
         };
 
         restoreSession();
         // Only run on mount — usersList intentionally excluded to avoid infinite loop
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mergeProfile]);
+    }, [authenticateUser, mergeProfile]);
 
     /**
      * Login with a specific local user (used from Login page or user-switcher).
      */
     const login = useCallback(async (employeeId) => {
-        const localUser = usersList.find(u => u.employeeId === employeeId);
-        if (!localUser) throw new Error(`No user found for employee ID: ${employeeId}`);
+        let localUser = usersList.find(u => 
+            u.employeeId?.toUpperCase() === employeeId?.toUpperCase() ||
+            u.email?.toLowerCase() === employeeId?.toLowerCase()
+        );
+        if (!localUser) {
+            localUser = {
+                id: Date.now(),
+                employeeId: employeeId.toUpperCase(),
+                name: employeeId,
+                role: 'EMP',
+                roleName: 'Employee',
+                designation: 'Staff',
+                department: 'Development',
+                location: 'Bhopal',
+                avatar: 'https://randomuser.me/api/portraits/men/75.jpg',
+                isActive: true,
+            };
+        }
         if (localUser.isActive === false) {
             throw new Error(`Your account (${localUser.name}) has been suspended by System Administrator. Please contact HR for compliance clearance.`);
         }
-        localStorage.setItem('knome_employeeId', employeeId);
+        localStorage.setItem('knome_employeeId', localUser.employeeId);
         await authenticateUser(localUser);
     }, [authenticateUser, usersList]);
 
     /**
-     * Logout — clear tokens and reset state.
+     * Logout — clear tokens and redirect to Employee Hub Single Sign-On.
      */
     const logout = useCallback(async () => {
         const refreshToken = localStorage.getItem('knome_refresh');
@@ -194,8 +339,7 @@ export const UserProvider = ({ children }) => {
         localStorage.removeItem('knome_jwt');
         localStorage.removeItem('knome_refresh');
         localStorage.removeItem('knome_employeeId');
-        setCurrentUser(null);
-        setIsAuthenticated(false);
+        window.location.href = 'http://localhost:5001/?logout=true&client_id=knome-web-portal&redirect_uri=http%3A%2F%2Flocalhost%3A5173';
     }, []);
 
     /**
@@ -227,15 +371,15 @@ export const UserProvider = ({ children }) => {
      * @param {string|number} userId   - backend userId of the target user
      * @param {string}        newRoleName - e.g. "HR Administrator"
      */
-    const updateUserRoleInList = useCallback((userId, newRoleName) => {
-        const newRoleCode = roleNameToCode[newRoleName] || 'EMP';
+    const updateUserRoleInList = useCallback((targetIdentifier, newRoleName) => {
+        const newRoleCode = roleNameToCode[newRoleName] || (newRoleName === 'Pending Role Assignment' ? 'PENDING' : 'EMP');
 
         // 1. Update the reactive usersList (Navbar Switch User list)
         setUsersList(prev => prev.map(u => {
-            // Match by backend userId (stored after login) OR by id (initial seed id)
-            const matchById = u.userId && String(u.userId) === String(userId);
-            const matchBySeedId = u.id && String(u.id) === String(userId);
-            if (matchById || matchBySeedId) {
+            const matchById = u.userId && String(u.userId) === String(targetIdentifier);
+            const matchBySeedId = u.id && String(u.id) === String(targetIdentifier);
+            const matchByEmpId = u.employeeId && u.employeeId.toUpperCase() === String(targetIdentifier).toUpperCase();
+            if (matchById || matchBySeedId || matchByEmpId) {
                 return { ...u, role: newRoleCode, roleName: newRoleName };
             }
             return u;
@@ -244,21 +388,16 @@ export const UserProvider = ({ children }) => {
         // 2. If this is the currently logged-in user, update currentUser too
         setCurrentUser(prev => {
             if (!prev) return prev;
-            const matchById = prev.userId && String(prev.userId) === String(userId);
-            const matchBySeedId = prev.id && String(prev.id) === String(userId);
-            if (matchById || matchBySeedId) {
+            const matchById = prev.userId && String(prev.userId) === String(targetIdentifier);
+            const matchBySeedId = prev.id && String(prev.id) === String(targetIdentifier);
+            const matchByEmpId = prev.employeeId && prev.employeeId.toUpperCase() === String(targetIdentifier).toUpperCase();
+            if (matchById || matchBySeedId || matchByEmpId) {
                 return { ...prev, role: newRoleCode, roleName: newRoleName };
             }
             return prev;
         });
     }, []);
 
-    /**
-     * Award Karma Points specifically to a target user (e.g. after Admin approves their video/podcast).
-     * @param {string|number} userId - backend userId or seed id of the target user
-     * @param {number} points - number of karma points to award (e.g. +50)
-     * @param {string} reason - description of the earned karma
-     */
     /**
      * Award Karma Points according to official MPOnline Enterprise Karma Rules & Daily Caps
      * @param {string|number} userId - Target user ID

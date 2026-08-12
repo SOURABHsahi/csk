@@ -27,6 +27,7 @@ public class InteractionController : KnomeControllerBase
     private bool IsAdmin()
     {
         return User.IsInRole(Roles.CommunityAdmin) ||
+               User.IsInRole(Roles.HRAdmin) ||
                User.IsInRole(Roles.SystemAdmin);
     }
 
