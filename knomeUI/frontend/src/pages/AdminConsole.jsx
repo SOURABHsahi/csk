@@ -520,20 +520,31 @@ export default function AdminConsole() {
             const apiData = res?.data || res;
             let list = Array.isArray(apiData) ? [...apiData] : [];
 
-            // Merge local storage pending requests so client-side login requests always show up instantly
+            // Merge local storage pending requests only for non-existing employees
             try {
                 const stored = JSON.parse(localStorage.getItem('knome_pending_role_requests') || localStorage.getItem('eh_role_requests') || '[]');
                 if (Array.isArray(stored)) {
                     stored.forEach(s => {
                         if (s && s.employeeId && !list.some(item => item.employeeId?.toUpperCase() === s.employeeId.toUpperCase())) {
-                            list.unshift(s);
+                            list.push(s);
                         }
                     });
                 }
             } catch (e) {}
 
-            setRoleRequests(list);
-            localStorage.setItem('knome_pending_role_requests', JSON.stringify(list));
+            // Deduplicate strictly by employeeId
+            const uniqueList = [];
+            const seen = new Set();
+            for (const item of list) {
+                const key = item.employeeId?.toUpperCase();
+                if (key && !seen.has(key)) {
+                    seen.add(key);
+                    uniqueList.push(item);
+                }
+            }
+
+            setRoleRequests(uniqueList);
+            localStorage.setItem('knome_pending_role_requests', JSON.stringify(uniqueList));
         } catch {
             const stored = JSON.parse(localStorage.getItem('knome_pending_role_requests') || localStorage.getItem('eh_role_requests') || '[]');
             if (stored.length > 0) setRoleRequests(stored);
@@ -546,9 +557,13 @@ export default function AdminConsole() {
         try {
             await adminApi.approveRoleRequest(requestId, roleName).catch(() => {});
             
-            // Optimistically update local state & localStorage
+            // Optimistically update local state & localStorage for all matching records
             setRoleRequests(prev => {
-                const updated = prev.map(r => r.requestId === requestId ? { ...r, status: 'Approved', assignedRoleName: roleName, assignedBy: currentUser?.name || 'System Admin' } : r);
+                const updated = prev.map(r => 
+                    (r.requestId === requestId || (empId && r.employeeId?.toUpperCase() === empId.toUpperCase()))
+                        ? { ...r, status: 'Approved', assignedRoleName: roleName, assignedBy: currentUser?.name || 'System Admin' } 
+                        : r
+                );
                 localStorage.setItem('knome_pending_role_requests', JSON.stringify(updated));
                 try {
                     localStorage.setItem('eh_role_requests', JSON.stringify(updated));

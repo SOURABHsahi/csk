@@ -736,14 +736,27 @@ public class UserService : IUserService
 
         using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            SELECT 
-                r.[RequestId], r.[EmployeeId], r.[FullName], r.[Email], 
-                r.[DepartmentId], r.[DepartmentName], r.[Designation], 
-                r.[RequestedRoleCode], r.[Status], r.[AssignedRoleId], 
-                r.[AssignedRoleName], r.[AssignedBy], r.[AdminComment], 
-                r.[CreatedAt], r.[ProcessedAt]
-            FROM [RoleRequests] r
-            ORDER BY r.[CreatedAt] DESC";
+            WITH RankedRequests AS (
+                SELECT 
+                    r.[RequestId], r.[EmployeeId], r.[FullName], r.[Email], 
+                    r.[DepartmentId], r.[DepartmentName], r.[Designation], 
+                    r.[RequestedRoleCode], 
+                    CASE 
+                        WHEN EXISTS (
+                            SELECT 1 FROM [Users] u 
+                            JOIN [UserRoles] ur ON u.[UserId] = ur.[UserId] 
+                            WHERE u.[EmployeeId] = r.[EmployeeId]
+                        ) THEN 'Approved'
+                        ELSE r.[Status] 
+                    END AS [Status],
+                    r.[AssignedRoleId], 
+                    r.[AssignedRoleName], r.[AssignedBy], r.[AdminComment], 
+                    r.[CreatedAt], r.[ProcessedAt],
+                    ROW_NUMBER() OVER (PARTITION BY r.[EmployeeId] ORDER BY r.[RequestId] DESC) as rn
+                FROM [RoleRequests] r
+            )
+            SELECT * FROM RankedRequests WHERE rn = 1
+            ORDER BY [CreatedAt] DESC";
 
         using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
@@ -783,8 +796,7 @@ public class UserService : IUserService
             "System Admin" => "SYSADM",
             "HR Administrator" => "HRADM",
             "HR Admin" => "HRADM",
-            "Community Admin" => "CADM",
-            "Community Administrator" => "CADM",
+            "Community Admin" or "Community Administrator" => "CADM",
             _ => "EMP"
         };
 
@@ -792,7 +804,7 @@ public class UserService : IUserService
         if (conn.State != System.Data.ConnectionState.Open)
             await conn.OpenAsync();
 
-        // 1. Fetch Request details
+        // 1. Fetch EmployeeId from RequestId
         string empId = string.Empty;
         using (var fetchCmd = conn.CreateCommand())
         {
@@ -818,7 +830,7 @@ public class UserService : IUserService
                     [AssignedBy] = 'System Admin',
                     [AdminComment] = @comment,
                     [ProcessedAt] = GETUTCDATE()
-                WHERE [RequestId] = @reqId;
+                WHERE [EmployeeId] = @empId;
 
                 DECLARE @knomeUserId INT = (SELECT TOP 1 [UserId] FROM [Users] WHERE [EmployeeId] = @empId);
                 DECLARE @knomeRoleId INT = (SELECT TOP 1 [RoleId] FROM [Roles] WHERE [RoleName] = @roleName OR [RoleCode] = @roleCode);
