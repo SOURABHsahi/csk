@@ -215,7 +215,7 @@ export default function Network() {
     };
 
     return (
-        <main className="flex-1 flex flex-col gap-8 pb-32 min-w-0 font-sans">
+        <main className="flex-1 flex flex-col gap-8 pb-6 min-w-0 font-sans">
             
             {/* Hero Header */}
             <div className="relative rounded-3xl overflow-hidden shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col md:flex-row items-start md:items-center justify-between text-left px-6 py-8 md:px-10 md:py-8 gap-6">

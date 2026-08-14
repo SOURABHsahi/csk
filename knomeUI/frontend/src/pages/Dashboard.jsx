@@ -130,7 +130,7 @@ export default function Dashboard() {
 
     return (
         <>
-            <div className="flex-1 min-w-0 flex flex-col xl:flex-row gap-6 pb-32">
+            <div className="flex-1 min-w-0 flex flex-col xl:flex-row gap-6 pb-6">
                 {/* Main Feed Column */}
                 <main className="flex-1 min-w-0 flex flex-col gap-5">
 

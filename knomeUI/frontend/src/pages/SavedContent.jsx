@@ -327,7 +327,7 @@ export default function SavedContent() {
     }, [isFetchingMoreSaved, visibleItemCount, categoryFilteredItems.length]);
 
     return (
-        <main className="flex-1 flex flex-col gap-5 pb-32 min-w-0 text-slate-800 dark:text-slate-100 font-sans">
+        <main className="flex-1 flex flex-col gap-5 pb-6 min-w-0 text-slate-800 dark:text-slate-100 font-sans">
             
             {/* Hero Header */}
             <div className="relative rounded-2xl overflow-hidden shadow-xs border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col md:flex-row items-start md:items-center justify-between text-left px-6 py-6 md:px-8 md:py-7 gap-6">

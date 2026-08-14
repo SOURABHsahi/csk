@@ -30,13 +30,8 @@ export const INITIAL_USERS = [
     { id: 7, employeeId: 'MPO107', name: 'Vilash Deshmukh', role: 'SYSADM', roleName: 'System Administrator', designation: 'TL', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/66.jpg', isActive: true },
     { id: 8, employeeId: 'MPO112', name: 'Rajesh Kumar', role: 'CADM', roleName: 'Community Administrator', designation: 'Senior Software Engineer', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/72.jpg', isActive: true },
     { id: 9, employeeId: 'MPO108', name: 'Pooja Sharma', role: 'HRADM', roleName: 'HR Administrator', designation: 'Frontend Engineer', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/women/68.jpg', isActive: true },
-    { id: 10, employeeId: 'MPO109', name: 'Amit Patel', role: 'PENDING', roleName: 'Pending Role Assignment', designation: 'DevOps Engineer', department: 'IT Operations', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/52.jpg', isActive: true },
-    { id: 11, employeeId: 'MPO110', name: 'Neha Gupta', role: 'PENDING', roleName: 'Pending Role Assignment', designation: 'HR Executive', department: 'Human Resources', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/women/50.jpg', isActive: true },
-    { id: 12, employeeId: 'MPO111', name: 'Sanjay Mishra', role: 'PENDING', roleName: 'Pending Role Assignment', designation: 'Community Coordinator', department: 'Employee Experience', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/46.jpg', isActive: true },
-    { id: 13, employeeId: 'MPO113', name: 'Deepak Chouhan', role: 'PENDING', roleName: 'Pending Role Assignment', designation: 'Database Administrator', department: 'IT Operations', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/32.jpg', isActive: true },
-    { id: 14, employeeId: 'MPO114', name: 'Priyanka Patel', role: 'PENDING', roleName: 'Pending Role Assignment', designation: 'Quality Assurance Engineer', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/women/36.jpg', isActive: true },
-    { id: 15, employeeId: 'MPO115', name: 'Sourabh Sahu', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/75.jpg', isActive: true },
-    { id: 16, employeeId: 'MPO116', name: 'Sourabh Sahu', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/76.jpg', isActive: true },
+    { id: 10, employeeId: 'MPO115', name: 'Sourabh Sahu', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/75.jpg', isActive: true },
+    { id: 11, employeeId: 'MPO116', name: 'Sourabh Sahu', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/76.jpg', isActive: true },
 ];
 
 // Keep the named export `users` for any legacy imports
@@ -144,6 +139,10 @@ export const UserProvider = ({ children }) => {
      * Authenticate via backend and set currentUser.
      * Falls back gracefully if API is unreachable (demo mode).
      */
+    /**
+     * Authenticate via backend and set currentUser.
+     * Strictly verifies credentials with backend.
+     */
     const authenticateUser = useCallback(async (localUser) => {
         setIsAuthLoading(true);
         try {
@@ -176,16 +175,16 @@ export const UserProvider = ({ children }) => {
 
             setIsAuthenticated(true);
         } catch (error) {
+            localStorage.removeItem('knome_jwt');
+            localStorage.removeItem('knome_refresh');
+            localStorage.removeItem('knome_employeeId');
+            setCurrentUser(null);
+            setIsAuthenticated(false);
             const errMsg = (error?.message || '').toLowerCase();
             if (errMsg.includes('suspended') || errMsg.includes('inactive')) {
-                setCurrentUser(null);
-                setIsAuthenticated(false);
                 throw new Error(error.message || 'This account has been suspended by System Administrator. Please contact HR.');
             }
-            console.warn('API unavailable — running in demo mode:', error.message);
-            // Demo fallback: still allow app to work without backend for active non-suspended users
-            setCurrentUser(localUser);
-            setIsAuthenticated(true);
+            throw new Error(error.message || 'Invalid Employee ID or credentials.');
         } finally {
             setIsAuthLoading(false);
         }
@@ -225,7 +224,16 @@ export const UserProvider = ({ children }) => {
                     };
                 }
 
-                await authenticateUser(localUser);
+                try {
+                    await authenticateUser(localUser);
+                } catch (err) {
+                    console.error('SSO authentication failed:', err?.message || err);
+                    localStorage.removeItem('knome_jwt');
+                    localStorage.removeItem('knome_employeeId');
+                    setCurrentUser(null);
+                    setIsAuthenticated(false);
+                    setIsAuthLoading(false);
+                }
                 return;
             }
 
@@ -233,7 +241,6 @@ export const UserProvider = ({ children }) => {
             const savedEmployeeId = localStorage.getItem('knome_employeeId');
 
             if (savedEmployeeId) {
-                // Try to restore from stored employee ID
                 let localUser = usersList.find(u => u.employeeId?.toUpperCase() === savedEmployeeId.toUpperCase());
                 if (!localUser) {
                     localUser = {
@@ -251,7 +258,6 @@ export const UserProvider = ({ children }) => {
                 }
 
                 if (localUser.isActive === false) {
-                    console.warn('Suspended user session blocked');
                     localStorage.removeItem('knome_jwt');
                     localStorage.removeItem('knome_refresh');
                     localStorage.removeItem('knome_employeeId');
@@ -261,7 +267,7 @@ export const UserProvider = ({ children }) => {
                     return;
                 }
 
-                // If existing token is valid, verify it with getMe; otherwise re-authenticate to get a fresh token
+                // If existing token is valid, verify it with getMe; otherwise re-authenticate
                 if (existingToken) {
                     try {
                         const profile = await profileApi.getMe();
@@ -281,23 +287,45 @@ export const UserProvider = ({ children }) => {
                     await authenticateUser(localUser);
                     return;
                 } catch (err) {
-                    console.warn('Auto-authenticate fallback:', err?.message || err);
-                    setCurrentUser(localUser);
-                    setIsAuthenticated(true);
+                    console.warn('Session verification failed:', err?.message || err);
+                    localStorage.removeItem('knome_jwt');
+                    localStorage.removeItem('knome_employeeId');
+                    setCurrentUser(null);
+                    setIsAuthenticated(false);
                     setIsAuthLoading(false);
                     return;
                 }
             }
 
-            // Default initial login as MPO101 only if no prior session exists
-            const defaultUser = usersList[0];
-            await authenticateUser(defaultUser);
+            // No active session — do not auto-authenticate
+            setIsAuthLoading(false);
+            setIsAuthenticated(false);
+            setCurrentUser(null);
         };
 
         restoreSession();
         // Only run on mount — usersList intentionally excluded to avoid infinite loop
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authenticateUser, mergeProfile]);
+
+    // ── Real-time Role Assignment Poller (Instantly removes Pending banner/modal when Admin assigns role) ──
+    useEffect(() => {
+        if (!currentUser || currentUser.role !== 'PENDING') return;
+
+        const intervalId = setInterval(async () => {
+            try {
+                const profile = await profileApi.getMe();
+                if (profile && Array.isArray(profile.roles) && profile.roles.length > 0) {
+                    const localUser = usersList.find(u => u.employeeId === currentUser.employeeId) || currentUser;
+                    setCurrentUser(mergeProfile(localUser, profile));
+                }
+            } catch {
+                // Ignore transient network errors
+            }
+        }, 3000);
+
+        return () => clearInterval(intervalId);
+    }, [currentUser?.role, currentUser?.employeeId, mergeProfile, usersList]);
 
     /**
      * Login with a specific local user (used from Login page or user-switcher).

@@ -5,7 +5,7 @@ import mponlineLogo from '../../assets/mponline_logo.png';
 
 export default function Footer() {
     return (
-        <footer className="relative w-full mt-10 bg-[#070c1b] text-slate-100 font-sans shadow-2xl border-t border-slate-800">
+        <footer className="relative w-full mt-0 bg-[#070c1b] text-slate-100 font-sans shadow-2xl border-t border-slate-800">
             
             {/* Top Gradient Accent Line */}
             <div className="w-full h-0.5 bg-gradient-to-r from-indigo-500 via-pink-500 to-purple-600"></div>

@@ -105,36 +105,6 @@ IF NOT EXISTS (SELECT 1 FROM [Users] WHERE [EmployeeId] = 'MPO108')
     VALUES ('MPO108', 'pooja.sharma@mponline.gov.in', 'Pooja Sharma', 'Frontend Engineer', @TechDeptId, 'Bhopal HQ', 'Public', 'Public', 'Public', 'Public', 1, 0, GETUTCDATE());
 ELSE UPDATE [Users] SET [IsActive] = 1, [IsPermanentlySuspended] = 0 WHERE [EmployeeId] = 'MPO108';
 
--- 4.10 MPO109: Amit Patel (Pending Role Assignment)
-IF NOT EXISTS (SELECT 1 FROM [Users] WHERE [EmployeeId] = 'MPO109')
-    INSERT INTO [Users] ([EmployeeId], [Email], [FullName], [Designation], [DepartmentId], [Location], [BioVisibility], [NetworkVisibility], [PhotosVisibility], [InterestsVisibility], [IsActive], [IsPermanentlySuspended], [CreatedDate])
-    VALUES ('MPO109', 'amit.patel@mponline.gov.in', 'Amit Patel', 'DevOps Engineer', @TechDeptId, 'Bhopal HQ', 'Public', 'Public', 'Public', 'Public', 1, 0, GETUTCDATE());
-ELSE UPDATE [Users] SET [IsActive] = 1, [IsPermanentlySuspended] = 0 WHERE [EmployeeId] = 'MPO109';
-
--- 4.11 MPO110: Neha Gupta (Pending Role Assignment)
-IF NOT EXISTS (SELECT 1 FROM [Users] WHERE [EmployeeId] = 'MPO110')
-    INSERT INTO [Users] ([EmployeeId], [Email], [FullName], [Designation], [DepartmentId], [Location], [BioVisibility], [NetworkVisibility], [PhotosVisibility], [InterestsVisibility], [IsActive], [IsPermanentlySuspended], [CreatedDate])
-    VALUES ('MPO110', 'neha.gupta@mponline.gov.in', 'Neha Gupta', 'HR Executive', @HrDeptId, 'Bhopal HQ', 'Public', 'Public', 'Public', 'Public', 1, 0, GETUTCDATE());
-ELSE UPDATE [Users] SET [IsActive] = 1, [IsPermanentlySuspended] = 0 WHERE [EmployeeId] = 'MPO110';
-
--- 4.12 MPO111: Sanjay Mishra (Pending Role Assignment)
-IF NOT EXISTS (SELECT 1 FROM [Users] WHERE [EmployeeId] = 'MPO111')
-    INSERT INTO [Users] ([EmployeeId], [Email], [FullName], [Designation], [DepartmentId], [Location], [BioVisibility], [NetworkVisibility], [PhotosVisibility], [InterestsVisibility], [IsActive], [IsPermanentlySuspended], [CreatedDate])
-    VALUES ('MPO111', 'sanjay.mishra@mponline.gov.in', 'Sanjay Mishra', 'Community Coordinator', @TechDeptId, 'Bhopal HQ', 'Public', 'Public', 'Public', 'Public', 1, 0, GETUTCDATE());
-ELSE UPDATE [Users] SET [IsActive] = 1, [IsPermanentlySuspended] = 0 WHERE [EmployeeId] = 'MPO111';
-
--- 4.13 MPO113: Deepak Chouhan (Pending Role Assignment)
-IF NOT EXISTS (SELECT 1 FROM [Users] WHERE [EmployeeId] = 'MPO113')
-    INSERT INTO [Users] ([EmployeeId], [Email], [FullName], [Designation], [DepartmentId], [Location], [BioVisibility], [NetworkVisibility], [PhotosVisibility], [InterestsVisibility], [IsActive], [IsPermanentlySuspended], [CreatedDate])
-    VALUES ('MPO113', 'deepak.chouhan@mponline.gov.in', 'Deepak Chouhan', 'Database Administrator', @TechDeptId, 'Bhopal HQ', 'Public', 'Public', 'Public', 'Public', 1, 0, GETUTCDATE());
-ELSE UPDATE [Users] SET [IsActive] = 1, [IsPermanentlySuspended] = 0 WHERE [EmployeeId] = 'MPO113';
-
--- 4.14 MPO114: Priyanka Patel (Pending Role Assignment)
-IF NOT EXISTS (SELECT 1 FROM [Users] WHERE [EmployeeId] = 'MPO114')
-    INSERT INTO [Users] ([EmployeeId], [Email], [FullName], [Designation], [DepartmentId], [Location], [BioVisibility], [NetworkVisibility], [PhotosVisibility], [InterestsVisibility], [IsActive], [IsPermanentlySuspended], [CreatedDate])
-    VALUES ('MPO114', 'priyanka.patel@mponline.gov.in', 'Priyanka Patel', 'Quality Assurance Engineer', @TechDeptId, 'Bhopal HQ', 'Public', 'Public', 'Public', 'Public', 1, 0, GETUTCDATE());
-ELSE UPDATE [Users] SET [IsActive] = 1, [IsPermanentlySuspended] = 0 WHERE [EmployeeId] = 'MPO114';
-
 -- Insert / Update UserCredentials for all users
 INSERT INTO [UserCredentials] ([UserId], [PasswordHash], [PasswordSalt])
 SELECT u.[UserId], @Hash, @Salt
@@ -161,7 +131,7 @@ DECLARE @U12 INT = (SELECT [UserId] FROM [Users] WHERE [EmployeeId] = 'MPO112');
 -- Clear old roles for fresh assignment
 DELETE FROM [UserRoles] WHERE [UserId] IN (@U1, @U2, @U3, @U4, @U5, @U6, @U7, @U12);
 -- Ensure pending users have no roles
-DELETE ur FROM [UserRoles] ur INNER JOIN [Users] u ON ur.UserId = u.UserId WHERE u.EmployeeId IN ('MPO108', 'MPO109', 'MPO110', 'MPO111');
+DELETE ur FROM [UserRoles] ur INNER JOIN [Users] u ON ur.UserId = u.UserId WHERE u.EmployeeId IN ('MPO108');
 
 -- Assign Specific Roles
 IF @U1 IS NOT NULL INSERT INTO [UserRoles] ([UserId], [RoleId]) VALUES (@U1, @RoleSysAdmin), (@U1, @RoleEmp);
@@ -193,7 +163,4 @@ PRINT '    MPO107 -> System Administrator, Employee (Vilash Deshmukh)';
 PRINT '    MPO112 -> Community Admin, Employee (Rajesh Kumar)';
 PRINT '  Pending Role Users (Awaiting System Admin Assignment):';
 PRINT '    MPO108 -> Pending (Pooja Sharma)';
-PRINT '    MPO109 -> Pending (Amit Patel)';
-PRINT '    MPO110 -> Pending (Neha Gupta)';
-PRINT '    MPO111 -> Pending (Sanjay Mishra)';
 GO

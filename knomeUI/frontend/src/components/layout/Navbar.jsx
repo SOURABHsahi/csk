@@ -820,7 +820,7 @@ export default function Navbar() {
     return (
         <>
         {/* TopNavBar */}
-        <nav className="fixed w-full z-50 transition-colors duration-300">
+        <nav className="fixed top-0 left-0 right-0 w-full z-50 transition-colors duration-300">
             <div className="max-w-screen-2xl mx-auto px-4 md:px-8 h-[72px] grid grid-cols-2 lg:grid-cols-3 items-center gap-4">
                 
                 {/* ─── LEFT: Logo & Navigation ─── */}

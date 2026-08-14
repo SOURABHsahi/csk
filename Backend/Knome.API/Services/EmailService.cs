@@ -19,7 +19,12 @@ public class EmailService : IEmailService
         _logger = logger;
     }
 
-    public async Task<bool> SendEmailAsync(string toEmail, string subject, string htmlBody)
+    public Task<bool> SendEmailAsync(string toEmail, string subject, string htmlBody)
+    {
+        return SendEmailAsync(toEmail, subject, htmlBody, null);
+    }
+
+    public async Task<bool> SendEmailAsync(string toEmail, string subject, string htmlBody, string? textBody)
     {
         if (string.IsNullOrWhiteSpace(toEmail))
         {
@@ -31,11 +36,26 @@ public class EmailService : IEmailService
         {
             var message = new MimeMessage();
             var fromEmail = !string.IsNullOrWhiteSpace(_settings.SenderEmail) ? _settings.SenderEmail : _settings.Username;
+            
             message.From.Add(new MailboxAddress(_settings.SenderName, fromEmail));
+            message.ReplyTo.Add(new MailboxAddress(_settings.SenderName, fromEmail));
             message.To.Add(MailboxAddress.Parse(toEmail.Trim()));
             message.Subject = subject;
+            message.Date = DateTimeOffset.UtcNow;
+            message.MessageId = MimeKit.Utils.MimeUtils.GenerateMessageId("gmail.com");
 
-            var bodyBuilder = new BodyBuilder { HtmlBody = htmlBody };
+            // Anti-Spam Compliance Headers
+            message.Headers.Add("X-Mailer", "Knome-Enterprise-Mailer-v1");
+            message.Headers.Add("Auto-Submitted", "auto-generated");
+
+            var bodyBuilder = new BodyBuilder
+            {
+                HtmlBody = htmlBody,
+                TextBody = !string.IsNullOrWhiteSpace(textBody) 
+                    ? textBody 
+                    : System.Text.RegularExpressions.Regex.Replace(htmlBody, "<.*?>", string.Empty)
+            };
+
             message.Body = bodyBuilder.ToMessageBody();
 
             using var client = new SmtpClient();
@@ -69,6 +89,21 @@ public class EmailService : IEmailService
         var safeEmpId = HtmlEncoder.Default.Encode(employeeId ?? "");
         var safeDept = HtmlEncoder.Default.Encode(departmentName ?? "General");
         var safeDesig = HtmlEncoder.Default.Encode(designation ?? "Employee");
+
+        var plainText = $@"Welcome to Knome, {fullName}!
+
+Your account has been initialized via EmployeeHub Single Sign-On (SSO).
+Your profile is currently under review for role assignment by the System Administrator.
+
+Employee ID: {employeeId}
+Department: {departmentName}
+Designation: {designation}
+Status: Role Assignment Pending
+
+You do not need to take any action. You will receive an automated confirmation email as soon as the System Administrator approves your role.
+
+Regards,
+MPOnline Limited - Knome Team";
 
         var html = $@"
 <!DOCTYPE html>
@@ -104,7 +139,7 @@ public class EmailService : IEmailService
                     <tr>
                         <td style=""padding: 36px 32px;"">
                             <h2 style=""margin: 0 0 12px 0; font-size: 20px; font-weight: 800; color: #0f172a;"">
-                                Welcome, {safeName}! 👋
+                                Welcome, {safeName}!
                             </h2>
                             <p style=""margin: 0 0 24px 0; font-size: 14px; line-height: 1.6; color: #475569;"">
                                 Your account has been initialized via <strong>EmployeeHub Single Sign-On (SSO)</strong>. Your profile is currently under review for role assignment.
@@ -114,7 +149,7 @@ public class EmailService : IEmailService
                             <div style=""background-color: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #f59e0b; border-radius: 12px; padding: 18px 20px; margin-bottom: 24px;"">
                                 <div style=""display: flex; align-items: center; margin-bottom: 8px;"">
                                     <span style=""font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #b45309;"">
-                                        ⏳ Account Status: Role Assignment Pending
+                                        Account Status: Role Assignment Pending
                                     </span>
                                 </div>
                                 <p style=""margin: 0; font-size: 13px; color: #78350f; line-height: 1.5;"">
@@ -123,7 +158,7 @@ public class EmailService : IEmailService
                             </div>
 
                             <!-- Details Table -->
-                            <table role=""presentation"" width=""100%"" style=""background-color: #f8fafc; border-radius: 12px; padding: 16px; border: 1px solid #e2e8f0; margin-bottom: 24px;"" cellspacing=""0"" cellpadding=""0"">
+                            <table role=""presentation"" width=""100%"" style=""background-color: #f8fafc; border-radius: 12px; padding: 16px; border: 1px solid #e2e8f0; margin-bottom: 24px;"">
                                 <tr>
                                     <td style=""padding: 8px 12px; font-size: 12px; font-weight: 700; color: #64748b; width: 40%;"">Employee ID</td>
                                     <td style=""padding: 8px 12px; font-size: 13px; font-weight: 700; color: #0f172a;"">{safeEmpId}</td>
@@ -168,7 +203,7 @@ public class EmailService : IEmailService
 </body>
 </html>";
 
-        return await SendEmailAsync(toEmail, "⏳ Welcome to Knome - Role Assignment Pending", html);
+        return await SendEmailAsync(toEmail, $"[Knome Portal] Action Required: Role Assignment Pending ({safeEmpId})", html, plainText);
     }
 
     public async Task<bool> SendRoleAssignedEmailAsync(string toEmail, string fullName, string employeeId, string roleName, string departmentName, string? adminComment = null)
@@ -178,6 +213,21 @@ public class EmailService : IEmailService
         var safeRole = HtmlEncoder.Default.Encode(roleName ?? "Employee");
         var safeDept = HtmlEncoder.Default.Encode(departmentName ?? "General");
         var safeComment = !string.IsNullOrWhiteSpace(adminComment) ? HtmlEncoder.Default.Encode(adminComment) : null;
+
+        var plainText = $@"Congratulations, {fullName}!
+
+Your role is assigned by System Admin and your role name is {roleName}.
+You now have full access to explore, collaborate, and contribute on the Knome platform.
+
+Employee ID: {employeeId}
+Department: {departmentName}
+Assigned Role: {roleName}
+Assigned By: System Administrator
+{(adminComment != null ? $"Admin Note: {adminComment}\n" : "")}
+You can now access the Knome Portal.
+
+Regards,
+MPOnline Limited - Knome Team";
 
         var html = $@"
 <!DOCTYPE html>
@@ -213,16 +263,16 @@ public class EmailService : IEmailService
                     <tr>
                         <td style=""padding: 36px 32px;"">
                             <h2 style=""margin: 0 0 12px 0; font-size: 20px; font-weight: 800; color: #0f172a;"">
-                                Congratulations, {safeName}! 🎉
+                                Congratulations, {safeName}!
                             </h2>
                             <p style=""margin: 0 0 24px 0; font-size: 14px; line-height: 1.6; color: #475569;"">
-                                Your role in Knome has been approved and assigned by the <strong>System Administrator</strong>. You now have full access to explore, collaborate, and contribute.
+                                <strong>Your role is assigned by System Admin</strong> and your role name is <strong>{safeRole}</strong>. You now have full access to explore, collaborate, and contribute on the Knome platform.
                             </p>
 
                             <!-- Role Highlight Card -->
                             <div style=""background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%); border: 1px solid #bbf7d0; border-left: 5px solid #10b981; border-radius: 14px; padding: 20px; margin-bottom: 24px; text-align: center;"">
                                 <span style=""font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: #047857;"">
-                                    Your Assigned Role
+                                    Assigned Role
                                 </span>
                                 <h3 style=""margin: 6px 0 0 0; font-size: 22px; font-weight: 900; color: #065f46;"">
                                     {safeRole}
@@ -230,7 +280,7 @@ public class EmailService : IEmailService
                             </div>
 
                             <!-- Assignment Details -->
-                            <table role=""presentation"" width=""100%"" style=""background-color: #f8fafc; border-radius: 12px; padding: 16px; border: 1px solid #e2e8f0; margin-bottom: 28px;"" cellspacing=""0"" cellpadding=""0"">
+                            <table role=""presentation"" width=""100%"" style=""background-color: #f8fafc; border-radius: 12px; padding: 16px; border: 1px solid #e2e8f0; margin-bottom: 28px;"">
                                 <tr>
                                     <td style=""padding: 8px 12px; font-size: 12px; font-weight: 700; color: #64748b; width: 40%;"">Employee ID</td>
                                     <td style=""padding: 8px 12px; font-size: 13px; font-weight: 700; color: #0f172a;"">{safeEmpId}</td>
@@ -250,11 +300,11 @@ public class EmailService : IEmailService
                                 </tr>" : "")}
                             </table>
 
-                            <!-- CTA Button -->
+                            <!-- Status Highlight -->
                             <div style=""text-align: center; margin-bottom: 24px;"">
-                                <a href=""http://localhost:5173"" style=""display: inline-block; background: linear-gradient(135deg, #059669 0%, #0284c7 100%); color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 800; padding: 14px 32px; border-radius: 12px; box-shadow: 0 4px 14px rgba(5, 150, 105, 0.35); letter-spacing: 0.3px;"">
-                                    Launch Knome Portal →
-                                </a>
+                                <div style=""display: inline-block; background: linear-gradient(135deg, #059669 0%, #0284c7 100%); color: #ffffff; font-size: 14px; font-weight: 800; padding: 12px 28px; border-radius: 12px; box-shadow: 0 4px 14px rgba(5, 150, 105, 0.25); letter-spacing: 0.3px;"">
+                                    Portal Access Activated
+                                </div>
                             </div>
 
                             <p style=""margin: 0; font-size: 13px; line-height: 1.6; color: #64748b; text-align: center;"">
@@ -282,7 +332,7 @@ public class EmailService : IEmailService
 </body>
 </html>";
 
-        return await SendEmailAsync(toEmail, $"✅ Your Role in Knome has been Assigned: {safeRole}", html);
+        return await SendEmailAsync(toEmail, $"[Knome Portal] Role Assigned by System Administrator: {safeRole}", html, plainText);
     }
 
     public async Task SendTemplateEmailAsync(string toEmail, string templateName, object model)

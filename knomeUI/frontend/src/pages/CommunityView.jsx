@@ -1357,7 +1357,7 @@ export default function CommunityView() {
     });
 
     return (
-        <main className="flex-1 pb-32">
+        <main className="flex-1 pb-6">
 
             {/* Toast Notification (FR-CM-09 user feedback) */}
             {toast && (

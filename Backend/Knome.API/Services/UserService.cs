@@ -238,6 +238,70 @@ public class UserService : IUserService
         _userRepo.Update(user);
         await _userRepo.SaveChangesAsync();
 
+        // Also update any pending RoleRequests for this employee and send notification email
+        try
+        {
+            var primaryRole = dto.RoleNames.FirstOrDefault() ?? "Employee";
+            var empId = user.EmployeeId;
+            var userEmail = user.Email;
+            var userName = user.FullName;
+            var userDept = user.Department?.Name ?? "General";
+
+            var conn = _db.Database.GetDbConnection();
+            if (conn.State != System.Data.ConnectionState.Open)
+                await conn.OpenAsync();
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                UPDATE [RoleRequests]
+                SET [Status] = 'Approved',
+                    [AssignedRoleName] = @roleName,
+                    [AssignedBy] = 'System Admin',
+                    [AdminComment] = 'Assigned by System Administrator from Knome Admin Console',
+                    [ProcessedAt] = GETUTCDATE()
+                WHERE [EmployeeId] = @empId AND [Status] = 'Pending';
+
+                IF EXISTS (SELECT 1 FROM sys.databases WHERE name = 'EmployeeHubDb')
+                BEGIN
+                    UPDATE [EmployeeHubDb].[dbo].[RoleRequests]
+                    SET [Status] = 'Approved',
+                        [AssignedRoleName] = @roleName,
+                        [AssignedBy] = 'System Admin',
+                        [AdminComment] = 'Assigned by System Administrator from Knome Admin Console',
+                        [ProcessedAt] = GETUTCDATE()
+                    WHERE [EmployeeId] = @empId AND [Status] = 'Pending';
+                END
+            ";
+            var p1 = cmd.CreateParameter(); p1.ParameterName = "@roleName"; p1.Value = primaryRole; cmd.Parameters.Add(p1);
+            var p2 = cmd.CreateParameter(); p2.ParameterName = "@empId"; p2.Value = empId; cmd.Parameters.Add(p2);
+            await cmd.ExecuteNonQueryAsync();
+
+            if (!string.IsNullOrWhiteSpace(userEmail))
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _emailService.SendRoleAssignedEmailAsync(
+                            userEmail,
+                            userName,
+                            empId,
+                            primaryRole,
+                            userDept,
+                            "Assigned by System Administrator from Knome Admin Console");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to send role assigned email to {Email}", userEmail);
+                    }
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to sync role assignment email in ChangeRolesAsync for {UserId}", userId);
+        }
+
         return await GetUserProfileAsync(userId, userId);
     }
 
@@ -724,7 +788,7 @@ public class UserService : IUserService
             _ => "EMP"
         };
 
-        using var conn = _db.Database.GetDbConnection();
+        var conn = _db.Database.GetDbConnection();
         if (conn.State != System.Data.ConnectionState.Open)
             await conn.OpenAsync();
 
@@ -862,7 +926,7 @@ public class UserService : IUserService
 
     public async Task<bool> RejectRoleRequestAsync(int actorUserId, int requestId, RejectKnomeRoleRequestDto dto)
     {
-        using var conn = _db.Database.GetDbConnection();
+        var conn = _db.Database.GetDbConnection();
         if (conn.State != System.Data.ConnectionState.Open)
             await conn.OpenAsync();
 
@@ -905,7 +969,7 @@ public class UserService : IUserService
             return false;
         }
 
-        using var conn = _db.Database.GetDbConnection();
+        var conn = _db.Database.GetDbConnection();
         if (conn.State != System.Data.ConnectionState.Open)
             await conn.OpenAsync();
 

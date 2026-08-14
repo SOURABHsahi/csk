@@ -89,7 +89,7 @@ public class AuthService : IAuthService
     {
         try
         {
-            using var conn = _db.Database.GetDbConnection();
+            var conn = _db.Database.GetDbConnection();
             if (conn.State != System.Data.ConnectionState.Open)
                 await conn.OpenAsync();
 
@@ -112,17 +112,31 @@ public class AuthService : IAuthService
                 ";
                 var p1 = insCmd.CreateParameter(); p1.ParameterName = "@empId"; p1.Value = user.EmployeeId; insCmd.Parameters.Add(p1);
                 var p2 = insCmd.CreateParameter(); p2.ParameterName = "@fullName"; p2.Value = user.FullName; insCmd.Parameters.Add(p2);
-                var p3 = insCmd.CreateParameter(); p3.ParameterName = "@email"; p3.Value = user.Email; insCmd.Parameters.Add(p3);
+                var p3 = insCmd.CreateParameter(); p3.ParameterName = "@email"; p3.Value = (object?)user.Email ?? DBNull.Value; insCmd.Parameters.Add(p3);
                 var p4 = insCmd.CreateParameter(); p4.ParameterName = "@deptId"; p4.Value = (object?)user.DepartmentId ?? 1; insCmd.Parameters.Add(p4);
-                var p5 = insCmd.CreateParameter(); p5.ParameterName = "@deptName"; p5.Value = (object?)user.Department?.Name ?? "Development"; insCmd.Parameters.Add(p5);
+                var p5 = insCmd.CreateParameter(); p5.ParameterName = "@deptName"; p5.Value = (object?)user.Department?.Name ?? "General"; insCmd.Parameters.Add(p5);
                 var p6 = insCmd.CreateParameter(); p6.ParameterName = "@desig"; p6.Value = (object?)user.Designation ?? "Staff"; insCmd.Parameters.Add(p6);
 
                 await insCmd.ExecuteNonQueryAsync();
 
                 // Send professional Welcome & Role Pending Email (fire-and-forget)
-                if (!string.IsNullOrWhiteSpace(user.Email))
+                var userEmail = user.Email;
+                if (string.IsNullOrWhiteSpace(userEmail))
                 {
-                    var recipientEmail = user.Email;
+                    using var emailCmd = conn.CreateCommand();
+                    emailCmd.CommandText = "SELECT TOP 1 Email FROM [RoleRequests] WHERE EmployeeId = @empId";
+                    var pFetch = emailCmd.CreateParameter();
+                    pFetch.ParameterName = "@empId";
+                    pFetch.Value = user.EmployeeId;
+                    emailCmd.Parameters.Add(pFetch);
+                    var fetched = await emailCmd.ExecuteScalarAsync();
+                    if (fetched != null && !Convert.IsDBNull(fetched))
+                        userEmail = fetched.ToString();
+                }
+
+                if (!string.IsNullOrWhiteSpace(userEmail))
+                {
+                    var recipientEmail = userEmail;
                     var recipientName = user.FullName;
                     var recipientEmpId = user.EmployeeId;
                     var recipientDept = user.Department?.Name ?? "General";
@@ -174,7 +188,7 @@ public class AuthService : IAuthService
     {
         try
         {
-            using var conn = _db.Database.GetDbConnection();
+            var conn = _db.Database.GetDbConnection();
             if (conn.State != System.Data.ConnectionState.Open)
                 await conn.OpenAsync();
 
@@ -197,10 +211,12 @@ public class AuthService : IAuthService
                     IF @ehEmpId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [Users] WHERE EmployeeId = @ehEmpId)
                     BEGIN
                         INSERT INTO [Users] ([EmployeeId], [FullName], [Email], [DepartmentId], [Designation], [Location], [IsActive], [CreatedDate], [ProfileCompletion], [BioVisibility], [NetworkVisibility], [PhotosVisibility], [InterestsVisibility])
-                        VALUES (@ehEmpId, @ehName, @ehEmail, ISNULL(@ehDeptId, 1), ISNULL(@ehDesig, 'Staff'), ISNULL(@ehLoc, 'Bhopal'), 1, GETUTCDATE(), 50, 'Everyone', 'Everyone', 'Everyone', 'Everyone');
+                        VALUES (@ehEmpId, @ehName, @ehEmail, ISNULL(@ehDeptId, 1), ISNULL(@ehDesig, 'Staff'), ISNULL(@ehLoc, 'Bhopal'), 1, GETUTCDATE(), 50, 'Public', 'Public', 'Public', 'Public');
 
                         DECLARE @newUserId INT = SCOPE_IDENTITY();
-                        DECLARE @defaultHash NVARCHAR(255) = (SELECT TOP 1 PasswordHash FROM [UserCredentials] WHERE PasswordHash LIKE '$2%');
+                        DECLARE @defaultHash NVARCHAR(255) = (SELECT TOP 1 [PasswordHash] FROM [EmployeeHubDb].[dbo].[UserCredentials] WHERE [EmployeeId] = @ehEmpId);
+                        IF @defaultHash IS NULL
+                            SET @defaultHash = (SELECT TOP 1 PasswordHash FROM [UserCredentials] WHERE PasswordHash LIKE '$2%');
                         IF @defaultHash IS NULL
                             SET @defaultHash = '$2a$11$CS8Szl.LS4r1zinkLjKb8ucRdww25eHjSGhqc6my/hQXCbb9DW0Nm';
 

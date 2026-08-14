@@ -876,7 +876,7 @@ export default function Videos() {
             )}
 
 
-            <main className="flex-1 w-full min-w-0 flex flex-col gap-6 pb-20">
+            <main className="flex-1 w-full min-w-0 flex flex-col gap-6 pb-6">
 
                 {/* ── PAGE TITLE & HEADER ── */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800/80 p-5 rounded-2xl shadow-sm">

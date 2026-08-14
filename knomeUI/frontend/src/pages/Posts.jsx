@@ -102,7 +102,7 @@ export default function Posts() {
     };
 
     return (
-        <div className="flex-1 min-w-0 flex flex-col gap-6 pb-32">
+        <div className="flex-1 min-w-0 flex flex-col gap-6 pb-6">
             
             {/* Header - Custom Hero Typography Design */}
             <div className="relative flex flex-col items-center text-center pb-8 pt-6">
