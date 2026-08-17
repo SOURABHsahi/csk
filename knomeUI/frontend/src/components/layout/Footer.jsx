@@ -101,19 +101,19 @@ export default function Footer() {
             </div>
 
             {/* Bottom Bar */}
-            <div className="w-full bg-[#040814] border-t border-slate-800/80 py-3 px-6 relative">
-                <div className="max-w-screen-2xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5 text-center sm:text-left">
+            <div className="w-full bg-[#040814] border-t border-slate-800/80 py-3.5 px-6 relative">
+                <div className="max-w-screen-2xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 text-center sm:text-left">
                         <img 
                             src={knomeLogo} 
                             alt="Knome Logo" 
-                            className="h-5 object-contain bg-white rounded p-0.5 shadow-sm" 
+                            className="h-6 md:h-7 object-contain bg-white rounded-lg p-1 shadow-sm" 
                         />
-                        <span className="text-slate-400 text-[11px]">Knome v1.0 — Enterprise Knowledge Platform | Maintained by</span>
+                        <span className="text-slate-400 text-xs font-medium">Knome v1.0 — Enterprise Knowledge Platform | Maintained by</span>
                         <img 
                             src={mponlineLogo} 
                             alt="MPOnline Limited" 
-                            className="h-5 object-contain bg-white rounded px-1 py-0.5 shadow-sm" 
+                            className="h-8 md:h-9 object-contain bg-white rounded-lg px-2.5 py-1 shadow-md hover:scale-105 transition-transform" 
                         />
                     </div>
                 </div>

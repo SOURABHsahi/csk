@@ -268,8 +268,7 @@ export default function Articles() {
                                 onClick={() => setViewMode('create')}
                                 className="px-6 py-2.5 text-xs font-black text-white rounded-xl transition-all hover:-translate-y-0.5 flex items-center gap-2"
                                 style={{
-                                    background: 'linear-gradient(135deg, var(--theme-10), #1D4ED8)',
-                                    boxShadow: '0 4px 14px rgba(79,70,229,0.35)'
+                                    background: 'linear-gradient(135deg, #4f46e5 0%, #2563eb 100%)',
                                 }}
                             >
                                 <span className="material-symbols-outlined text-[16px]">edit_document</span>
@@ -277,22 +276,27 @@ export default function Articles() {
                             </button>
                         </div>
 
-                        {/* Title: Connect (Light) + the World (Heavy) -> Share Knowledge */}
-                        <h1 className="text-[52px] sm:text-[64px] leading-tight tracking-tight text-slate-800 dark:text-slate-100 flex flex-col sm:flex-row items-center gap-2 sm:gap-4 mb-2">
-                            <span className="font-light">Share</span>
-                            <span className="font-black">Knowledge</span>
-                        </h1>
-
-                        {/* Gradient Divider Line */}
-                        <div className="w-full max-w-3xl h-1.5 rounded-full mb-6" style={{ background: 'linear-gradient(90deg, #1e293b 0%, rgba(30,41,59,0.8) 40%, rgba(30,41,59,0.1) 100%)' }}></div>
-
-                        {/* Subtitle with Inline Pills */}
-                        <div className="text-[17px] font-medium text-theme-30-text mb-4 max-w-2xl leading-relaxed">
-                            Experience collaborative learning with our <span className="inline-flex items-center px-3 py-1 bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg mx-1 text-[15px] font-bold shadow-sm">expert community</span> <span className="inline-flex items-center px-3 py-1 bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg mx-1 text-[15px] font-bold shadow-sm">platform</span>
+                        {/* Refined Category Badge */}
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200/80 dark:border-indigo-800/80 text-indigo-600 dark:text-indigo-400 text-xs font-extrabold uppercase tracking-wider mb-3 shadow-xs">
+                            <span className="material-symbols-outlined text-[14px]">auto_stories</span>
+                            Knowledge Hub & Publications
                         </div>
 
+                        {/* Title: Formal & Catchy (No Underline) */}
+                        <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight text-slate-900 dark:text-white flex flex-wrap items-center justify-center gap-2 sm:gap-3.5 mb-3 leading-tight">
+                            <span className="text-slate-800 dark:text-slate-200 font-extrabold">Share</span>
+                            <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 bg-clip-text text-transparent drop-shadow-xs">
+                                Knowledge
+                            </span>
+                        </h1>
+
+                        {/* Subtitle with Integrated Text Flow */}
+                        <p className="text-base sm:text-lg text-slate-600 dark:text-slate-300 font-medium max-w-2xl leading-relaxed mb-1">
+                            Experience collaborative learning with our <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 dark:from-indigo-400 dark:via-blue-400 dark:to-cyan-400">expert community platform</span>
+                        </p>
+
                         {/* Small Description */}
-                        <p className="text-[14px] text-theme-30-text font-normal max-w-xl opacity-80">
+                        <p className="text-xs sm:text-sm text-slate-400 dark:text-slate-500 font-normal max-w-xl">
                             Discover deep insights, track trending topics, and scale your expertise across the organization with unprecedented reliability.
                         </p>
 

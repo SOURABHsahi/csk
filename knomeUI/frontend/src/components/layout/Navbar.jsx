@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useUser } from '../contexts/UserContext';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import NotificationSettingsModal from '../modals/NotificationSettingsModal';
@@ -223,6 +223,44 @@ export default function Navbar() {
     const [toastNotification, setToastNotification] = useState(null);
     const [activeNotifFilter, setActiveNotifFilter] = useState('All'); // All | Reactions | Comments | Connections | Mentions | System
     const [notifSearchQuery, setNotifSearchQuery] = useState('');
+
+    // Refs for outside click detection
+    const notifDropdownRef = useRef(null);
+    const userMenuDropdownRef = useRef(null);
+    const searchDropdownRef = useRef(null);
+
+    // Auto-close notification dropdown, search suggestions & user menu when clicking anywhere outside or pressing Escape
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (notifDropdownRef.current && !notifDropdownRef.current.contains(event.target)) {
+                setIsNotifOpen(false);
+            }
+            if (userMenuDropdownRef.current && !userMenuDropdownRef.current.contains(event.target)) {
+                setIsUserMenuOpen(false);
+            }
+            if (searchDropdownRef.current && !searchDropdownRef.current.contains(event.target)) {
+                setShowSuggestions(false);
+            }
+        };
+
+        const handleEscape = (event) => {
+            if (event.key === 'Escape') {
+                setIsNotifOpen(false);
+                setIsUserMenuOpen(false);
+                setShowSuggestions(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside, true);
+        document.addEventListener('touchstart', handleClickOutside, true);
+        document.addEventListener('keydown', handleEscape);
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside, true);
+            document.removeEventListener('touchstart', handleClickOutside, true);
+            document.removeEventListener('keydown', handleEscape);
+        };
+    }, []);
 
     const playChimeSound = () => {
         try {
@@ -825,25 +863,19 @@ export default function Navbar() {
                 
                 {/* ─── LEFT: Logo & Navigation ─── */}
                 <div className="flex items-center gap-8 justify-start">
-                    <Link to="/" className="flex items-center gap-3 transition-transform hover:scale-[1.01] shrink-0">
-                        <img 
-                            src={knomeLogo} 
-                            alt="Knome Logo" 
-                            className="h-14 object-contain bg-white rounded-xl p-1" 
-                            style={{
-                                boxShadow: '0 2px 10px rgba(0,0,0,0.15)'
-                            }}
-                        />
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-black uppercase tracking-widest" style={{
-                                background: 'linear-gradient(135deg, #3b7fff, #00d4ff)',
-                                WebkitBackgroundClip: 'text',
-                                WebkitTextFillColor: 'transparent',
-                                backgroundClip: 'text'
-                            }}>
-                                Knome Portal
+                    <Link to="/" className="flex items-center gap-3.5 transition-all duration-200 hover:scale-[1.02] shrink-0 group">
+                        <div className="relative p-1 bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-md group-hover:shadow-indigo-500/25 transition-all flex items-center justify-center">
+                            <img 
+                                src={knomeLogo} 
+                                alt="Knome Logo" 
+                                className="h-12 w-auto object-contain rounded-xl" 
+                            />
+                        </div>
+                        <div className="flex flex-col justify-center">
+                            <span className="text-[17px] sm:text-[19px] font-black tracking-tight leading-none bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 bg-clip-text text-transparent group-hover:opacity-95 transition-opacity drop-shadow-xs">
+                                KNOME PORTAL
                             </span>
-                            <span className="text-[9px] font-extrabold text-slate-500 dark:text-slate-400 mt-0.5 leading-none">
+                            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1 leading-tight tracking-tight">
                                 Connecting People & Knowledge
                             </span>
                         </div>
@@ -878,7 +910,7 @@ export default function Navbar() {
 
                 {/* ─── CENTER: Smart Search ─── */}
                 <div className="hidden lg:flex items-center justify-center w-full">
-                    <div className="relative w-full max-w-[520px] z-50">
+                    <div className="relative w-full max-w-[520px] z-50" ref={searchDropdownRef}>
                         <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[18px]"
                             style={{color: 'var(--text-muted)'}}>search</span>
                         <input
@@ -1091,7 +1123,7 @@ export default function Navbar() {
                     </button>
 
                     {/* Notifications */}
-                    <div className="relative">
+                    <div className="relative" ref={notifDropdownRef}>
                         <button
                             onClick={() => {
                                 const nextState = !isNotifOpen;
@@ -1205,9 +1237,9 @@ export default function Navbar() {
                                                     <button 
                                                         onClick={(e) => handleDeleteNotification(e, n.id)} 
                                                         title="Delete notification"
-                                                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-all rounded"
+                                                        className="p-1 text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all rounded-lg cursor-pointer"
                                                     >
-                                                        <span className="material-symbols-outlined text-[15px]">delete</span>
+                                                        <span className="material-symbols-outlined text-[17px]">delete</span>
                                                     </button>
                                                 </div>
                                             </div>
@@ -1290,7 +1322,7 @@ export default function Navbar() {
                     </div>
 
                     {/* User Avatar & Menu */}
-                    <div className="relative">
+                    <div className="relative" ref={userMenuDropdownRef}>
                         <button
                             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
                             className="flex items-center gap-3 px-3 py-1.5 rounded-full transition-all hover:scale-105"

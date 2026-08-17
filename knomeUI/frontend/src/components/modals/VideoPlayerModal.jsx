@@ -4,6 +4,7 @@ import { useToast } from '../contexts/ToastContext';
 import { deleteVideo } from '../../utils/videoService';
 import { resolveMediaUrl } from '../../utils/apiService';
 import ReportModal from './ReportModal';
+import ArticleShareModal from './ArticleShareModal';
 
 const ENTERPRISE_COMMUNITIES = [
     { id: 1, name: 'Engineering & Tech', icon: 'developer_board' },
@@ -481,207 +482,19 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
 
             </div>
 
-            {/* Interactive Share Video Modal */}
-            {isShareModalOpen && (
-                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-                    <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={() => setIsShareModalOpen(false)}></div>
-                    
-                    <div className="relative bg-slate-900 border border-slate-700 text-white rounded-2xl w-full max-w-md p-6 shadow-2xl animate-in fade-in zoom-in duration-200">
-                        {/* Header */}
-                        <div className="flex items-center justify-between mb-6 pb-3 border-b border-slate-800">
-                            <div className="flex items-center gap-2">
-                                <span className="material-symbols-outlined text-cyan-400">share</span>
-                                <h3 className="text-lg font-black tracking-tight">Share Video</h3>
-                            </div>
-                            <button 
-                                onClick={() => setIsShareModalOpen(false)}
-                                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-                            >
-                                <span className="material-symbols-outlined text-sm">close</span>
-                            </button>
-                        </div>
-
-                        {/* Menu Tab Options */}
-                        {shareTab === 'menu' && (
-                            <div className="space-y-3">
-                                <button
-                                    onClick={() => setShareTab('community')}
-                                    className="w-full flex items-center gap-4 p-4 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 transition-all text-left cursor-pointer group"
-                                >
-                                    <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                                        <span className="material-symbols-outlined">groups</span>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <h4 className="font-bold text-sm text-slate-100 group-hover:text-cyan-400 transition-colors">Share to Community</h4>
-                                        <p className="text-xs text-slate-400 truncate">Post video directly to a community's interactive feed</p>
-                                    </div>
-                                    <span className="material-symbols-outlined text-slate-500 text-sm">chevron_right</span>
-                                </button>
-
-                                <button
-                                    onClick={() => setShareTab('users')}
-                                    className="w-full flex items-center gap-4 p-4 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 transition-all text-left cursor-pointer group"
-                                >
-                                    <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                                        <span className="material-symbols-outlined">person_add</span>
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <h4 className="font-bold text-sm text-slate-100 group-hover:text-purple-400 transition-colors">Share with Users</h4>
-                                        <p className="text-xs text-slate-400 truncate">Send direct video notification to team members</p>
-                                    </div>
-                                    <span className="material-symbols-outlined text-slate-500 text-sm">chevron_right</span>
-                                </button>
-                            </div>
-                        )}
-
-                        {/* Share to Community Form */}
-                        {shareTab === 'community' && (
-                            <form onSubmit={handleShareToCommunitySubmit} className="space-y-4">
-                                <button 
-                                    type="button" 
-                                    onClick={() => setShareTab('menu')}
-                                    className="inline-flex items-center gap-1 text-xs font-bold text-cyan-400 hover:underline mb-2 cursor-pointer"
-                                >
-                                    <span className="material-symbols-outlined text-xs">arrow_back</span>
-                                    Back to options
-                                </button>
-
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-300 mb-1">Select Enterprise Community</label>
-                                    <select
-                                        value={selectedCommunityId}
-                                        onChange={(e) => setSelectedCommunityId(e.target.value)}
-                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white outline-none focus:border-cyan-500"
-                                    >
-                                        {ENTERPRISE_COMMUNITIES.map(c => (
-                                            <option key={c.id} value={c.id}>{c.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-300 mb-1">Optional Note for Community Feed</label>
-                                    <textarea
-                                        rows={3}
-                                        placeholder="Add a note or context for this video..."
-                                        value={shareMessageNote}
-                                        onChange={(e) => setShareMessageNote(e.target.value)}
-                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs text-white outline-none focus:border-cyan-500 resize-none"
-                                    />
-                                </div>
-
-                                <div className="flex gap-2 pt-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsShareModalOpen(false)}
-                                        className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl cursor-pointer"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="flex-1 py-2.5 bg-cyan-500 hover:bg-cyan-600 text-white font-bold text-xs rounded-xl cursor-pointer shadow-md"
-                                    >
-                                        Share to Feed
-                                    </button>
-                                </div>
-                            </form>
-                        )}
-
-                        {/* Share with Users Form */}
-                        {shareTab === 'users' && (
-                            <form onSubmit={handleShareToUsersSubmit} className="space-y-4">
-                                <button 
-                                    type="button" 
-                                    onClick={() => setShareTab('menu')}
-                                    className="inline-flex items-center gap-1 text-xs font-bold text-purple-400 hover:underline mb-2 cursor-pointer"
-                                >
-                                    <span className="material-symbols-outlined text-xs">arrow_back</span>
-                                    Back to options
-                                </button>
-
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-300 mb-1">Search & Select Team Members</label>
-                                    <input
-                                        type="text"
-                                        placeholder="Search teammates by name or department..."
-                                        value={userSearchQuery}
-                                        onChange={(e) => setUserSearchQuery(e.target.value)}
-                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-purple-500 mb-3"
-                                    />
-
-                                    <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-2 border border-slate-800 p-2 rounded-xl bg-slate-950/40">
-                                        {activeUsersList.length === 0 ? (
-                                            <p className="text-xs text-slate-500 text-center py-4">No matching teammates found.</p>
-                                        ) : (
-                                            activeUsersList.map(u => {
-                                                const uId = u.id || u.userId;
-                                                const isChecked = selectedUserIds.includes(uId);
-                                                const avatarUrl = resolveMediaUrl(u.avatar || u.profilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name || u.fullName || 'U')}&background=6366f1&color=fff&bold=true`;
-                                                return (
-                                                    <div 
-                                                        key={uId} 
-                                                        onClick={() => {
-                                                            setSelectedUserIds(prev => 
-                                                                prev.includes(uId) ? prev.filter(id => id !== uId) : [...prev, uId]
-                                                            );
-                                                        }}
-                                                        className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all border ${isChecked ? 'bg-purple-500/20 border-purple-500/40 text-purple-300' : 'hover:bg-slate-800 border-transparent text-slate-300'}`}
-                                                    >
-                                                        <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
-                                                            <img src={avatarUrl} alt={u.name || u.fullName} className="w-8 h-8 rounded-full object-cover shrink-0 shadow-xs" />
-                                                            <div className="min-w-0 flex-1">
-                                                                <div className="flex items-center gap-1.5">
-                                                                    <p className="text-xs font-bold text-slate-100 truncate">{u.name || u.fullName}</p>
-                                                                    {u.employeeId && (
-                                                                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-semibold shrink-0">
-                                                                            {u.employeeId}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                                <p className="text-[10px] text-slate-400 truncate mt-0.5">{u.roleName || u.role || u.designation || 'Employee'} • {u.department || 'MPOnline'}</p>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all shrink-0 ${
-                                                            isChecked 
-                                                                ? 'bg-purple-600 border-purple-600 text-white shadow-xs' 
-                                                                : 'border-slate-600 bg-slate-800'
-                                                        }`}>
-                                                            {isChecked && (
-                                                                <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="3" stroke="currentColor">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                                                </svg>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-2 pt-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsShareModalOpen(false)}
-                                        className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl cursor-pointer"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        disabled={selectedUserIds.length === 0}
-                                        className="flex-1 py-2.5 bg-purple-600 disabled:opacity-40 hover:bg-purple-700 text-white font-bold text-xs rounded-xl cursor-pointer shadow-md"
-                                    >
-                                        Send Notification ({selectedUserIds.length})
-                                    </button>
-                                </div>
-                            </form>
-                        )}
-                    </div>
-                </div>
-            )}
+            {/* Universal Share Video Modal */}
+            <ArticleShareModal 
+                isOpen={isShareModalOpen}
+                onClose={() => setIsShareModalOpen(false)}
+                item={video}
+                contentType="Video"
+                onShared={(type, count) => {
+                    setShareCount(prev => prev + (count || 1));
+                    if (awardRuleKarma && (video?.authorId || video?.userId)) {
+                        awardRuleKarma(video.authorId || video.userId, 'SHARE_RECEIVED');
+                    }
+                }}
+            />
 
             {/* Report Video Modal */}
             <ReportModal

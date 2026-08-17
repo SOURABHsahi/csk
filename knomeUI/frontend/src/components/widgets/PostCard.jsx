@@ -6,6 +6,7 @@ import { useToast } from '../contexts/ToastContext';
 import ReportModal from '../modals/ReportModal';
 import SaveToCategoryModal from '../modals/SaveToCategoryModal';
 import DocumentViewerModal from '../modals/DocumentViewerModal';
+import ArticleShareModal from '../modals/ArticleShareModal';
 
 import { interactionsApi, postsApi, searchApi, communitiesApi, resolveMediaUrl, getVideoThumbnail } from '../../utils/apiService';
 
@@ -279,6 +280,17 @@ export default function PostCard({ post, onPostDeleted }) {
     const imageAttachments = (post.attachments || []).filter(a => a.type === 'image');
     const otherAttachments = (post.attachments || []).filter(a => a.type !== 'image');
 
+    const handleCopyPostLink = () => {
+        const link = `${window.location.origin}/posts?id=${post.id}`;
+        navigator.clipboard.writeText(link).then(() => {
+            setShareCount(prev => prev + 1);
+            addToast('Post permalink copied to clipboard!', 'success');
+            setIsShareOpen(false);
+        }).catch(() => {
+            addToast('Failed to copy link', 'error');
+        });
+    };
+
     const handleShareToTimeline = async () => {
         try {
             await interactionsApi.shareContent('Post', post.id, 'Timeline');
@@ -323,7 +335,9 @@ export default function PostCard({ post, onPostDeleted }) {
         }
         try {
             await Promise.all(selectedShareUsers.map(u => 
-                interactionsApi.shareContent('Post', post.id, 'User', u.id || u.userId)
+                interactionsApi.shareContent('Post', post.id, 'User', u.id || u.userId).catch(err => {
+                    console.warn('Backend user share notice:', err);
+                })
             ));
             setShareCount(prev => prev + selectedShareUsers.length);
             if (awardRuleKarma && (post.userId || post.authorId)) {
@@ -563,7 +577,7 @@ export default function PostCard({ post, onPostDeleted }) {
     return (
         <article 
             id={post.id ? `post-${post.id}` : undefined}
-            className={`rounded-2xl overflow-hidden flex flex-col transition-all hover:-translate-y-1 ${post.isHighlighted ? 'ring-2 ring-indigo-500 shadow-2xl' : ''}`}
+            className={`w-full min-w-0 rounded-2xl overflow-hidden flex flex-col transition-all hover:-translate-y-1 ${post.isHighlighted ? 'ring-2 ring-indigo-500 shadow-2xl' : ''}`}
             style={{
                 background: 'var(--bg-card)',
                 border: post.isHighlighted ? '1px solid #6366f1' : '1px solid var(--border-subtle)',
@@ -895,19 +909,27 @@ export default function PostCard({ post, onPostDeleted }) {
             )}
 
             {/* Interaction Counts */}
-            <div className="px-5 py-3 flex items-center justify-between text-[12px] text-slate-500 border-b border-slate-100 dark:border-slate-800">
-                <div className="flex items-center gap-1">
-                    {reaction && (
-                        <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">
-                            <span className="text-[14px]">{REACTION_TYPES[reaction].icon}</span>
-                            <span className="font-bold text-slate-900 dark:text-white">You {likeCount > 1 ? `and ${likeCount - 1} others` : ''}</span>
-                        </div>
-                    )}
-                    {!reaction && likeCount > 0 && <span>{likeCount} reactions</span>}
+            <div className="px-5 py-2.5 flex items-center justify-between text-[12px] text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-2">
+                    <div className="flex items-center -space-x-1">
+                        <span className="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] shadow-xs">👍</span>
+                        <span className="w-5 h-5 rounded-full bg-rose-500 text-white flex items-center justify-center text-[10px] shadow-xs">❤️</span>
+                        <span className="w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px] shadow-xs">👏</span>
+                    </div>
+                    <span className="font-bold text-slate-800 dark:text-slate-200">
+                        {likeCount > 0 ? `${likeCount} ${likeCount === 1 ? 'reaction' : 'reactions'}` : '0 reactions'}
+                    </span>
                 </div>
-                <div className="flex gap-4">
-                    <button className="hover:underline hover:text-indigo-500">{comments.length} comments</button>
-                    <span>{shareCount} shares</span>
+                <div className="flex items-center gap-3 text-xs font-semibold">
+                    <button onClick={() => setShowComments(!showComments)} className="hover:underline hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer flex items-center gap-1 text-slate-600 dark:text-slate-300">
+                        <span className="font-bold">{comments.length || post.commentsCount || 0}</span>
+                        <span>comments</span>
+                    </button>
+                    <span className="text-slate-300 dark:text-slate-700">•</span>
+                    <span className="flex items-center gap-1 text-slate-600 dark:text-slate-300">
+                        <span className="font-bold">{shareCount || post.sharesCount || 0}</span>
+                        <span>shares</span>
+                    </span>
                 </div>
             </div>
 
@@ -960,7 +982,7 @@ export default function PostCard({ post, onPostDeleted }) {
 
                     <button 
                         onClick={() => toggleReaction(reaction ? null : 'like')}
-                        className={`w-full flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] transition-colors ${reaction ? REACTION_TYPES[reaction].color : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                        className={`w-full flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] transition-colors cursor-pointer ${reaction ? REACTION_TYPES[reaction].color : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                     >
                         {reaction ? (
                             <>
@@ -1013,7 +1035,7 @@ export default function PostCard({ post, onPostDeleted }) {
                             }
                         }
                     }}
-                    className="flex-1 flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    className="flex-1 flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                     <span className="material-symbols-outlined text-[20px]">chat_bubble</span>
                     Comment ({comments.length || post.commentsCount || 0})
@@ -1027,170 +1049,25 @@ export default function PostCard({ post, onPostDeleted }) {
                             e.stopPropagation();
                             setIsShareOpen(!isShareOpen);
                         }}
-                        className="w-full flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        className="w-full flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                     >
                         <span className="material-symbols-outlined text-[20px]">share</span>
-                        Share ({shareCount})
+                        Share ({shareCount || post.sharesCount || 0})
                     </button>
 
-                    {/* Share Popover Modal... */}
-                    {isShareOpen && createPortal(
-                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={(e) => { e.stopPropagation(); setIsShareOpen(false); }}></div>
-                            <div className="relative bg-theme-60-surface rounded-2xl shadow-xl w-full max-w-sm p-6 border border-theme-30 animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
-                                <div className="flex justify-between items-center mb-4">
-                                    <div className="flex items-center gap-2">
-                                        {(shareMode === 'userSearch' || shareMode === 'community') && (
-                                            <button onClick={() => setShareMode('menu')} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
-                                                <span className="material-symbols-outlined text-[20px]">arrow_back</span>
-                                            </button>
-                                        )}
-                                        <h3 className="font-bold text-slate-900 dark:text-white">Share Post</h3>
-                                    </div>
-                                    <button onClick={() => {
-                                        setIsShareOpen(false);
-                                        setShareMode('menu');
-                                    }} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
-                                        <span className="material-symbols-outlined">close</span>
-                                    </button>
-                                </div>
-
-                                {shareMode === 'menu' ? (
-                                    <div className="flex flex-col gap-2">
-                                        <button onClick={() => setShareMode('community')} className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left text-sm font-semibold text-slate-700 dark:text-slate-200">
-                                            <div className="w-8 h-8 rounded-full bg-cyan-100 dark:bg-cyan-900/30 text-cyan-500 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">groups</span></div> Share to Community
-                                        </button>
-                                        <button onClick={() => setShareMode('userSearch')} className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left text-sm font-semibold text-slate-700 dark:text-slate-200">
-                                            <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-500 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">group_add</span></div> Share with Users
-                                        </button>
-                                    </div>
-                                ) : shareMode === 'community' ? (
-                                    <div className="flex flex-col gap-4">
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">Select a community to share this post to:</p>
-                                        {loadingCommunities ? (
-                                            <div className="text-center py-4 text-slate-500 text-sm">Loading communities...</div>
-                                        ) : shareCommunities.length === 0 ? (
-                                            <div className="text-center py-4 text-slate-500 text-sm">You are not a member of any community.</div>
-                                        ) : (
-                                            <select
-                                                value={selectedShareCommunityId}
-                                                onChange={e => setSelectedShareCommunityId(e.target.value)}
-                                                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                                            >
-                                                {shareCommunities.map(c => {
-                                                    const cId = String(c.communityId || c.id);
-                                                    const cName = c.name || c.communityName || 'Community';
-                                                    return <option key={cId} value={cId}>{cName}</option>;
-                                                })}
-                                            </select>
-                                        )}
-                                        {shareCommunities.length > 0 && (
-                                            <button
-                                                onClick={handleShareToCommunity}
-                                                disabled={isSharingToCommunity || !selectedShareCommunityId}
-                                                className="w-full bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50 text-white font-bold py-2.5 rounded-xl transition-colors flex items-center justify-center gap-2"
-                                            >
-                                                <span className="material-symbols-outlined text-[18px]">send</span>
-                                                {isSharingToCommunity ? 'Sharing...' : 'Share to Community'}
-                                            </button>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-col gap-4">
-                                        <div className="relative">
-                                            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
-                                            <input 
-                                                type="text"
-                                                placeholder="Search users..."
-                                                value={shareSearchQuery}
-                                                onChange={e => setShareSearchQuery(e.target.value)}
-                                                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white"
-                                            />
-                                        </div>
-                                        <div className="max-h-60 overflow-y-auto space-y-1 pr-1">
-                                            {isShareSearching ? (
-                                                <div className="text-center py-4 text-slate-500 text-sm flex items-center justify-center gap-2">
-                                                    <span className="material-symbols-outlined text-[18px] animate-spin text-indigo-500">progress_activity</span>
-                                                    Searching teammates...
-                                                </div>
-                                            ) : displayedShareUsers.length > 0 ? (
-                                                displayedShareUsers.map(user => {
-                                                    const userId = user.id || user.userId;
-                                                    const userName = user.title || user.fullName || user.name || 'User';
-                                                    const userRole = user.summary || user.designation || user.roleName || user.role || 'Employee';
-                                                    const userDept = user.department || user.departmentName || 'MPOnline';
-                                                    const userEmpId = user.employeeId || '';
-                                                    const rawPhoto = user.authorProfilePhotoUrl || user.profilePhotoUrl || user.thumbnailUrl || user.avatar;
-                                                    const userAvatar = resolveMediaUrl(rawPhoto) || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=6366f1&color=fff&bold=true`;
-                                                    const isSelected = selectedShareUsers.some(u => String(u.id || u.userId) === String(userId));
-
-                                                    return (
-                                                        <div 
-                                                            key={userId} 
-                                                            onClick={() => {
-                                                                if (isSelected) {
-                                                                    setSelectedShareUsers(prev => prev.filter(u => String(u.id || u.userId) !== String(userId)));
-                                                                } else {
-                                                                    setSelectedShareUsers(prev => [...prev, { ...user, id: userId }]);
-                                                                }
-                                                            }}
-                                                            className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all border ${
-                                                                isSelected 
-                                                                    ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/60 text-indigo-600 dark:text-indigo-300' 
-                                                                    : 'hover:bg-slate-50 dark:hover:bg-slate-800/80 border-transparent text-slate-700 dark:text-slate-300'
-                                                            }`}
-                                                        >
-                                                            <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
-                                                                <img 
-                                                                    src={userAvatar} 
-                                                                    alt={userName} 
-                                                                    className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700 shadow-xs"
-                                                                    onError={(e) => {
-                                                                        e.target.onerror = null; 
-                                                                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=6366f1&color=fff&bold=true`;
-                                                                    }}
-                                                                />
-                                                                <div className="flex-1 min-w-0">
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{userName}</p>
-                                                                        {userEmpId && (
-                                                                            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-semibold shrink-0">
-                                                                                {userEmpId}
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{userRole} • {userDept}</p>
-                                                                </div>
-                                                            </div>
-
-                                                            <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all shrink-0 ${
-                                                                isSelected 
-                                                                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs' 
-                                                                    : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
-                                                            }`}>
-                                                                {isSelected && (
-                                                                    <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="3" stroke="currentColor">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                                                    </svg>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })
-                                            ) : (
-                                                <div className="text-center py-4 text-slate-500 text-sm">No users found matching "{shareSearchQuery}".</div>
-                                            )}
-                                        </div>
-                                        {selectedShareUsers.length > 0 && (
-                                            <button onClick={handleShareWithUsers} className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2.5 rounded-xl transition-colors">
-                                                Share with {selectedShareUsers.length} user{selectedShareUsers.length > 1 ? 's' : ''}
-                                            </button>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </div>, document.body
-                    )}
+                    {/* Universal Share Modal (FR-CI-03) */}
+                    <ArticleShareModal 
+                        isOpen={isShareOpen}
+                        onClose={() => setIsShareOpen(false)}
+                        post={post}
+                        contentType="Post"
+                        onShared={(type, count) => {
+                            setShareCount(prev => prev + (count || 1));
+                            if (awardRuleKarma && (post.userId || post.authorId)) {
+                                awardRuleKarma(post.userId || post.authorId, 'SHARE_RECEIVED');
+                            }
+                        }}
+                    />
                 </div>
             </div>
 

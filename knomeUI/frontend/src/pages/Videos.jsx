@@ -5,6 +5,7 @@ import UploadVideoModal from '../components/modals/UploadVideoModal';
 import ReportModal from '../components/modals/ReportModal';
 import SaveToCategoryModal from '../components/modals/SaveToCategoryModal';
 import CommentsSection from '../components/video/CommentsSection';
+import ArticleShareModal from '../components/modals/ArticleShareModal';
 import { getVideos, getPlaylists, savePlaylist, deletePlaylist, importYouTubePlaylist } from '../utils/videoService';
 
 import { savedContentApi, getPersonalizedRecommendations, resolveMediaUrl } from '../utils/apiService';
@@ -1020,138 +1021,13 @@ export default function Videos() {
 
 
                                 {/* ── SHARE MODAL POPUP ── */}
-                                {showSharePanel && (
-                                    <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
-                                        onClick={() => setShowSharePanel(false)}>
-                                        <div className="bg-slate-900 border border-slate-700/80 w-full max-w-lg rounded-3xl p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200"
-                                            onClick={e => e.stopPropagation()}>
-
-                                            {/* Modal Header */}
-                                            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold">
-                                                        <span className="material-symbols-outlined text-[20px]">share</span>
-                                                    </div>
-                                                    <h3 className="font-black text-base text-white">Share Video</h3>
-                                                </div>
-                                                <button onClick={() => setShowSharePanel(false)}
-                                                    className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-all cursor-pointer">
-                                                    <span className="material-symbols-outlined text-[18px]">close</span>
-                                                </button>
-                                            </div>
-
-                                            {/* Video Mini Preview Card */}
-                                            <div className="flex items-center gap-3 p-3 bg-slate-800/60 border border-slate-700/60 rounded-2xl">
-                                                <img src={activeVideo.thumbnail} alt={activeVideo.title} className="w-20 aspect-video rounded-xl object-cover shrink-0" />
-                                                <div className="min-w-0 flex-1">
-                                                    <h4 className="font-bold text-xs text-white line-clamp-1">{activeVideo.title}</h4>
-                                                    <p className="text-[11px] text-slate-400 mt-0.5">{activeVideo.author || 'MPOnline Creator'}</p>
-                                                </div>
-                                            </div>
-
-                                            {/* Main Share Tab Content */}
-                                            {shareTab === 'menu' && (
-                                                <div className="space-y-4">
-                                                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Choose sharing option</p>
-                                                    <div className="grid grid-cols-3 gap-3">
-                                                        {/* Copy Link */}
-                                                        <button onClick={handleCopyLink}
-                                                            className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-slate-800 hover:bg-slate-700/80 border border-slate-700/50 transition-all cursor-pointer group">
-                                                            <div className="w-12 h-12 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center group-hover:scale-110 transition-transform shadow-md">
-                                                                <span className="material-symbols-outlined text-[22px]">link</span>
-                                                            </div>
-                                                            <span className="text-xs font-bold text-slate-200 group-hover:text-cyan-400 transition-colors">Copy Link</span>
-                                                        </button>
-
-                                                        {/* Community */}
-                                                        <button onClick={() => setShareTab('community')}
-                                                            className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-slate-800 hover:bg-slate-700/80 border border-slate-700/50 transition-all cursor-pointer group">
-                                                            <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center group-hover:scale-110 transition-transform shadow-md">
-                                                                <span className="material-symbols-outlined text-[22px]">groups</span>
-                                                            </div>
-                                                            <span className="text-xs font-bold text-slate-200 group-hover:text-indigo-400 transition-colors">Community</span>
-                                                        </button>
-
-                                                        {/* Teammate */}
-                                                        <button onClick={() => setShareTab('users')}
-                                                            className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-slate-800 hover:bg-slate-700/80 border border-slate-700/50 transition-all cursor-pointer group">
-                                                            <div className="w-12 h-12 rounded-2xl bg-purple-500/20 text-purple-400 flex items-center justify-center group-hover:scale-110 transition-transform shadow-md">
-                                                                <span className="material-symbols-outlined text-[22px]">person_add</span>
-                                                            </div>
-                                                            <span className="text-xs font-bold text-slate-200 group-hover:text-purple-400 transition-colors">Team Member</span>
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* Share to Community Form */}
-                                            {shareTab === 'community' && (
-                                                <form onSubmit={handleShareToCommunity} className="space-y-4">
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-xs font-bold text-indigo-400 uppercase tracking-wide">Share to Community Feed</span>
-                                                        <button type="button" onClick={() => setShareTab('menu')}
-                                                            className="text-xs text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer font-semibold">
-                                                            <span className="material-symbols-outlined text-sm">arrow_back</span> Back
-                                                        </button>
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-[11px] font-bold text-slate-400 mb-1">Select Target Community</label>
-                                                        <select value={selectedCommunityId} onChange={e => setSelectedCommunityId(e.target.value)}
-                                                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white outline-none focus:border-indigo-500">
-                                                            {ENTERPRISE_COMMUNITIES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                                        </select>
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-[11px] font-bold text-slate-400 mb-1">Message / Note</label>
-                                                        <textarea rows={2} placeholder="Why are you sharing this video? Add a note for the team..." value={shareMessageNote} onChange={e => setShareMessageNote(e.target.value)}
-                                                            className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs text-white outline-none focus:border-indigo-500 resize-none placeholder-slate-500" />
-                                                    </div>
-                                                    <div className="flex gap-2 pt-2">
-                                                        <button type="button" onClick={() => setShowSharePanel(false)} className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl cursor-pointer">Cancel</button>
-                                                        <button type="submit" className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl cursor-pointer shadow-md">Post to Community</button>
-                                                    </div>
-                                                </form>
-                                            )}
-
-                                            {/* Share to Teammates Form */}
-                                            {shareTab === 'users' && (
-                                                <form onSubmit={handleShareToUsers} className="space-y-4">
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-xs font-bold text-purple-400 uppercase tracking-wide">Send to Team Members</span>
-                                                        <button type="button" onClick={() => setShareTab('menu')}
-                                                            className="text-xs text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer font-semibold">
-                                                            <span className="material-symbols-outlined text-sm">arrow_back</span> Back
-                                                        </button>
-                                                    </div>
-                                                    <input type="text" placeholder="Search teammates by name or department..." value={userSearchQuery} onChange={e => setUserSearchQuery(e.target.value)}
-                                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-purple-500 placeholder-slate-500" />
-                                                    <div className="max-h-44 overflow-y-auto custom-scrollbar space-y-1 border border-slate-800 p-2 rounded-2xl bg-slate-950/40">
-                                                        {activeUsersList.map(u => {
-                                                            const uId = u.id || u.userId;
-                                                            const checked = selectedUserIds.includes(uId);
-                                                            return (
-                                                                <label key={uId} className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition-colors ${checked ? 'bg-purple-500/20 border border-purple-500/30' : 'hover:bg-slate-800/80'}`}>
-                                                                    <div className="flex items-center gap-2.5">
-                                                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold shadow-sm">{(u.name || '?').charAt(0)}</div>
-                                                                        <div>
-                                                                            <p className="text-xs font-bold text-slate-200">{u.name}</p>
-                                                                            <p className="text-[10px] text-slate-400">{u.roleName || u.department || 'Teammate'}</p>
-                                                                        </div>
-                                                                    </div>
-                                                                    <input type="checkbox" checked={checked} onChange={() => setSelectedUserIds(p => p.includes(uId) ? p.filter(i => i !== uId) : [...p, uId])} className="accent-purple-500 cursor-pointer w-4 h-4" />
-                                                                </label>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                    <div className="flex gap-2 pt-2">
-                                                        <button type="button" onClick={() => setShowSharePanel(false)} className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl cursor-pointer">Cancel</button>
-                                                        <button type="submit" disabled={selectedUserIds.length === 0} className="flex-1 py-2.5 bg-purple-600 disabled:opacity-40 hover:bg-purple-700 text-white font-bold text-xs rounded-xl cursor-pointer shadow-md">Send ({selectedUserIds.length})</button>
-                                                    </div>
-                                                </form>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
+                                <ArticleShareModal 
+                                    isOpen={showSharePanel}
+                                    onClose={() => setShowSharePanel(false)}
+                                    item={activeVideo}
+                                    contentType="Video"
+                                    onShared={() => setShareCount(prev => prev + 1)}
+                                />
 
 
                                 {/* Channel / Author Info (Uploader) */}

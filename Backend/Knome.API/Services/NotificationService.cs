@@ -37,29 +37,36 @@ public class NotificationService : INotificationService
         string? relatedContentType = null,
         long? relatedContentId = null)
     {
-        var eligible = await _repository.GetEligibleRecipientIdsAsync(eventType, new List<int> { recipientUserId });
-        if (eligible.Count == 0)
-            return null;
-
-        var notification = new Notification
+        try
         {
-            UserId = recipientUserId,
-            EventType = eventType,
-            Message = message,
-            RelatedContentType = relatedContentType,
-            RelatedContentId = relatedContentId,
-            IsRead = false,
-            CreatedDate = DateTime.UtcNow
-        };
+            var eligible = await _repository.GetEligibleRecipientIdsAsync(eventType, new List<int> { recipientUserId });
+            if (eligible.Count == 0)
+                return null;
 
-        var saved = await _repository.AddAsync(notification);
-        var dto = _mapper.Map<NotificationDto>(saved);
-        await EnrichNotificationDtoAsync(dto);
+            var notification = new Notification
+            {
+                UserId = recipientUserId,
+                EventType = eventType,
+                Message = message,
+                RelatedContentType = relatedContentType,
+                RelatedContentId = relatedContentId,
+                IsRead = false,
+                CreatedDate = DateTime.UtcNow
+            };
 
-        // Real-time broadcast to user group
-        await _hubContext.Clients.Group($"User_{recipientUserId}").SendAsync("ReceiveNotification", dto);
+            var saved = await _repository.AddAsync(notification);
+            var dto = _mapper.Map<NotificationDto>(saved);
+            await EnrichNotificationDtoAsync(dto);
 
-        return dto;
+            // Real-time broadcast to user group
+            await _hubContext.Clients.Group($"User_{recipientUserId}").SendAsync("ReceiveNotification", dto);
+
+            return dto;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public async Task PublishBroadcastAsync(

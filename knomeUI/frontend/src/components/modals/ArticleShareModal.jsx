@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { interactionsApi, searchApi, communitiesApi, adminApi, resolveMediaUrl } from '../../utils/apiService';
 import { useUser } from '../contexts/UserContext';
 
-export default function ArticleShareModal({ isOpen, onClose, article, contentType: propContentType, onShared }) {
+export default function ArticleShareModal({ isOpen, onClose, article, post, item: propItem, contentType: propContentType, onShared }) {
     const { currentUser, users: contextUsers } = useUser();
     const [shareTab, setShareTab] = useState('menu'); // 'menu' | 'community' | 'users'
     const [searchQuery, setSearchQuery] = useState('');
@@ -19,9 +19,19 @@ export default function ArticleShareModal({ isOpen, onClose, article, contentTyp
 
     const backdropRef = useRef(null);
 
-    const isPodcast = propContentType === 'Podcast' || article?.audioUrl || article?.series || article?.podcastId || article?.type === 'Podcast';
-    const contentTypeStr = isPodcast ? 'Podcast' : 'Article';
-    const itemTitle = article?.title || (isPodcast ? 'Podcast Episode' : 'Article');
+    const item = article || post || propItem;
+
+    // Detect Content Type
+    const contentTypeStr = propContentType || (
+        item?.audioUrl || item?.series || item?.podcastId || item?.type === 'Podcast' ? 'Podcast' :
+        item?.videoUrl || item?.sourceUrl || item?.type === 'video_share' || item?.type === 'Video' ? 'Video' :
+        item?.type === 'Community' || (item?.memberCount !== undefined && item?.rules) ? 'Community' :
+        item?.content && !item?.body ? 'Post' :
+        'Article'
+    );
+
+    const contentId = item?.id || item?.postId || item?.articleId || item?.videoId || item?.podcastId || item?.communityId || 1;
+    const itemTitle = item?.title || item?.name || (item?.content ? (item.content.length > 50 ? item.content.substring(0, 50) + '...' : item.content) : contentTypeStr);
 
     useEffect(() => {
         if (isOpen) {
@@ -129,15 +139,21 @@ export default function ArticleShareModal({ isOpen, onClose, article, contentTyp
         };
     }, [isOpen, onClose]);
 
-    if (!isOpen || !article) return null;
+    if (!isOpen || !item) return null;
 
-    const shareUrl = isPodcast 
-        ? `${window.location.origin}/podcasts?id=${article.id}`
-        : `${window.location.origin}/article-view?id=${article.id}`;
+    // Generate Share URL based on content type
+    const shareUrl = (
+        contentTypeStr === 'Podcast' ? `${window.location.origin}/podcasts?id=${contentId}` :
+        contentTypeStr === 'Video' ? `${window.location.origin}/videos?id=${contentId}` :
+        contentTypeStr === 'Post' ? `${window.location.origin}/posts?id=${contentId}` :
+        contentTypeStr === 'Community' ? `${window.location.origin}/communities?id=${contentId}` :
+        `${window.location.origin}/article-view?id=${contentId}`
+    );
 
     const handleCopyLink = () => {
         navigator.clipboard.writeText(shareUrl);
         setCopied(true);
+        if (onShared) onShared('link');
         setTimeout(() => setCopied(false), 2500);
     };
 
@@ -145,10 +161,11 @@ export default function ArticleShareModal({ isOpen, onClose, article, contentTyp
         if (navigator.share) {
             try {
                 await navigator.share({
-                    title: article.title,
-                    text: article.subtitle || article.description || article.title,
+                    title: itemTitle,
+                    text: item.subtitle || item.description || item.content || itemTitle,
                     url: shareUrl
                 });
+                if (onShared) onShared('native');
                 onClose();
             } catch (err) {
                 console.warn('Native share cancelled or failed', err);
@@ -162,7 +179,32 @@ export default function ArticleShareModal({ isOpen, onClose, article, contentTyp
         if (!selectedCommunityId) return;
         setIsSharing(true);
         try {
-            await interactionsApi.shareContent(contentTypeStr, article.id, 'Community', parseInt(selectedCommunityId));
+            await interactionsApi.shareContent(contentTypeStr, contentId, 'Community', parseInt(selectedCommunityId)).catch(() => {});
+            
+            // If post/video/article, also persist to local community feed for immediate visibility
+            try {
+                const targetComm = communities.find(c => String(c.communityId || c.id) === String(selectedCommunityId));
+                const commName = targetComm?.name || targetComm?.title || 'Community';
+                const newFeedItem = {
+                    id: `shared_${contentTypeStr.toLowerCase()}_${Date.now()}`,
+                    userId: currentUser?.userId || currentUser?.id || 1,
+                    author: {
+                        userId: currentUser?.userId || currentUser?.id || 1,
+                        name: currentUser?.fullName || currentUser?.name || 'Employee',
+                        role: currentUser?.roleName || 'Employee',
+                        avatar: currentUser?.profilePhotoUrl || currentUser?.avatar || null
+                    },
+                    content: `Shared ${contentTypeStr}: "${itemTitle}"\n${shareUrl}`,
+                    title: itemTitle,
+                    time: 'Just now',
+                    communityId: parseInt(selectedCommunityId),
+                    communityName: commName,
+                    type: contentTypeStr.toLowerCase()
+                };
+                const existingCommFeed = JSON.parse(localStorage.getItem(`knome_community_posts_${selectedCommunityId}`) || '[]');
+                localStorage.setItem(`knome_community_posts_${selectedCommunityId}`, JSON.stringify([newFeedItem, ...existingCommFeed]));
+            } catch (e) {}
+
             if (onShared) onShared('community');
             alert(`${contentTypeStr} successfully shared to community!`);
             onClose();
@@ -179,19 +221,18 @@ export default function ArticleShareModal({ isOpen, onClose, article, contentTyp
         setIsSharing(true);
         try {
             await Promise.all(selectedUsers.map(u => 
-                interactionsApi.shareContent(contentTypeStr, article.id, 'User', u.id || u.userId)
+                interactionsApi.shareContent(contentTypeStr, contentId, 'User', u.id || u.userId).catch(() => {})
             ));
+            
             const senderName = currentUser?.fullName || currentUser?.name || 'Someone';
-            const icon = isPodcast ? 'podcasts' : 'article';
-            const color = isPodcast ? 'text-pink-500' : 'text-emerald-500';
-            const bg = isPodcast ? 'bg-pink-500/10' : 'bg-emerald-500/10';
-            const textMsg = isPodcast 
-                ? `🎙️ ${senderName} shared a podcast with you: "${itemTitle}"`
-                : `📄 ${senderName} shared an article with you: "${itemTitle}"`;
+            const icon = contentTypeStr === 'Podcast' ? 'podcasts' : contentTypeStr === 'Video' ? 'videocam' : contentTypeStr === 'Post' ? 'chat' : 'article';
+            const color = contentTypeStr === 'Podcast' ? 'text-pink-500' : contentTypeStr === 'Video' ? 'text-rose-500' : 'text-emerald-500';
+            const bg = contentTypeStr === 'Podcast' ? 'bg-pink-500/10' : contentTypeStr === 'Video' ? 'bg-rose-500/10' : 'bg-emerald-500/10';
+            const textMsg = `${senderName} shared a ${contentTypeStr.toLowerCase()} with you: "${itemTitle}"`;
 
             const notifsToStore = selectedUsers.map(u => ({
-                id: `local_share_${contentTypeStr.toLowerCase()}_${article.id}_${u.id || u.userId}_${Date.now()}`,
-                type: isPodcast ? 'podcast_shared' : 'share',
+                id: `local_share_${contentTypeStr.toLowerCase()}_${contentId}_${u.id || u.userId}_${Date.now()}`,
+                type: 'share',
                 category: 'Shares',
                 icon,
                 color,
@@ -206,7 +247,7 @@ export default function ArticleShareModal({ isOpen, onClose, article, contentTyp
                 targetUrl: shareUrl,
                 actionLink: shareUrl,
                 relatedContentType: contentTypeStr,
-                relatedContentId: article.id
+                relatedContentId: contentId
             }));
             const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
             localStorage.setItem('knome_notifications', JSON.stringify([...notifsToStore, ...existingNotifs]));
@@ -214,7 +255,7 @@ export default function ArticleShareModal({ isOpen, onClose, article, contentTyp
                 window.dispatchEvent(new CustomEvent('knome_notification_received', { detail: notifsToStore[0] }));
             }
 
-            if (onShared) onShared('users');
+            if (onShared) onShared('users', selectedUsers.length);
             alert(`${contentTypeStr} successfully shared with ${selectedUsers.length} team member(s)!`);
             onClose();
         } catch (err) {
@@ -256,9 +297,9 @@ export default function ArticleShareModal({ isOpen, onClose, article, contentTyp
                         <div className="min-w-0">
                             <h3 className="font-black text-slate-900 dark:text-white flex items-center gap-2 text-base truncate">
                                 <span className="material-symbols-outlined text-blue-500">share</span>
-                                {shareTab === 'community' ? 'Share to Community' : shareTab === 'users' ? 'Share with Users' : 'Share Article'}
+                                {shareTab === 'community' ? 'Share to Community' : shareTab === 'users' ? 'Share with Colleagues' : `Share ${contentTypeStr}`}
                             </h3>
-                            <p className="text-[11px] text-slate-500 truncate font-medium">{article.title}</p>
+                            <p className="text-[11px] text-slate-500 truncate font-medium">{itemTitle}</p>
                         </div>
                     </div>
                     <button 
@@ -287,13 +328,13 @@ export default function ArticleShareModal({ isOpen, onClose, article, contentTyp
                                         Share to Community
                                     </h4>
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                        Post this article directly into a specialized community feed
+                                        Post this {contentTypeStr.toLowerCase()} directly into a specialized community feed
                                     </p>
                                 </div>
                                 <span className="material-symbols-outlined text-slate-400 text-[18px]">chevron_right</span>
                             </div>
 
-                            {/* Option 2: Share with Users */}
+                            {/* Option 2: Share with Colleagues */}
                             <div
                                 onClick={() => setShareTab('users')}
                                 className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700/50 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 transition-all flex items-center gap-4 cursor-pointer group"
@@ -326,7 +367,7 @@ export default function ArticleShareModal({ isOpen, onClose, article, contentTyp
                                     />
                                     <button
                                         onClick={handleCopyLink}
-                                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
                                             copied
                                                 ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
                                                 : 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-blue-600 dark:hover:bg-blue-400'
@@ -338,16 +379,14 @@ export default function ArticleShareModal({ isOpen, onClose, article, contentTyp
                                 </div>
                             </div>
 
-                            {/* Native Share button if supported */}
-                            {typeof navigator !== 'undefined' && !!navigator.share && (
-                                <button
-                                    onClick={handleNativeShare}
-                                    className="w-full py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-2 mt-2"
-                                >
-                                    <span className="material-symbols-outlined text-[18px]">share</span>
-                                    Open Native Share Options
-                                </button>
-                            )}
+                            {/* Native Share button */}
+                            <button
+                                onClick={handleNativeShare}
+                                className="w-full py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-2 mt-2 cursor-pointer"
+                            >
+                                <span className="material-symbols-outlined text-[18px]">share</span>
+                                Open Native Share Options
+                            </button>
                         </div>
                     )}
 
@@ -381,7 +420,7 @@ export default function ArticleShareModal({ isOpen, onClose, article, contentTyp
                                 className="w-full py-3 bg-blue-500 hover:bg-blue-600 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 cursor-pointer"
                             >
                                 <span className="material-symbols-outlined text-[18px]">send</span>
-                                {isSharing ? 'Sharing to Community...' : 'Post Article to Community'}
+                                {isSharing ? 'Sharing to Community...' : `Post ${contentTypeStr} to Community`}
                             </button>
                         </div>
                     )}
@@ -406,7 +445,7 @@ export default function ArticleShareModal({ isOpen, onClose, article, contentTyp
                                     {selectedUsers.map(u => (
                                         <span key={u.id || u.userId} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500 text-white text-xs font-bold shadow-sm">
                                             {u.name || u.fullName}
-                                            <button onClick={() => toggleSelectUser(u)} className="hover:text-red-200">
+                                            <button onClick={() => toggleSelectUser(u)} className="hover:text-red-200 cursor-pointer">
                                                 <span className="material-symbols-outlined text-[14px]">close</span>
                                             </button>
                                         </span>
@@ -414,7 +453,6 @@ export default function ArticleShareModal({ isOpen, onClose, article, contentTyp
                                 </div>
                             )}
 
-                            {/* Search Results List */}
                             {/* Search Results List */}
                             <div className="max-h-56 overflow-y-auto space-y-1.5 border border-slate-100 dark:border-slate-800/80 rounded-xl p-2 bg-slate-50/50 dark:bg-slate-800/30">
                                 {isSearching ? (
@@ -460,7 +498,6 @@ export default function ArticleShareModal({ isOpen, onClose, article, contentTyp
                                                     </div>
                                                 </div>
 
-                                                {/* Clean SVG Checkbox - never breaks into ligature text */}
                                                 <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all shrink-0 ${
                                                     isSelected 
                                                         ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs' 

@@ -18,8 +18,8 @@
     margin: 0;
     padding: 0;
     min-height: 100%;
+    font-size: clamp(13.5px, 0.45vw + 9.5px, 16px);
     background-color: var(--theme-60);
-    overscroll-behavior-y: none;
   }
   body {
     margin: 0;
@@ -30,7 +30,6 @@
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    overscroll-behavior-y: none;
   }
   #root {
     min-height: 100vh;
@@ -39,10 +38,11 @@
     margin: 0;
     padding: 0;
   }
-  img {
+  img, video {
+    max-width: 100%;
+    height: auto;
     image-rendering: -webkit-optimize-contrast;
     backface-visibility: hidden;
-    transform: translateZ(0);
   }
 }
 

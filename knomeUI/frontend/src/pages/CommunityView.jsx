@@ -4,6 +4,99 @@ import { useUser } from '../components/contexts/UserContext';
 import { apiClient } from '../utils/apiClient';
 import { communitiesApi, mediaApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages } from '../utils/apiService';
 
+const ENTERPRISE_CHANNELS_SEED = {
+    '1': {
+        name: 'Engineering & Tech',
+        type: 'Public',
+        category: 'Technology & Architecture',
+        adminContact: 'Loveneesh Sharma (Lead Admin)',
+        description: 'Core engineering discussions, architecture standards, technical roadmaps, and code design patterns for MPOnline software systems.',
+        rules: ['1. Keep discussions technical and constructive.', '2. Follow code review & architecture guidelines.', '3. Respect all engineers and peers.'],
+        faq: [
+            { q: 'Who can participate?', a: 'All developers, architects, and technical staff across MPOnline.' },
+            { q: 'Can I share code snippets?', a: 'Yes, formatted code and architecture diagrams are highly encouraged.' }
+        ]
+    },
+    '2': {
+        name: 'HR & People Ops',
+        type: 'Default (Org)',
+        category: 'Human Resources & Governance',
+        adminContact: 'Sourabh Sahu (HR Lead)',
+        description: 'Official human resources updates, employee engagement, workplace policies, internal training, and talent development programs.',
+        rules: ['1. Follow official HR communications protocol.', '2. Confidential employee queries should be routed via HR portal.', '3. Maintain constructive, professional dialogue.'],
+        faq: [
+            { q: 'Who is a member?', a: 'All MPOnline employees are auto-enrolled in HR & People Ops.' },
+            { q: 'Where are policy documents stored?', a: 'Check the Files & Media tab for official policy handbooks.' }
+        ]
+    },
+    '3': {
+        name: 'Product Design & UX',
+        type: 'Public',
+        category: 'UI/UX & Design Systems',
+        adminContact: 'Mayur Verma (Design Lead)',
+        description: 'Design system specifications, user research findings, interactive prototypes, and UI/UX design reviews across enterprise portals.',
+        rules: ['1. Share constructive design critique.', '2. Adhere to the Knome & MPOnline design system tokens.', '3. Credit design resources appropriately.'],
+        faq: [
+            { q: 'Can non-designers join?', a: 'Yes! Product managers, frontend engineers, and stakeholders are welcome.' }
+        ]
+    },
+    '4': {
+        name: 'AI & Data Science Lab',
+        type: 'Private',
+        category: 'AI Research & Data Science',
+        adminContact: 'Vishendra Sharma (AI Lead)',
+        description: 'Exploration of machine learning, NLP, computer vision models, agentic workflows, and predictive analytics for public services.',
+        rules: ['1. Respect data privacy and security benchmarks.', '2. No production customer PII in experiment posts.', '3. Share reproducible notebook links.'],
+        faq: [
+            { q: 'How do I request access?', a: 'Click Request to Join; the AI Lab moderator will review your request.' }
+        ]
+    },
+    '5': {
+        name: 'Finance & Accounting',
+        type: 'Default (Org)',
+        category: 'Finance, Audit & Payroll',
+        adminContact: 'Sourabh Sahu (Finance Admin)',
+        description: 'Finance announcements, reimbursement policies, payroll schedules, and compliance audit notices for MPOnline teams.',
+        rules: ['1. Official financial guidelines only.', '2. For personal payroll disputes, contact Finance directly.', '3. Comply with government audit standards.'],
+        faq: [
+            { q: 'When are payroll guidelines posted?', a: 'Monthly before each payment cycle.' }
+        ]
+    },
+    '6': {
+        name: 'Marketing & Brand Strategy',
+        type: 'Public',
+        category: 'Marketing, PR & Events',
+        adminContact: 'Meghna Tiwari (Brand Lead)',
+        description: 'Brand identity assets, public relations updates, social campaigns, event coverage, and outreach roadmaps.',
+        rules: ['1. Align with MPOnline corporate branding guidelines.', '2. Coordinate external PR with the communications cell.'],
+        faq: [
+            { q: 'Where are brand logos and guidelines?', a: 'Check the Files & Media tab.' }
+        ]
+    },
+    '7': {
+        name: 'CTO Leadership Circle',
+        type: 'Private',
+        category: 'Executive Leadership & Strategy',
+        adminContact: 'Loveneesh Sharma (Lead Admin)',
+        description: 'Strategic technology direction, executive briefings, technology modernization, and enterprise architecture decisions.',
+        rules: ['1. Executive confidentiality applies.', '2. Strategic alignment only.'],
+        faq: [
+            { q: 'Who is eligible?', a: 'Department heads, team leads, and executive architects.' }
+        ]
+    },
+    '8': {
+        name: 'General Discussion',
+        type: 'Public',
+        category: 'Company Open Lounge',
+        adminContact: 'System Admin',
+        description: 'The open lounge for cross-department networking, achievements, celebrations, and general office chatter.',
+        rules: ['1. Keep it friendly, positive, and inclusive.', '2. Avoid unverified rumors.'],
+        faq: [
+            { q: 'What can I post here?', a: 'Team shoutouts, hackathons, book recommendations, celebrations, and informal discussions.' }
+        ]
+    }
+};
+
 export default function CommunityView() {
     const { currentUser, users: contextUsers, awardRuleKarma } = useUser();
     const navigate = useNavigate();
@@ -732,24 +825,43 @@ export default function CommunityView() {
                     });
                     setMembershipStatus(calcStatus);
                 } else {
-                    // Default seed community view
-                    setCommunity({
-                        id: targetId,
-                        name: 'DotNet Developers Community',
-                        type: 'Public',
-                        category: 'Technology',
-                        membersCount: resolvedMembers.length,
-                        adminContact: 'Loveneesh Sharma (System Admin)',
-                        banner: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=1200&h=400',
-                        thumbnail: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=200&h=200',
-                        description: 'The DotNet Developers Community is a place for developers, students, and technology enthusiasts to collaborate.',
-                        rules: ['1. Keep discussions technical and constructive.', '2. No unverified code snippets.', '3. Respect all members.'],
-                        faq: [
-                            { q: 'Who can post?', a: 'Any approved Community Member can share code and technical updates.' },
-                            { q: 'How are posts moderated?', a: 'Community Admins review reports and pin top discussions.' }
-                        ]
-                    });
-                    setMembershipStatus(calcStatus);
+                    const enterpriseChannel = ENTERPRISE_CHANNELS_SEED[String(targetId)];
+                    if (enterpriseChannel) {
+                        const imgs = getCommunityImages(enterpriseChannel.name, enterpriseChannel.category);
+                        setCommunity({
+                            id: targetId,
+                            name: enterpriseChannel.name,
+                            type: enterpriseChannel.type || 'Public',
+                            category: enterpriseChannel.category,
+                            membersCount: resolvedMembers.length,
+                            adminContact: enterpriseChannel.adminContact,
+                            banner: imgs.banner,
+                            thumbnail: imgs.thumbnail,
+                            description: enterpriseChannel.description,
+                            rules: enterpriseChannel.rules,
+                            faq: enterpriseChannel.faq
+                        });
+                        setMembershipStatus(calcStatus);
+                    } else {
+                        // Default seed community view
+                        setCommunity({
+                            id: targetId,
+                            name: 'DotNet Developers Community',
+                            type: 'Public',
+                            category: 'Technology',
+                            membersCount: resolvedMembers.length,
+                            adminContact: 'Loveneesh Sharma (System Admin)',
+                            banner: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=1200&h=400',
+                            thumbnail: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=200&h=200',
+                            description: 'The DotNet Developers Community is a place for developers, students, and technology enthusiasts to collaborate.',
+                            rules: ['1. Keep discussions technical and constructive.', '2. No unverified code snippets.', '3. Respect all members.'],
+                            faq: [
+                                { q: 'Who can post?', a: 'Any approved Community Member can share code and technical updates.' },
+                                { q: 'How are posts moderated?', a: 'Community Admins review reports and pin top discussions.' }
+                            ]
+                        });
+                        setMembershipStatus(calcStatus);
+                    }
                 }
             }
 
@@ -1632,7 +1744,18 @@ export default function CommunityView() {
 
 
                             {/* FR-CM-08: Posts Feed & Pinned Content */}
-                            {sortedPosts.map(post => (
+                            {sortedPosts.map(post => {
+                                const authorName = typeof post.author === 'string' 
+                                    ? post.author 
+                                    : (post.author?.name || post.author?.fullName || post.authorName || 'Member');
+                                const authorRole = typeof post.author === 'object' && post.author?.role 
+                                    ? post.author.role 
+                                    : (post.role || post.authorRole || 'Member');
+                                const rawAvatar = (typeof post.author === 'object' ? post.author?.avatar : null) || post.authorAvatar || post.avatar;
+                                const authorAvatar = rawAvatar ? resolveMediaUrl(rawAvatar) : null;
+                                const authorInitial = (authorName || 'M').charAt(0).toUpperCase();
+
+                                return (
                                 <div key={post.id} className={`glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 ${post.isPinned ? 'ring-2 ring-indigo-500/50 bg-indigo-50/10' : ''}`}>
                                     {post.isPinned && (
                                         <div className="flex items-center gap-1.5 text-[11px] font-black text-indigo-500 mb-3 uppercase tracking-wider">
@@ -1643,12 +1766,24 @@ export default function CommunityView() {
                                     
                                     <div className="flex justify-between items-start mb-4">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 font-bold">
-                                                {post.author.charAt(0)}
-                                            </div>
+                                            {authorAvatar ? (
+                                                <img 
+                                                    src={authorAvatar} 
+                                                    alt={authorName} 
+                                                    className="w-10 h-10 rounded-full object-cover shadow-sm border border-slate-200 dark:border-slate-700"
+                                                    onError={(e) => {
+                                                        e.target.onerror = null;
+                                                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=6366f1&color=fff&bold=true`;
+                                                    }}
+                                                />
+                                            ) : (
+                                                <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-300 font-bold">
+                                                    {authorInitial}
+                                                </div>
+                                            )}
                                             <div>
-                                                <h4 className="font-bold text-sm text-slate-900 dark:text-white">{post.author}</h4>
-                                                <p className="text-[12px] text-slate-500">{post.role} • {post.time}</p>
+                                                <h4 className="font-bold text-sm text-slate-900 dark:text-white">{authorName}</h4>
+                                                <p className="text-[12px] text-slate-500">{authorRole} • {post.time || 'Recently'}</p>
                                             </div>
                                         </div>
                                         
@@ -1661,7 +1796,7 @@ export default function CommunityView() {
                                                 <button onClick={() => handleDelete(post.id)} className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 transition-colors" title="Remove Post">
                                                     <span className="material-symbols-outlined text-[18px]">delete</span>
                                                 </button>
-                                                <button onClick={() => handleSuspend(post.author)} className="p-1.5 rounded-lg text-slate-400 hover:text-amber-500 transition-colors" title="Suspend Member">
+                                                <button onClick={() => handleSuspend(authorName)} className="p-1.5 rounded-lg text-slate-400 hover:text-amber-500 transition-colors" title="Suspend Member">
                                                     <span className="material-symbols-outlined text-[18px]">person_off</span>
                                                 </button>
                                             </div>
@@ -1822,7 +1957,8 @@ export default function CommunityView() {
                                         </button>
                                     </div>
                                 </div>
-                            ))}
+                            );
+                        })}
                         </div>
                     )}
 

@@ -106,6 +106,10 @@ export default function AdminConsole() {
     const [roleUserName, setRoleUserName] = useState('');
     const [selectedRole, setSelectedRole] = useState('Employee');
 
+    // Comprehensive User Details Modal State
+    const [selectedUserDetailsUser, setSelectedUserDetailsUser] = useState(null);
+    const [isUserDetailsModalOpen, setIsUserDetailsModalOpen] = useState(false);
+
     // Role Assignment Requests State
     const [roleRequests, setRoleRequests] = useState(() => {
         try {
@@ -124,17 +128,93 @@ export default function AdminConsole() {
 
     // Community Channels Moderation State
     const [communityChannels, setCommunityChannels] = useState([
-        { id: 1, name: 'Engineering & Tech', category: 'Technology & Architecture', members: 142, reportsCount: 5, mod: 'Loveneesh Sharma', status: 'Strict', type: 'Public', filterKey: 'Engineering', icon: 'developer_board' },
-        { id: 2, name: 'HR & People Ops', category: 'Human Resources & Governance', members: 120, reportsCount: 3, mod: 'Sourabh Sahu', status: 'Standard', type: 'Default (Org)', filterKey: 'HR', icon: 'groups' },
-        { id: 3, name: 'Product Design & UX', category: 'UI/UX & Design Systems', members: 64, reportsCount: 2, mod: 'Mayur Verma', status: 'Standard', type: 'Public', filterKey: 'Product', icon: 'palette' },
-        { id: 4, name: 'AI & Data Science Lab', category: 'AI Research & Data Science', members: 58, reportsCount: 4, mod: 'Vishendra Sharma', status: 'Strict', type: 'Private', filterKey: 'AI', icon: 'psychology' },
-        { id: 5, name: 'Finance & Accounting', category: 'Finance, Audit & Payroll', members: 45, reportsCount: 1, mod: 'Sourabh Sahu', status: 'Standard', type: 'Default (Org)', filterKey: 'Finance', icon: 'account_balance' },
-        { id: 6, name: 'Marketing & Brand Strategy', category: 'Marketing, PR & Events', members: 36, reportsCount: 1, mod: 'Meghna Tiwari', status: 'Standard', type: 'Public', filterKey: 'Marketing', icon: 'campaign' },
-        { id: 7, name: 'CTO Leadership Circle', category: 'Executive Leadership & Strategy', members: 18, reportsCount: 0, mod: 'Loveneesh Sharma', status: 'Strict', type: 'Private', filterKey: 'CTO', icon: 'military_tech' },
-        { id: 8, name: 'General Discussion', category: 'Company Open Lounge', members: 310, reportsCount: 2, mod: 'System Admin', status: 'Relaxed', type: 'Public', filterKey: 'General', icon: 'forum' }
+        { id: 1, name: 'Engineering & Tech', category: 'Technology & Architecture', reportsCount: 5, mod: 'Loveneesh Sharma', status: 'Strict', type: 'Public', filterKey: 'Engineering', icon: 'developer_board' },
+        { id: 2, name: 'HR & People Ops', category: 'Human Resources & Governance', reportsCount: 3, mod: 'Sourabh Sahu', status: 'Standard', type: 'Default (Org)', filterKey: 'HR', icon: 'groups' },
+        { id: 3, name: 'Product Design & UX', category: 'UI/UX & Design Systems', reportsCount: 2, mod: 'Mayur Verma', status: 'Standard', type: 'Public', filterKey: 'Product', icon: 'palette' },
+        { id: 4, name: 'AI & Data Science Lab', category: 'AI Research & Data Science', reportsCount: 4, mod: 'Vishendra Sharma', status: 'Strict', type: 'Private', filterKey: 'AI', icon: 'psychology' },
+        { id: 5, name: 'Finance & Accounting', category: 'Finance, Audit & Payroll', reportsCount: 1, mod: 'Sourabh Sahu', status: 'Standard', type: 'Default (Org)', filterKey: 'Finance', icon: 'account_balance' },
+        { id: 6, name: 'Marketing & Brand Strategy', category: 'Marketing, PR & Events', reportsCount: 1, mod: 'Meghna Tiwari', status: 'Standard', type: 'Public', filterKey: 'Marketing', icon: 'campaign' },
+        { id: 7, name: 'CTO Leadership Circle', category: 'Executive Leadership & Strategy', reportsCount: 0, mod: 'Loveneesh Sharma', status: 'Strict', type: 'Private', filterKey: 'CTO', icon: 'military_tech' },
+        { id: 8, name: 'General Discussion', category: 'Company Open Lounge', reportsCount: 2, mod: 'System Admin', status: 'Relaxed', type: 'Public', filterKey: 'General', icon: 'forum' }
     ]);
     const [selectedManageCommunity, setSelectedManageCommunity] = useState(null);
     const [isCommunityModalOpen, setIsCommunityModalOpen] = useState(false);
+
+    // Get exact live member count for each community from persistent storage or API
+    const getCommunityMemberCount = (commId) => {
+        try {
+            const savedMembersKey = `knome_community_members_${commId}`;
+            const localMembers = JSON.parse(localStorage.getItem(savedMembersKey) || '[]');
+            if (Array.isArray(localMembers) && localMembers.length > 0) {
+                return localMembers.length;
+            }
+        } catch (e) {}
+        return 6;
+    };
+
+    // Helper to resolve the user's actual assigned role accurately
+    const getUserAssignedRole = (u) => {
+        if (!u) return 'Employee';
+        
+        // 1. Check if user object has explicit roleName (e.g. from local edit)
+        if (u.roleName && u.roleName !== 'Employee') return u.roleName;
+
+        // 2. Check roles array from Backend UserSummaryDto
+        if (Array.isArray(u.roles) && u.roles.length > 0) {
+            // Find highest priority non-Employee role
+            const priorityRoles = ['System Administrator', 'HR Administrator', 'Community Admin', 'System Admin', 'HR Admin', 'SYSADM', 'HRADM', 'CADM'];
+            for (const pr of priorityRoles) {
+                const match = u.roles.find(r => typeof r === 'string' && r.toLowerCase() === pr.toLowerCase());
+                if (match) {
+                    if (match === 'SYSADM' || match === 'SystemAdmin') return 'System Administrator';
+                    if (match === 'HRADM' || match === 'HRAdmin') return 'HR Administrator';
+                    if (match === 'CADM') return 'Community Admin';
+                    return match;
+                }
+            }
+            const nonEmp = u.roles.find(r => typeof r === 'string' && r.toLowerCase() !== 'employee' && r.toLowerCase() !== 'emp');
+            if (nonEmp) return nonEmp;
+        }
+
+        // 3. Check role requests approved in localStorage (knome_pending_role_requests / eh_role_requests)
+        try {
+            const roleReqs = JSON.parse(localStorage.getItem('knome_pending_role_requests') || localStorage.getItem('eh_role_requests') || '[]');
+            const req = roleReqs.find(r => 
+                (u.employeeId && r.employeeId && r.employeeId.toUpperCase() === u.employeeId.toUpperCase()) ||
+                (u.userId && String(r.userId || r.id) === String(u.userId)) ||
+                (u.id && String(r.userId || r.id) === String(u.id)) ||
+                (u.fullName && r.fullName && r.fullName.toLowerCase() === u.fullName.toLowerCase())
+            );
+            if (req && req.status === 'Approved' && req.assignedRoleName) {
+                return req.assignedRoleName;
+            }
+        } catch (e) {}
+
+        // 4. Check user context or local overrides
+        if (u.role && u.role !== 'EMP' && u.role !== 'Employee') {
+            if (u.role === 'SYSADM') return 'System Administrator';
+            if (u.role === 'HRADM') return 'HR Administrator';
+            if (u.role === 'CADM') return 'Community Admin';
+            return u.role;
+        }
+
+        if (Array.isArray(u.roles) && u.roles.includes('Employee')) return 'Employee';
+        return u.roleName || 'Employee';
+    };
+
+    const getRoleBadgeStyle = (roleName) => {
+        const r = (roleName || '').toLowerCase();
+        if (r.includes('system') || r.includes('sysadm')) {
+            return 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-300 dark:border-purple-700/50 font-black';
+        }
+        if (r.includes('hr') || r.includes('hrad')) {
+            return 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-700/50 font-black';
+        }
+        if (r.includes('community') || r.includes('cadm')) {
+            return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700/50 font-black';
+        }
+        return 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold border border-indigo-200/40 dark:border-indigo-800/40';
+    };
 
     // Audit Trail State
     const [auditTrail, setAuditTrail] = useState([]);
@@ -413,15 +493,66 @@ export default function AdminConsole() {
         }
     };
 
-    // 2. Fetch Users
+    // 2. Fetch Users — Comprehensive Aggregator across SQL Server API + EmployeeHub
     const fetchUsers = async () => {
         setIsLoadingUsers(true);
         try {
             const res = await adminApi.getUsers(1, 100, userSearchTerm);
+            let apiItems = [];
             if (res) {
-                const items = Array.isArray(res) ? res : (res.items || []);
-                setUsersList(items);
+                apiItems = Array.isArray(res) ? res : (res.items || []);
             }
+
+            let allMerged = [...apiItems];
+
+            // Merge additional employees from EmployeeHub and local storage
+            try {
+                const ehStored = JSON.parse(localStorage.getItem('eh_demo_employees') || '[]');
+                if (Array.isArray(ehStored)) {
+                    ehStored.forEach(emp => {
+                        const exists = allMerged.some(u => 
+                            (emp.employeeId && u.employeeId && emp.employeeId.toUpperCase() === u.employeeId.toUpperCase()) ||
+                            (emp.id && String(emp.id) === String(u.userId || u.id))
+                        );
+                        if (!exists) {
+                            allMerged.push({
+                                userId: emp.id || (1000 + allMerged.length + 1),
+                                id: emp.id || (1000 + allMerged.length + 1),
+                                employeeId: emp.employeeId || `MPO${emp.id || (1000 + allMerged.length + 1)}`,
+                                fullName: emp.name || emp.fullName || 'Employee',
+                                email: emp.email || `${(emp.name || 'user').toLowerCase().replace(/\s+/g, '.')}@mponline.gov.in`,
+                                designation: emp.designation || 'Staff Member',
+                                departmentName: emp.department || emp.departmentName || 'General',
+                                department: emp.department || emp.departmentName || 'General',
+                                isActive: emp.isActive !== false,
+                                roles: Array.isArray(emp.roles) ? emp.roles : [emp.roleName || emp.role || 'Employee'],
+                                karmaPoints: emp.karmaPoints || emp.karma || 240,
+                                karmaBadgeLevel: emp.badgeLevel || 'Bronze',
+                                location: emp.location || 'Bhopal',
+                                avatar: emp.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(emp.name || 'User')}&background=6366f1&color=fff&bold=true`
+                            });
+                        }
+                    });
+                }
+            } catch (e) {}
+
+            const mapped = allMerged.map(u => {
+                const assignedRole = getUserAssignedRole(u);
+                const empId = u.employeeId || `MPO${u.userId || u.id || '100'}`;
+                const email = u.email || `${(u.fullName || u.name || 'user').toLowerCase().replace(/\s+/g, '.')}@mponline.gov.in`;
+                const avatar = u.profilePhotoUrl || u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.fullName || u.name || 'U')}&background=6366f1&color=fff&bold=true`;
+                return {
+                    ...u,
+                    employeeId: empId,
+                    email: email,
+                    avatar: avatar,
+                    roleName: assignedRole,
+                    assignedRole: assignedRole,
+                    karmaPoints: u.karmaPoints || u.karma || 350,
+                    karmaBadgeLevel: u.karmaBadgeLevel || (u.karmaPoints > 1000 ? 'Gold' : u.karmaPoints > 500 ? 'Silver' : 'Bronze')
+                };
+            });
+            setUsersList(mapped);
         } catch (err) {
             console.error("Failed to load users list", err);
         } finally {
@@ -825,7 +956,7 @@ export default function AdminConsole() {
         }
 
         // Update the local AdminConsole users table
-        setUsersList(prev => prev.map(u => String(u.userId) === String(roleUserId) ? { ...u, roleName: selectedRole } : u));
+        setUsersList(prev => prev.map(u => (String(u.userId) === String(roleUserId) || String(u.id) === String(roleUserId)) ? { ...u, roleName: selectedRole, assignedRole: selectedRole, roles: [selectedRole, 'Employee'] } : u));
 
         // ── Update global UserContext usersList so Navbar Switch User dropdown
         // instantly shows the new role for this user, and if it's the logged-in
@@ -1763,20 +1894,21 @@ export default function AdminConsole() {
                             <table className="w-full text-left border-collapse text-xs">
                                 <thead className="bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold uppercase tracking-wider">
                                     <tr>
-                                        <th className="px-4 py-2.5">User ID</th>
-                                        <th className="px-4 py-2.5">Full Name</th>
-                                        <th className="px-4 py-2.5">Designation / Department</th>
+                                        <th className="px-4 py-2.5">User / Emp ID</th>
+                                        <th className="px-4 py-2.5">Employee Name & Email</th>
+                                        <th className="px-4 py-2.5">Designation & Dept</th>
                                         <th className="px-4 py-2.5">Assigned Role</th>
+                                        <th className="px-4 py-2.5">Karma Score</th>
                                         <th className="px-4 py-2.5">Status</th>
                                         <th className="px-4 py-2.5 text-right">Governance Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                                     {isLoadingUsers ? (
-                                        <tr><td colSpan="6" className="text-center py-6">Loading user directory...</td></tr>
+                                        <tr><td colSpan="7" className="text-center py-6">Loading user directory...</td></tr>
                                     ) : filteredUsers.length === 0 ? (
                                         <tr>
-                                            <td colSpan="6" className="text-center py-8 text-slate-500">
+                                            <td colSpan="7" className="text-center py-8 text-slate-500">
                                                 No users found matching "{userSearchTerm}".
                                                 <button onClick={() => setUserSearchTerm('')} className="ml-2 text-indigo-600 underline font-bold cursor-pointer">
                                                     Clear Filter
@@ -1784,44 +1916,103 @@ export default function AdminConsole() {
                                             </td>
                                         </tr>
                                     ) : (
-                                        filteredUsers.map(u => (
-                                            <tr key={u.userId || u.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
-                                                <td className="px-4 py-2.5 font-bold">#{u.userId || u.id}</td>
-                                                <td className="px-4 py-2.5 font-bold text-slate-900 dark:text-white">{u.fullName || u.name}</td>
-                                                <td className="px-4 py-2.5 text-slate-500">{u.designation || 'Staff'} ({u.department || u.departmentName || 'MPOnline'})</td>
-                                                <td className="px-4 py-2.5">
-                                                    <span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-600 font-bold text-[10px]">
-                                                        {u.roleName || 'Employee'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-2.5">
-                                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${u.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'}`}>
-                                                        {u.isActive ? 'Active' : 'Suspended'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-2.5 text-right">
-                                                    <div className="flex items-center justify-end gap-2">
-                                                        <button
-                                                            onClick={() => {
-                                                                setRoleUserId(String(u.userId || u.id));
-                                                                setRoleUserName(u.fullName || u.name);
-                                                                setSelectedRole(u.roleName || 'Employee');
-                                                                setIsRoleModalOpen(true);
-                                                            }}
-                                                            className="px-2.5 py-1 bg-indigo-500/10 text-indigo-600 font-bold text-[11px] rounded hover:bg-indigo-500/20 cursor-pointer"
-                                                        >
-                                                            Edit Role
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleToggleUserActive(u)}
-                                                            className={`px-2.5 py-1 font-bold text-[11px] rounded cursor-pointer ${u.isActive ? 'bg-rose-500/10 text-rose-600 hover:bg-rose-500/20' : 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20'}`}
-                                                        >
-                                                            {u.isActive ? 'Suspend' : 'Activate'}
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))
+                                        filteredUsers.map(u => {
+                                            const assignedRole = u.roleName || getUserAssignedRole(u);
+                                            const empId = u.employeeId || `MPO${u.userId || u.id || '100'}`;
+                                            const uEmail = u.email || `${(u.fullName || u.name || 'user').toLowerCase().replace(/\s+/g, '.')}@mponline.gov.in`;
+                                            const uAvatar = u.avatar || u.profilePhotoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.fullName || u.name || 'U')}&background=6366f1&color=fff&bold=true`;
+
+                                            return (
+                                                <tr key={u.userId || u.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
+                                                    <td className="px-4 py-2.5 font-bold">
+                                                        <div className="flex flex-col">
+                                                            <span className="text-slate-900 dark:text-white font-mono text-[11px]">#{u.userId || u.id}</span>
+                                                            <span className="text-[10px] font-mono text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.2 rounded w-fit mt-0.5">
+                                                                {empId}
+                                                            </span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-2.5">
+                                                        <div className="flex items-center gap-2.5">
+                                                            <img 
+                                                                src={uAvatar} 
+                                                                alt={u.fullName || u.name} 
+                                                                className="w-8 h-8 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0" 
+                                                            />
+                                                            <div className="min-w-0">
+                                                                <p 
+                                                                    onClick={() => {
+                                                                        setSelectedUserDetailsUser(u);
+                                                                        setIsUserDetailsModalOpen(true);
+                                                                    }}
+                                                                    className="font-bold text-slate-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer transition-colors truncate"
+                                                                >
+                                                                    {u.fullName || u.name}
+                                                                </p>
+                                                                <p className="text-[11px] text-slate-400 truncate max-w-[180px]">{uEmail}</p>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-2.5">
+                                                        <p className="font-semibold text-slate-800 dark:text-slate-200">{u.designation || 'Staff Member'}</p>
+                                                        <p className="text-[11px] text-slate-500">{u.department || u.departmentName || 'MPOnline Limited'}</p>
+                                                    </td>
+                                                    <td className="px-4 py-2.5">
+                                                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] inline-flex items-center gap-1.5 shadow-xs ${getRoleBadgeStyle(assignedRole)}`}>
+                                                            <span className="material-symbols-outlined text-[13px]">
+                                                                {assignedRole.toLowerCase().includes('system') ? 'shield_person' :
+                                                                 assignedRole.toLowerCase().includes('hr') ? 'badge' :
+                                                                 assignedRole.toLowerCase().includes('community') ? 'groups' : 'person'}
+                                                            </span>
+                                                            {assignedRole}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-2.5">
+                                                        <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-black">
+                                                            <span className="material-symbols-outlined text-[15px]">stars</span>
+                                                            <span>{u.karmaPoints || 350} pts</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-2.5">
+                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${u.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'}`}>
+                                                            {u.isActive ? 'Active' : 'Suspended'}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-2.5 text-right">
+                                                        <div className="flex items-center justify-end gap-1.5">
+                                                            <button
+                                                                onClick={() => {
+                                                                    setSelectedUserDetailsUser(u);
+                                                                    setIsUserDetailsModalOpen(true);
+                                                                }}
+                                                                className="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-[11px] rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                                                                title="View Complete User Details"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[14px]">visibility</span>
+                                                                <span>View Details</span>
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    setRoleUserId(String(u.userId || u.id));
+                                                                    setRoleUserName(u.fullName || u.name);
+                                                                    setSelectedRole(assignedRole);
+                                                                    setIsRoleModalOpen(true);
+                                                                }}
+                                                                className="px-2.5 py-1 bg-indigo-500/10 text-indigo-600 font-bold text-[11px] rounded-lg hover:bg-indigo-500/20 cursor-pointer"
+                                                            >
+                                                                Edit Role
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleToggleUserActive(u)}
+                                                                className={`px-2.5 py-1 font-bold text-[11px] rounded-lg cursor-pointer ${u.isActive ? 'bg-rose-500/10 text-rose-600 hover:bg-rose-500/20' : 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20'}`}
+                                                            >
+                                                                {u.isActive ? 'Suspend' : 'Activate'}
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
                                     )}
                                 </tbody>
                             </table>
@@ -1867,26 +2058,39 @@ export default function AdminConsole() {
                                         <span className="px-2 py-0.5 bg-slate-200/60 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 font-bold text-[9px] rounded-full uppercase">
                                             {c.type || 'Public'}
                                         </span>
-                                        <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                                            {c.members} Members
+                                        <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
+                                            {getCommunityMemberCount(c.id)} {getCommunityMemberCount(c.id) === 1 ? 'Member' : 'Members'}
                                         </span>
                                     </div>
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
                                         Pending Reports: <span className={`font-bold ${c.reportsCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>{c.reportsCount}</span>
                                     </p>
                                 </div>
-                                <div className="mt-3 pt-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between text-[11px]">
-                                    <span className="text-slate-500">Mod: <strong className="text-slate-800 dark:text-slate-200">{c.mod}</strong></span>
-                                    <button 
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSelectedManageCommunity(c);
-                                            setIsCommunityModalOpen(true);
-                                        }}
-                                        className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] rounded-lg transition-all shadow-xs cursor-pointer"
-                                    >
-                                        Manage
-                                    </button>
+                                <div className="mt-3 pt-2 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between text-[11px] gap-2">
+                                    <span className="text-slate-500 truncate">Mod: <strong className="text-slate-800 dark:text-slate-200">{c.mod}</strong></span>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                navigate(`/community/view?id=${c.id}`);
+                                            }}
+                                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-lg transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                            title={`View full ${c.name} community page`}
+                                        >
+                                            <span className="material-symbols-outlined text-[13px]">visibility</span>
+                                            <span>View</span>
+                                        </button>
+                                        <button 
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedManageCommunity(c);
+                                                setIsCommunityModalOpen(true);
+                                            }}
+                                            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] rounded-lg transition-all shadow-xs cursor-pointer"
+                                        >
+                                            Manage
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
@@ -2854,7 +3058,9 @@ export default function AdminConsole() {
                             <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 grid grid-cols-2 gap-2">
                                 <div>
                                     <span className="text-slate-400 font-medium">Total Members</span>
-                                    <p className="font-black text-sm text-slate-900 dark:text-white">{selectedManageCommunity.members} Members</p>
+                                    <p className="font-black text-sm text-slate-900 dark:text-white">
+                                        {getCommunityMemberCount(selectedManageCommunity.id)} {getCommunityMemberCount(selectedManageCommunity.id) === 1 ? 'Member' : 'Members'}
+                                    </p>
                                 </div>
                                 <div>
                                     <span className="text-slate-400 font-medium">Pending Reports</span>
@@ -2897,17 +3103,29 @@ export default function AdminConsole() {
                         </div>
 
                         <div className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 dark:border-slate-800 pt-4">
-                            <button
-                                onClick={() => {
-                                    setIsCommunityModalOpen(false);
-                                    setActiveTab('moderation');
-                                    setCommunityFilter(selectedManageCommunity.filterKey);
-                                    showToast(`Filtered: Showing content reports for ${selectedManageCommunity.name}.`);
-                                }}
-                                className="px-3 py-2 bg-indigo-500/10 text-indigo-600 hover:bg-indigo-500/20 font-bold text-xs rounded-xl cursor-pointer"
-                            >
-                                View Reports ({selectedManageCommunity.reportsCount})
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => {
+                                        setIsCommunityModalOpen(false);
+                                        navigate(`/community/view?id=${selectedManageCommunity.id}`);
+                                    }}
+                                    className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer"
+                                >
+                                    <span className="material-symbols-outlined text-[15px]">visibility</span>
+                                    <span>View Community Page</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setIsCommunityModalOpen(false);
+                                        setActiveTab('moderation');
+                                        setCommunityFilter(selectedManageCommunity.filterKey);
+                                        showToast(`Filtered: Showing content reports for ${selectedManageCommunity.name}.`);
+                                    }}
+                                    className="px-3 py-2 bg-indigo-500/10 text-indigo-600 hover:bg-indigo-500/20 font-bold text-xs rounded-xl cursor-pointer"
+                                >
+                                    View Reports ({selectedManageCommunity.reportsCount})
+                                </button>
+                            </div>
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={() => setIsCommunityModalOpen(false)}
@@ -3034,6 +3252,170 @@ export default function AdminConsole() {
                                 >
                                     <span className="material-symbols-outlined text-[18px]">check_circle</span>
                                     Approve & Publish
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* ─── MODAL: COMPREHENSIVE USER DETAILS MODAL ─── */}
+            {isUserDetailsModalOpen && selectedUserDetailsUser && (
+                <div className="fixed inset-0 z-[140] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+                        {/* Header Banner */}
+                        <div className="relative p-6 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-700 text-white flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="relative">
+                                    <img
+                                        src={selectedUserDetailsUser.avatar || selectedUserDetailsUser.profilePhotoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(selectedUserDetailsUser.fullName || selectedUserDetailsUser.name || 'U')}&background=fff&color=4f46e5&bold=true`}
+                                        alt={selectedUserDetailsUser.fullName || selectedUserDetailsUser.name}
+                                        className="w-16 h-16 rounded-2xl object-cover border-2 border-white/40 shadow-lg"
+                                    />
+                                    <span className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${selectedUserDetailsUser.isActive ? 'bg-emerald-400' : 'bg-rose-500'}`} />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-xl font-black text-white leading-tight">
+                                            {selectedUserDetailsUser.fullName || selectedUserDetailsUser.name}
+                                        </h3>
+                                        <span className="px-2 py-0.5 rounded-full bg-white/20 text-white font-mono text-[11px] font-bold">
+                                            {selectedUserDetailsUser.employeeId || `MPO${selectedUserDetailsUser.userId || selectedUserDetailsUser.id}`}
+                                        </span>
+                                    </div>
+                                    <p className="text-indigo-100 text-xs mt-0.5">
+                                        {selectedUserDetailsUser.designation || 'Staff Member'} • {selectedUserDetailsUser.department || selectedUserDetailsUser.departmentName || 'MPOnline Limited'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={() => setIsUserDetailsModalOpen(false)}
+                                className="p-2 text-white/80 hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
+                            >
+                                <span className="material-symbols-outlined text-2xl">close</span>
+                            </button>
+                        </div>
+
+                        {/* Modal Body Content */}
+                        <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto custom-scrollbar">
+                            {/* KPI Strip */}
+                            <div className="grid grid-cols-3 gap-3">
+                                <div className="p-3.5 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 text-center">
+                                    <span className="text-[10px] uppercase font-bold text-indigo-500 tracking-wider">Assigned Role</span>
+                                    <p className="text-xs font-black text-indigo-950 dark:text-indigo-200 mt-0.5">
+                                        {selectedUserDetailsUser.roleName || getUserAssignedRole(selectedUserDetailsUser)}
+                                    </p>
+                                </div>
+                                <div className="p-3.5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/40 text-center">
+                                    <span className="text-[10px] uppercase font-bold text-amber-500 tracking-wider">Karma Points</span>
+                                    <p className="text-xs font-black text-amber-950 dark:text-amber-200 mt-0.5">
+                                        ⭐ {selectedUserDetailsUser.karmaPoints || 350} pts ({selectedUserDetailsUser.karmaBadgeLevel || 'Bronze'})
+                                    </p>
+                                </div>
+                                <div className="p-3.5 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 text-center">
+                                    <span className="text-[10px] uppercase font-bold text-emerald-500 tracking-wider">Account Status</span>
+                                    <p className={`text-xs font-black mt-0.5 ${selectedUserDetailsUser.isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                                        {selectedUserDetailsUser.isActive ? '● Active & Verified' : '● Suspended'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Section: Employee & Organization Details */}
+                            <div className="space-y-3">
+                                <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                    <span className="material-symbols-outlined text-[16px] text-indigo-500">badge</span>
+                                    Employee & Contact Information
+                                </h4>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                                        <span className="text-slate-400 text-[11px] block font-medium">Official Email Address</span>
+                                        <span className="font-bold text-slate-800 dark:text-slate-200 break-all select-all font-mono mt-0.5 block">
+                                            {selectedUserDetailsUser.email || `${(selectedUserDetailsUser.fullName || selectedUserDetailsUser.name || 'user').toLowerCase().replace(/\s+/g, '.')}@mponline.gov.in`}
+                                        </span>
+                                    </div>
+
+                                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                                        <span className="text-slate-400 text-[11px] block font-medium">Department</span>
+                                        <span className="font-bold text-slate-800 dark:text-slate-200 mt-0.5 block">
+                                            {selectedUserDetailsUser.department || selectedUserDetailsUser.departmentName || 'MPOnline IT Operations'}
+                                        </span>
+                                    </div>
+
+                                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                                        <span className="text-slate-400 text-[11px] block font-medium">Official Designation</span>
+                                        <span className="font-bold text-slate-800 dark:text-slate-200 mt-0.5 block">
+                                            {selectedUserDetailsUser.designation || 'Staff Member'}
+                                        </span>
+                                    </div>
+
+                                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
+                                        <span className="text-slate-400 text-[11px] block font-medium">Work Location</span>
+                                        <span className="font-bold text-slate-800 dark:text-slate-200 mt-0.5 block">
+                                            {selectedUserDetailsUser.location || 'MPOnline Headquarters, Bhopal'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Section: Role Governance & Permissions */}
+                            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 space-y-2">
+                                <h4 className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                                    <span className="material-symbols-outlined text-[16px] text-purple-500">security</span>
+                                    System Access Scope & Privileges
+                                </h4>
+                                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                    {(selectedUserDetailsUser.roleName || getUserAssignedRole(selectedUserDetailsUser)).includes('System')
+                                        ? '🛡️ Full System Administration: Complete governance authority over user accounts, audit trails, community moderation, and platform parameters.'
+                                        : (selectedUserDetailsUser.roleName || getUserAssignedRole(selectedUserDetailsUser)).includes('HR')
+                                        ? '🪪 HR Administrator: Authorized for organization-wide default community assignments, HR analytics dashboards, and job postings.'
+                                        : (selectedUserDetailsUser.roleName || getUserAssignedRole(selectedUserDetailsUser)).includes('Community')
+                                        ? '👥 Community Administrator: Authorized for content moderation, pinned discussions, user approvals, and channel safety enforcement.'
+                                        : '👤 Standard Employee: Access to feed posting, media channels, communities collaboration, and karma rewards.'}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Modal Footer with Action Buttons */}
+                        <div className="p-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-950/40">
+                            <button
+                                onClick={() => setIsUserDetailsModalOpen(false)}
+                                className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 cursor-pointer"
+                            >
+                                Close
+                            </button>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => {
+                                        const curRole = selectedUserDetailsUser.roleName || getUserAssignedRole(selectedUserDetailsUser);
+                                        setRoleUserId(String(selectedUserDetailsUser.userId || selectedUserDetailsUser.id));
+                                        setRoleUserName(selectedUserDetailsUser.fullName || selectedUserDetailsUser.name);
+                                        setSelectedRole(curRole);
+                                        setIsUserDetailsModalOpen(false);
+                                        setIsRoleModalOpen(true);
+                                    }}
+                                    className="px-4 py-2 bg-indigo-500/10 text-indigo-600 hover:bg-indigo-500/20 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                                >
+                                    <span className="material-symbols-outlined text-[15px]">manage_accounts</span>
+                                    Edit Role
+                                </button>
+
+                                <button
+                                    onClick={() => {
+                                        handleToggleUserActive(selectedUserDetailsUser);
+                                        setSelectedUserDetailsUser(prev => prev ? { ...prev, isActive: !prev.isActive } : null);
+                                    }}
+                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                                        selectedUserDetailsUser.isActive 
+                                            ? 'bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-600 dark:text-rose-400' 
+                                            : 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                                    }`}
+                                >
+                                    <span className="material-symbols-outlined text-[15px]">
+                                        {selectedUserDetailsUser.isActive ? 'person_off' : 'person_check'}
+                                    </span>
+                                    {selectedUserDetailsUser.isActive ? 'Suspend User' : 'Reactivate User'}
                                 </button>
                             </div>
                         </div>

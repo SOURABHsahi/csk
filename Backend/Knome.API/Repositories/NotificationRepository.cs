@@ -112,11 +112,20 @@ public class NotificationRepository : INotificationRepository
         if (candidateUserIds.Count == 0)
             return new List<int>();
 
+        // Ensure user IDs actually exist in dbo.Users table to prevent FK constraint violations
+        var existingUserIds = await _db.Users
+            .Where(u => candidateUserIds.Contains(u.UserId))
+            .Select(u => u.UserId)
+            .ToListAsync();
+
+        if (existingUserIds.Count == 0)
+            return new List<int>();
+
         var disabled = await _db.NotificationPreferences
-            .Where(p => p.EventType == eventType && !p.BellEnabled && candidateUserIds.Contains(p.UserId))
+            .Where(p => p.EventType == eventType && !p.BellEnabled && existingUserIds.Contains(p.UserId))
             .Select(p => p.UserId)
             .ToListAsync();
 
-        return candidateUserIds.Where(id => !disabled.Contains(id)).ToList();
+        return existingUserIds.Where(id => !disabled.Contains(id)).ToList();
     }
 }

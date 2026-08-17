@@ -325,6 +325,44 @@ public class ContentInteractionService : IContentInteractionService
         var sharingUser = await _userRepo.GetProfileByIdAsync(userId);
         var sharingUserName = sharingUser?.FullName ?? "Someone";
 
+        // Retrieve content title or snippet to include in notifications
+        string contentTitle = "";
+        try
+        {
+            if (contentType == ContentTypes.Post)
+            {
+                var p = await _db.Posts.FindAsync(contentId);
+                if (p != null && !string.IsNullOrWhiteSpace(p.ContentText))
+                {
+                    contentTitle = p.ContentText.Length > 40 ? p.ContentText.Substring(0, 40) + "..." : p.ContentText;
+                }
+            }
+            else if (contentType == ContentTypes.Article)
+            {
+                var a = await _db.Articles.FindAsync((int)contentId);
+                if (a != null && !string.IsNullOrWhiteSpace(a.Title)) contentTitle = a.Title;
+            }
+            else if (contentType == ContentTypes.Video)
+            {
+                var v = await _db.Videos.FindAsync((int)contentId);
+                if (v != null && !string.IsNullOrWhiteSpace(v.Title)) contentTitle = v.Title;
+            }
+            else if (contentType == ContentTypes.Podcast)
+            {
+                var pod = await _db.Podcasts.FindAsync((int)contentId);
+                if (pod != null && !string.IsNullOrWhiteSpace(pod.Title)) contentTitle = pod.Title;
+            }
+        }
+        catch { }
+
+        var authorShareMsg = !string.IsNullOrWhiteSpace(contentTitle)
+            ? $"{sharingUserName} shared your {contentType.ToLower()}: \"{contentTitle}\""
+            : $"{sharingUserName} shared your {contentType.ToLower()}.";
+
+        var recipientShareMsg = !string.IsNullOrWhiteSpace(contentTitle)
+            ? $"{sharingUserName} shared a {contentType.ToLower()} with you: \"{contentTitle}\""
+            : $"{sharingUserName} shared a {contentType.ToLower()} with you.";
+
         var authorId = await _repo.GetContentAuthorUserIdAsync(contentType, contentId);
         if (authorId.HasValue && authorId.Value != userId)
         {
@@ -333,7 +371,7 @@ public class ContentInteractionService : IContentInteractionService
             await _notificationService.PublishAsync(
                 authorId.Value,
                 NotificationTypes.Share,
-                $"{sharingUserName} shared your {contentType.ToLower()}.",
+                authorShareMsg,
                 relatedContentType: contentType,
                 relatedContentId: contentId);
         }
@@ -345,7 +383,7 @@ public class ContentInteractionService : IContentInteractionService
             await _notificationService.PublishAsync(
                 recipientId,
                 NotificationTypes.Share,
-                $"{sharingUserName} shared a {contentType.ToLower()} with you.",
+                recipientShareMsg,
                 relatedContentType: contentType,
                 relatedContentId: contentId);
         }
@@ -376,9 +414,13 @@ public class ContentInteractionService : IContentInteractionService
 
             if (memberIds.Count > 0)
             {
+                var commBroadcastMsg = !string.IsNullOrWhiteSpace(contentTitle)
+                    ? $"{sharingUserName} shared a {contentType.ToLower()} in your community: \"{contentTitle}\""
+                    : $"{sharingUserName} shared a post in your community.";
+
                 await _notificationService.PublishBroadcastAsync(
                     NotificationTypes.Share,
-                    $"{sharingUserName} shared a post in your community.",
+                    commBroadcastMsg,
                     relatedContentType: ContentTypes.Post,
                     relatedContentId: contentId,
                     candidateUserIds: memberIds);
