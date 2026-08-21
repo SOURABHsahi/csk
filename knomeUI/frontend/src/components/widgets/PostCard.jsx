@@ -270,8 +270,52 @@ export default function PostCard({ post, onPostDeleted }) {
     const menuRef = useRef(null);
     
     // Comments State
+    const initialCommentCount = Number(post.commentsCount ?? post.commentCount ?? (Array.isArray(post.comments) ? post.comments.length : 0)) || 0;
     const [comments, setComments] = useState(post.comments || []);
+    const [commentCount, setCommentCount] = useState(initialCommentCount);
     const [newComment, setNewComment] = useState('');
+    
+    // Total live comment count including nested replies
+    const nestedRepliesCount = comments.reduce((acc, c) => acc + (Array.isArray(c.replies) ? c.replies.length : 0), 0);
+    const displayCommentCount = Math.max(commentCount, comments.length + nestedRepliesCount);
+
+    const handleAddComment = async (e, parentCommentId = null) => {
+        if (e && e.preventDefault) e.preventDefault();
+        if (!newComment.trim()) return;
+
+        const commentText = newComment.trim();
+        setNewComment('');
+
+        try {
+            const added = await interactionsApi.addComment('Post', post.id, commentText, parentCommentId);
+            const formatted = {
+                id: added?.commentId || Date.now(),
+                author: added?.authorFullName || currentUser?.name || currentUser?.fullName || 'You',
+                avatar: resolveMediaUrl(added?.authorProfilePhotoUrl || currentUser?.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || 'You')}&background=6366f1&color=fff`,
+                text: added?.commentText || commentText,
+                time: 'Just now',
+                replies: []
+            };
+
+            setComments(prev => [formatted, ...prev]);
+            setCommentCount(prev => Math.max(prev + 1, comments.length + 1));
+            if (awardRuleKarma && (post.userId || post.authorId)) {
+                awardRuleKarma(post.userId || post.authorId, 'COMMENT_RECEIVED');
+            }
+        } catch (error) {
+            console.error('Failed to add comment', error);
+            const optimistic = {
+                id: Date.now(),
+                author: currentUser?.name || currentUser?.fullName || 'You',
+                avatar: currentUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || 'You')}&background=6366f1&color=fff`,
+                text: commentText,
+                time: 'Just now',
+                replies: []
+            };
+            setComments(prev => [optimistic, ...prev]);
+            setCommentCount(prev => Math.max(prev + 1, comments.length + 1));
+        }
+    };
     
     // Timer for reaction popover delay
     const hoverTimeoutRef = useRef(null);
@@ -534,43 +578,6 @@ export default function PostCard({ post, onPostDeleted }) {
             } else if (!previousReaction && newReaction) {
                 setLikeCount(prev => Math.max(0, prev - 1));
             }
-        }
-    };
-
-    const handleAddComment = async (e, parentId = null) => {
-        e.preventDefault();
-        if (!newComment.trim()) return;
-        
-        try {
-            const c = await interactionsApi.addComment('Post', post.id, newComment);
-            if (c) {
-                if (awardRuleKarma && (post.userId || post.authorId)) {
-                    awardRuleKarma(post.userId || post.authorId, 'COMMENT_RECEIVED');
-                }
-                const newC = {
-                    id: c.commentId,
-                    author: c.authorFullName,
-                    avatar: resolveMediaUrl(c.authorProfilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName)}&background=6366f1&color=fff`,
-                    text: c.commentText,
-                    time: 'Just now',
-                    replies: []
-                };
-
-                if (parentId) {
-                    setComments(comments.map(comment => {
-                        if (comment.id === parentId) {
-                            return { ...comment, replies: [...(comment.replies || []), newC] };
-                        }
-                        return comment;
-                    }));
-                } else {
-                    setComments([newC, ...comments]);
-                }
-                setNewComment('');
-            }
-        } catch (error) {
-            console.error('Failed to add comment', error);
-            alert('Failed to add comment');
         }
     };
 
@@ -922,8 +929,8 @@ export default function PostCard({ post, onPostDeleted }) {
                 </div>
                 <div className="flex items-center gap-3 text-xs font-semibold">
                     <button onClick={() => setShowComments(!showComments)} className="hover:underline hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer flex items-center gap-1 text-slate-600 dark:text-slate-300">
-                        <span className="font-bold">{comments.length || post.commentsCount || 0}</span>
-                        <span>comments</span>
+                        <span className="font-bold">{displayCommentCount}</span>
+                        <span>{displayCommentCount === 1 ? 'comment' : 'comments'}</span>
                     </button>
                     <span className="text-slate-300 dark:text-slate-700">•</span>
                     <span className="flex items-center gap-1 text-slate-600 dark:text-slate-300">
@@ -1038,7 +1045,7 @@ export default function PostCard({ post, onPostDeleted }) {
                     className="flex-1 flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                     <span className="material-symbols-outlined text-[20px]">chat_bubble</span>
-                    Comment ({comments.length || post.commentsCount || 0})
+                    Comment ({displayCommentCount})
                 </button>
 
                 {/* Share Button (FR-CI-03) */}
@@ -1082,7 +1089,7 @@ export default function PostCard({ post, onPostDeleted }) {
             {/* Comments Section (FR-CI-02, FR-CI-05) */}
             {showComments && (
                 <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 p-5">
-                    <h3 className="font-bold text-sm text-slate-900 dark:text-white mb-4">Comments ({comments.length})</h3>
+                    <h3 className="font-bold text-sm text-slate-900 dark:text-white mb-4">Comments ({displayCommentCount})</h3>
                     
                     {/* Add Comment */}
                     <form onSubmit={(e) => handleAddComment(e, null)} className="flex gap-3 mb-6">
@@ -1114,7 +1121,12 @@ export default function PostCard({ post, onPostDeleted }) {
                     {/* Comments List */}
                     <div className="space-y-5">
                         {comments.map(comment => (
-                            <CommentThread key={comment.id} postId={post.id} comment={comment} />
+                            <CommentThread 
+                                key={comment.id} 
+                                postId={post.id} 
+                                comment={comment} 
+                                onReplyAdded={() => setCommentCount(p => p + 1)}
+                            />
                         ))}
                     </div>
                 </div>
@@ -1147,7 +1159,7 @@ export default function PostCard({ post, onPostDeleted }) {
 }
 
 // Sub-component for nested replies (FR-CI-05)
-function CommentThread({ postId, comment, depth = 0 }) {
+function CommentThread({ postId, comment, depth = 0, onReplyAdded }) {
     const [isReplying, setIsReplying] = useState(false);
     const [replyText, setReplyText] = useState('');
     const [replies, setReplies] = useState(comment.replies || []);
@@ -1175,10 +1187,22 @@ function CommentThread({ postId, comment, depth = 0 }) {
                 setReplies(prev => [...prev, newReply]);
                 setReplyText('');
                 setIsReplying(false);
+                if (onReplyAdded) onReplyAdded();
             }
         } catch (error) {
             console.error('Failed to add reply', error);
-            alert('Failed to add reply');
+            const optimisticReply = {
+                id: Date.now(),
+                author: 'You',
+                avatar: `https://ui-avatars.com/api/?name=You&background=6366f1&color=fff`,
+                time: 'Just now',
+                text: replyText.trim(),
+                replies: []
+            };
+            setReplies(prev => [...prev, optimisticReply]);
+            setReplyText('');
+            setIsReplying(false);
+            if (onReplyAdded) onReplyAdded();
         }
     };
 

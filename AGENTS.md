@@ -75,7 +75,8 @@ Test login credentials: `EMP001`–`EMP004` with password `Password@123` (seed s
 ## Documentation Workflow
 
 **Before implementing:** `CLAUDE.md` → `Documentation/Project/PROJECT_CONTEXT.md` → `Documentation/Project/PROJECT_STATUS.md` → latest Dev Journal → FRD section.
-**After every phase:** `dotnet restore` → `dotnet build` → verify APIs → update Dev Journal → update API docs → update `Documentation/Project/PROJECT_STATUS.md` → update `Documentation/Project/PROJECT_CONTEXT.md`.
+**Implementation Plans:** Every implementation plan and walkthrough MUST automatically be persisted and saved into `Documentation/Development Journal/` as a numbered phase entry (e.g. `21_First_Time_Login_Default_Role_And_Email_Workflow.md`).
+**After every phase:** `dotnet restore` → `dotnet build` → verify APIs → update Dev Journal in `Documentation/Development Journal/` → update API docs → update `Documentation/Project/PROJECT_STATUS.md` → update `Documentation/Project/PROJECT_CONTEXT.md`.
 
 ## Determining Completion Status
 

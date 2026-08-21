@@ -46,7 +46,7 @@ public class PostController : KnomeControllerBase
         return Ok(ApiResponse<List<PostDto>>.SuccessResponse(200, "User posts retrieved successfully.", posts));
     }
 
-    [HttpGet("{postId}")]
+    [HttpGet("{postId:long}")]
     [ProducesResponseType(typeof(ApiResponse<PostDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetPost(long postId)
     {

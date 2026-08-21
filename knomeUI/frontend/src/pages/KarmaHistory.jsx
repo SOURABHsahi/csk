@@ -102,13 +102,7 @@ export default function KarmaHistory() {
         { activity: 'Active Community Participation', points: '5 pts/day', cap: 'Once per community per day' },
     ];
 
-    const displayLeaderboard = leaderboard.length > 0 ? leaderboard : [
-        { rank: 1, userId: 1, name: 'Sourabh Sahu', role: 'Staff Engineer', points: 6420, avatar: `https://ui-avatars.com/api/?name=Sourabh+Sahu&background=6366f1&color=fff` },
-        { rank: 2, userId: 2, name: 'Vishendra Sharma', role: 'DevOps Architect', points: 4890, avatar: `https://ui-avatars.com/api/?name=Vishendra+Sharma&background=3b82f6&color=fff` },
-        { rank: 3, userId: 3, name: 'Mayur Verma', role: 'Tech Lead', points: 1950, avatar: `https://ui-avatars.com/api/?name=Mayur+Verma&background=10b981&color=fff` },
-        { rank: 4, userId: 4, name: 'Meghna Tiwari', role: 'Design Lead', points: 5150, avatar: `https://ui-avatars.com/api/?name=Meghna+Tiwari&background=ec4899&color=fff` },
-        { rank: 5, userId: 5, name: 'Rishikesh Ugle', role: 'Product Manager', points: 3200, avatar: `https://ui-avatars.com/api/?name=Rishikesh+Ugle&background=f59e0b&color=fff` },
-    ];
+    const displayLeaderboard = leaderboard;
 
     return (
         <main className="flex-1 min-w-0 flex flex-col gap-6 pb-6">

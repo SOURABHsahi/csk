@@ -46,7 +46,7 @@ public class VideoController : KnomeControllerBase
         return Ok(ApiResponse<List<VideoDto>>.SuccessResponse(200, "User videos retrieved successfully.", videos));
     }
 
-    [HttpGet("{videoId}")]
+    [HttpGet("{videoId:long}")]
     [ProducesResponseType(typeof(ApiResponse<VideoDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetVideo(long videoId)
     {

@@ -297,7 +297,7 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
                         <div className="min-w-0">
                             <h3 className="font-black text-slate-900 dark:text-white flex items-center gap-2 text-base truncate">
                                 <span className="material-symbols-outlined text-blue-500">share</span>
-                                {shareTab === 'community' ? 'Share to Community' : shareTab === 'users' ? 'Share with Colleagues' : `Share ${contentTypeStr}`}
+                                {shareTab === 'community' ? 'Share to Community' : shareTab === 'users' ? 'Share with Users' : `Share ${contentTypeStr}`}
                             </h3>
                             <p className="text-[11px] text-slate-500 truncate font-medium">{itemTitle}</p>
                         </div>
@@ -318,13 +318,13 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
                             {/* Option 1: Share to Community */}
                             <div
                                 onClick={() => setShareTab('community')}
-                                className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-700/50 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-blue-50/30 dark:hover:bg-blue-950/20 transition-all flex items-center gap-4 cursor-pointer group"
+                                className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-cyan-300 dark:hover:border-cyan-700/50 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-cyan-50/30 dark:hover:bg-cyan-950/20 transition-all flex items-center gap-4 cursor-pointer group"
                             >
-                                <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                                <div className="w-12 h-12 rounded-full bg-cyan-100 dark:bg-cyan-900/40 text-cyan-600 dark:text-cyan-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
                                     <span className="material-symbols-outlined text-[24px]">groups</span>
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                    <h4 className="font-bold text-slate-900 dark:text-white text-sm group-hover:text-blue-600 transition-colors">
+                                    <h4 className="font-bold text-slate-900 dark:text-white text-sm group-hover:text-cyan-600 transition-colors">
                                         Share to Community
                                     </h4>
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -334,17 +334,17 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
                                 <span className="material-symbols-outlined text-slate-400 text-[18px]">chevron_right</span>
                             </div>
 
-                            {/* Option 2: Share with Colleagues */}
+                            {/* Option 2: Share with Users */}
                             <div
                                 onClick={() => setShareTab('users')}
-                                className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700/50 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-indigo-50/30 dark:hover:bg-indigo-950/20 transition-all flex items-center gap-4 cursor-pointer group"
+                                className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800 hover:border-purple-300 dark:hover:border-purple-700/50 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-purple-50/30 dark:hover:bg-purple-950/20 transition-all flex items-center gap-4 cursor-pointer group"
                             >
-                                <div className="w-12 h-12 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                                <div className="w-12 h-12 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
                                     <span className="material-symbols-outlined text-[24px]">person_add</span>
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                    <h4 className="font-bold text-slate-900 dark:text-white text-sm group-hover:text-indigo-600 transition-colors">
-                                        Share with Colleagues
+                                    <h4 className="font-bold text-slate-900 dark:text-white text-sm group-hover:text-purple-600 transition-colors">
+                                        Share with Users
                                     </h4>
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                                         Send direct notifications to specific MPOnline team members
@@ -352,41 +352,6 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
                                 </div>
                                 <span className="material-symbols-outlined text-slate-400 text-[18px]">chevron_right</span>
                             </div>
-
-                            {/* Copy Link Section */}
-                            <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                                    Direct {contentTypeStr} URL
-                                </label>
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="text"
-                                        readOnly
-                                        value={shareUrl}
-                                        className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-600 dark:text-slate-300 outline-none font-mono truncate"
-                                    />
-                                    <button
-                                        onClick={handleCopyLink}
-                                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
-                                            copied
-                                                ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
-                                                : 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-blue-600 dark:hover:bg-blue-400'
-                                        }`}
-                                    >
-                                        <span className="material-symbols-outlined text-[16px]">{copied ? 'done' : 'content_copy'}</span>
-                                        {copied ? 'Copied!' : 'Copy Link'}
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Native Share button */}
-                            <button
-                                onClick={handleNativeShare}
-                                className="w-full py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-2 mt-2 cursor-pointer"
-                            >
-                                <span className="material-symbols-outlined text-[18px]">share</span>
-                                Open Native Share Options
-                            </button>
                         </div>
                     )}
 

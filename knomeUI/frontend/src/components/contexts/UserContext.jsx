@@ -399,8 +399,10 @@ export const UserProvider = ({ children }) => {
      * @param {string|number} userId   - backend userId of the target user
      * @param {string}        newRoleName - e.g. "HR Administrator"
      */
-    const updateUserRoleInList = useCallback((targetIdentifier, newRoleName) => {
-        const newRoleCode = roleNameToCode[newRoleName] || (newRoleName === 'Pending Role Assignment' ? 'PENDING' : 'EMP');
+    const updateUserRoleInList = useCallback((targetIdentifier, newRoleParam) => {
+        const rolesArray = Array.isArray(newRoleParam) ? newRoleParam : [newRoleParam];
+        const primaryRoleName = rolesArray.find(r => r !== 'Employee') || rolesArray[0] || 'Employee';
+        const newRoleCode = roleNameToCode[primaryRoleName] || (primaryRoleName === 'Pending Role Assignment' ? 'PENDING' : 'EMP');
 
         // 1. Update the reactive usersList (Navbar Switch User list)
         setUsersList(prev => prev.map(u => {
@@ -408,7 +410,7 @@ export const UserProvider = ({ children }) => {
             const matchBySeedId = u.id && String(u.id) === String(targetIdentifier);
             const matchByEmpId = u.employeeId && u.employeeId.toUpperCase() === String(targetIdentifier).toUpperCase();
             if (matchById || matchBySeedId || matchByEmpId) {
-                return { ...u, role: newRoleCode, roleName: newRoleName };
+                return { ...u, role: newRoleCode, roleName: primaryRoleName, roles: rolesArray };
             }
             return u;
         }));
@@ -420,7 +422,7 @@ export const UserProvider = ({ children }) => {
             const matchBySeedId = prev.id && String(prev.id) === String(targetIdentifier);
             const matchByEmpId = prev.employeeId && prev.employeeId.toUpperCase() === String(targetIdentifier).toUpperCase();
             if (matchById || matchBySeedId || matchByEmpId) {
-                return { ...prev, role: newRoleCode, roleName: newRoleName };
+                return { ...prev, role: newRoleCode, roleName: primaryRoleName, roles: rolesArray };
             }
             return prev;
         });

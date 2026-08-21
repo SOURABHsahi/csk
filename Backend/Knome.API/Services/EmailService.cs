@@ -92,15 +92,17 @@ public class EmailService : IEmailService
 
         var plainText = $@"Welcome to Knome, {fullName}!
 
-Your account has been initialized via EmployeeHub Single Sign-On (SSO).
-Your profile is currently under review for role assignment by the System Administrator.
+Your account has been successfully initialized via EmployeeHub Single Sign-On (SSO).
+Default 'Employee' role access has been activated for your profile. You can now log in, explore feeds, join communities, and collaborate.
+
+Your profile has also been notified to the System Administrator for role assignment / review.
 
 Employee ID: {employeeId}
 Department: {departmentName}
 Designation: {designation}
-Status: Role Assignment Pending
+Current Access: Employee (Default Active)
 
-You do not need to take any action. You will receive an automated confirmation email as soon as the System Administrator approves your role.
+You can access the Knome portal at any time. When an administrator assigns or updates your role, you will receive an automatic update.
 
 Regards,
 MPOnline Limited - Knome Team";
@@ -111,7 +113,7 @@ MPOnline Limited - Knome Team";
 <head>
     <meta charset=""UTF-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
-    <title>Role Assignment Pending - Knome</title>
+    <title>Welcome to Knome</title>
 </head>
 <body style=""margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;"">
     <table role=""presentation"" width=""100%"" cellspacing=""0"" cellpadding=""0"" style=""background-color: #f1f5f9; padding: 40px 15px;"">
@@ -120,17 +122,17 @@ MPOnline Limited - Knome Team";
                 <!-- Main Container Card -->
                 <table role=""presentation"" width=""100%"" style=""max-width: 600px; background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06); border: 1px solid #e2e8f0;"" cellspacing=""0"" cellpadding=""0"">
                     
-                    <!-- Header Banner -->
+                    <!-- Header Banner (Vibrant Indigo Gradient) -->
                     <tr>
-                        <td style=""background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); padding: 36px 32px; text-align: center;"">
+                        <td style=""background: linear-gradient(135deg, #312e81 0%, #4f46e5 50%, #6366f1 100%); padding: 36px 32px; text-align: center;"">
                             <div style=""display: inline-block; background-color: rgba(255, 255, 255, 0.15); padding: 6px 16px; border-radius: 9999px; font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #ffffff; margin-bottom: 12px; border: 1px solid rgba(255, 255, 255, 0.2);"">
-                                MPOnline Limited • Enterprise Portal
+                                MPOnline Limited • Enterprise Knowledge Portal
                             </div>
-                            <h1 style=""margin: 0; color: #ffffff; font-size: 26px; font-weight: 900; letter-spacing: -0.5px;"">
-                                KNOME
+                            <h1 style=""margin: 0; color: #ffffff; font-size: 28px; font-weight: 900; letter-spacing: -0.5px;"">
+                                Welcome to Knome! 🎉
                             </h1>
                             <p style=""margin: 6px 0 0 0; color: #e0e7ff; font-size: 13px; font-weight: 500;"">
-                                Knowledge Management & Excellence Platform
+                                Knowledge Management & Employee Engagement Platform
                             </p>
                         </td>
                     </tr>
@@ -139,21 +141,21 @@ MPOnline Limited - Knome Team";
                     <tr>
                         <td style=""padding: 36px 32px;"">
                             <h2 style=""margin: 0 0 12px 0; font-size: 20px; font-weight: 800; color: #0f172a;"">
-                                Welcome, {safeName}!
+                                Hello {safeName},
                             </h2>
-                            <p style=""margin: 0 0 24px 0; font-size: 14px; line-height: 1.6; color: #475569;"">
-                                Your account has been initialized via <strong>EmployeeHub Single Sign-On (SSO)</strong>. Your profile is currently under review for role assignment.
+                            <p style=""margin: 0 0 20px 0; font-size: 14px; line-height: 1.6; color: #475569;"">
+                                Your account has been initialized via <strong>EmployeeHub Single Sign-On (SSO)</strong>. You have been assigned the default <strong>Employee</strong> role so you can start using Knome right away!
                             </p>
 
-                            <!-- Status Badge Box -->
-                            <div style=""background-color: #fffbeb; border: 1px solid #fef3c7; border-left: 4px solid #f59e0b; border-radius: 12px; padding: 18px 20px; margin-bottom: 24px;"">
-                                <div style=""display: flex; align-items: center; margin-bottom: 8px;"">
-                                    <span style=""font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #b45309;"">
-                                        Account Status: Role Assignment Pending
+                            <!-- Access Badge Box -->
+                            <div style=""background-color: #ecfdf5; border: 1px solid #d1fae5; border-left: 4px solid #10b981; border-radius: 12px; padding: 18px 20px; margin-bottom: 24px;"">
+                                <div style=""display: flex; align-items: center; margin-bottom: 6px;"">
+                                    <span style=""font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #065f46;"">
+                                        Active Role: Employee (Default)
                                     </span>
                                 </div>
-                                <p style=""margin: 0; font-size: 13px; color: #78350f; line-height: 1.5;"">
-                                    Your request has been forwarded to the <strong>System Administrator</strong>. Once your access role is assigned, you will receive full permissions.
+                                <p style=""margin: 0; font-size: 13px; color: #047857; line-height: 1.5;"">
+                                    You can explore the enterprise feed, publish posts, read articles, stream videos, listen to podcasts, and earn Karma points.
                                 </p>
                             </div>
 
@@ -171,15 +173,19 @@ MPOnline Limited - Knome Team";
                                     <td style=""padding: 8px 12px; font-size: 12px; font-weight: 700; color: #64748b; border-top: 1px solid #e2e8f0;"">Designation</td>
                                     <td style=""padding: 8px 12px; font-size: 13px; font-weight: 600; color: #0f172a; border-top: 1px solid #e2e8f0;"">{safeDesig}</td>
                                 </tr>
+                                <tr>
+                                    <td style=""padding: 8px 12px; font-size: 12px; font-weight: 700; color: #64748b; border-top: 1px solid #e2e8f0;"">Admin Status</td>
+                                    <td style=""padding: 8px 12px; font-size: 13px; font-weight: 600; color: #6366f1; border-top: 1px solid #e2e8f0;"">Notified for Role Review</td>
+                                </tr>
                             </table>
 
                             <p style=""margin: 0 0 20px 0; font-size: 13px; line-height: 1.6; color: #64748b;"">
-                                You do not need to take any action at this time. You will receive an automated confirmation email as soon as the System Administrator approves your role.
+                                Your profile has also been queued for the <strong>System Administrator</strong>. If an elevated role (e.g. Community Admin or HR Admin) is assigned to you, you will receive an automatic email notification.
                             </p>
 
                             <!-- Security Notice -->
                             <div style=""border-top: 1px solid #f1f5f9; padding-top: 20px; font-size: 12px; color: #94a3b8; line-height: 1.5;"">
-                                If you did not request access to Knome, please report this to your IT Operations team.
+                                If you did not log into Knome, please immediately contact your IT Security & Governance team.
                             </div>
                         </td>
                     </tr>
@@ -203,7 +209,7 @@ MPOnline Limited - Knome Team";
 </body>
 </html>";
 
-        return await SendEmailAsync(toEmail, $"[Knome Portal] Action Required: Role Assignment Pending ({safeEmpId})", html, plainText);
+        return await SendEmailAsync(toEmail, $"🎉 Welcome to Knome, {safeName}! Your Account is Ready ({safeEmpId})", html, plainText);
     }
 
     public async Task<bool> SendRoleAssignedEmailAsync(string toEmail, string fullName, string employeeId, string roleName, string departmentName, string? adminComment = null)
@@ -216,15 +222,16 @@ MPOnline Limited - Knome Team";
 
         var plainText = $@"Congratulations, {fullName}!
 
-Your role is assigned by System Admin and your role name is {roleName}.
-You now have full access to explore, collaborate, and contribute on the Knome platform.
+Your role has been updated by the System Administrator.
+Your assigned role is now: {roleName}.
 
 Employee ID: {employeeId}
 Department: {departmentName}
 Assigned Role: {roleName}
 Assigned By: System Administrator
 {(adminComment != null ? $"Admin Note: {adminComment}\n" : "")}
-You can now access the Knome Portal.
+
+You can now log into Knome to access all features associated with your new role.
 
 Regards,
 MPOnline Limited - Knome Team";
@@ -235,7 +242,7 @@ MPOnline Limited - Knome Team";
 <head>
     <meta charset=""UTF-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
-    <title>Role Assigned - Knome</title>
+    <title>Role Updated - Knome</title>
 </head>
 <body style=""margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;"">
     <table role=""presentation"" width=""100%"" cellspacing=""0"" cellpadding=""0"" style=""background-color: #f1f5f9; padding: 40px 15px;"">
@@ -248,7 +255,7 @@ MPOnline Limited - Knome Team";
                     <tr>
                         <td style=""background: linear-gradient(135deg, #059669 0%, #0284c7 100%); padding: 36px 32px; text-align: center;"">
                             <div style=""display: inline-block; background-color: rgba(255, 255, 255, 0.18); padding: 6px 16px; border-radius: 9999px; font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #ffffff; margin-bottom: 12px; border: 1px solid rgba(255, 255, 255, 0.2);"">
-                                Access Approved & Activated
+                                Access Role Updated
                             </div>
                             <h1 style=""margin: 0; color: #ffffff; font-size: 26px; font-weight: 900; letter-spacing: -0.5px;"">
                                 KNOME
@@ -266,15 +273,15 @@ MPOnline Limited - Knome Team";
                                 Congratulations, {safeName}!
                             </h2>
                             <p style=""margin: 0 0 24px 0; font-size: 14px; line-height: 1.6; color: #475569;"">
-                                <strong>Your role is assigned by System Admin</strong> and your role name is <strong>{safeRole}</strong>. You now have full access to explore, collaborate, and contribute on the Knome platform.
+                                <strong>Your access role has been updated by the System Administrator.</strong> Your assigned role is now <strong>{safeRole}</strong>. You now have full access with your updated permissions on the Knome platform.
                             </p>
 
                             <!-- Role Highlight Card -->
                             <div style=""background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%); border: 1px solid #bbf7d0; border-left: 5px solid #10b981; border-radius: 14px; padding: 20px; margin-bottom: 24px; text-align: center;"">
                                 <span style=""font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.5px; color: #047857;"">
-                                    Assigned Role
+                                    Current Active Role
                                 </span>
-                                <h3 style=""margin: 6px 0 0 0; font-size: 22px; font-weight: 900; color: #065f46;"">
+                                <h3 style=""margin: 6px 0 0 0; font-size: 24px; font-weight: 900; color: #065f46;"">
                                     {safeRole}
                                 </h3>
                             </div>
@@ -290,7 +297,7 @@ MPOnline Limited - Knome Team";
                                     <td style=""padding: 8px 12px; font-size: 13px; font-weight: 600; color: #0f172a; border-top: 1px solid #e2e8f0;"">{safeDept}</td>
                                 </tr>
                                 <tr>
-                                    <td style=""padding: 8px 12px; font-size: 12px; font-weight: 700; color: #64748b; border-top: 1px solid #e2e8f0;"">Assigned By</td>
+                                    <td style=""padding: 8px 12px; font-size: 12px; font-weight: 700; color: #64748b; border-top: 1px solid #e2e8f0;"">Approved / Assigned By</td>
                                     <td style=""padding: 8px 12px; font-size: 13px; font-weight: 600; color: #0f172a; border-top: 1px solid #e2e8f0;"">System Administrator</td>
                                 </tr>
                                 {(safeComment != null ? $@"
@@ -300,15 +307,14 @@ MPOnline Limited - Knome Team";
                                 </tr>" : "")}
                             </table>
 
-                            <!-- Status Highlight -->
                             <div style=""text-align: center; margin-bottom: 24px;"">
                                 <div style=""display: inline-block; background: linear-gradient(135deg, #059669 0%, #0284c7 100%); color: #ffffff; font-size: 14px; font-weight: 800; padding: 12px 28px; border-radius: 12px; box-shadow: 0 4px 14px rgba(5, 150, 105, 0.25); letter-spacing: 0.3px;"">
-                                    Portal Access Activated
+                                    Permissions Updated
                                 </div>
                             </div>
 
                             <p style=""margin: 0; font-size: 13px; line-height: 1.6; color: #64748b; text-align: center;"">
-                                You can now publish knowledge posts, interact in communities, and earn Karma Points on the platform.
+                                You can now access features associated with your updated role on the Knome portal.
                             </p>
                         </td>
                     </tr>
@@ -318,9 +324,6 @@ MPOnline Limited - Knome Team";
                         <td style=""background-color: #f8fafc; padding: 24px 32px; text-align: center; border-top: 1px solid #e2e8f0;"">
                             <p style=""margin: 0 0 6px 0; font-size: 12px; font-weight: 700; color: #64748b;"">
                                 © 2026 MPOnline Limited. All rights reserved.
-                            </p>
-                            <p style=""margin: 0; font-size: 11px; color: #94a3b8;"">
-                                Knome Enterprise Knowledge & Collaboration Network • Internal Confidential
                             </p>
                         </td>
                     </tr>
@@ -332,7 +335,7 @@ MPOnline Limited - Knome Team";
 </body>
 </html>";
 
-        return await SendEmailAsync(toEmail, $"[Knome Portal] Role Assigned by System Administrator: {safeRole}", html, plainText);
+        return await SendEmailAsync(toEmail, $"[Knome Portal] Role Updated by System Administrator: {safeRole}", html, plainText);
     }
 
     public async Task SendTemplateEmailAsync(string toEmail, string templateName, object model)

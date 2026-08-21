@@ -1415,16 +1415,7 @@ export default function CommunityView() {
     // Files & Media Handlers
     // ─────────────────────────────────────────
     const handleDownloadFile = (file) => {
-        const targetId = community?.id || communityId || 101;
-        setFilesList(prev => {
-            const updated = prev.map(f => f.id === file.id ? { ...f, downloadCount: (f.downloadCount || 0) + 1 } : f);
-            localStorage.setItem(`knome_community_files_${targetId}`, JSON.stringify(updated));
-            return updated;
-        });
-        if (file.url && file.url !== '#') {
-            window.open(file.url, '_blank');
-        }
-        showToast(`Downloading "${file.name}"...`, 'success');
+        setPreviewModalFile(file);
     };
 
     const filteredFiles = filesList.filter(f => {
@@ -2697,31 +2688,6 @@ export default function CommunityView() {
                                             </p>
                                         </div>
                                         <span className="material-symbols-outlined text-slate-400 text-[18px]">chevron_right</span>
-                                    </div>
-
-                                    {/* Direct Copy Link Quick Access */}
-                                    <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
-                                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                                            Or Copy Direct Link
-                                        </label>
-                                        <div className="flex items-center gap-2">
-                                            <input
-                                                type="text"
-                                                readOnly
-                                                value={window.location.href}
-                                                className="flex-1 px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-mono outline-none text-slate-900 dark:text-white select-all"
-                                            />
-                                            <button
-                                                onClick={() => {
-                                                    navigator.clipboard.writeText(window.location.href);
-                                                    showToast('🔗 Link copied to clipboard!', 'success');
-                                                }}
-                                                className="px-4 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl text-xs transition-colors shadow-md shadow-indigo-500/20 flex items-center gap-1.5 shrink-0 cursor-pointer"
-                                            >
-                                                <span className="material-symbols-outlined text-[16px]">content_copy</span>
-                                                Copy Link
-                                            </button>
-                                        </div>
                                     </div>
                                 </div>
                             )}

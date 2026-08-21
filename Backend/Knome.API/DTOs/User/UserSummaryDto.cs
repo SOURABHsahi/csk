@@ -16,5 +16,9 @@ public class UserSummaryDto
     public string? ProfilePhotoUrl { get; set; }
     public bool IsActive { get; set; }
     public bool IsPermanentlySuspended { get; set; }
+    public bool IsSuspended { get; set; }
+    public DateTime? SuspendedUntil { get; set; }
+    public int KarmaPoints { get; set; }
+    public string KarmaBadgeLevel { get; set; } = "Bronze";
     public List<string> Roles { get; set; } = new();
 }

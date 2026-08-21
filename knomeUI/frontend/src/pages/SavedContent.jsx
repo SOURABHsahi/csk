@@ -197,6 +197,7 @@ export default function SavedContent() {
             .withUrl(`http://${host}:5095/hubs/notifications`, {
                 accessTokenFactory: () => token,
             })
+            .configureLogging(signalR.LogLevel.None)
             .withAutomaticReconnect()
             .build();
 

@@ -360,39 +360,6 @@ export default function ShareProfileModal({ isOpen, onClose, user }) {
                                 </div>
                                 <span className="material-symbols-outlined text-slate-400 group-hover:translate-x-1 transition-transform text-[20px]">chevron_right</span>
                             </button>
-
-                            {/* Option 3: Share to Timeline */}
-                            <button 
-                                onClick={handleShareToTimeline}
-                                disabled={isPostingToTimeline}
-                                className="flex items-center justify-between w-full p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 hover:bg-indigo-500/10 dark:hover:bg-indigo-500/10 border border-slate-200/60 dark:border-slate-700/60 transition-all text-left group cursor-pointer disabled:opacity-50"
-                            >
-                                <div className="flex items-center gap-3.5">
-                                    <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
-                                        <span className="material-symbols-outlined text-[20px]">dynamic_feed</span>
-                                    </div>
-                                    <span className="font-bold text-slate-800 dark:text-slate-100 text-sm group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                                        {isPostingToTimeline ? 'Publishing...' : 'Share to Timeline'}
-                                    </span>
-                                </div>
-                                <span className="material-symbols-outlined text-slate-400 group-hover:translate-x-1 transition-transform text-[20px]">chevron_right</span>
-                            </button>
-
-                            {/* Direct Link Copy Button */}
-                            <div className="pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center gap-2">
-                                <div className="flex-1 bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded-xl text-xs font-mono truncate text-slate-600 dark:text-slate-300">
-                                    {shareUrl}
-                                </div>
-                                <button
-                                    onClick={handleCopyLink}
-                                    className={`px-4 py-2 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 shrink-0 shadow-sm cursor-pointer ${
-                                        copied ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 hover:opacity-90'
-                                    }`}
-                                >
-                                    <span className="material-symbols-outlined text-[16px]">{copied ? 'check' : 'content_copy'}</span>
-                                    {copied ? 'Copied' : 'Copy'}
-                                </button>
-                            </div>
                         </div>
                     )}
 

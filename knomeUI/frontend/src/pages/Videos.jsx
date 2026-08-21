@@ -798,7 +798,7 @@ export default function Videos() {
                                 <div className="flex gap-2 pt-2">
                                     <button type="button" onClick={() => setIsCreatePlaylistOpen(false)} className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl cursor-pointer">Cancel</button>
                                     <button type="submit" className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl cursor-pointer shadow-md shadow-red-600/30 flex items-center justify-center gap-1.5">
-                                        <span className="material-symbols-outlined text-[18px]">download</span>
+                                        <span className="material-symbols-outlined text-[18px]">playlist_add</span>
                                         Import & Save Series
                                     </button>
                                 </div>

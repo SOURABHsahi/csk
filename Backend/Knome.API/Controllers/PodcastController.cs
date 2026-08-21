@@ -88,7 +88,7 @@ public class PodcastController : KnomeControllerBase
         return Ok(ApiResponse<List<PodcastDto>>.SuccessResponse(200, "User podcasts retrieved successfully.", podcasts));
     }
 
-    [HttpGet("{podcastId}")]
+    [HttpGet("{podcastId:long}")]
     [ProducesResponseType(typeof(ApiResponse<PodcastDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetPodcast(long podcastId)
     {

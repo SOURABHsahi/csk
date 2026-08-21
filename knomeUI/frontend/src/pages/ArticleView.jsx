@@ -6,6 +6,7 @@ import { resolveMediaUrl, interactionsApi } from '../utils/apiService';
 import ReportModal from '../components/modals/ReportModal';
 import SaveToCategoryModal from '../components/modals/SaveToCategoryModal';
 import ArticleShareModal from '../components/modals/ArticleShareModal';
+import DocumentViewerModal from '../components/modals/DocumentViewerModal';
 
 export default function ArticleView() {
     const location = useLocation();
@@ -15,6 +16,7 @@ export default function ArticleView() {
     const [isReportOpen, setIsReportOpen] = useState(false);
     const [savingArticleModal, setSavingArticleModal] = useState(null);
     const [sharingArticleModal, setSharingArticleModal] = useState(null);
+    const [activeDocViewer, setActiveDocViewer] = useState(null);
     
     // Read ?id=X query parameter
     const searchParams = new URLSearchParams(location.search);
@@ -59,6 +61,8 @@ export default function ArticleView() {
     const [userLiked, setUserLiked] = useState(false);
     const [comments, setComments] = useState([]);
     const [newComment, setNewComment] = useState('');
+
+    const totalComments = comments.reduce((acc, c) => acc + 1 + (c.replies ? c.replies.length : 0), 0);
 
     const loadArticleComments = async (artId) => {
         if (!artId) return;
@@ -455,15 +459,14 @@ export default function ArticleView() {
                                                     </div>
                                                 </div>
                                             </div>
-                                            <a 
-                                                href={mediaUrl} 
-                                                target="_blank" 
-                                                rel="noopener noreferrer"
-                                                className="px-3 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500 hover:text-white rounded-lg text-xs font-bold transition-colors shrink-0 flex items-center gap-1"
+                                            <button 
+                                                type="button"
+                                                onClick={() => setActiveDocViewer({ name: file.name, url: mediaUrl })}
+                                                className="px-3 py-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500 hover:text-white rounded-lg text-xs font-bold transition-colors shrink-0 flex items-center gap-1 cursor-pointer"
                                             >
-                                                <span className="material-symbols-outlined text-sm">open_in_new</span>
-                                                View
-                                            </a>
+                                                <span className="material-symbols-outlined text-sm">visibility</span>
+                                                View Document
+                                            </button>
                                         </div>
                                     );
                                 })}
@@ -624,6 +627,14 @@ export default function ArticleView() {
                 onClose={() => setSharingArticleModal(null)}
                 article={sharingArticleModal}
             />
+
+            {/* Document Viewer Modal */}
+            {activeDocViewer && (
+                <DocumentViewerModal 
+                    document={activeDocViewer} 
+                    onClose={() => setActiveDocViewer(null)} 
+                />
+            )}
         </>
     );
 }

@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Knome & MPOEmployeeHub - High-Level Architecture Document</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm 12mm 12mm;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #1e293b;
+    background: #ffffff;
+    font-size: 8.5pt;
+    line-height: 1.38;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    page-break-after: always;
+    height: 275mm;
+    max-height: 275mm;
+    position: relative;
+    padding-bottom: 12mm;
+    overflow: hidden;
+  }
+
+  .page:last-child {
+    page-break-after: avoid;
+  }
+
+  /* Header / Footer */
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1.5px solid #0f2b48;
+    padding-bottom: 4px;
+    margin-bottom: 8px;
+  }
+  .page-header .doc-title {
+    font-size: 7.5pt;
+    font-weight: 700;
+    color: #0f2b48;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .page-header .doc-meta {
+    font-size: 7pt;
+    color: #64748b;
+    font-weight: 600;
+  }
+
+  .page-footer {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid #cbd5e1;
+    padding-top: 4px;
+    font-size: 6.8pt;
+    color: #64748b;
+  }
+  .page-footer .confidential {
+    font-weight: 600;
+    color: #0f2b48;
+  }
+
+  /* Typography */
+  h1.main-title {
+    background: #0f2b48;
+    color: #ffffff;
+    padding: 10px 14px;
+    font-size: 14pt;
+    font-weight: 800;
+    text-align: center;
+    border-radius: 4px;
+    margin-bottom: 2px;
+    letter-spacing: 0.3px;
+  }
+  h2.sub-title {
+    text-align: center;
+    font-size: 9.5pt;
+    color: #334155;
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+
+  h2.section-heading {
+    font-size: 10pt;
+    color: #0f2b48;
+    font-weight: 800;
+    border-left: 4px solid #2563eb;
+    padding-left: 6px;
+    margin: 8px 0 5px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+  h3.sub-heading {
+    font-size: 8.5pt;
+    color: #1e3a8a;
+    font-weight: 700;
+    margin: 6px 0 3px 0;
+  }
+
+  p {
+    margin-bottom: 5px;
+    color: #334155;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 8px;
+    font-size: 7.5pt;
+  }
+  th, td {
+    padding: 4px 6px;
+    border: 1px solid #cbd5e1;
+    text-align: left;
+    vertical-align: middle;
+  }
+  th {
+    background: #0f2b48;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 7.5pt;
+    letter-spacing: 0.2px;
+  }
+  tr:nth-child(even) td {
+    background: #f8fafc;
+  }
+
+  .meta-table th {
+    background: #1e3a8a;
+    width: 25%;
+  }
+  .meta-table td {
+    font-weight: 600;
+    color: #0f172a;
+  }
+
+  /* Badge styling */
+  .badge {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 6.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .badge-blue { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+  .badge-green { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+  .badge-purple { background: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; }
+  .badge-amber { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+
+  /* Callout boxes */
+  .callout-box {
+    border-radius: 4px;
+    padding: 6px 8px;
+    margin: 6px 0;
+    font-size: 7.2pt;
+    line-height: 1.35;
+  }
+  .callout-blue {
+    background: #eff6ff;
+    border: 1px solid #93c5fd;
+    border-left: 4px solid #2563eb;
+    color: #1e3a8a;
+  }
+  .callout-red {
+    background: #fef2f2;
+    border: 1px solid #fca5a5;
+    border-left: 4px solid #dc2626;
+    color: #991b1b;
+  }
+  .callout-title {
+    font-weight: 800;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+    display: block;
+    font-size: 7.5pt;
+  }
+
+  /* Step cards */
+  .step-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin: 5px 0;
+  }
+  .step-card {
+    display: flex;
+    align-items: center;
+    border: 1px solid #cbd5e1;
+    border-radius: 3px;
+    padding: 3.5px 6px;
+    background: #ffffff;
+    font-size: 7.3pt;
+  }
+  .step-num {
+    background: #0f2b48;
+    color: white;
+    font-weight: 800;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 7pt;
+    margin-right: 7px;
+    flex-shrink: 0;
+  }
+  .step-title {
+    font-weight: 700;
+    color: #0f172a;
+    margin-right: 4px;
+  }
+  .step-desc {
+    color: #475569;
+  }
+  .step-card.auth { background: #f0fdf4; border-color: #86efac; }
+  .step-card.auth .step-num { background: #16a34a; }
+  .step-card.token { background: #eff6ff; border-color: #93c5fd; }
+  .step-card.token .step-num { background: #2563eb; }
+  .step-card.session { background: #faf5ff; border-color: #d8b4fe; }
+  .step-card.session .step-num { background: #9333ea; }
+  .step-card.api { background: #fffbeb; border-color: #fde68a; }
+  .step-card.api .step-num { background: #d97706; }
+  .step-card.logout { background: #fef2f2; border-color: #fca5a5; }
+  .step-card.logout .step-num { background: #dc2626; }
+
+  /* Diagram styles */
+  .diagram-container {
+    background: #f8fafc;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 5px;
+    padding: 6px;
+    margin: 6px 0;
+  }
+  .layer-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+  .layer-col {
+    background: #ffffff;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 4px;
+    padding: 4px;
+    text-align: center;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  }
+  .layer-col.l1 { border-top: 3px solid #0284c7; }
+  .layer-col.l2 { border-top: 3px solid #7c3aed; }
+  .layer-col.l3 { border-top: 3px solid #059669; }
+  .layer-col.l4 { border-top: 3px solid #ea580c; }
+  .layer-col.l5 { border-top: 3px solid #dc2626; }
+  .layer-col.l6 { border-top: 3px solid #475569; }
+  
+  .layer-col-title {
+    font-size: 6.8pt;
+    font-weight: 800;
+    color: #0f172a;
+    text-transform: uppercase;
+  }
+  .layer-col-tech {
+    font-size: 6.2pt;
+    color: #64748b;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Code / Monospace */
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 6.8pt;
+    background: #f1f5f9;
+    padding: 1px 3px;
+    border-radius: 2px;
+    color: #0f2b48;
+  }
+  pre {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 6.2pt;
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 6px;
+    border-radius: 4px;
+    line-height: 1.25;
+    overflow: hidden;
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  .rule-item {
+    display: flex;
+    margin-bottom: 3.5px;
+    font-size: 7.2pt;
+    align-items: flex-start;
+  }
+  .rule-num {
+    background: #0f2b48;
+    color: white;
+    font-weight: 800;
+    font-size: 6.5pt;
+    padding: 1px 4px;
+    border-radius: 2px;
+    margin-right: 5px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .rule-text {
+    color: #334155;
+  }
+  .rule-text strong {
+    color: #0f2b48;
+  }
+</style>
+</head>
+<body>
+
+<!-- ========================================================================= -->
+<!-- PAGE 1: TITLE, EXECUTIVE CONTEXT & 6-LAYER ARCHITECTURE SUMMARY -->
+<!-- ========================================================================= -->
+<div class="page">
+  <div class="page-header">
+    <span class="doc-title">MPOOnline Limited · Enterprise Architecture Division</span>
+    <span class="doc-meta">Doc ID: MPO-KNOME-HUB-HLA-001</span>
+  </div>
+
+  <h1 class="main-title">Knome & MPOEmployeeHub Platform</h1>
+  <h2 class="sub-title">High-Level Architecture (HLA) & Federated SSO Integration Specification</h2>
+
+  <table class="meta-table">
+    <tr>
+      <th>Document Type</th>
+      <td>High-Level Architecture (HLA) Specification</td>
+      <th>Version & Status</th>
+      <td><span class="badge badge-green">Version 1.0 — Official Approved Baseline</span></td>
+    </tr>
+    <tr>
+      <th>Target Systems</th>
+      <td>Knome Enterprise Knowledge Platform & MPOEmployeeHub Central Identity</td>
+      <th>Security & Session Model</th>
+      <td>BFF Secure HttpOnly Cookie Boundary + YARP Gateway + Bearer JWT & RBAC</td>
+    </tr>
+  </table>
+
+  <h2 class="section-heading">1. Introduction & Executive Context</h2>
+  <p>This document describes the unified <strong>High-Level Architecture (HLA)</strong> of the <strong>Knome Enterprise Knowledge & Collaboration Platform</strong> and its deep integration with <strong>MPOEmployeeHub</strong> — MPOnline Limited's Master Identity Provider, Single Sign-On (SSO) engine, and Enterprise Workforce Governance Authority.</p>
+
+  <h3 class="sub-heading">1.1 Business Context & Strategic Objectives</h3>
+  <p>Together, MPOEmployeeHub and Knome deliver a 360-degree digital workspace for MPOnline Limited employees, structured across two core operational pillars:</p>
+
+  <div class="grid-2">
+    <table>
+      <thead>
+        <tr><th colspan="2">MPOEmployeeHub (Master Identity & Governance)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Enterprise SSO & Token Broker</strong></td><td>Centralized authentication, OpenID Connect / OAuth2 token issuance</td></tr>
+        <tr><td><strong>Master Identity & Lifecycle</strong></td><td>Single source of truth for employee master data, status & credentials</td></tr>
+        <tr><td><strong>Zero-Role Security Governance</strong></td><td>Interception and assignment workflows for new/unassigned users</td></tr>
+        <tr><td><strong>DPDP Act 2023 Compliance</strong></td><td>Digital Personal Data Protection consent and privacy governance</td></tr>
+        <tr><td><strong>Global Session Revocation</strong></td><td>Centralized token blacklisting & session kill switch across all apps</td></tr>
+      </tbody>
+    </table>
+
+    <table>
+      <thead>
+        <tr><th colspan="2">Knome Platform (Knowledge & Social Collaboration)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Social Activity Feed & Polls</strong></td><td>LinkedIn-style real-time micro-posts, polls, mentions & reactions</td></tr>
+        <tr><td><strong>Rich Technical Articles</strong></td><td>Medium-style publishing, code syntax highlighting & rich media</td></tr>
+        <tr><td><strong>Video Training & Playlists</strong></td><td>YouTube-style learning repository, streams & departmental courses</td></tr>
+        <tr><td><strong>Communities of Practice</strong></td><td>Public and private domain groups with membership governance</td></tr>
+        <tr><td><strong>Gamification & Recognition</strong></td><td>Points engine, achievement badges, and enterprise leaderboards</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="section-heading">1.2 Architecture Scope & Summary</h2>
+  <p>The integrated ecosystem enforces a rigorous <strong>Six-Layer Enterprise Architecture</strong>. React provides browser presentation, Next.js / .NET provides the browser-facing BFF, YARP acts as the common security gateway, MPOEmployeeHub provides master identity & SSO, Knome Backend APIs provide knowledge business logic, and MSSQL Server provides persistence.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 7%;">Layer</th>
+        <th style="width: 18%;">Layer Name</th>
+        <th style="width: 18%;">Primary Technology</th>
+        <th>Primary Architectural Responsibility</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Layer 1</strong></td>
+        <td><strong>React Frontend UI</strong></td>
+        <td>React 18 / Vite / TypeScript</td>
+        <td>Browser-facing user interface for Knome feeds, articles, videos & EmployeeHub SSO login. Zero token storage.</td>
+      </tr>
+      <tr>
+        <td><strong>Layer 2</strong></td>
+        <td><strong>Next.js / .NET BFF</strong></td>
+        <td>Next.js / ASP.NET Core BFF</td>
+        <td><strong>Backend-For-Frontend:</strong> Manages browser session boundary, encrypted <code>HttpOnly</code> cookies & Cookie→Bearer token conversion.</td>
+      </tr>
+      <tr>
+        <td><strong>Layer 3</strong></td>
+        <td><strong>API Gateway</strong></td>
+        <td>.NET / YARP Gateway</td>
+        <td>Common security & traffic gateway — SSL termination, URL routing, rate limiting, and security header enforcement.</td>
+      </tr>
+      <tr>
+        <td><strong>Layer 4</strong></td>
+        <td><strong>MPOEmployeeHub SSO</strong></td>
+        <td>ASP.NET Identity / RS256</td>
+        <td>Centralized Identity Provider. Owns master credential validation, Zero-Role evaluation, DPDP consent, and JWT token minting.</td>
+      </tr>
+      <tr>
+        <td><strong>Layer 5</strong></td>
+        <td><strong>Knome Backend APIs</strong></td>
+        <td>ASP.NET Core (.NET 10)</td>
+        <td>Modular business APIs owning Knome domains — Posts, Articles, Videos, Communities, Gamification, and Moderation.</td>
+      </tr>
+      <tr>
+        <td><strong>Layer 6</strong></td>
+        <td><strong>MSSQL Server</strong></td>
+        <td>Microsoft SQL Server 2022</td>
+        <td>Persistent data storage across dual isolated databases: <code>EmployeeHubDb</code> (Identity) and <code>Knome</code> (Business & Social).</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span class="confidential">MPOnline Limited · Confidential</span>
+    <span>Knome & MPOEmployeeHub HLA Specification · Version 1.0</span>
+    <span>Page 1 of 7</span>
+  </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- PAGE 2: SIX-LAYER PLATFORM WORKFLOW DIAGRAM & 21-STEP EXECUTION TABLE -->
+<!-- ========================================================================= -->
+<div class="page">
+  <div class="page-header">
+    <span class="doc-title">MPOOnline Limited · Enterprise Architecture Division</span>
+    <span class="doc-meta">Doc ID: MPO-KNOME-HUB-HLA-001</span>
+  </div>
+
+  <h2 class="section-heading">2. Six-Layer Platform Workflow Diagram</h2>
+  <p>The diagram and table below illustrate the complete 6-layer platform workflow across <strong>21 numbered execution steps</strong>, covering the interaction between React Frontend, Next.js BFF, YARP Gateway, MPOEmployeeHub SSO, Knome .NET APIs, and MS SQL Server.</p>
+
+  <div class="diagram-container">
+    <div class="layer-grid">
+      <div class="layer-col l1">
+        <div class="layer-col-title">Layer 1</div>
+        <div style="font-weight:700; font-size:7pt; color:#0284c7;">React Frontend UI</div>
+        <div class="layer-col-tech">React 18 / Vite</div>
+      </div>
+      <div class="layer-col l2">
+        <div class="layer-col-title">Layer 2</div>
+        <div style="font-weight:700; font-size:7pt; color:#7c3aed;">Next.js / .NET BFF</div>
+        <div class="layer-col-tech">Session Boundary</div>
+      </div>
+      <div class="layer-col l3">
+        <div class="layer-col-title">Layer 3</div>
+        <div style="font-weight:700; font-size:7pt; color:#059669;">YARP Gateway</div>
+        <div class="layer-col-tech">.NET Reverse Proxy</div>
+      </div>
+      <div class="layer-col l4">
+        <div class="layer-col-title">Layer 4</div>
+        <div style="font-weight:700; font-size:7pt; color:#ea580c;">EmployeeHub SSO</div>
+        <div class="layer-col-tech">Identity Provider</div>
+      </div>
+      <div class="layer-col l5">
+        <div class="layer-col-title">Layer 5</div>
+        <div style="font-weight:700; font-size:7pt; color:#dc2626;">Knome APIs (.NET)</div>
+        <div class="layer-col-tech">Business Logic</div>
+      </div>
+      <div class="layer-col l6">
+        <div class="layer-col-title">Layer 6</div>
+        <div style="font-weight:700; font-size:7pt; color:#475569;">Database (MSSQL)</div>
+        <div class="layer-col-tech">SQL Server 2022</div>
+      </div>
+    </div>
+  </div>
+
+  <table style="font-size: 6.8pt; margin-top: 4px;">
+    <thead>
+      <tr>
+        <th style="width: 5%;">Step</th>
+        <th style="width: 20%;">Source Layer</th>
+        <th style="width: 20%;">Target Layer</th>
+        <th>Architectural Execution Description</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td><strong>1</strong></td><td>User / Browser</td><td>Layer 1 (React UI)</td><td>User opens Knome application URL and enters SSO credentials (MPO ID & Password).</td></tr>
+      <tr><td><strong>2</strong></td><td>Layer 1 (React UI)</td><td>Layer 2 (Next.js BFF)</td><td>React sends authentication request via client fetch to BFF proxy endpoint (<code>/api/auth/login</code>).</td></tr>
+      <tr><td><strong>3</strong></td><td>Layer 2 (Next.js BFF)</td><td>Layer 3 (YARP Gateway)</td><td>BFF forwards authentication request payload to centralized YARP gateway.</td></tr>
+      <tr><td><strong>4</strong></td><td>Layer 3 (YARP Gateway)</td><td>Layer 4 (EmployeeHub SSO)</td><td>YARP routes auth request to EmployeeHub Layer 4 AuthService endpoint over internal TLS.</td></tr>
+      <tr><td><strong>5</strong></td><td>Layer 4 (EmployeeHub SSO)</td><td>Layer 6 (MSSQL Server)</td><td>EmployeeHub AuthService queries user master record, salt, BCrypt hash, and role status in <code>EmployeeHubDb</code>.</td></tr>
+      <tr><td><strong>6</strong></td><td>Layer 6 (MSSQL Server)</td><td>Layer 4 (EmployeeHub SSO)</td><td>Database returns employee master record, role associations, and DPDP consent flags.</td></tr>
+      <tr><td><strong>7</strong></td><td>Layer 4 (EmployeeHub SSO)</td><td>Layer 4 (Internal Engine)</td><td>Verifies password hash; checks Zero-Role status; signs standard RS256 JWT Token with claims & scopes.</td></tr>
+      <tr><td><strong>8</strong></td><td>Layer 4 (EmployeeHub SSO)</td><td>Layer 3 (YARP Gateway)</td><td>Returns signed JWT authorization token, refresh token, and sanitized employee profile DTO.</td></tr>
+      <tr><td><strong>9</strong></td><td>Layer 3 (YARP Gateway)</td><td>Layer 2 (Next.js BFF)</td><td>YARP forwards auth response and token stream to Next.js BFF.</td></tr>
+      <tr><td><strong>10</strong></td><td>Layer 2 (Next.js BFF)</td><td>Layer 2 (Internal)</td><td>BFF validates token signature against JWKS, creates server-side secure session envelope.</td></tr>
+      <tr><td><strong>11</strong></td><td>Layer 2 (Next.js BFF)</td><td>Layer 1 (React UI)</td><td>Sets secure <code>HttpOnly</code> session cookie in browser; returns sanitized user profile to UI.</td></tr>
+      <tr><td><strong>12</strong></td><td>Layer 1 (React UI)</td><td>User / Browser</td><td>User logged in; dashboard rendered with personalized Knome Feed, Articles & Communities.</td></tr>
+      <tr><td><strong>13</strong></td><td>User / Browser</td><td>Layer 1 (React UI)</td><td>User performs action in UI (e.g., views technical feed, creates post, uploads video).</td></tr>
+      <tr><td><strong>14</strong></td><td>Layer 1 (React UI)</td><td>Layer 2 (Next.js BFF)</td><td>React calls Next.js BFF API proxy endpoint with automatic browser cookie attachment.</td></tr>
+      <tr><td><strong>15</strong></td><td>Layer 2 (Next.js BFF)</td><td>Layer 3 (YARP Gateway)</td><td>BFF extracts session cookie and injects standard <code>Authorization: Bearer &lt;JWT&gt;</code> header.</td></tr>
+      <tr><td><strong>16</strong></td><td>Layer 3 (YARP Gateway)</td><td>Layer 3 (Policy Engine)</td><td>YARP enforces rate limiting, CORS policies, and validates token signature & claims.</td></tr>
+      <tr><td><strong>17</strong></td><td>Layer 3 (YARP Gateway)</td><td>Layer 5 (Knome APIs)</td><td>Authorized request forwarded to target Knome business controller (e.g., <code>PostController</code>).</td></tr>
+      <tr><td><strong>18</strong></td><td>Layer 5 (Knome APIs)</td><td>Layer 6 (MSSQL Server)</td><td>Knome API executes business logic, applies FluentValidation rules, reads/writes in <code>Knome</code> DB.</td></tr>
+      <tr><td><strong>19</strong></td><td>Layer 6 (MSSQL Server)</td><td>Layer 5 (Knome APIs)</td><td>MSSQL returns dataset recordsets or operation status to Knome API.</td></tr>
+      <tr><td><strong>20</strong></td><td>Layer 5 (Knome APIs)</td><td>Layer 3 (YARP Gateway)</td><td>Knome API returns standardized <code>ApiResponse&lt;T&gt;</code> JSON payload through gateway.</td></tr>
+      <tr><td><strong>21</strong></td><td>Layer 3 → 2 → 1</td><td>React Frontend UI</td><td>Gateway proxies to BFF, BFF strips internal headers, React UI renders updated state.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span class="confidential">MPOnline Limited · Confidential</span>
+    <span>Figure 2.1: Six-Layer Platform Workflow Diagram</span>
+    <span>Page 2 of 7</span>
+  </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- PAGE 3: LOGIN & AUTHENTICATION WORKFLOW (12 STEPS) -->
+<!-- ========================================================================= -->
+<div class="page">
+  <div class="page-header">
+    <span class="doc-title">MPOOnline Limited · Enterprise Architecture Division</span>
+    <span class="doc-meta">Doc ID: MPO-KNOME-HUB-HLA-001</span>
+  </div>
+
+  <h2 class="section-heading">3. Login & Authentication Workflow</h2>
+  <p><strong>MPOEmployeeHub</strong> is the sole owner of authentication, credentials, and master identity. The user's login request reaches EmployeeHub through the common YARP Gateway, which returns the callback through YARP to establish the BFF secure <code>HttpOnly</code> cookie session.</p>
+
+  <div class="step-flow">
+    <div class="step-card auth">
+      <div class="step-num">1</div>
+      <div><span class="step-title">User opens Knome in Browser:</span> <span class="step-desc">User accesses application URL (<code>https://knome.mponline.gov.in</code>) in browser.</span></div>
+    </div>
+    <div class="step-card auth">
+      <div class="step-num">2</div>
+      <div><span class="step-title">React UI displays Login entry point:</span> <span class="step-desc">React renders SSO login UI component and credential form.</span></div>
+    </div>
+    <div class="step-card auth">
+      <div class="step-num">3</div>
+      <div><span class="step-title">React sends auth request to Next.js BFF:</span> <span class="step-desc">Client initiates authentication call <code>POST /api/auth/login</code>.</span></div>
+    </div>
+    <div class="step-card token">
+      <div class="step-num">4</div>
+      <div><span class="step-title">BFF forwards auth request to YARP Gateway:</span> <span class="step-desc">BFF passes request to common security gateway.</span></div>
+    </div>
+    <div class="step-card token">
+      <div class="step-num">5</div>
+      <div><span class="step-title">YARP routes auth request to MPOEmployeeHub:</span> <span class="step-desc">YARP proxies to Layer 4 Master AuthService over internal TLS.</span></div>
+    </div>
+    <div class="step-card token">
+      <div class="step-num">6</div>
+      <div><span class="step-title">MPOEmployeeHub authenticates user:</span> <span class="step-desc">Validates MPO ID & BCrypt password hash (work factor 11) against <code>EmployeeHubDb</code>.</span></div>
+    </div>
+    <div class="step-card session">
+      <div class="step-num">7</div>
+      <div><span class="step-title">Zero-Role & Status Evaluation:</span> <span class="step-desc">Checks active role status, account locking, and DPDP Act 2023 consent flags.</span></div>
+    </div>
+    <div class="step-card session">
+      <div class="step-num">8</div>
+      <div><span class="step-title">MPOEmployeeHub creates & returns JWT token:</span> <span class="step-desc">Issues signed RS256 authorization JWT token with claims, scopes & 30-day refresh token.</span></div>
+    </div>
+    <div class="step-card session">
+      <div class="step-num">9</div>
+      <div><span class="step-title">MPOEmployeeHub redirects/callbacks via YARP:</span> <span class="step-desc">Proxies auth callback result and token payload back to Next.js BFF.</span></div>
+    </div>
+    <div class="step-card session">
+      <div class="step-num">10</div>
+      <div><span class="step-title">BFF processes authentication result:</span> <span class="step-desc">BFF handles token verification via JWKS & creates server-side session envelope.</span></div>
+    </div>
+    <div class="step-card api">
+      <div class="step-num">11</div>
+      <div><span class="step-title">Secure HttpOnly cookie session established:</span> <span class="step-desc">Stores session token in <code>__Host-KnomeSession</code> <code>HttpOnly; Secure; SameSite=Strict</code> cookie.</span></div>
+    </div>
+    <div class="step-card api">
+      <div class="step-num">12</div>
+      <div><span class="step-title">User reaches authenticated Knome app:</span> <span class="step-desc">React renders authenticated portal dashboard with personalized feeds, articles, and groups.</span></div>
+    </div>
+  </div>
+
+  <div class="callout-box callout-blue">
+    <span class="callout-title">[KEY ARCHITECTURE PRINCIPLES — LOGIN]</span>
+    • <strong>Zero Browser Token Exposure:</strong> The browser never directly authenticates against MPOEmployeeHub or receives raw JWT tokens.<br>
+    • <strong>YARP Gateway Gatekeeping:</strong> YARP is the common security gateway through which all authentication traffic passes.<br>
+    • <strong>Centralized Identity Authority:</strong> The JWT / token lifecycle is owned entirely by MPOEmployeeHub — not by Knome UI or BFF.<br>
+    • <strong>Secure Session Boundary:</strong> The BFF establishes an encrypted <code>HttpOnly</code> cookie to maintain the browser session securely.
+  </div>
+
+  <h3 class="sub-heading">JWT Claims Specification (Issued by MPOEmployeeHub)</h3>
+  <pre>{
+  "iss": "https://employeehub.mponline.gov.in",
+  "aud": "https://knome.mponline.gov.in",
+  "sub": "EMP001",
+  "name": "Rajesh Sharma",
+  "email": "rajesh.sharma@mponline.gov.in",
+  "department": "Technology Division",
+  "designation": "Senior Software Engineer",
+  "roles": ["Employee", "Community Admin"],
+  "dpdp_consent": true,
+  "exp": 1753100800
+}</pre>
+
+  <div class="page-footer">
+    <span class="confidential">MPOnline Limited · Confidential</span>
+    <span>Section 3: Login & Authentication Workflow</span>
+    <span>Page 3 of 7</span>
+  </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- PAGE 4: AUTHENTICATED FUNCTIONAL / API WORKFLOW -->
+<!-- ========================================================================= -->
+<div class="page">
+  <div class="page-header">
+    <span class="doc-title">MPOOnline Limited · Enterprise Architecture Division</span>
+    <span class="doc-meta">Doc ID: MPO-KNOME-HUB-HLA-001</span>
+  </div>
+
+  <h2 class="section-heading">4. Authenticated Functional / API Workflow</h2>
+  <p>After login, all user-initiated actions follow this request-response cycle. Layer 5 (Knome Backend APIs) is responsible for serving all Knome business functionality. Authorization is enforced at YARP Gateway before any business API is reached.</p>
+
+  <h3 class="sub-heading">4.1 Request Execution Path (User ➔ Database)</h3>
+  <div class="step-flow">
+    <div class="step-card api">
+      <div class="step-num">1</div>
+      <div><span class="step-title">User performs action in React UI:</span> <span class="step-desc">User clicks button, creates post, publishes article, or requests video stream.</span></div>
+    </div>
+    <div class="step-card api">
+      <div class="step-num">2</div>
+      <div><span class="step-title">React sends request to Next.js BFF:</span> <span class="step-desc">UI calls BFF API proxy endpoint (<code>/api/proxy/posts</code>) with automatic cookie attachment.</span></div>
+    </div>
+    <div class="step-card api">
+      <div class="step-num">3</div>
+      <div><span class="step-title">BFF forwards request to YARP Gateway:</span> <span class="step-desc">BFF extracts session cookie and attaches <code>Authorization: Bearer &lt;JWT&gt;</code> header.</span></div>
+    </div>
+    <div class="step-card token">
+      <div class="step-num">4</div>
+      <div><span class="step-title">YARP validates token & authorization:</span> <span class="step-desc">Enforces gateway controls, rate limits, CORS policies, and validates JWT claims via JWKS.</span></div>
+    </div>
+    <div class="step-card token">
+      <div class="step-num">5</div>
+      <div><span class="step-title">Authorized request reaches Knome API (Layer 5):</span> <span class="step-desc">Routes to target business controller (e.g. <code>PostController</code>, <code>ArticleController</code>).</span></div>
+    </div>
+    <div class="step-card session">
+      <div class="step-num">6</div>
+      <div><span class="step-title">Knome API executes business logic:</span> <span class="step-desc">Applies FluentValidation, RBAC permissions check, domain logic & AutoMapper mapping.</span></div>
+    </div>
+    <div class="step-card session">
+      <div class="step-num">7</div>
+      <div><span class="step-title">Knome API reads / writes in MSSQL Server:</span> <span class="step-desc">Executes Entity Framework Core query, transaction, or stored procedure on <code>Knome</code> DB.</span></div>
+    </div>
+  </div>
+
+  <div class="callout-box callout-blue" style="margin: 4px 0;">
+    <span class="callout-title">Layer 5 — Knome Backend API Business Domains (Illustrative Examples)</span>
+    <strong>Posts & Social Feed</strong> | <strong>Technical Articles & Publishing</strong> | <strong>Video Learning Hub</strong> | <strong>Communities of Practice</strong><br>
+    <strong>Gamification & Leaderboard</strong> | <strong>Enterprise Broadcasts</strong> | <strong>Content Moderation</strong> | <strong>Audit & Analytics</strong>
+  </div>
+
+  <h3 class="sub-heading">4.2 Response Path (Database ➔ User)</h3>
+  <div class="step-flow">
+    <div class="step-card auth">
+      <div class="step-num">8</div>
+      <div><span class="step-title">MSSQL returns requested data to Knome API:</span> <span class="step-desc">Database returns recordsets, affected rows, or transaction status.</span></div>
+    </div>
+    <div class="step-card auth">
+      <div class="step-num">9</div>
+      <div><span class="step-title">Knome API wraps payload & sends to YARP:</span> <span class="step-desc">Transforms entity to DTO, wraps in <code>ApiResponse&lt;T&gt;</code> envelope, returns HTTP 200/201.</span></div>
+    </div>
+    <div class="step-card auth">
+      <div class="step-num">10</div>
+      <div><span class="step-title">Next.js BFF delivers sanitized data to React UI:</span> <span class="step-desc">BFF proxies payload, strips internal headers; React UI updates TanStack Query cache & renders.</span></div>
+    </div>
+  </div>
+
+  <h3 class="sub-heading">Standardized Response Envelope Contract</h3>
+  <pre>public class ApiResponse&lt;T&gt; {
+    public bool Success { get; set; }
+    public int StatusCode { get; set; }
+    public string Message { get; set; }
+    public T? Data { get; set; }
+    public IEnumerable&lt;string&gt;? Errors { get; set; }
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
+}</pre>
+
+  <div class="page-footer">
+    <span class="confidential">MPOnline Limited · Confidential</span>
+    <span>Section 4: Authenticated Functional / API Workflow</span>
+    <span>Page 4 of 7</span>
+  </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- PAGE 5: LOGOUT & SESSION INVALIDATION WORKFLOW -->
+<!-- ========================================================================= -->
+<div class="page">
+  <div class="page-header">
+    <span class="doc-title">MPOOnline Limited · Enterprise Architecture Division</span>
+    <span class="doc-meta">Doc ID: MPO-KNOME-HUB-HLA-001</span>
+  </div>
+
+  <h2 class="section-heading">5. Logout & Session Invalidation Workflow</h2>
+  <p>Logout is not simply hiding the UI. Authentication and session validity are invalidated at the identity layer (<strong>MPOEmployeeHub</strong>) and at the BFF session cookie layer. Once invalidated, the user's previous session cannot be used to resume protected operations.</p>
+
+  <div class="step-flow">
+    <div class="step-card logout">
+      <div class="step-num">1</div>
+      <div><span class="step-title">User clicks Logout in React UI:</span> <span class="step-desc">User initiates sign-out action in Knome portal settings / header menu.</span></div>
+    </div>
+    <div class="step-card logout">
+      <div class="step-num">2</div>
+      <div><span class="step-title">React sends logout request to Next.js BFF:</span> <span class="step-desc">UI calls BFF logout endpoint (<code>POST /api/auth/logout</code>).</span></div>
+    </div>
+    <div class="step-card logout">
+      <div class="step-num">3</div>
+      <div><span class="step-title">BFF sends logout request through YARP:</span> <span class="step-desc">BFF proxies revocation call to centralized gateway.</span></div>
+    </div>
+    <div class="step-card token">
+      <div class="step-num">4</div>
+      <div><span class="step-title">YARP routes logout request to MPOEmployeeHub API:</span> <span class="step-desc">YARP routes logout to Identity Platform revocation endpoint.</span></div>
+    </div>
+    <div class="step-card token">
+      <div class="step-num">5</div>
+      <div><span class="step-title">MPOEmployeeHub invalidates session & JWT token:</span> <span class="step-desc">Revokes Refresh Token & registers JWT JTI in the central security blacklist.</span></div>
+    </div>
+    <div class="step-card session">
+      <div class="step-num">6</div>
+      <div><span class="step-title">Logout callback sent back through YARP to BFF:</span> <span class="step-desc">SSO confirms global session termination.</span></div>
+    </div>
+    <div class="step-card session">
+      <div class="step-num">7</div>
+      <div><span class="step-title">BFF clears / expires browser HttpOnly cookie:</span> <span class="step-desc">Destroys browser-facing secure session cookie (<code>Max-Age=0</code>).</span></div>
+    </div>
+    <div class="step-card auth">
+      <div class="step-num">8</div>
+      <div><span class="step-title">Protected access is no longer valid:</span> <span class="step-desc">All subsequent API calls rejected with HTTP 401 Unauthorized at YARP / BFF.</span></div>
+    </div>
+    <div class="step-card auth">
+      <div class="step-num">9</div>
+      <div><span class="step-title">User is redirected back to Login page:</span> <span class="step-desc">React navigates user to login entry screen; in-memory state cleared.</span></div>
+    </div>
+    <div class="step-card auth">
+      <div class="step-num">10</div>
+      <div><span class="step-title">Login lifecycle must start again for access:</span> <span class="step-desc">User must authenticate from Step 1 for any new session.</span></div>
+    </div>
+  </div>
+
+  <div class="callout-box callout-red">
+    <span class="callout-title">[SECURITY STATEMENT — LOGOUT INVALIDATION]</span>
+    After logout, the user's previous authenticated session / token cannot be used to continue protected Knome operations. Protected access is invalidated at MPOEmployeeHub Core (Refresh Token revoked & JTI blacklisted) and BFF cookie level (destroyed), forcing a complete new login lifecycle for subsequent access. Replay attacks with previous cookies are permanently blocked.
+  </div>
+
+  <h3 class="sub-heading">Global Session Revocation Matrix</h3>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 25%;">Layer</th>
+        <th style="width: 35%;">Action on User Logout</th>
+        <th>Security Impact</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Layer 1 (React UI)</strong></td>
+        <td>Purges in-memory auth state, TanStack cache, redirects to <code>/login</code></td>
+        <td>Client cannot display stale cached data.</td>
+      </tr>
+      <tr>
+        <td><strong>Layer 2 (BFF)</strong></td>
+        <td>Deletes server-side session, sets <code>Set-Cookie: __Host-KnomeSession=; Max-Age=0</code></td>
+        <td>Browser cookie is wiped; cannot proxy any further calls.</td>
+      </tr>
+      <tr>
+        <td><strong>Layer 3 (YARP)</strong></td>
+        <td>Checks token revocation blacklist cache</td>
+        <td>Stolen raw JWTs are instantly rejected with HTTP 401.</td>
+      </tr>
+      <tr>
+        <td><strong>Layer 4 (EmployeeHub)</strong></td>
+        <td>Revokes Refresh Token in <code>EmployeeHubDb</code></td>
+        <td>Tokens cannot be silently refreshed by any downstream app.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="page-footer">
+    <span class="confidential">MPOnline Limited · Confidential</span>
+    <span>Section 5: Logout & Session Invalidation Workflow</span>
+    <span>Page 5 of 7</span>
+  </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- PAGE 6: IMPLEMENTATION VIEW & CLEAN ARCHITECTURE FOLDER STRUCTURE -->
+<!-- ========================================================================= -->
+<div class="page">
+  <div class="page-header">
+    <span class="doc-title">MPOOnline Limited · Enterprise Architecture Division</span>
+    <span class="doc-meta">Doc ID: MPO-KNOME-HUB-HLA-001</span>
+  </div>
+
+  <h2 class="section-heading">6. Implementation View & Architecture Principles</h2>
+  <h3 class="sub-heading">6.1 Logical / Illustrative Monorepo Folder Structure</h3>
+  <p>The unified monorepo adheres strictly to Clean Architecture and MPOnline Monorepo Standards:</p>
+
+  <pre>Knome-Platform/
+├── Frontend/                                       # Layer 1: Presentation Tier
+│   ├── knome-web/                                  # React 18 + Vite + TypeScript SPA
+│   │   ├── src/
+│   │   │   ├── features/
+│   │   │   │   ├── feed/ (ActivityFeed.tsx, PostCreator.tsx, PollWidget.tsx)
+│   │   │   │   ├── articles/ (ArticleReader.tsx, RichTextEditor.tsx)
+│   │   │   │   ├── videos/ (VideoPlayer.tsx, PlaylistView.tsx, VideoUploader.tsx)
+│   │   │   │   ├── communities/ (CommunityBrowser.tsx, MemberList.tsx)
+│   │   │   │   ├── gamification/ (Leaderboard.tsx, BadgeGallery.tsx)
+│   │   │   │   └── admin/ (BroadcastConsole.tsx, ModerationQueue.tsx)
+│   │   │   ├── services/ (apiClient.ts, authService.ts)
+│   │   │   ├── App.tsx & main.tsx
+│   │   └── vite.config.ts
+│   └── employeehub-web/                            # EmployeeHub Master Console UI
+│
+├── Backend/
+│   ├── bff/                                        # Layer 2: Session Boundary
+│   │   └── Knome.Bff/                              # Next.js / ASP.NET Core BFF
+│   │       ├── Controllers/ (BffAuthController.cs, BffProxyController.cs)
+│   │       ├── Services/ (SessionService.cs, TokenExchangeService.cs)
+│   │       └── Program.cs
+│   │
+│   ├── gateway/                                    # Layer 3: Security & Traffic Gateway
+│   │   └── Knome.Gateway/                          # .NET YARP Reverse Proxy
+│   │       ├── Configuration/ (yarp.json, rateLimiting.json)
+│   │       ├── Policies/ (RateLimitingPolicy.cs, SecurityHeadersPolicy.cs)
+│   │       └── Program.cs
+│   │
+│   └── services/
+│       ├── EmployeeHub/                            # Layer 4: Master Identity Provider
+│       │   ├── EmployeeHub.Domain/ (Employee.cs, Role.cs, DPDPRecord.cs)
+│       │   ├── EmployeeHub.Contracts/ (LoginRequest.cs, EmployeeDto.cs)
+│       │   ├── EmployeeHub.Application/ (AuthService.cs, IdentityService.cs)
+│       │   ├── EmployeeHub.Infrastructure/ (JwtTokenGenerator.cs, BCryptHasher.cs)
+│       │   ├── EmployeeHub.Persistence/ (EmployeeHubDbContext.cs, Repositories)
+│       │   └── EmployeeHub.API/ (AuthController.cs, EmployeeController.cs)
+│       │
+│       └── Knome/                                  # Layer 5: Knome Business Microservices
+│           ├── Knome.Domain/ (Post.cs, Article.cs, Video.cs, Community.cs, Badge.cs)
+│           ├── Knome.Contracts/ (PostDtos.cs, ArticleDtos.cs, ApiResponse.cs)
+│           ├── Knome.Application/ (PostService.cs, ArticleService.cs, BadgeService.cs)
+│           ├── Knome.Infrastructure/ (Repositories, LocalFileStorageService.cs)
+│           │   ├── Data/KnomeDbContext.cs          # ⚠️ Scaffolded — DB-First only
+│           │   └── Models/                         # ⚠️ Scaffolded Entities
+│           └── Knome.API/ (PostController.cs, ArticleController.cs, VideoController.cs)</pre>
+
+  <div class="page-footer">
+    <span class="confidential">MPOnline Limited · Confidential</span>
+    <span>Section 6: Implementation View & Folder Structure</span>
+    <span>Page 6 of 7</span>
+  </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- PAGE 7: TECH STACK SUMMARY & 10 ARCHITECTURAL RULES -->
+<!-- ========================================================================= -->
+<div class="page">
+  <div class="page-header">
+    <span class="doc-title">MPOOnline Limited · Enterprise Architecture Division</span>
+    <span class="doc-meta">Doc ID: MPO-KNOME-HUB-HLA-001</span>
+  </div>
+
+  <h2 class="section-heading">6.2 Technology Stack Summary</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 18%;">Component</th>
+        <th style="width: 22%;">Technology</th>
+        <th>Architectural Role & Operational Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Frontend UI</strong></td>
+        <td>React 18 / Vite / TS</td>
+        <td>Browser-based SPA UI, component-driven dashboard, feed, articles & videos.</td>
+      </tr>
+      <tr>
+        <td><strong>BFF Layer</strong></td>
+        <td>Next.js / .NET BFF</td>
+        <td>Server-Side BFF, session handling, <code>HttpOnly</code> cookie boundary, token bridge.</td>
+      </tr>
+      <tr>
+        <td><strong>API Gateway</strong></td>
+        <td>.NET / YARP</td>
+        <td>Centralized reverse proxy, routing, rate limiting, security headers, SSL termination.</td>
+      </tr>
+      <tr>
+        <td><strong>Identity Provider</strong></td>
+        <td>MPOEmployeeHub SSO</td>
+        <td>Master identity platform, credential verification, RS256 JWT lifecycle & DPDP.</td>
+      </tr>
+      <tr>
+        <td><strong>Business APIs</strong></td>
+        <td>.NET 10 / ASP.NET Core</td>
+        <td>Modular microservice APIs owning Knome business functionality (Feeds, Videos).</td>
+      </tr>
+      <tr>
+        <td><strong>Database</strong></td>
+        <td>Microsoft SQL Server</td>
+        <td>Dual isolated DBs (<code>EmployeeHubDb</code> & <code>Knome</code>), ACID transactions & audit logs.</td>
+      </tr>
+      <tr>
+        <td><strong>Communication</strong></td>
+        <td>HTTPS / REST</td>
+        <td>Secure encrypted TLS communication across all inter-service layers.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2 class="section-heading">6.3 Architecture Principles & Rules</h2>
+  
+  <div class="rule-item">
+    <div class="rule-num">1</div>
+    <div class="rule-text"><strong>Presentation Separation:</strong> React is presentation / UI only — strictly no direct database calls or business logic.</div>
+  </div>
+  <div class="rule-item">
+    <div class="rule-num">2</div>
+    <div class="rule-text"><strong>BFF Session Boundary:</strong> Next.js / .NET BFF is the browser-facing session boundary — manages <code>HttpOnly</code> cookies and session storage.</div>
+  </div>
+  <div class="rule-item">
+    <div class="rule-num">3</div>
+    <div class="rule-text"><strong>Gateway Gatekeeping:</strong> YARP is the common security gateway through which all protected Knome & EmployeeHub traffic passes.</div>
+  </div>
+  <div class="rule-item">
+    <div class="rule-num">4</div>
+    <div class="rule-text"><strong>Master Identity Ownership:</strong> MPOEmployeeHub owns master authentication, SSO, and identity token lifecycle end-to-end.</div>
+  </div>
+  <div class="rule-item">
+    <div class="rule-num">5</div>
+    <div class="rule-text"><strong>Business Encapsulation:</strong> Layer 5 owns all Knome business functionality — APIs, business rules, and integrations.</div>
+  </div>
+  <div class="rule-item">
+    <div class="rule-num">6</div>
+    <div class="rule-text"><strong>Persistence Isolation:</strong> Layer 6 owns persistent data storage — business data, transactions, and audit records in MSSQL Server.</div>
+  </div>
+  <div class="rule-item">
+    <div class="rule-num">7</div>
+    <div class="rule-text"><strong>Encryption Standard:</strong> All service-to-service communication must enforce HTTPS / TLS encryption without exception.</div>
+  </div>
+  <div class="rule-item">
+    <div class="rule-num">8</div>
+    <div class="rule-text"><strong>Role & Compliance Validation:</strong> Role-based authorization & DPDP compliance must be validated before protected operations execute.</div>
+  </div>
+  <div class="rule-item">
+    <div class="rule-num">9</div>
+    <div class="rule-text"><strong>Complexity Encapsulation:</strong> Backend complexity and raw JWT tokens must be hidden from the browser client via the BFF layer.</div>
+  </div>
+  <div class="rule-item">
+    <div class="rule-num">10</div>
+    <div class="rule-text"><strong>LLD Alignment:</strong> Exact low-level class designs, DB schemas, and API JSON payloads belong to Low-Level Design (LLD).</div>
+  </div>
+
+  <div class="page-footer">
+    <span class="confidential">MPOnline Limited · Confidential & Approved Baseline</span>
+    <span>Knome & MPOEmployeeHub High-Level Architecture Document</span>
+    <span>Page 7 of 7</span>
+  </div>
+</div>
+
+</body>
+</html>

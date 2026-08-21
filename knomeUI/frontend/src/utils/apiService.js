@@ -621,20 +621,23 @@ export const mediaApi = {
 //  ANALYTICS (HR)
 // ─────────────────────────────────────────────
 export const analyticsApi = {
-    /** GET /Analytics/engagement */
-    getEngagement: () => apiClient.get('/Analytics/engagement'),
+    /** GET /analytics/engagement */
+    getEngagement: () => apiClient.get('/analytics/engagement'),
 
-    /** GET /Analytics/community-health */
-    getCommunityHealth: () => apiClient.get('/Analytics/community-health'),
+    /** GET /analytics/community-health */
+    getCommunityHealth: () => apiClient.get('/analytics/community-health'),
 
-    /** GET /Analytics/content */
-    getContent: () => apiClient.get('/Analytics/content'),
+    /** GET /analytics/content-performance */
+    getContentPerformance: () => apiClient.get('/analytics/content-performance'),
 
-    /** GET /Analytics/trending */
-    getTrending: () => apiClient.get('/Analytics/trending'),
+    /** GET /analytics/content (alias) */
+    getContent: () => apiClient.get('/analytics/content-performance'),
 
-    /** GET /Analytics/moderation */
-    getModeration: () => apiClient.get('/Analytics/moderation'),
+    /** GET /analytics/trending (alias) */
+    getTrending: () => apiClient.get('/analytics/community-health'),
+
+    /** GET /analytics/moderation (alias) */
+    getModeration: () => apiClient.get('/interactions/reports/pending'),
 };
 
 // ─────────────────────────────────────────────
@@ -697,6 +700,7 @@ export const mapPost = (post) => {
         : (post.contentText ? (post.contentText.match(/#[a-zA-Z0-9_]+/g) || []).map(t => t.replace('#', '')) : []);
 
     const authorName = post.authorFullName || post.authorUser?.fullName || 'User';
+    const commentsCount = post.commentsCount ?? post.commentCount ?? post.engagementSummary?.commentsCount ?? post.engagementSummary?.commentCount ?? (Array.isArray(post.comments) ? post.comments.length : 0);
 
     return {
         id: post.postId,
@@ -734,9 +738,10 @@ export const mapPost = (post) => {
             })),
         likes: post.reactionCount || post.engagementSummary?.reactionCount || post.engagementSummary?.reactionSummary?.totalCount || 0,
         shares: post.shareCount || post.engagementSummary?.shareCount || post.engagementSummary?.sharesCount || 0,
+        commentsCount: commentsCount,
         isSaved: post.isBookmarked || post.engagementSummary?.isBookmarkedByCurrentUser || false,
         userReaction: post.engagementSummary?.reactionSummary?.currentUserReactionType?.toLowerCase() || null,
-        comments: [],
+        comments: Array.isArray(post.comments) ? post.comments : [],
         communityName: post.communityName || null,
     };
 };
@@ -760,6 +765,7 @@ export const mapArticle = (article) => ({
     readTime: article.estimatedReadMinutes ? `${article.estimatedReadMinutes} min read` : '5 min read',
     likes: article.reactionCount || 0,
     views: article.viewCount || 0,
+    commentsCount: article.commentsCount ?? article.commentCount ?? article.engagementSummary?.commentsCount ?? 0,
     status: article.status || 'Published',
 });
 
@@ -780,6 +786,7 @@ export const mapVideo = (v) => ({
     },
     views: v.viewCount || 0,
     likes: v.reactionCount || 0,
+    commentsCount: v.commentsCount ?? v.commentCount ?? v.engagementSummary?.commentsCount ?? 0,
     time: new Date(v.uploadedDate || v.createdDate).toLocaleString(),
 });
 
@@ -800,6 +807,7 @@ export const mapPodcast = (p) => ({
             `https://ui-avatars.com/api/?name=${encodeURIComponent(p.authorFullName)}&background=6366f1&color=fff&size=256&bold=true`,
     },
     episodeNumber: p.episodeNumber || 1,
+    commentsCount: p.commentsCount ?? p.commentCount ?? p.engagementSummary?.commentsCount ?? 0,
     plays: p.playCount || 0,
     time: new Date(p.uploadedDate || p.createdDate).toLocaleString(),
 });
@@ -967,3 +975,5 @@ export const getPersonalizedRecommendations = (items = [], currentUser = null) =
 
     return scored.sort((a, b) => b.recommendationScore - a.recommendationScore);
 };
+
+

@@ -241,7 +241,9 @@ public class UserService : IUserService
         // Also update any pending RoleRequests for this employee and send notification email
         try
         {
-            var primaryRole = dto.RoleNames.FirstOrDefault() ?? "Employee";
+            var rolesList = dto.RoleNames ?? new List<string>();
+            var rolesDisplay = rolesList.Count > 0 ? string.Join(", ", rolesList) : "Employee";
+            var primaryRole = rolesList.FirstOrDefault() ?? "Employee";
             var empId = user.EmployeeId;
             var userEmail = user.Email;
             var userName = user.FullName;
@@ -286,9 +288,10 @@ public class UserService : IUserService
                             userEmail,
                             userName,
                             empId,
-                            primaryRole,
+                            rolesDisplay,
                             userDept,
-                            "Assigned by System Administrator from Knome Admin Console");
+                            "Role updated by System Administrator from Knome Admin Console");
+                        _logger.LogInformation("Successfully sent role update notification email to {Email} for roles: {Roles}", userEmail, rolesDisplay);
                     }
                     catch (Exception ex)
                     {

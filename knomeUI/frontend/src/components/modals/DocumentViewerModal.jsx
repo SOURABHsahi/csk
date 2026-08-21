@@ -107,17 +107,6 @@ export default function DocumentViewerModal({ document, onClose }) {
 
                     {/* Right Controls */}
                     <div className="flex items-center gap-2 shrink-0">
-                        <a 
-                            href={displayUrl} 
-                            target="_blank" 
-                            rel="noreferrer"
-                            className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 border border-slate-700"
-                            title="Open in new window"
-                        >
-                            <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                            <span className="hidden sm:inline">Open External</span>
-                        </a>
-
                         <button 
                             onClick={onClose}
                             className="w-9 h-9 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-all flex items-center justify-center border border-slate-700 ml-1 cursor-pointer"
@@ -129,45 +118,39 @@ export default function DocumentViewerModal({ document, onClose }) {
                 </div>
 
                 {/* Modal Body / Reader Viewport */}
-                <div className="flex-1 bg-slate-950 p-2 sm:p-4 flex items-center justify-center overflow-hidden relative" onContextMenu={(e) => e.preventDefault()}>
+                <div className="flex-1 bg-slate-950 p-2 sm:p-4 flex items-center justify-center overflow-hidden relative select-none" onContextMenu={(e) => e.preventDefault()}>
                     {loading ? (
                         <div className="flex flex-col items-center justify-center gap-3 text-slate-400">
                             <span className="material-symbols-outlined text-[36px] animate-spin text-indigo-500">progress_activity</span>
-                            <p className="text-xs font-medium">Loading document viewer...</p>
+                            <p className="text-xs font-medium">Loading protected document...</p>
                         </div>
                     ) : isImage ? (
                         <div className="w-full h-full flex items-center justify-center overflow-auto">
-                            <img src={displayUrl} alt={fileName} className="max-w-full max-h-full object-contain rounded-lg shadow-xl" onContextMenu={(e) => e.preventDefault()} />
+                            <img src={displayUrl} alt={fileName} className="max-w-full max-h-full object-contain rounded-lg shadow-xl pointer-events-none" onContextMenu={(e) => e.preventDefault()} />
                         </div>
                     ) : hasError ? (
                         <div className="flex flex-col items-center justify-center p-8 bg-slate-900 rounded-2xl text-center max-w-md border border-slate-800">
                             <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mb-4 border border-indigo-500/20">
-                                <span className="material-symbols-outlined text-[32px]">picture_as_pdf</span>
+                                <span className="material-symbols-outlined text-[32px]">lock</span>
                             </div>
                             <h4 className="font-bold text-white text-base mb-1">{fileName}</h4>
-                            <p className="text-xs text-slate-400 mb-6">
-                                Enterprise PDF Document Preview is ready. Click below to view in a clean full-screen tab.
+                            <p className="text-xs text-slate-400 mb-2">
+                                Knome Protected Enterprise Viewer
                             </p>
-                            <a
-                                href={displayUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-lg transition-all flex items-center gap-2"
-                            >
-                                <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                                Open Full Document View
-                            </a>
+                            <p className="text-[11px] text-slate-500">
+                                Direct downloading and external opening are disabled by security policy.
+                            </p>
                         </div>
                     ) : (
                         <object
-                            data={displayUrl}
+                            data={`${displayUrl}${isPdf && !displayUrl.includes('#') ? '#toolbar=0&navpanes=0&scrollbar=0' : ''}`}
                             type={isPdf ? "application/pdf" : undefined}
-                            className="w-full h-full rounded-xl border border-slate-800/80 bg-white shadow-inner"
+                            className="w-full h-full rounded-xl border border-slate-800/80 bg-white shadow-inner pointer-events-auto"
                         >
                             <iframe 
-                                src={displayUrl}
+                                src={`${displayUrl}${isPdf && !displayUrl.includes('#') ? '#toolbar=0&navpanes=0&scrollbar=0' : ''}`}
                                 title={fileName}
-                                className="w-full h-full rounded-xl border border-slate-800/80 bg-white shadow-inner"
+                                className="w-full h-full rounded-xl border border-slate-800/80 bg-white shadow-inner pointer-events-auto"
                             />
                         </object>
                     )}

@@ -483,6 +483,26 @@ export default function Navbar() {
         }
     };
 
+    const sortNotifsDescending = (notifs) => {
+        return [...notifs].sort((a, b) => {
+            const dateA = new Date(a.createdDate || a.createdAt || a.timestamp || 0).getTime();
+            const dateB = new Date(b.createdDate || b.createdAt || b.timestamp || 0).getTime();
+            
+            if (dateA && dateB && dateA !== dateB) {
+                return dateB - dateA; // Newest first
+            }
+            if (a.time === 'Just now' && b.time !== 'Just now') return -1;
+            if (b.time === 'Just now' && a.time !== 'Just now') return 1;
+
+            if (a.unread && !b.unread) return -1;
+            if (!a.unread && b.unread) return 1;
+
+            const idA = Number(a.id) || 0;
+            const idB = Number(b.id) || 0;
+            return idB - idA;
+        });
+    };
+
     const fetchNotifications = async () => {
         try {
             const res = await notificationsApi.getAll(false);
@@ -498,11 +518,12 @@ export default function Navbar() {
             const apiIds = new Set(apiNotifs.map(n => String(n.id)));
             const freshCommunity = localCommunityNotifs.filter(n => !apiIds.has(String(n.id)));
             const freshGeneric = localGenericNotifs.filter(n => !apiIds.has(String(n.id)) && !freshCommunity.some(c => String(c.id) === String(n.id)));
-            setAllNotifs([...freshCommunity, ...freshGeneric, ...apiNotifs]);
+            const combined = [...freshCommunity, ...freshGeneric, ...apiNotifs];
+            setAllNotifs(sortNotifsDescending(combined));
         } catch (error) {
             console.error('Failed to fetch notifications', error);
-            // Fallback: show all local notifs
-            setAllNotifs([...getLocalCommunityNotifs(), ...getLocalGenericNotifs()]);
+            // Fallback: show all local notifs sorted newest first
+            setAllNotifs(sortNotifsDescending([...getLocalCommunityNotifs(), ...getLocalGenericNotifs()]));
         }
     };
 
@@ -518,6 +539,10 @@ export default function Navbar() {
             const localNotifs = getLocalCommunityNotifs();
             const newNotif = localNotifs.find(n => n.communityName === communityName && n.unread);
             if (newNotif) {
+                newNotif.createdDate = newNotif.createdDate || new Date().toISOString();
+                newNotif.createdAt = newNotif.createdAt || new Date().toISOString();
+                newNotif.unread = true;
+                newNotif.time = 'Just now';
                 setAllNotifs(prev => {
                     const filtered = prev.filter(n => String(n.id) !== String(newNotif.id));
                     return [newNotif, ...filtered];
@@ -542,7 +567,7 @@ export default function Navbar() {
                         setToastNotification(newOnes[0]);
                         playChimeSound();
                     }
-                    return [...newOnes, ...prev.filter(n => !n.isLocalNotif)];
+                    return sortNotifsDescending([...newOnes, ...prev.filter(n => !n.isLocalNotif)]);
                 });
             }
         };
@@ -554,6 +579,10 @@ export default function Navbar() {
             if (notif.targetUserId && currentUser?.id && String(notif.targetUserId) !== String(currentUser.id)) {
                 return; // Notification meant for another user
             }
+            notif.createdDate = notif.createdDate || new Date().toISOString();
+            notif.createdAt = notif.createdAt || new Date().toISOString();
+            notif.unread = true;
+            notif.time = 'Just now';
             setAllNotifs(prev => [notif, ...prev.filter(n => String(n.id) !== String(notif.id))]);
             setToastNotification(notif);
             playChimeSound();
@@ -578,9 +607,11 @@ export default function Navbar() {
         connection.on("ReceiveNotification", (notification) => {
             const mapped = mapNotificationItem(notification);
             mapped.time = 'Just now';
+            mapped.createdDate = new Date().toISOString();
+            mapped.createdAt = new Date().toISOString();
             mapped.unread = true;
             setAllNotifs(prev => {
-                const filtered = prev.filter(item => item.id !== mapped.id);
+                const filtered = prev.filter(item => String(item.id) !== String(mapped.id));
                 return [mapped, ...filtered];
             });
             setToastNotification(mapped);

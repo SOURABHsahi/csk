@@ -100,11 +100,11 @@ export default function AdminConsole() {
     const [suspendReason, setSuspendReason] = useState('');
     const [suspendDays, setSuspendDays] = useState(7);
 
-    // Change Role Modal State
+    // Change Role Modal State (Multiple Role Support)
     const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
     const [roleUserId, setRoleUserId] = useState('');
     const [roleUserName, setRoleUserName] = useState('');
-    const [selectedRole, setSelectedRole] = useState('Employee');
+    const [selectedRoles, setSelectedRoles] = useState(['Employee']);
 
     // Comprehensive User Details Modal State
     const [selectedUserDetailsUser, setSelectedUserDetailsUser] = useState(null);
@@ -200,6 +200,24 @@ export default function AdminConsole() {
 
         if (Array.isArray(u.roles) && u.roles.includes('Employee')) return 'Employee';
         return u.roleName || 'Employee';
+    };
+
+    const getUserRolesList = (u) => {
+        if (!u) return ['Employee'];
+        if (Array.isArray(u.roles) && u.roles.length > 0) {
+            const roleStrings = u.roles.map(r => typeof r === 'string' ? r : (r.roleName || 'Employee'));
+            const normalized = roleStrings.map(r => {
+                if (r === 'SYSADM' || r === 'SystemAdmin') return 'System Administrator';
+                if (r === 'HRADM' || r === 'HRAdmin') return 'HR Administrator';
+                if (r === 'CADM' || r === 'CommunityAdmin') return 'Community Admin';
+                if (r === 'EMP') return 'Employee';
+                return r;
+            });
+            // deduplicate
+            return Array.from(new Set(normalized));
+        }
+        const single = getUserAssignedRole(u);
+        return [single];
     };
 
     const getRoleBadgeStyle = (roleName) => {
@@ -541,6 +559,8 @@ export default function AdminConsole() {
                 const empId = u.employeeId || `MPO${u.userId || u.id || '100'}`;
                 const email = u.email || `${(u.fullName || u.name || 'user').toLowerCase().replace(/\s+/g, '.')}@mponline.gov.in`;
                 const avatar = u.profilePhotoUrl || u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(u.fullName || u.name || 'U')}&background=6366f1&color=fff&bold=true`;
+                const rawKarma = typeof u.karmaPoints === 'number' ? u.karmaPoints : (typeof u.karma === 'number' ? u.karma : 0);
+                const isUserSuspended = u.isSuspended === true || u.isPermanentlySuspended === true || u.isActive === false;
                 return {
                     ...u,
                     employeeId: empId,
@@ -548,8 +568,10 @@ export default function AdminConsole() {
                     avatar: avatar,
                     roleName: assignedRole,
                     assignedRole: assignedRole,
-                    karmaPoints: u.karmaPoints || u.karma || 350,
-                    karmaBadgeLevel: u.karmaBadgeLevel || (u.karmaPoints > 1000 ? 'Gold' : u.karmaPoints > 500 ? 'Silver' : 'Bronze')
+                    isActive: !isUserSuspended,
+                    isSuspended: isUserSuspended,
+                    karmaPoints: rawKarma,
+                    karmaBadgeLevel: u.karmaBadgeLevel || (rawKarma >= 1000 ? 'Gold' : rawKarma >= 500 ? 'Silver' : 'Bronze')
                 };
             });
             setUsersList(mapped);
@@ -946,30 +968,38 @@ export default function AdminConsole() {
         );
     };
 
-    // Handle Role Change Submission
+    // Handle Role Change Submission (Multiple Roles)
     const handleConfirmRoleChange = async () => {
         if (!roleUserId) return;
+        const rolesToAssign = selectedRoles.length > 0 ? selectedRoles : ['Employee'];
+        const primaryRole = rolesToAssign.find(r => r !== 'Employee') || rolesToAssign[0] || 'Employee';
+
         try {
-            await adminApi.changeUserRoles(roleUserId, selectedRole);
+            await adminApi.changeUserRoles(roleUserId, rolesToAssign);
         } catch (err) {
             console.warn("Backend role change notice:", err);
         }
 
         // Update the local AdminConsole users table
-        setUsersList(prev => prev.map(u => (String(u.userId) === String(roleUserId) || String(u.id) === String(roleUserId)) ? { ...u, roleName: selectedRole, assignedRole: selectedRole, roles: [selectedRole, 'Employee'] } : u));
+        setUsersList(prev => prev.map(u => (String(u.userId) === String(roleUserId) || String(u.id) === String(roleUserId)) ? { 
+            ...u, 
+            roleName: primaryRole, 
+            assignedRole: primaryRole, 
+            roles: rolesToAssign 
+        } : u));
 
         // ── Update global UserContext usersList so Navbar Switch User dropdown
         // instantly shows the new role for this user, and if it's the logged-in
         // user their currentUser state (role guards, Sidebar, HR Analytics) updates too.
-        updateUserRoleInList(roleUserId, selectedRole);
+        updateUserRoleInList(roleUserId, rolesToAssign);
 
         const isCurrentUser = currentUser?.userId && String(currentUser.userId) === String(roleUserId);
         setIsRoleModalOpen(false);
-        showToast(`Role for ${roleUserName} changed to '${selectedRole}'.${isCurrentUser ? ' Your permissions have been updated!' : ''}`);
+        showToast(`Roles for ${roleUserName} updated to '${rolesToAssign.join(', ')}'.${isCurrentUser ? ' Your permissions have been updated!' : ''}`);
 
         logAuditEntry(
             'RoleChanged',
-            `Assigned role '${selectedRole}' to Employee #${roleUserId} (${roleUserName})`,
+            `Assigned roles '${rolesToAssign.join(', ')}' to Employee #${roleUserId} (${roleUserName})`,
             'text-indigo-600 font-bold'
         );
     };
@@ -1958,24 +1988,28 @@ export default function AdminConsole() {
                                                         <p className="text-[11px] text-slate-500">{u.department || u.departmentName || 'MPOnline Limited'}</p>
                                                     </td>
                                                     <td className="px-4 py-2.5">
-                                                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] inline-flex items-center gap-1.5 shadow-xs ${getRoleBadgeStyle(assignedRole)}`}>
-                                                            <span className="material-symbols-outlined text-[13px]">
-                                                                {assignedRole.toLowerCase().includes('system') ? 'shield_person' :
-                                                                 assignedRole.toLowerCase().includes('hr') ? 'badge' :
-                                                                 assignedRole.toLowerCase().includes('community') ? 'groups' : 'person'}
-                                                            </span>
-                                                            {assignedRole}
-                                                        </span>
+                                                        <div className="flex flex-wrap gap-1.5 items-center max-w-[220px]">
+                                                            {getUserRolesList(u).map((rItem, rIdx) => (
+                                                                <span key={rIdx} className={`px-2.5 py-0.5 rounded-full text-[10px] inline-flex items-center gap-1 shadow-xs ${getRoleBadgeStyle(rItem)}`}>
+                                                                    <span className="material-symbols-outlined text-[13px]">
+                                                                        {rItem.toLowerCase().includes('system') ? 'shield_person' :
+                                                                         rItem.toLowerCase().includes('hr') ? 'badge' :
+                                                                         rItem.toLowerCase().includes('community') ? 'groups' : 'person'}
+                                                                    </span>
+                                                                    <span>{rItem}</span>
+                                                                </span>
+                                                            ))}
+                                                        </div>
                                                     </td>
                                                     <td className="px-4 py-2.5">
                                                         <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-black">
                                                             <span className="material-symbols-outlined text-[15px]">stars</span>
-                                                            <span>{u.karmaPoints || 350} pts</span>
+                                                            <span>{typeof u.karmaPoints === 'number' ? u.karmaPoints : 0} pts</span>
                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-2.5">
-                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${u.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'}`}>
-                                                            {u.isActive ? 'Active' : 'Suspended'}
+                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${!u.isSuspended && u.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'}`}>
+                                                            {!u.isSuspended && u.isActive ? 'Active' : 'Suspended'}
                                                         </span>
                                                     </td>
                                                     <td className="px-4 py-2.5 text-right">
@@ -1995,12 +2029,13 @@ export default function AdminConsole() {
                                                                 onClick={() => {
                                                                     setRoleUserId(String(u.userId || u.id));
                                                                     setRoleUserName(u.fullName || u.name);
-                                                                    setSelectedRole(assignedRole);
+                                                                    setSelectedRoles(getUserRolesList(u));
                                                                     setIsRoleModalOpen(true);
                                                                 }}
-                                                                className="px-2.5 py-1 bg-indigo-500/10 text-indigo-600 font-bold text-[11px] rounded-lg hover:bg-indigo-500/20 cursor-pointer"
+                                                                className="px-2.5 py-1 bg-indigo-500/10 text-indigo-600 font-bold text-[11px] rounded-lg hover:bg-indigo-500/20 cursor-pointer flex items-center gap-1"
                                                             >
-                                                                Edit Role
+                                                                <span className="material-symbols-outlined text-[13px]">tune</span>
+                                                                <span>Edit Roles</span>
                                                             </button>
                                                             <button
                                                                 onClick={() => handleToggleUserActive(u)}
@@ -2675,119 +2710,159 @@ export default function AdminConsole() {
                 </div>
             )}
 
-            {/* ─── MODAL 2: CHANGE EMPLOYEE ROLE ─── */}
+            {/* ─── MODAL 2: CHANGE EMPLOYEE ROLES (MULTIPLE ROLE ASSIGNMENT) ─── */}
             {isRoleModalOpen && (
                 <div className="fixed inset-0 z-[120] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-                        <div className="flex items-center justify-between mb-4">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl animate-in zoom-in-95 max-h-[92vh] overflow-y-auto">
+                        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
                             <div className="flex items-center gap-2 text-indigo-600">
                                 <span className="material-symbols-outlined text-2xl">admin_panel_settings</span>
-                                <h3 className="text-base font-black text-slate-900 dark:text-white">Change Employee Role</h3>
+                                <div>
+                                    <h3 className="text-base font-black text-slate-900 dark:text-white">Manage User Roles</h3>
+                                    <p className="text-[11px] text-slate-400 font-medium">Assign multiple enterprise governance roles to a user</p>
+                                </div>
                             </div>
-                            <button onClick={() => setIsRoleModalOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                            <button onClick={() => setIsRoleModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-1">
                                 <span className="material-symbols-outlined text-xl">close</span>
                             </button>
                         </div>
 
-                        <div className="space-y-3 text-xs">
-                            <p className="text-slate-500">
-                                Modify platform permissions and role assignment for <strong className="text-slate-800 dark:text-slate-200">{roleUserName}</strong> (ID #{roleUserId}).
-                            </p>
+                        <div className="space-y-4 text-xs">
+                            <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between">
+                                <div>
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Target User</span>
+                                    <p className="font-extrabold text-slate-900 dark:text-white text-sm">{roleUserName}</p>
+                                    <p className="text-[11px] text-slate-500 font-mono">User ID: #{roleUserId}</p>
+                                </div>
+                                <div className="text-right">
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Selected ({selectedRoles.length})</span>
+                                    <div className="flex flex-wrap gap-1 justify-end max-w-[180px]">
+                                        {selectedRoles.map(r => (
+                                            <span key={r} className="px-2 py-0.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold rounded-md text-[10px] border border-indigo-200/50 dark:border-indigo-800/50">
+                                                {r}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
 
                             {/* Warning: changing own role */}
                             {currentUser?.userId && String(currentUser.userId) === String(roleUserId) && (
                                 <div className="flex items-start gap-2 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl">
                                     <span className="material-symbols-outlined text-amber-500 text-[16px] mt-0.5 shrink-0">warning</span>
                                     <p className="text-amber-700 dark:text-amber-400 font-semibold">
-                                        You are changing <strong>your own role</strong>. Your access permissions will update immediately after saving.
+                                        You are modifying <strong>your own roles</strong>. Your session permissions will update immediately upon saving.
                                     </p>
                                 </div>
                             )}
 
                             <div>
-                                <label className="block text-slate-500 font-bold mb-1">Select New Governance Role</label>
-                                <select
-                                    value={selectedRole}
-                                    onChange={e => setSelectedRole(e.target.value)}
-                                    className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 font-bold outline-none text-slate-900 dark:text-white"
-                                >
-                                    <option value="Employee">Employee (Standard Access)</option>
-                                    <option value="Community Admin">Community Admin (Community Moderation)</option>
-                                    <option value="HR Administrator">HR Administrator (HR Governance)</option>
-                                    <option value="System Administrator">System Administrator (Full Platform Control)</option>
-                                </select>
+                                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-2">
+                                    Select Roles (Multiple Selection Allowed):
+                                </label>
+                                <div className="space-y-2">
+                                    {[
+                                        {
+                                            name: 'Employee',
+                                            icon: 'person',
+                                            badge: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
+                                            title: 'Employee (Standard User)',
+                                            desc: 'Create posts, articles, videos, join communities, earn karma, and network.'
+                                        },
+                                        {
+                                            name: 'Community Admin',
+                                            icon: 'groups',
+                                            badge: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+                                            title: 'Community Admin (Moderation)',
+                                            desc: 'Moderate community posts, manage community members, rules, and categories.'
+                                        },
+                                        {
+                                            name: 'HR Administrator',
+                                            icon: 'badge',
+                                            badge: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
+                                            title: 'HR Administrator (HR Governance)',
+                                            desc: 'Manage departments, broadcast announcements, HR analytics, and job postings.'
+                                        },
+                                        {
+                                            name: 'System Administrator',
+                                            icon: 'shield_person',
+                                            badge: 'bg-purple-500/15 text-purple-700 dark:text-purple-300',
+                                            title: 'System Administrator (Full Platform Control)',
+                                            desc: 'Full governance, user administration, security audit logs, and media approvals.'
+                                        }
+                                    ].map(roleItem => {
+                                        const isSelected = selectedRoles.includes(roleItem.name);
+                                        return (
+                                            <div
+                                                key={roleItem.name}
+                                                onClick={() => {
+                                                    setSelectedRoles(prev => {
+                                                        if (prev.includes(roleItem.name)) {
+                                                            const filtered = prev.filter(r => r !== roleItem.name);
+                                                            return filtered.length > 0 ? filtered : ['Employee'];
+                                                        } else {
+                                                            return [...prev, roleItem.name];
+                                                        }
+                                                    });
+                                                }}
+                                                className={`p-3 rounded-xl border transition-all cursor-pointer flex items-start gap-3 ${
+                                                    isSelected 
+                                                        ? 'bg-indigo-50/70 dark:bg-indigo-950/30 border-indigo-500/80 shadow-xs ring-1 ring-indigo-500/20' 
+                                                        : 'bg-slate-50/50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                                                }`}
+                                            >
+                                                <div className="mt-0.5">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => {}} // Handled by container click
+                                                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer accent-indigo-600"
+                                                    />
+                                                </div>
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="material-symbols-outlined text-[16px] text-indigo-600 dark:text-indigo-400">{roleItem.icon}</span>
+                                                        <span className="font-extrabold text-slate-900 dark:text-white text-xs">{roleItem.title}</span>
+                                                        {isSelected && (
+                                                            <span className="ml-auto text-[10px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-900/60 px-1.5 py-0.2 rounded">Active</span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">{roleItem.desc}</p>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             </div>
 
-                            {/* Live Permissions Preview */}
-                            <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                                <p className="font-bold text-slate-600 dark:text-slate-300 mb-2 flex items-center gap-1">
-                                    <span className="material-symbols-outlined text-[14px]">security</span>
-                                    Permissions after role change:
+                            {/* Email notification notice */}
+                            <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2">
+                                <span className="material-symbols-outlined text-emerald-600 dark:text-emerald-400 text-[16px]">mail</span>
+                                <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium">
+                                    Saving changes will automatically send an email update notification to the user.
                                 </p>
-                                {selectedRole === 'Employee' && (
-                                    <ul className="space-y-1">
-                                        {['Create & manage own posts, articles, videos, podcasts', 'Join communities & participate in discussions', 'Follow colleagues & build professional network', 'Earn & track Karma points', 'View public content across the platform'].map(p => (
-                                            <li key={p} className="flex items-start gap-1.5 text-slate-600 dark:text-slate-300">
-                                                <span className="material-symbols-outlined text-emerald-500 text-[13px] mt-0.5 shrink-0">check_circle</span>{p}
-                                            </li>
-                                        ))}
-                                        <li className="flex items-start gap-1.5 text-slate-400 mt-1">
-                                            <span className="material-symbols-outlined text-rose-400 text-[13px] mt-0.5 shrink-0">cancel</span>No Admin Console / HR Analytics access
-                                        </li>
-                                    </ul>
-                                )}
-                                {selectedRole === 'Community Admin' && (
-                                    <ul className="space-y-1">
-                                        {['All Employee permissions', 'Moderate community posts & comments', 'Remove reported content in assigned community', 'Manage community members & settings', 'View HR Analytics dashboard'].map(p => (
-                                            <li key={p} className="flex items-start gap-1.5 text-slate-600 dark:text-slate-300">
-                                                <span className="material-symbols-outlined text-emerald-500 text-[13px] mt-0.5 shrink-0">check_circle</span>{p}
-                                            </li>
-                                        ))}
-                                        <li className="flex items-start gap-1.5 text-slate-400 mt-1">
-                                            <span className="material-symbols-outlined text-rose-400 text-[13px] mt-0.5 shrink-0">cancel</span>No Admin Console or user management access
-                                        </li>
-                                    </ul>
-                                )}
-                                {selectedRole === 'HR Administrator' && (
-                                    <ul className="space-y-1">
-                                        {['All Community Admin permissions', 'Full HR Analytics & workforce reporting dashboard', 'Manage departments, roles & job postings', 'Suspend / activate employee accounts', 'Broadcast HR announcements platform-wide', 'View & resolve content moderation reports'].map(p => (
-                                            <li key={p} className="flex items-start gap-1.5 text-slate-600 dark:text-slate-300">
-                                                <span className="material-symbols-outlined text-emerald-500 text-[13px] mt-0.5 shrink-0">check_circle</span>{p}
-                                            </li>
-                                        ))}
-                                        <li className="flex items-start gap-1.5 text-slate-400 mt-1">
-                                            <span className="material-symbols-outlined text-rose-400 text-[13px] mt-0.5 shrink-0">cancel</span>No full System Admin Console access
-                                        </li>
-                                    </ul>
-                                )}
-                                {selectedRole === 'System Administrator' && (
-                                    <ul className="space-y-1">
-                                        {['Full access to all platform features', 'Admin Console: moderation, governance, AI configuration', 'Manage all users, roles, communities, and content', 'Full HR Analytics, audit trail & system logs', 'Approve media (videos/podcasts) before publishing', 'Platform-wide configuration & system parameters'].map(p => (
-                                            <li key={p} className="flex items-start gap-1.5 text-slate-600 dark:text-slate-300">
-                                                <span className="material-symbols-outlined text-emerald-500 text-[13px] mt-0.5 shrink-0">check_circle</span>{p}
-                                            </li>
-                                        ))}
-                                        <li className="flex items-start gap-1.5 text-indigo-500 font-semibold mt-1">
-                                            <span className="material-symbols-outlined text-indigo-500 text-[13px] mt-0.5 shrink-0">verified_user</span>Highest privilege level — assign with caution
-                                        </li>
-                                    </ul>
-                                )}
                             </div>
                         </div>
 
-                        <div className="mt-6 flex items-center justify-end gap-2">
-                            <button
-                                onClick={() => setIsRoleModalOpen(false)}
-                                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl cursor-pointer"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleConfirmRoleChange}
-                                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer"
-                            >
-                                Save Role Change
-                            </button>
+                        <div className="mt-6 flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
+                            <span className="text-[11px] text-slate-400 font-bold">
+                                {selectedRoles.length} role{selectedRoles.length > 1 ? 's' : ''} selected
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setIsRoleModalOpen(false)}
+                                    className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl cursor-pointer transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleConfirmRoleChange}
+                                    className="px-5 py-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-600/25 cursor-pointer flex items-center gap-1.5 transition-all"
+                                >
+                                    <span className="material-symbols-outlined text-[15px]">save</span>
+                                    <span>Save Role Changes</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -3309,7 +3384,7 @@ export default function AdminConsole() {
                                 <div className="p-3.5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/40 text-center">
                                     <span className="text-[10px] uppercase font-bold text-amber-500 tracking-wider">Karma Points</span>
                                     <p className="text-xs font-black text-amber-950 dark:text-amber-200 mt-0.5">
-                                        ⭐ {selectedUserDetailsUser.karmaPoints || 350} pts ({selectedUserDetailsUser.karmaBadgeLevel || 'Bronze'})
+                                        ⭐ {typeof selectedUserDetailsUser.karmaPoints === 'number' ? selectedUserDetailsUser.karmaPoints : 0} pts ({selectedUserDetailsUser.karmaBadgeLevel || 'Bronze'})
                                     </p>
                                 </div>
                                 <div className="p-3.5 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 text-center">
@@ -3388,17 +3463,16 @@ export default function AdminConsole() {
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={() => {
-                                        const curRole = selectedUserDetailsUser.roleName || getUserAssignedRole(selectedUserDetailsUser);
                                         setRoleUserId(String(selectedUserDetailsUser.userId || selectedUserDetailsUser.id));
                                         setRoleUserName(selectedUserDetailsUser.fullName || selectedUserDetailsUser.name);
-                                        setSelectedRole(curRole);
+                                        setSelectedRoles(getUserRolesList(selectedUserDetailsUser));
                                         setIsUserDetailsModalOpen(false);
                                         setIsRoleModalOpen(true);
                                     }}
                                     className="px-4 py-2 bg-indigo-500/10 text-indigo-600 hover:bg-indigo-500/20 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
                                 >
                                     <span className="material-symbols-outlined text-[15px]">manage_accounts</span>
-                                    Edit Role
+                                    Edit Roles
                                 </button>
 
                                 <button

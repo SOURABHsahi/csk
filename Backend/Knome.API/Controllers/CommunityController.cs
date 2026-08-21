@@ -46,7 +46,7 @@ public class CommunityController : KnomeControllerBase
         return Ok(ApiResponse<List<CommunityDto>>.SuccessResponse(200, "User communities retrieved successfully.", dtos));
     }
 
-    [HttpGet("{communityId}")]
+    [HttpGet("{communityId:int}")]
     [ProducesResponseType(typeof(ApiResponse<CommunityDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCommunity(int communityId)
     {

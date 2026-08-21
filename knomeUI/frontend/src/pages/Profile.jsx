@@ -810,7 +810,7 @@ export default function Profile() {
                                             </span>
                                             <span className="flex items-center gap-1.5 hover:text-indigo-500 cursor-pointer">
                                                 <span className="material-symbols-outlined text-[18px]">chat_bubble</span> 
-                                                {post.engagementSummary?.commentCount ?? post.commentsCount ?? post.comments ?? 0}
+                                                {post.engagementSummary?.commentsCount ?? post.engagementSummary?.commentCount ?? post.commentsCount ?? (Array.isArray(post.comments) ? post.comments.length : (typeof post.comments === 'number' ? post.comments : 0))}
                                             </span>
                                             <span className="flex items-center gap-1.5 hover:text-indigo-500 cursor-pointer">
                                                 <span className="material-symbols-outlined text-[18px]">share</span> 

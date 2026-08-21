@@ -47,7 +47,7 @@ public class ArticleController : KnomeControllerBase
         return Ok(ApiResponse<List<ArticleDto>>.SuccessResponse(200, "User articles retrieved successfully.", articles));
     }
 
-    [HttpGet("{articleId}")]
+    [HttpGet("{articleId:long}")]
     [ProducesResponseType(typeof(ApiResponse<ArticleDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetArticle(long articleId)
     {
