@@ -193,10 +193,16 @@ export default function Articles() {
 
         const resolvedAttachments = attachments.map(a => a.backendUrl || a.url).filter(url => !url.startsWith('blob:'));
         
+        let cleanHtml = (editorHtml || '')
+            .replace(/<p class="opacity-50">Start writing your long-form article here\.{0,3}<\/p>/gi, '')
+            .replace(/Start writing your long-form article here\.{0,3}/gi, '')
+            .replace(/Start writi(?:ng)?/gi, '')
+            .replace(/class="[^"]*opacity-50[^"]*"/gi, '');
+
         const dto = {
             title: title.trim(),
             description: description.trim() || null,
-            contentHtml: editorHtml,
+            contentHtml: cleanHtml.trim(),
             categoryId: parseInt(category) || 7,
             status: "Published",
             tags: finalTags,
@@ -217,7 +223,7 @@ export default function Articles() {
             setTagInput('');
             setAttachments([]);
             if (editorRef.current) {
-                editorRef.current.innerHTML = '<p class="opacity-50">Start writing your long-form article here...</p>';
+                editorRef.current.innerHTML = '';
             }
             
             setTimeout(() => setShowToast(false), 5000); // hide toast after 5s
@@ -628,11 +634,15 @@ export default function Articles() {
                             <div 
                                 ref={editorRef}
                                 contentEditable="true"
-                                className="flex-1 p-8 focus:outline-none prose dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 min-h-[400px]"
+                                className="flex-1 p-8 focus:outline-none prose dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 min-h-[400px] empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 empty:before:pointer-events-none"
                                 suppressContentEditableWarning={true}
-                                data-placeholder="Start writing your article here..."
+                                data-placeholder="Start writing your long-form article here..."
+                                onFocus={(e) => {
+                                    if (e.currentTarget.innerHTML.includes('Start writing your long-form article here')) {
+                                        e.currentTarget.innerHTML = '<p><br></p>';
+                                    }
+                                }}
                             >
-                                <p className="opacity-50">Start writing your long-form article here...</p>
                             </div>
                         </div>
                     </div>

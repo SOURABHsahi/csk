@@ -20,15 +20,15 @@ export async function getArticles(categoryId = null, tag = null, search = null, 
 
         return data.map((art, idx) => {
             // Find cover image if it exists in coverImageUrl or attachments
-            const coverAttachment = art.coverImageUrl 
-                || art.attachmentUrls?.find(url => url.match(/\.(jpeg|jpg|gif|png|webp)$/i))
-                || art.attachments?.find(a => a.fileType === 'Image' || (a.fileUrl && a.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i)))?.fileUrl;
+            const coverAttachmentRaw = art.coverImageUrl 
+                || art.attachmentUrls?.find(url => url && url.match(/\.(jpeg|jpg|gif|png|webp)$/i))
+                || art.attachments?.find(a => a && (a.fileType === 'Image' || (a.fileUrl && a.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i))))?.fileUrl;
 
-            const coverImage = coverAttachment 
-                ? resolveMediaUrl(coverAttachment) 
-                : DEFAULT_COVER_IMAGES[idx % DEFAULT_COVER_IMAGES.length];
+            const coverImage = coverAttachmentRaw 
+                ? resolveMediaUrl(coverAttachmentRaw) 
+                : (art.coverImageUrl ? resolveMediaUrl(art.coverImageUrl) : null);
 
-            const attachmentsList = (art.attachments && art.attachments.length > 0)
+            const rawAttachments = (art.attachments && art.attachments.length > 0)
                 ? art.attachments.map(att => {
                     const fileUrl = (att.fileUrl || '').toLowerCase();
                     const isDoc = Boolean(fileUrl.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)$/i) || att.fileType === 'Document');
@@ -62,6 +62,16 @@ export async function getArticles(categoryId = null, tag = null, search = null, 
                         isVideo,
                     };
                   });
+
+            // Filter out cover photo from attachments so image is shown only ONCE
+            const attachmentsList = rawAttachments.filter(att => {
+                if (att.isImage && coverAttachmentRaw) {
+                    if (att.rawUrl === coverAttachmentRaw || (att.url && coverImage && att.url === coverImage)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
 
             const authorName = art.authorFullName || 'Enterprise Author';
             const authorAvatar = art.authorProfilePhotoUrl 

@@ -5,10 +5,12 @@ const getHostIp = () => {
     return 'localhost';
 };
 
-// Candidate Backend URLs ordered by priority (Direct Knome Backend API first)
+const currentHost = getHostIp();
+
+// Candidate Backend URLs ordered by priority (Dynamic host first for LAN / WiFi access)
 const CANDIDATES = [
-    'http://localhost:5095/api',
-    `http://${getHostIp()}:5095/api`
+    `http://${currentHost}:5095/api`,
+    'http://localhost:5095/api'
 ];
 
 let activeBaseUrl = CANDIDATES[0];

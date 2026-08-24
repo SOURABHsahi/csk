@@ -13,6 +13,7 @@ public class ArticleAttachmentDto
 }
 
 public class ArticleDto
+
 {
     public long ArticleId { get; set; }
     public int AuthorUserId { get; set; }

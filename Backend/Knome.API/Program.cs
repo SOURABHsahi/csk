@@ -33,15 +33,14 @@ public class Program
                 .ReadFrom.Configuration(context.Configuration)
                 .ReadFrom.Services(services)
                 .Enrich.FromLogContext()
-                .Enrich.With<Knome.API.Logging.PiiScrubbingEnricher>()
-                .WriteTo.Console()
-                .WriteTo.File("logs/knome-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 30));
+                .Enrich.With<Knome.API.Logging.PiiScrubbingEnricher>());
 
             // Register infrastructure services (CORS, DbContext, Repository, AutoMapper, FluentValidation, Swagger)
             builder.Services.AddInfrastructure(builder.Configuration);
 
             // Background workers
             builder.Services.AddHostedService<Knome.API.Background.JobExpiryHostedService>();
+            builder.Services.AddHostedService<Knome.API.Background.DataArchivalHostedService>();
 
             var app = builder.Build();
 

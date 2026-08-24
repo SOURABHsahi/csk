@@ -58,7 +58,7 @@ public class PostService : IPostService
 
     public async Task<List<PostDto>> GetPostsAsync(string? audienceType, string? search, int pageNumber, int pageSize, int currentUserId)
     {
-        var posts = await _repo.GetPostsAsync(audienceType, search, pageNumber, pageSize);
+        var posts = await _repo.GetPostsAsync(audienceType, search, pageNumber, pageSize, currentUserId);
         var dtos = new List<PostDto>();
 
         foreach (var p in posts)
@@ -110,7 +110,12 @@ public class PostService : IPostService
             CreatedDate = DateTime.UtcNow
         };
 
-        var savedPost = await _repo.AddPostAsync(post, dto.AttachmentUrls, dto.AttachmentTypes, dto.MentionedUserIds);
+        var allTargetedUserIds = (dto.MentionedUserIds ?? new List<int>())
+            .Concat(dto.AudienceUserIds ?? new List<int>())
+            .Distinct()
+            .ToList();
+
+        var savedPost = await _repo.AddPostAsync(post, dto.AttachmentUrls, dto.AttachmentTypes, allTargetedUserIds);
         await _karmaService.AwardKarmaAsync(currentUserId, KarmaActivityTypes.CreatePost, KarmaPoints.CreatePostPoints, ContentTypes.Post, savedPost.PostId, KarmaCaps.CreatePostDailyCap);
         if (dto.AudienceCommunityIds != null && dto.AudienceCommunityIds.Any())
         {
@@ -120,16 +125,18 @@ public class PostService : IPostService
             }
         }
 
-        // FR-NT-01: notify mentioned users (producer -> generic engine)
-        if (dto.MentionedUserIds.Any())
+        // FR-NT-01: notify mentioned & targeted users (producer -> generic engine)
+        if (allTargetedUserIds.Any())
         {
             var authorName = (await _db.Users.FindAsync(currentUserId))?.FullName ?? "Someone";
-            foreach (var mentionedUserId in dto.MentionedUserIds.Where(id => id != currentUserId))
+            foreach (var targetUserId in allTargetedUserIds.Where(id => id != currentUserId))
             {
                 await _notificationService.PublishAsync(
-                    mentionedUserId,
+                    targetUserId,
                     NotificationTypes.Mention,
-                    $"You were mentioned in a post by {authorName}.",
+                    dto.AudienceType == "Connections"
+                        ? $"{authorName} shared a post with you."
+                        : $"You were mentioned in a post by {authorName}.",
                     relatedContentType: ContentTypes.Post,
                     relatedContentId: savedPost.PostId);
             }

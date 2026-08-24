@@ -10,5 +10,7 @@ public class CreatePostDto
     public List<string> AttachmentUrls { get; set; } = new();
     public List<string> AttachmentTypes { get; set; } = new();
     public List<int> MentionedUserIds { get; set; } = new();
+    public List<int> AudienceUserIds { get; set; } = new();
     public List<int> AudienceCommunityIds { get; set; } = new();
 }
+

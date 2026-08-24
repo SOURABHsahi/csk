@@ -660,6 +660,16 @@ export const resolveMediaUrl = (url) => {
     }
     if (cleaned.startsWith('/media/')) {
         cleaned = '/uploads' + cleaned;
+    } else if (cleaned.startsWith('/profiles/')) {
+        cleaned = '/uploads' + cleaned;
+    } else if (!cleaned.startsWith('/uploads/')) {
+        if (cleaned.includes('media_')) {
+            cleaned = '/uploads/media' + cleaned;
+        } else if (cleaned.includes('user_')) {
+            cleaned = '/uploads/profiles' + cleaned;
+        } else {
+            cleaned = '/uploads/media' + cleaned;
+        }
     }
     const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : 'localhost';
     return `http://${host}:5095${cleaned}`;
@@ -742,7 +752,12 @@ export const mapPost = (post) => {
         isSaved: post.isBookmarked || post.engagementSummary?.isBookmarkedByCurrentUser || false,
         userReaction: post.engagementSummary?.reactionSummary?.currentUserReactionType?.toLowerCase() || null,
         comments: Array.isArray(post.comments) ? post.comments : [],
-        communityName: post.communityName || null,
+        communityName: post.communityName || post.sharedCommunityName || null,
+        sharedCommunityName: post.sharedCommunityName || post.communityName || null,
+        sharedWithName: post.sharedWithName || (post.mentionedUsers && post.mentionedUsers.length > 0 ? post.mentionedUsers.map(u => u.fullName || u.name).join(', ') : null),
+        sharedUsers: post.mentionedUsers || post.sharedUsers || [],
+        mentionedUsers: post.mentionedUsers || [],
+        audienceType: post.audienceType || 'Everyone',
     };
 };
 
@@ -858,18 +873,25 @@ export const mapFeedItem = (item) => {
         isVerified: false,
     };
 
+    const commentsCount = Number(item.engagementSummary?.commentCount ?? item.engagementSummary?.commentsCount ?? 0);
+    const likesCount = Number(item.engagementSummary?.reactionCount ?? item.engagementSummary?.reactionsCount ?? item.engagementSummary?.totalReactions ?? 0);
+    const sharesCount = Number(item.engagementSummary?.shareCount ?? item.engagementSummary?.sharesCount ?? 0);
+
     const base = {
         id: item.contentId,
         type: item.contentType.toLowerCase(),
         author,
         time: new Date(item.publishedDate).toLocaleString(),
-        likes: item.engagementSummary?.reactionCount || 0,
-        shares: item.engagementSummary?.shareCount || 0,
+        likes: likesCount,
+        shares: sharesCount,
         views: item.engagementSummary?.viewCount || 0,
+        commentsCount: commentsCount,
         isSaved: item.engagementSummary?.isBookmarkedByCurrentUser || false,
-        comments: [], // Comments are loaded lazily on expand
+        userReaction: item.engagementSummary?.currentUserReactionType?.toLowerCase() || null,
+        comments: [], // Comments are loaded live from API on expand
         title: item.title,
         content: item.textSummary,
+        audienceType: item.audienceType || 'Everyone',
     };
 
     if (item.contentType === 'Post') {

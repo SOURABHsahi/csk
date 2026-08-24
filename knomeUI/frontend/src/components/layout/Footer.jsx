@@ -8,7 +8,7 @@ export default function Footer() {
         <footer className="relative w-full mt-0 bg-[#070c1b] text-slate-100 font-sans shadow-2xl border-t border-slate-800">
             
             {/* Top Gradient Accent Line */}
-            <div className="w-full h-0.5 bg-gradient-to-r from-indigo-500 via-pink-500 to-purple-600"></div>
+            <div className="w-full h-0.5 bg-gradient-to-r from-blue-600 via-sky-400 to-indigo-600"></div>
 
             <div className="max-w-screen-2xl mx-auto px-6 md:px-12 py-6 md:py-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-12 items-center">
@@ -21,6 +21,7 @@ export default function Footer() {
                                     src={knomeLogo} 
                                     alt="Knome Logo" 
                                     className="h-8 object-contain bg-white rounded-lg p-0.5 shadow-sm" 
+                                
                                 />
                                 <div className="flex flex-col">
                                     <span className="text-xs font-black uppercase tracking-widest" style={{
@@ -44,19 +45,19 @@ export default function Footer() {
                         
                         {/* Social Links */}
                         <div className="flex flex-wrap items-center gap-2 mt-1">
-                            <a href="https://facebook.com/mponlinelimited" target="_blank" rel="noreferrer" title="Facebook" className="w-7 h-7 rounded-full bg-slate-800/80 border border-slate-700 hover:bg-indigo-600 hover:border-indigo-500 flex items-center justify-center text-white transition-all shadow-sm group">
+                            <a href="https://facebook.com/mponlinelimited" target="_blank" rel="noreferrer" title="Facebook" className="w-7 h-7 rounded-full bg-slate-800/80 border border-slate-700 hover:bg-blue-600 hover:border-blue-500 flex items-center justify-center text-white transition-all shadow-sm group">
                                 <span className="font-bold text-xs group-hover:scale-110 transition-transform">f</span>
                             </a>
-                            <a href="https://instagram.com/mponlinelimited" target="_blank" rel="noreferrer" title="Instagram" className="w-7 h-7 rounded-full bg-slate-800/80 border border-slate-700 hover:bg-indigo-600 hover:border-indigo-500 flex items-center justify-center text-white transition-all shadow-sm group">
+                            <a href="https://instagram.com/mponlinelimited" target="_blank" rel="noreferrer" title="Instagram" className="w-7 h-7 rounded-full bg-slate-800/80 border border-slate-700 hover:bg-blue-600 hover:border-blue-500 flex items-center justify-center text-white transition-all shadow-sm group">
                                 <span className="material-symbols-outlined text-[15px] group-hover:scale-110 transition-transform">photo_camera</span>
                             </a>
-                            <a href="https://youtube.com/@mponlinelimited" target="_blank" rel="noreferrer" title="YouTube" className="w-7 h-7 rounded-full bg-slate-800/80 border border-slate-700 hover:bg-indigo-600 hover:border-indigo-500 flex items-center justify-center text-white transition-all shadow-sm group">
+                            <a href="https://youtube.com/@mponlinelimited" target="_blank" rel="noreferrer" title="YouTube" className="w-7 h-7 rounded-full bg-slate-800/80 border border-slate-700 hover:bg-blue-600 hover:border-blue-500 flex items-center justify-center text-white transition-all shadow-sm group">
                                 <span className="material-symbols-outlined text-[15px] group-hover:scale-110 transition-transform">smart_display</span>
                             </a>
-                            <a href="https://linkedin.com/company/mponlinelimited" target="_blank" rel="noreferrer" title="LinkedIn" className="w-7 h-7 rounded-full bg-slate-800/80 border border-slate-700 hover:bg-indigo-600 hover:border-indigo-500 flex items-center justify-center text-white transition-all shadow-sm group">
+                            <a href="https://linkedin.com/company/mponlinelimited" target="_blank" rel="noreferrer" title="LinkedIn" className="w-7 h-7 rounded-full bg-slate-800/80 border border-slate-700 hover:bg-blue-600 hover:border-blue-500 flex items-center justify-center text-white transition-all shadow-sm group">
                                 <span className="font-bold text-[10px] group-hover:scale-110 transition-transform">in</span>
                             </a>
-                            <a href="https://x.com/mponlinelimited" target="_blank" rel="noreferrer" title="X (Twitter)" className="w-7 h-7 rounded-full bg-slate-800/80 border border-slate-700 hover:bg-indigo-600 hover:border-indigo-500 flex items-center justify-center text-white transition-all shadow-sm group">
+                            <a href="https://x.com/mponlinelimited" target="_blank" rel="noreferrer" title="X (Twitter)" className="w-7 h-7 rounded-full bg-slate-800/80 border border-slate-700 hover:bg-blue-600 hover:border-blue-500 flex items-center justify-center text-white transition-all shadow-sm group">
                                 <span className="font-bold text-[10px] group-hover:scale-110 transition-transform">𝕏</span>
                             </a>
                         </div>
@@ -64,7 +65,7 @@ export default function Footer() {
 
                     {/* COLUMN 2: Enterprise Support */}
                     <div className="flex flex-col gap-2.5 min-w-0 break-words md:items-end">
-                        <div className="flex items-center gap-2 text-pink-400 font-extrabold text-xs tracking-wide">
+                        <div className="flex items-center gap-2 text-sky-400 font-extrabold text-xs tracking-wide">
                             <span className="material-symbols-outlined text-[18px]">headset_mic</span>
                             <span>Enterprise Support</span>
                         </div>
@@ -72,28 +73,28 @@ export default function Footer() {
                         <div className="flex flex-wrap md:justify-end gap-x-5 gap-y-1.5 text-xs text-slate-300">
                             <div className="flex items-center gap-1.5">
                                 <span className="text-slate-400">Customer Care:</span>
-                                <a href="tel:+07556720200" className="text-slate-100 hover:text-pink-400 font-semibold transition-colors">
+                                <a href="tel:+07556720200" className="text-slate-100 hover:text-sky-400 font-semibold transition-colors">
                                     +0755-6720200
                                 </a>
                             </div>
 
                             <div className="flex items-center gap-1.5">
                                 <span className="text-slate-400">HR Support:</span>
-                                <a href="tel:+917049923881" className="text-slate-100 hover:text-pink-400 font-semibold transition-colors">
+                                <a href="tel:+917049923881" className="text-slate-100 hover:text-sky-400 font-semibold transition-colors">
                                     +91-7049923881
                                 </a>
                             </div>
 
                             <div className="flex items-center gap-1.5">
                                 <span className="text-slate-400">Email:</span>
-                                <a href="mailto:knome-support@mponline.gov.in" className="text-slate-100 hover:text-pink-400 font-semibold transition-colors">
+                                <a href="mailto:knome-support@mponline.gov.in" className="text-slate-100 hover:text-sky-400 font-semibold transition-colors">
                                     knome-support@mponline.gov.in
                                 </a>
                             </div>
                         </div>
 
                         <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
-                            <span className="material-symbols-outlined text-[14px] text-pink-400 shrink-0">location_on</span>
+                            <span className="material-symbols-outlined text-[14px] text-sky-400 shrink-0">location_on</span>
                             <span>3rd Floor State IT Park, Abbas Nagar near RGPV Gandhi Nagar, Bhopal 462033</span>
                         </div>
                     </div>
@@ -101,19 +102,14 @@ export default function Footer() {
             </div>
 
             {/* Bottom Bar */}
-            <div className="w-full bg-[#040814] border-t border-slate-800/80 py-3.5 px-6 relative">
-                <div className="max-w-screen-2xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-                    <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 text-center sm:text-left">
-                        <img 
-                            src={knomeLogo} 
-                            alt="Knome Logo" 
-                            className="h-6 md:h-7 object-contain bg-white rounded-lg p-1 shadow-sm" 
-                        />
-                        <span className="text-slate-400 text-xs font-medium">Knome v1.0 — Enterprise Knowledge Platform | Maintained by</span>
+            <div className="w-full bg-[#040814] border-t border-slate-800/80 py-4 px-6 relative">
+                <div className="max-w-screen-2xl mx-auto flex items-center justify-center">
+                    <div className="flex flex-wrap items-center justify-center gap-3.5 text-center">
+                        <span className="text-slate-400 text-sm font-semibold tracking-wide">Powered by</span>
                         <img 
                             src={mponlineLogo} 
                             alt="MPOnline Limited" 
-                            className="h-8 md:h-9 object-contain bg-white rounded-lg px-2.5 py-1 shadow-md hover:scale-105 transition-transform" 
+                            className="h-11 md:h-14 object-contain bg-white rounded-xl px-4 py-1.5 shadow-lg shadow-black/40 hover:scale-105 transition-all duration-300" 
                         />
                     </div>
                 </div>

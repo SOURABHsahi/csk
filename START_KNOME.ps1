@@ -9,17 +9,34 @@ Write-Host "============================================================" -Foreg
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+# 0. Free Port 5095 if already occupied by any previous run
+$busyPort = Get-NetTCPConnection -LocalPort 5095 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
+if ($busyPort) {
+    Get-Process -Id $busyPort -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+}
+
 # 1. Knome Backend API (Port 5095)
 Write-Host " Starting Knome Backend API on http://localhost:5095..." -ForegroundColor Yellow
 $BackendJob = Start-Job -ScriptBlock {
     param($dir)
     Set-Location "$dir\Backend\Knome.API"
-    dotnet run
+    dotnet run --launch-profile http
 } -ArgumentList $ScriptDir
 
 Start-Sleep -Seconds 3
 
-# 2. Knome Frontend UI (Port 5173)
+# 2. Ensure IIS Sites are Active (Port 8080 & 8081)
+try {
+    Import-Module WebAdministration -ErrorAction SilentlyContinue
+    Start-Website -Name "Knome" -ErrorAction SilentlyContinue
+    Start-Website -Name "EmployeeHub" -ErrorAction SilentlyContinue
+    Write-Host " IIS Sites verified & active (Ports 8080 & 8081)" -ForegroundColor Green
+} catch {
+    # IIS optional fallback
+}
+
+# 3. Knome Frontend UI (Port 5173)
 Write-Host " Starting Knome Frontend UI on http://localhost:5173..." -ForegroundColor Yellow
 $FrontendJob = Start-Job -ScriptBlock {
     param($dir)
@@ -30,10 +47,12 @@ $FrontendJob = Start-Job -ScriptBlock {
 Start-Sleep -Seconds 2
 
 Write-Host "============================================================" -ForegroundColor Green
-Write-Host " KNOME PLATFORM IS ACTIVE AND RUNNING!" -ForegroundColor Green
-Write-Host "  -> Knome Web Portal:   http://localhost:5173" -ForegroundColor Cyan
-Write-Host "  -> Knome Backend API:   http://localhost:5095" -ForegroundColor Cyan
-Write-Host "  -> Single Sign-On:      Delegated to EmployeeHub (http://localhost:5001)" -ForegroundColor Cyan
+Write-Host " ALL SERVICES ARE ACTIVE AND RUNNING!" -ForegroundColor Green
+Write-Host "  -> IIS Knome Portal:     http://localhost:8080" -ForegroundColor Cyan
+Write-Host "  -> IIS EmployeeHub:      http://localhost:8081" -ForegroundColor Cyan
+Write-Host "  -> Knome Dev UI:         http://localhost:5173" -ForegroundColor Cyan
+Write-Host "  -> Knome Backend API:    http://localhost:5095" -ForegroundColor Cyan
+Write-Host "  -> Network / WiFi IP:    http://172.16.17.46:8080" -ForegroundColor Yellow
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host "Press Ctrl+C in this terminal to stop all Knome services." -ForegroundColor Gray
 

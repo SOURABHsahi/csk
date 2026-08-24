@@ -9,6 +9,7 @@ import DocumentViewerModal from '../modals/DocumentViewerModal';
 import ArticleShareModal from '../modals/ArticleShareModal';
 
 import { interactionsApi, postsApi, searchApi, communitiesApi, resolveMediaUrl, getVideoThumbnail } from '../../utils/apiService';
+import { checkRestrictedContent } from '../../utils/restrictedWords';
 
 // Available reactions (FR-CI-01)
 const REACTION_TYPES = {
@@ -274,16 +275,52 @@ export default function PostCard({ post, onPostDeleted }) {
     const [comments, setComments] = useState(post.comments || []);
     const [commentCount, setCommentCount] = useState(initialCommentCount);
     const [newComment, setNewComment] = useState('');
+    const [isLoadingComments, setIsLoadingComments] = useState(false);
+
+    // Fetch genuine comments from database API when user expands comments
+    useEffect(() => {
+        if (showComments && !hasFetchedComments) {
+            setIsLoadingComments(true);
+            interactionsApi.getComments('Post', post.id)
+                .then(res => {
+                    const apiComments = Array.isArray(res) ? res : (res?.data || []);
+                    if (apiComments.length > 0) {
+                        const formatted = apiComments.map(c => ({
+                            id: c.commentId || c.id,
+                            author: c.authorFullName || c.authorName || 'Colleague',
+                            avatar: resolveMediaUrl(c.authorProfilePhotoUrl || c.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName || 'User')}&background=6366f1&color=fff`,
+                            text: c.commentText || c.text,
+                            time: new Date(c.createdDate || c.createdAt || Date.now()).toLocaleDateString(),
+                            replies: (c.replies || []).map(r => ({
+                                id: r.commentId || r.id,
+                                author: r.authorFullName || r.authorName || 'Colleague',
+                                avatar: resolveMediaUrl(r.authorProfilePhotoUrl || r.avatar),
+                                text: r.commentText || r.text,
+                                time: new Date(r.createdDate || Date.now()).toLocaleDateString()
+                            }))
+                        }));
+                        setComments(formatted);
+                        setCommentCount(formatted.length);
+                    }
+                    setHasFetchedComments(true);
+                })
+                .catch(() => setHasFetchedComments(true))
+                .finally(() => setIsLoadingComments(false));
+        }
+    }, [showComments, hasFetchedComments, post.id]);
     
     // Total live comment count including nested replies
     const nestedRepliesCount = comments.reduce((acc, c) => acc + (Array.isArray(c.replies) ? c.replies.length : 0), 0);
-    const displayCommentCount = Math.max(commentCount, comments.length + nestedRepliesCount);
+    const displayCommentCount = comments.length > 0 ? (comments.length + nestedRepliesCount) : commentCount;
 
     const handleAddComment = async (e, parentCommentId = null) => {
         if (e && e.preventDefault) e.preventDefault();
-        if (!newComment.trim()) return;
-
         const commentText = newComment.trim();
+        const foundKeyword = checkRestrictedContent(commentText);
+        if (foundKeyword) {
+            addToast(`Security Alert: Please don't use restricted or abusive words ("${foundKeyword}").`, 'error');
+            return;
+        }
         setNewComment('');
 
         try {
@@ -298,7 +335,7 @@ export default function PostCard({ post, onPostDeleted }) {
             };
 
             setComments(prev => [formatted, ...prev]);
-            setCommentCount(prev => Math.max(prev + 1, comments.length + 1));
+            setCommentCount(prev => prev + 1);
             if (awardRuleKarma && (post.userId || post.authorId)) {
                 awardRuleKarma(post.userId || post.authorId, 'COMMENT_RECEIVED');
             }
@@ -313,7 +350,7 @@ export default function PostCard({ post, onPostDeleted }) {
                 replies: []
             };
             setComments(prev => [optimistic, ...prev]);
-            setCommentCount(prev => Math.max(prev + 1, comments.length + 1));
+            setCommentCount(prev => prev + 1);
         }
     };
     
@@ -673,10 +710,27 @@ export default function PostCard({ post, onPostDeleted }) {
                             </div>
                         </div>
                     </div>
-                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                        {post.time}
-                        <span className="material-symbols-outlined text-[10px]">public</span>
-                    </p>
+                    <div className="flex items-center flex-wrap gap-2 mt-0.5">
+                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                            {post.time}
+                        </p>
+                        {post.sharedCommunityName || post.sharedCommunity?.name || post.communityName ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-bold border border-blue-500/20">
+                                <span className="material-symbols-outlined text-[12px]">groups</span>
+                                {post.sharedCommunityName || post.sharedCommunity?.name || post.communityName}
+                            </span>
+                        ) : (post.sharedWithName || post.sharedUser?.name || post.recipientName) ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400 text-[10px] font-bold border border-purple-500/20">
+                                <span className="material-symbols-outlined text-[12px]">person</span>
+                                To: {post.sharedWithName || post.sharedUser?.name || post.recipientName}
+                            </span>
+                        ) : (
+                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 flex items-center gap-0.5" title="Public to Everyone">
+                                <span className="material-symbols-outlined text-[11px]">public</span>
+                                Everyone
+                            </span>
+                        )}
+                    </div>
                 </div>
             </div>
 

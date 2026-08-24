@@ -78,7 +78,7 @@ public class ExceptionHandlingMiddleware
             ),
             _ => (
                 StatusCodes.Status500InternalServerError,
-                exception.ToString(), // temporarily show stack trace
+                ApiConstants.Messages.InternalServerError,
                 null
             )
         };

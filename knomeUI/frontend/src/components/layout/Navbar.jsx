@@ -893,20 +893,30 @@ export default function Navbar() {
             <div className="max-w-screen-2xl mx-auto px-4 md:px-8 h-[72px] grid grid-cols-2 lg:grid-cols-3 items-center gap-4">
                 
                 {/* ─── LEFT: Logo & Navigation ─── */}
-                <div className="flex items-center gap-8 justify-start">
-                    <Link to="/" className="flex items-center gap-3.5 transition-all duration-200 hover:scale-[1.02] shrink-0 group">
+                <div className="flex items-center gap-3 sm:gap-6 justify-start">
+                    {/* Mobile Hamburger Menu Toggle Button */}
+                    <button
+                        onClick={() => window.dispatchEvent(new CustomEvent('knome_toggle_mobile_sidebar'))}
+                        className="md:hidden p-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700/80 transition-all flex items-center justify-center shrink-0 shadow-xs cursor-pointer active:scale-95"
+                        title="Toggle Navigation Menu"
+                        aria-label="Toggle Navigation Menu"
+                    >
+                        <span className="material-symbols-outlined text-[24px]">menu</span>
+                    </button>
+
+                    <Link to="/" className="flex items-center gap-2.5 sm:gap-3.5 transition-all duration-200 hover:scale-[1.02] shrink-0 group">
                         <div className="relative p-1 bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-md group-hover:shadow-indigo-500/25 transition-all flex items-center justify-center">
                             <img 
                                 src={knomeLogo} 
                                 alt="Knome Logo" 
-                                className="h-12 w-auto object-contain rounded-xl" 
+                                className="h-10 sm:h-12 w-auto object-contain rounded-xl" 
                             />
                         </div>
                         <div className="flex flex-col justify-center">
-                            <span className="text-[17px] sm:text-[19px] font-black tracking-tight leading-none bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 bg-clip-text text-transparent group-hover:opacity-95 transition-opacity drop-shadow-xs">
+                            <span className="text-[15px] sm:text-[19px] font-black tracking-tight leading-none bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 bg-clip-text text-transparent group-hover:opacity-95 transition-opacity drop-shadow-xs">
                                 KNOME PORTAL
                             </span>
-                            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1 leading-tight tracking-tight">
+                            <span className="hidden xs:inline-block text-[10px] sm:text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1 leading-tight tracking-tight">
                                 Connecting People & Knowledge
                             </span>
                         </div>

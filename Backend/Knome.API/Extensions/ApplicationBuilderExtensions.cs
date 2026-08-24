@@ -6,6 +6,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.FileProviders;
 using System.IO;
 
+using Serilog;
+
 namespace Knome.API.Extensions;
 
 public static class ApplicationBuilderExtensions
@@ -14,6 +16,12 @@ public static class ApplicationBuilderExtensions
     {
         // Global Exception Handling Middleware
         app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+        // Serilog HTTP Request Logging
+        app.UseSerilogRequestLogging(options =>
+        {
+            options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms";
+        });
 
         // F-022: Security Headers Middleware
         app.UseMiddleware<SecurityHeadersMiddleware>();

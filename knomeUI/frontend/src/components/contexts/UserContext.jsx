@@ -119,7 +119,7 @@ export const UserProvider = ({ children }) => {
             designation: profile.designation || localUser.designation,
             department: profile.departmentName || localUser.department,
             location: profile.location || localUser.location,
-            avatar: (profile.profilePhotoUrl ? (profile.profilePhotoUrl.startsWith('http') ? profile.profilePhotoUrl : `http://localhost:5095${profile.profilePhotoUrl.startsWith('/') ? '' : '/'}${profile.profilePhotoUrl}`) : null) || localUser.avatar,
+            avatar: (profile.profilePhotoUrl ? resolveMediaUrl(profile.profilePhotoUrl) : null) || localUser.avatar,
             bio: profile.bio || '',
             skills: profile.skills || [],
             interests: profile.interests || [],
@@ -356,9 +356,6 @@ export const UserProvider = ({ children }) => {
         await authenticateUser(localUser);
     }, [authenticateUser, usersList]);
 
-    /**
-     * Logout — clear tokens and redirect to Employee Hub Single Sign-On.
-     */
     const logout = useCallback(async () => {
         const refreshToken = localStorage.getItem('knome_refresh');
         try {
@@ -367,7 +364,15 @@ export const UserProvider = ({ children }) => {
         localStorage.removeItem('knome_jwt');
         localStorage.removeItem('knome_refresh');
         localStorage.removeItem('knome_employeeId');
-        window.location.href = 'http://localhost:5001/?logout=true&client_id=knome-web-portal&redirect_uri=http%3A%2F%2Flocalhost%3A5173';
+        
+        const host = window.location.hostname || 'localhost';
+        const isIis = window.location.port === '8080';
+        const ehPort = isIis ? '8081' : '5001';
+        const knomePort = window.location.port || (isIis ? '8080' : '5173');
+        const ehBase = `http://${host}:${ehPort}`;
+        const knomeBase = `http://${host}:${knomePort}`;
+        
+        window.location.href = `${ehBase}/?logout=true&client_id=knome-web-portal&redirect_uri=${encodeURIComponent(knomeBase)}`;
     }, []);
 
     /**

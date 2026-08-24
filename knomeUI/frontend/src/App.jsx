@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react'
+import React, { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/layout/Layout'
 import AuthGuard from './components/layout/AuthGuard'
@@ -45,6 +45,59 @@ function ProtectedPage({ children }) {
 }
 
 function App() {
+  useEffect(() => {
+    const handleGlobalKeyGuard = (e) => {
+      // Intercept and prevent browser Save As (Ctrl+S, Cmd+S, Ctrl+Shift+S)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+      // Intercept and prevent browser Print / Save As PDF (Ctrl+P, Cmd+P)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+      // Intercept View Source (Ctrl+U)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'u' || e.key === 'U')) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    };
+
+    const handleGlobalContextMenu = (e) => {
+      // Prevent browser default context menu on documents, articles, images, and embeds
+      const target = e.target;
+      if (target && (
+        target.closest?.('.article-body') ||
+        target.closest?.('[id^="doc-viewer"]') ||
+        target.closest?.('object') ||
+        target.closest?.('iframe') ||
+        target.tagName === 'OBJECT' ||
+        target.tagName === 'IFRAME' ||
+        target.tagName === 'EMBED' ||
+        target.tagName === 'IMG' ||
+        target.tagName === 'VIDEO'
+      )) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyGuard, true);
+    window.addEventListener('contextmenu', handleGlobalContextMenu, true);
+    document.addEventListener('contextmenu', handleGlobalContextMenu, true);
+
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyGuard, true);
+      window.removeEventListener('contextmenu', handleGlobalContextMenu, true);
+      document.removeEventListener('contextmenu', handleGlobalContextMenu, true);
+    };
+  }, []);
+
   return (
     <UserProvider>
       <AudioProvider>

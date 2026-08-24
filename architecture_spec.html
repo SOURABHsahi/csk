@@ -261,6 +261,24 @@
     line-height: 1.22;
   }
 
+  .terminal-box {
+    background: #0a1120;
+    color: #e2e8f0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 6.2pt;
+    line-height: 1.28;
+    border: 1px solid #1e293b;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.5);
+    margin-top: 4px;
+    height: 220mm;
+    overflow: hidden;
+  }
+  .comment { color: #94a3b8; }
+  .layer-tag { color: #38bdf8; font-weight: 600; }
+  .warning-tag { color: #facc15; font-weight: 700; }
+
   .grid-2 {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -410,7 +428,7 @@
   <div class="page-footer">
     <span class="confidential">MPOnline Limited · Confidential</span>
     <span>Knome & MPOEmployeeHub HLA Specification · Version 1.0</span>
-    <span>Page 1 of 7</span>
+    <span>Page 1 of 8</span>
   </div>
 </div>
 
@@ -683,7 +701,7 @@
   <div class="page-footer">
     <span class="confidential">MPOnline Limited · Confidential</span>
     <span>Figure 2.1: Six-Layer Platform Workflow Diagram</span>
-    <span>Page 2 of 7</span>
+    <span>Page 2 of 8</span>
   </div>
 </div>
 
@@ -748,7 +766,7 @@
   <div class="page-footer">
     <span class="confidential">MPOnline Limited · Confidential</span>
     <span>Section 2.1: Detailed 21-Step Workflow Execution Table</span>
-    <span>Page 3 of 7</span>
+    <span>Page 3 of 8</span>
   </div>
 </div>
 
@@ -804,7 +822,7 @@
   <div class="page-footer">
     <span class="confidential">MPOnline Limited · Confidential</span>
     <span>Section 3: Login & Authentication Workflow</span>
-    <span>Page 4 of 7</span>
+    <span>Page 4 of 8</span>
   </div>
 </div>
 
@@ -857,7 +875,7 @@
   <div class="page-footer">
     <span class="confidential">MPOnline Limited · Confidential</span>
     <span>Section 4: Authenticated Functional / API Workflow</span>
-    <span>Page 5 of 7</span>
+    <span>Page 5 of 8</span>
   </div>
 </div>
 
@@ -927,12 +945,12 @@
   <div class="page-footer">
     <span class="confidential">MPOnline Limited · Confidential</span>
     <span>Section 5: Logout & Session Invalidation Workflow</span>
-    <span>Page 6 of 7</span>
+    <span>Page 6 of 8</span>
   </div>
 </div>
 
 <!-- ========================================================================= -->
-<!-- PAGE 7: MONOREPO STRUCTURE, TECH STACK & 10 ARCHITECTURAL RULES -->
+<!-- PAGE 7: IMPLEMENTATION VIEW - FULL MONOREPO FOLDER STRUCTURE (FROM SCREENSHOT) -->
 <!-- ========================================================================= -->
 <div class="page">
   <div class="page-header">
@@ -940,19 +958,77 @@
     <span class="doc-meta">Doc ID: MPO-KNOME-HUB-HLA-001</span>
   </div>
 
-  <h2 class="section-heading">6. Implementation View & Architecture Principles</h2>
-  <h3 class="sub-heading">6.1 Logical / Illustrative Monorepo Folder Structure</h3>
-  <pre style="font-size: 5.6pt;">Knome-Platform/
-├── Frontend/ (React 18 + Vite SPA) ── knome-web/ (features: feed, articles, videos, communities, admin)
-├── Backend/
-│   ├── bff/ (Layer 2: Session Boundary) ── Knome.Bff/ (BffAuthController.cs, BffProxyController.cs)
-│   ├── gateway/ (Layer 3: Security Gateway) ── Knome.Gateway/ (YARP Reverse Proxy, RateLimitingPolicy.cs)
-│   └── services/
-│       ├── EmployeeHub/ (Layer 4: IdP) ── Domain, Contracts, Application, Infrastructure, API
-│       └── Knome/ (Layer 5: Business APIs) ── Domain, Contracts, Application, Infrastructure, API</pre>
+  <h2 class="section-heading">6. IMPLEMENTATION VIEW & ARCHITECTURE PRINCIPLES</h2>
+  <h3 class="sub-heading" style="font-size: 8.5pt;">6.1 Logical / Illustrative Monorepo Folder Structure</h3>
+  <p style="font-size: 7.2pt; color: #475569; margin-bottom: 2px;">The unified monorepo adheres strictly to Clean Architecture and MPOnline Monorepo Standards:</p>
 
-  <h2 class="section-heading" style="margin-top: 4px;">6.2 Technology Stack Summary</h2>
-  <table style="font-size: 6.6pt; margin-bottom: 4px;">
+  <div class="terminal-box">
+<pre style="background: transparent; color: inherit; padding: 0; font-size: 6.2pt; line-height: 1.28;">Knome-Platform/
+├── Frontend/                                       <span class="layer-tag"># Layer 1: Presentation Tier</span>
+│   ├── knome-web/                                  <span class="comment"># React 18 + Vite + TypeScript SPA</span>
+│   │   ├── src/
+│   │   │   ├── features/
+│   │   │   │   ├── feed/ (ActivityFeed.tsx, PostCreator.tsx, PollWidget.tsx)
+│   │   │   │   ├── articles/ (ArticleReader.tsx, RichTextEditor.tsx)
+│   │   │   │   ├── videos/ (VideoPlayer.tsx, PlaylistView.tsx, VideoUploader.tsx)
+│   │   │   │   ├── communities/ (CommunityBrowser.tsx, MemberList.tsx)
+│   │   │   │   ├── gamification/ (Leaderboard.tsx, BadgeGallery.tsx)
+│   │   │   │   └── admin/ (BroadcastConsole.tsx, ModerationQueue.tsx)
+│   │   │   ├── services/ (apiClient.ts, authService.ts)
+│   │   │   └── App.tsx &amp; main.tsx
+│   │   └── vite.config.ts
+│   └── employeehub-web/                            <span class="comment"># EmployeeHub Master Console UI</span>
+│
+├── Backend/
+│   ├── bff/                                        <span class="layer-tag"># Layer 2: Session Boundary</span>
+│   │   └── Knome.Bff/                              <span class="comment"># Next.js / ASP.NET Core BFF</span>
+│   │       ├── Controllers/ (BffAuthController.cs, BffProxyController.cs)
+│   │       ├── Services/ (SessionService.cs, TokenExchangeService.cs)
+│   │       └── Program.cs
+│   │
+│   ├── gateway/                                    <span class="layer-tag"># Layer 3: Security &amp; Traffic Gateway</span>
+│   │   └── Knome.Gateway/                          <span class="comment"># .NET YARP Reverse Proxy</span>
+│   │       ├── Configuration/ (yarp.json, rateLimiting.json)
+│   │       ├── Policies/ (RateLimitingPolicy.cs, SecurityHeadersPolicy.cs)
+│   │       └── Program.cs
+│   │
+│   └── services/
+│       ├── EmployeeHub/                            <span class="layer-tag"># Layer 4: Master Identity Provider</span>
+│       │   ├── EmployeeHub.Domain/ (Employee.cs, Role.cs, DPDPRecord.cs)
+│       │   ├── EmployeeHub.Contracts/ (LoginRequest.cs, EmployeeDto.cs)
+│       │   ├── EmployeeHub.Application/ (AuthService.cs, IdentityService.cs)
+│       │   ├── EmployeeHub.Infrastructure/ (JwtTokenGenerator.cs, BCryptHasher.cs)
+│       │   ├── EmployeeHub.Persistence/ (EmployeeHubDbContext.cs, Repositories)
+│       │   └── EmployeeHub.API/ (AuthController.cs, EmployeeController.cs)
+│       │
+│       └── Knome/                                  <span class="layer-tag"># Layer 5: Knome Business Microservices</span>
+│           ├── Knome.Domain/ (Post.cs, Article.cs, Video.cs, Community.cs, Badge.cs)
+│           ├── Knome.Contracts/ (PostDtos.cs, ArticleDtos.cs, ApiResponse.cs)
+│           ├── Knome.Application/ (PostService.cs, ArticleService.cs, BadgeService.cs)
+│           ├── Knome.Infrastructure/ (Repositories, LocalFileStorageService.cs)
+│           │   ├── Data/KnomeDbContext.cs          <span class="warning-tag"># ⚠️ Scaffolded — DB-First only</span>
+│           │   └── Models/                         <span class="warning-tag"># ⚠️ Scaffolded Entities</span>
+│           └── Knome.API/ (PostController.cs, ArticleController.cs, VideoController.cs)</pre>
+  </div>
+
+  <div class="page-footer">
+    <span class="confidential">MPOnline Limited · Confidential</span>
+    <span>Section 6.1: Monorepo Folder Structure</span>
+    <span>Page 7 of 8</span>
+  </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- PAGE 8: TECH STACK SUMMARY & 10 ARCHITECTURAL RULES -->
+<!-- ========================================================================= -->
+<div class="page">
+  <div class="page-header">
+    <span class="doc-title">MPOnline Limited · Enterprise Architecture Division</span>
+    <span class="doc-meta">Doc ID: MPO-KNOME-HUB-HLA-001</span>
+  </div>
+
+  <h2 class="section-heading">6.2 Technology Stack Summary</h2>
+  <table style="font-size: 6.8pt; margin-bottom: 6px;">
     <thead>
       <tr>
         <th style="width: 18%;">Component</th>
@@ -967,10 +1043,11 @@
       <tr><td><strong>Identity Provider</strong></td><td>MPOEmployeeHub SSO</td><td>Master identity platform, credential verification, RS256 JWT lifecycle &amp; DPDP.</td></tr>
       <tr><td><strong>Business APIs</strong></td><td>.NET 10 / ASP.NET Core</td><td>Modular microservice APIs owning Knome business functionality (Feeds, Videos).</td></tr>
       <tr><td><strong>Database</strong></td><td>Microsoft SQL Server</td><td>Dual isolated DBs (<code>EmployeeHubDb</code> &amp; <code>Knome</code>), ACID transactions &amp; audit logs.</td></tr>
+      <tr><td><strong>Communication</strong></td><td>HTTPS / REST</td><td>Secure encrypted TLS communication across all inter-service layers.</td></tr>
     </tbody>
   </table>
 
-  <h2 class="section-heading" style="margin-top: 4px;">6.3 Architecture Principles &amp; Rules</h2>
+  <h2 class="section-heading">6.3 Architecture Principles &amp; Rules</h2>
   <div class="rule-item"><div class="rule-num">1</div><div class="rule-text"><strong>Presentation Separation:</strong> React is presentation only — strictly no direct database calls or business logic.</div></div>
   <div class="rule-item"><div class="rule-num">2</div><div class="rule-text"><strong>BFF Session Boundary:</strong> Next.js / .NET BFF is the browser session boundary — manages <code>HttpOnly</code> cookies and session storage.</div></div>
   <div class="rule-item"><div class="rule-num">3</div><div class="rule-text"><strong>Gateway Gatekeeping:</strong> YARP is the common security gateway through which all protected traffic passes.</div></div>
@@ -985,7 +1062,7 @@
   <div class="page-footer">
     <span class="confidential">MPOnline Limited · Confidential &amp; Approved Baseline</span>
     <span>Knome &amp; MPOEmployeeHub High-Level Architecture Document</span>
-    <span>Page 7 of 7</span>
+    <span>Page 8 of 8</span>
   </div>
 </div>
 

@@ -16,7 +16,7 @@ export default function Layout({ children }) {
             <Navbar />
 
             <div className="w-full flex-1 flex flex-col relative z-10">
-                <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-10 pt-20 md:pt-24 pb-10 flex gap-4 lg:gap-6 max-w-[1720px] mx-auto flex-1 min-w-0">
+                <div className="w-full px-3 sm:px-4 md:px-6 lg:px-8 xl:px-10 pt-20 md:pt-24 pb-20 md:pb-10 flex gap-4 lg:gap-6 max-w-[1720px] mx-auto flex-1 min-w-0">
                     <Sidebar />
                     <main className="flex-1 flex flex-col min-w-0 w-full">
                         <PageLoader>
