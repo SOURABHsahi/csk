@@ -354,11 +354,22 @@ export default function Profile() {
         return resolveMediaUrl(url);
     };
 
-    const isSysAdmin = currentUser?.role === 'SYSADM' || 
-                       currentUser?.roleName === 'System Administrator' || 
-                       (Array.isArray(currentUser?.roles) && (currentUser.roles.includes('SYSADM') || currentUser.roles.includes('System Administrator') || currentUser.roles.includes('SystemAdmin'))) ||
-                       displayUser?.role === 'SYSADM' ||
-                       displayUser?.roleName === 'System Administrator';
+    const isSysAdmin = Boolean(
+        displayUser?.role === 'SYSADM' || 
+        displayUser?.roleName === 'System Administrator' || 
+        (Array.isArray(displayUser?.roles) && (displayUser.roles.includes('SYSADM') || displayUser.roles.includes('System Administrator') || displayUser.roles.includes('SystemAdmin'))) ||
+        displayUser?.employeeId === 'MPO101' ||
+        displayUser?.employeeId === 'MPO107' ||
+        displayUser?.employeeId === 'MPO089' ||
+        (isOwnProfile && (
+            currentUser?.role === 'SYSADM' || 
+            currentUser?.roleName === 'System Administrator' || 
+            (Array.isArray(currentUser?.roles) && (currentUser.roles.includes('SYSADM') || currentUser.roles.includes('System Administrator') || currentUser.roles.includes('SystemAdmin'))) ||
+            currentUser?.employeeId === 'MPO101' ||
+            currentUser?.employeeId === 'MPO107' ||
+            currentUser?.employeeId === 'MPO089'
+        ))
+    );
 
     const tabs = isSysAdmin 
         ? ['About', 'Communities', 'Network'] 
@@ -657,30 +668,47 @@ export default function Profile() {
                             </div>
                         </div>
 
-                        {/* Right Rail: Expertise & Badges */}
+                        {/* Right Rail: Expertise & Badges / Governance */}
                         <div className="flex flex-col gap-6">
-                            <div className="rounded-2xl border shadow-sm p-6 glass card-lift overflow-hidden relative group">
-                                <div className="absolute -right-8 -top-8 w-32 h-32 bg-indigo-500/20 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-700"></div>
-                                <h3 className="text-[12px] font-black uppercase tracking-widest text-slate-400 mb-6">Platform Level</h3>
-                                <div className="flex items-center gap-4 mb-6">
-                                    <div className="w-16 h-16 rounded-full border-4 border-indigo-500 flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/50 shadow-md">
-                                        <span className="text-xl font-black text-indigo-500">L{Math.max(1, Math.floor(stats.karma / 100) + 1)}</span>
-                                    </div>
-                                    <div>
-                                        <p className="font-bold text-slate-900 dark:text-white text-lg">{karmaBadge.name} Contributor</p>
-                                        <p className="text-slate-500 text-xs font-semibold mt-0.5">{stats.karma} Karma Points</p>
-                                    </div>
-                                </div>
-                                <div className="space-y-2">
-                                    <div className="flex justify-between text-[11px] font-bold text-slate-500">
-                                        <span>Progress to Level {Math.max(1, Math.floor(stats.karma / 100) + 1) + 1}</span>
-                                        <span className="text-indigo-500">{stats.karma % 100}%</span>
-                                    </div>
-                                    <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                                        <div className="h-full bg-indigo-500 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)] transition-all duration-500" style={{ width: `${stats.karma % 100}%` }}></div>
+                            {isSysAdmin ? (
+                                <div className="rounded-2xl border border-indigo-500/30 shadow-sm p-6 glass card-lift overflow-hidden relative group">
+                                    <div className="absolute -right-8 -top-8 w-32 h-32 bg-indigo-500/20 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-700"></div>
+                                    <h3 className="text-[12px] font-black uppercase tracking-widest text-indigo-500 mb-4 flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-[18px]">admin_panel_settings</span>
+                                        System Administrator
+                                    </h3>
+                                    <p className="text-slate-600 dark:text-slate-300 text-xs leading-relaxed mb-4 font-medium">
+                                        Full platform governance access, user management, audit logs, and security controls active across Knome.
+                                    </p>
+                                    <div className="flex items-center gap-2 px-3.5 py-2.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded-xl text-xs font-bold border border-indigo-200 dark:border-indigo-800/50">
+                                        <span className="material-symbols-outlined text-[18px] text-indigo-500">verified_user</span>
+                                        Governance Privileges Active
                                     </div>
                                 </div>
-                            </div>
+                            ) : (
+                                <div className="rounded-2xl border shadow-sm p-6 glass card-lift overflow-hidden relative group">
+                                    <div className="absolute -right-8 -top-8 w-32 h-32 bg-indigo-500/20 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-700"></div>
+                                    <h3 className="text-[12px] font-black uppercase tracking-widest text-slate-400 mb-6">Platform Level</h3>
+                                    <div className="flex items-center gap-4 mb-6">
+                                        <div className="w-16 h-16 rounded-full border-4 border-indigo-500 flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/50 shadow-md">
+                                            <span className="text-xl font-black text-indigo-500">L{Math.max(1, Math.floor(stats.karma / 100) + 1)}</span>
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-slate-900 dark:text-white text-lg">{karmaBadge.name} Contributor</p>
+                                            <p className="text-slate-500 text-xs font-semibold mt-0.5">{stats.karma} Karma Points</p>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <div className="flex justify-between text-[11px] font-bold text-slate-500">
+                                            <span>Progress to Level {Math.max(1, Math.floor(stats.karma / 100) + 1) + 1}</span>
+                                            <span className="text-indigo-500">{stats.karma % 100}%</span>
+                                        </div>
+                                        <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                                            <div className="h-full bg-indigo-500 rounded-full shadow-[0_0_10px_rgba(99,102,241,0.5)] transition-all duration-500" style={{ width: `${stats.karma % 100}%` }}></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}

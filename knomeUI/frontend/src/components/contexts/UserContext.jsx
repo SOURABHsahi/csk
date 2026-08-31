@@ -18,20 +18,33 @@ export const roleNameToCode = {
     'PENDING': 'PENDING',
 };
 
-// Static employee roster for demo login (matches HrmsService.cs mock data)
+// Static employee roster for demo login (matches live SQL Server database roster)
 // This is the seed — the live state is managed inside UserProvider via useState.
 export const INITIAL_USERS = [
-    { id: 1, employeeId: 'MPO101', name: 'Loveneesh Sharma', role: 'SYSADM', roleName: 'System Administrator', designation: 'IT Operations Manager', department: 'IT Operations', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/40.jpg', isActive: true },
-    { id: 2, employeeId: 'MPO102', name: 'Vishendra Sharma', role: 'CADM', roleName: 'Community Administrator', designation: 'Community Experience Specialist', department: 'Employee Experience', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/11.jpg', isActive: true },
-    { id: 3, employeeId: 'MPO103', name: 'Sourabh Sahu', role: 'HRADM', roleName: 'HR Administrator', designation: 'Talent Acquisition Manager', department: 'Human Resources', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/22.jpg', isActive: true },
-    { id: 4, employeeId: 'MPO104', name: 'Rishikesh Ugle', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Product Design', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/33.jpg', isActive: true },
-    { id: 5, employeeId: 'MPO105', name: 'Meghna Tiwari', role: 'EMP', roleName: 'Employee', designation: 'Business Analyst', department: 'Product Design', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/women/44.jpg', isActive: true },
-    { id: 6, employeeId: 'MPO106', name: 'Mayur Verma', role: 'EMP', roleName: 'Employee', designation: 'UI Designer', department: 'Engineering', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/55.jpg', isActive: true },
-    { id: 7, employeeId: 'MPO107', name: 'Vilash Deshmukh', role: 'SYSADM', roleName: 'System Administrator', designation: 'TL', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/66.jpg', isActive: true },
-    { id: 8, employeeId: 'MPO112', name: 'Rajesh Kumar', role: 'CADM', roleName: 'Community Administrator', designation: 'Senior Software Engineer', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/72.jpg', isActive: true },
-    { id: 9, employeeId: 'MPO108', name: 'Pooja Sharma', role: 'HRADM', roleName: 'HR Administrator', designation: 'Frontend Engineer', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/women/68.jpg', isActive: true },
-    { id: 10, employeeId: 'MPO115', name: 'Sourabh Sahu', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/75.jpg', isActive: true },
-    { id: 11, employeeId: 'MPO116', name: 'Sourabh Sahu', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Development', location: 'Bhopal', avatar: 'https://randomuser.me/api/portraits/men/76.jpg', isActive: true },
+    { id: 1, userId: 1, employeeId: 'MPO101', email: 'loveneesh.sharma@mponline.gov.in', name: 'Loveneesh Sharma', fullName: 'Loveneesh Sharma', role: 'SYSADM', roleName: 'System Administrator', designation: 'IT Operations Manager', department: 'IT Operations', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 2, userId: 2, employeeId: 'MPO102', email: 'vishendra.sharma@mponline.gov.in', name: 'Vishendra Sharma', fullName: 'Vishendra Sharma', role: 'CADM', roleName: 'Community Administrator', designation: 'Community Experience Specialist', department: 'Employee Experience', location: 'Bhopal HQ', avatar: null, karmaPoints: 225, karma: 225, isActive: true },
+    { id: 3, userId: 3, employeeId: 'MPO103', email: 'sourabh.sahu@mponline.gov.in', name: 'Sourabh Sahu', fullName: 'Sourabh Sahu', role: 'HRADM', roleName: 'HR Administrator', designation: 'Talent Acquisition Manager', department: 'Human Resources', location: 'Bhopal HQ', avatar: null, karmaPoints: 306, karma: 306, isActive: true },
+    { id: 4, userId: 4, employeeId: 'MPO104', email: 'rishikesh.ugle@mponline.gov.in', name: 'Rishikesh Ugle', fullName: 'Rishikesh Ugle', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Product Design', location: 'Bhopal HQ', avatar: null, karmaPoints: 170, karma: 170, isActive: true },
+    { id: 5, userId: 5, employeeId: 'MPO105', email: 'meghna.tiwari@mponline.gov.in', name: 'Meghna Tiwari', fullName: 'Meghna Tiwari', role: 'EMP', roleName: 'Employee', designation: 'Business Analyst', department: 'Product Design', location: 'Bhopal HQ', avatar: null, karmaPoints: 123, karma: 123, isActive: true },
+    { id: 6, userId: 6, employeeId: 'MPO106', email: 'mayur.verma@mponline.gov.in', name: 'Mayur Verma', fullName: 'Mayur Verma', role: 'EMP', roleName: 'Employee', designation: 'UI Designer', department: 'Engineering', location: 'Bhopal HQ', avatar: null, karmaPoints: 142, karma: 142, isActive: true },
+    { id: 17, userId: 17, employeeId: 'MPO107', email: 'mpo107.temp@mponline.gov.in', name: 'Vilash Deshmukh (Old)', fullName: 'Vilash Deshmukh', role: 'SYSADM', roleName: 'System Administrator', designation: 'TL', department: 'Development', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 19, userId: 19, employeeId: 'MPO108', email: 'pooja.sharma@mponline.gov.in', name: 'Pooja Sharma', fullName: 'Pooja Sharma', role: 'HRADM', roleName: 'HR Administrator', designation: 'Frontend Engineer', department: 'Development', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1034, userId: 1034, employeeId: 'MPO109', email: 'suresh.verma@mponline.gov.in', name: 'Suresh verma', fullName: 'Suresh verma', role: 'CADM', roleName: 'Community Administrator', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 17, karma: 17, isActive: true },
+    { id: 1035, userId: 1035, employeeId: 'MPO110', email: 'kabir.singh@mponline.gov.in', name: 'Kabir singh', fullName: 'Kabir singh', role: 'CADM', roleName: 'Community Administrator', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 21, karma: 21, isActive: true },
+    { id: 1036, userId: 1036, employeeId: 'MPO111', email: 'mayur.bansal@mponline.gov.in', name: 'Mayur bansal', fullName: 'Mayur bansal', role: 'EMP', roleName: 'Employee', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1037, userId: 1037, employeeId: 'MPO112', email: 'anup@mponline.gov.in', name: 'Anup', fullName: 'Anup', role: 'EMP', roleName: 'Employee', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1039, userId: 1039, employeeId: 'MPO113', email: 'mahesh.sharma@mponline.gov.in', name: 'Mahesh sharma', fullName: 'Mahesh sharma', role: 'HRADM', roleName: 'HR Administrator', designation: 'Hr', department: 'Human Resources', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1041, userId: 1041, employeeId: 'MPO114', email: 'ramesh.sharma@mponline.gov.in', name: 'Ramesh sharma', fullName: 'Ramesh sharma', role: 'EMP', roleName: 'Employee', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1043, userId: 1043, employeeId: 'MPO115', email: 'aishwary@mponline.gov.in', name: 'Aishwary', fullName: 'Aishwary', role: 'CADM', roleName: 'Community Administrator', designation: 'Software Engineer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1047, userId: 1047, employeeId: 'MPO116', email: 'meghna@mponline.gov.in', name: 'Meghna', fullName: 'Meghna', role: 'HRADM', roleName: 'HR Administrator', designation: 'Software Engineer', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1059, userId: 1059, employeeId: 'MP0108', email: 'loveneesh.sharma@mponline.gov.in', name: 'Loveneesh Sharma', fullName: 'Loveneesh Sharma', role: 'EMP', roleName: 'Employee', designation: 'TPM', department: 'Higher Education', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1050, userId: 1050, employeeId: 'MPO089', email: 'vilash.deshmukh@mponline.gov.in', name: 'Vilash deshmukh', fullName: 'Vilash deshmukh', role: 'SYSADM', roleName: 'System Administrator', designation: 'Associate Consultant', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1052, userId: 1052, employeeId: 'MPO118', email: 'raman.kumar@mponline.gov.in', name: 'Raman Kumar', fullName: 'Raman Kumar', role: 'CADM', roleName: 'Community Administrator', designation: 'Software Engineer', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1053, userId: 1053, employeeId: 'MPO119', email: 'rishabh.pandey@mponline.gov.in', name: 'Rishabh Pandey', fullName: 'Rishabh Pandey', role: 'CADM', roleName: 'Community Administrator', designation: 'Software Engineer', department: 'Information Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1054, userId: 1054, employeeId: 'MPO120', email: 'krisha.dabhi@mponline.gov.in', name: 'krisha dabhi', fullName: 'krisha dabhi', role: 'CADM', roleName: 'Community Administrator', designation: 'Software Engineer', department: 'Information Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1055, userId: 1055, employeeId: 'MPO121', email: 'mahi.rathore@mponline.gov.in', name: 'Mahi Rathore', fullName: 'Mahi Rathore', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1056, userId: 1056, employeeId: 'MPO122', email: 'satendra.singh@mponline.gov.in', name: 'Satendra Singh', fullName: 'Satendra Singh', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Information Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1057, userId: 1057, employeeId: 'mpo652', email: 'deepak.simrodia@mponline.gov.in', name: 'Deepak Simrodia', fullName: 'Deepak Simrodia', role: 'EMP', roleName: 'Employee', designation: 'Software Developer', department: 'University', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
 ];
 
 // Keep the named export `users` for any legacy imports
@@ -78,9 +91,10 @@ export const UserProvider = ({ children }) => {
             const highestRole = rolePriority.find(r => profile.roles.includes(r)) || profile.roles[0];
             derivedRoleName = highestRole;
             derivedRole = roleCodeMap[highestRole] || 'EMP';
-        } else if (Array.isArray(profile.roles) && profile.roles.length === 0) {
-            derivedRole = 'PENDING';
-            derivedRoleName = 'Pending Role Assignment';
+        } else {
+            // New user from EmployeeHub gets default Employee role with full access
+            derivedRole = 'EMP';
+            derivedRoleName = 'Employee';
         }
 
         const resolvedName = profile.fullName || localUser.name;
@@ -195,44 +209,165 @@ export const UserProvider = ({ children }) => {
      */
     useEffect(() => {
         const restoreSession = async () => {
-            // Check for incoming SSO query parameters from Employee Hub
-            const urlParams = new URLSearchParams(window.location.search);
-            const ssoToken = urlParams.get('sso_token') || urlParams.get('token');
-            const ssoEmpId = urlParams.get('employeeId') || urlParams.get('employee_id');
+            // Helper: sync users list from backend (only called after token is confirmed present)
+            const syncUsersList = async () => {
+                try {
+                    const res = await apiClient.get('/users?pageNumber=1&pageSize=100').catch(() => null);
+                    if (res) {
+                        const apiItems = Array.isArray(res) ? res : (res.items || res.data || []);
+                        if (apiItems.length > 0) {
+                            const mappedApiUsers = apiItems.map(u => {
+                                const empId = u.employeeId || u.EmployeeId || `MPO${u.userId || u.UserId || u.id}`;
+                                const name = u.fullName || u.FullName || u.name || 'Employee';
+                                const roles = Array.isArray(u.roles) ? u.roles : [u.roleName || 'Employee'];
+                                const primaryRole = roles.find(r => r !== 'Employee') || roles[0] || 'Employee';
+                                const roleCode = roleNameToCode[primaryRole] || 'EMP';
+                                const karma = typeof u.karmaPoints === 'number' ? u.karmaPoints : (typeof u.karma === 'number' ? u.karma : 0);
+                                const isSuspended = u.isSuspended === true || u.isPermanentlySuspended === true || u.isActive === false;
+                                return {
+                                    id: u.userId || u.UserId || u.id,
+                                    userId: u.userId || u.UserId || u.id,
+                                    employeeId: empId,
+                                    name: name,
+                                    fullName: name,
+                                    role: roleCode,
+                                    roleName: primaryRole,
+                                    roles: roles,
+                                    designation: u.designation || u.Designation || 'Staff Member',
+                                    department: u.departmentName || u.DepartmentName || u.department || 'General',
+                                    location: u.location || 'Bhopal HQ',
+                                    avatar: u.profilePhotoUrl || u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6366f1&color=fff&bold=true`,
+                                    karmaPoints: karma,
+                                    karma: karma,
+                                    isActive: !isSuspended,
+                                    isSuspended: isSuspended,
+                                };
+                            });
+                            setUsersList(mappedApiUsers);
+                        }
+                    }
+                } catch (e) { /* ignore */ }
+            };
 
-            if (ssoEmpId) {
+            // ── STEP 1: Check for incoming SSO parameters (Query string & Hash fragment) FIRST
+            const searchParams = new URLSearchParams(window.location.search);
+            const hashString = window.location.hash.startsWith('#') ? window.location.hash.substring(1) : window.location.hash;
+            const hashParams = new URLSearchParams(hashString);
+
+            // Combined param lookup (checks search params first, then hash params)
+            const getParam = (key) => searchParams.get(key) || hashParams.get(key);
+
+            // DEBUG: Log received SSO parameters
+            if (window.location.search || window.location.hash) {
+                console.info('[SSO Debug] Search params:', Object.fromEntries(searchParams.entries()));
+                console.info('[SSO Debug] Hash params:', Object.fromEntries(hashParams.entries()));
+                console.info('[SSO Debug] Full URL:', window.location.href);
+            }
+
+            const ssoToken = getParam('token') || getParam('access_token') || getParam('sso_token') || getParam('id_token') || getParam('code');
+            let ssoEmpId = getParam('employeeId') || getParam('employee_id') || getParam('empId') || getParam('emp_id') || getParam('email') || getParam('user') || getParam('username') || getParam('sub');
+
+            // If token is present, decode JWT claims (email / employeeId / sub)
+            if (ssoToken && !ssoEmpId) {
+                try {
+                    const parts = ssoToken.split('.');
+                    if (parts.length >= 2) {
+                        const base64Url = parts[1];
+                        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                        const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+                        const payload = JSON.parse(jsonPayload);
+                        console.info('[SSO Debug] Decoded JWT Claims:', payload);
+
+                        // Priority 1: Specific employee ID claims
+                        const extractedEmpId = payload.employeeId || 
+                                               payload.employee_id || 
+                                               payload.empId;
+
+                        // Priority 2: Specific email / username claims (including XML namespaces from Employee Hub / OpenIddict)
+                        const extractedEmail = payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] || 
+                                               payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name'] || 
+                                               payload.email || 
+                                               payload.preferred_username || 
+                                               payload.unique_name || 
+                                               payload.upn || 
+                                               payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn'];
+
+                        // Priority 3: Meaningful sub (ignore raw GUIDs if email is available)
+                        const isGuid = (val) => typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+                        const cleanSub = payload.sub && !isGuid(payload.sub) ? payload.sub : null;
+
+                        ssoEmpId = extractedEmpId || extractedEmail || cleanSub || payload.sub;
+                    }
+                } catch (e) {
+                    console.warn('[SSO Debug] JWT decode note:', e?.message || e);
+                }
+            }
+
+            if (ssoToken || ssoEmpId) {
                 const tokenToStore = ssoToken || `sso_token_${ssoEmpId}_${Date.now()}`;
                 localStorage.setItem('knome_jwt', tokenToStore);
-                localStorage.setItem('knome_employeeId', ssoEmpId);
+                localStorage.setItem('accessToken', tokenToStore);
+                if (ssoEmpId) localStorage.setItem('knome_employeeId', ssoEmpId);
+                
+                // Restore the page user was trying to visit before SSO redirect (or default to '/')
+                const ssoReturnUrl = sessionStorage.getItem('knome_sso_return_url') || '/';
+                sessionStorage.removeItem('knome_sso_return_url');
+
                 // Clean URL query parameters cleanly from address bar
-                const cleanUrl = window.location.pathname;
-                window.history.replaceState({}, document.title, cleanUrl);
+                window.history.replaceState({}, document.title, ssoReturnUrl);
 
-                let localUser = usersList.find(u => u.employeeId?.toUpperCase() === ssoEmpId.toUpperCase());
-                if (!localUser) {
-                    localUser = {
-                        id: Date.now(),
-                        employeeId: ssoEmpId.toUpperCase(),
-                        name: ssoEmpId,
-                        role: 'EMP',
-                        roleName: 'Employee',
-                        designation: 'Staff',
-                        department: 'Development',
-                        location: 'Bhopal',
-                        avatar: 'https://randomuser.me/api/portraits/men/75.jpg',
-                        isActive: true,
-                    };
-                }
+                // SSO token from Employee Hub: authenticate with Knome backend using resolved identity
+                if (ssoEmpId) {
+                    let localUser = INITIAL_USERS.find(u => 
+                        (u.employeeId && u.employeeId.toUpperCase() === ssoEmpId.toUpperCase()) ||
+                        (u.email && u.email.toLowerCase() === ssoEmpId.toLowerCase())
+                    );
+                    if (!localUser) {
+                        localUser = {
+                            id: Date.now(),
+                            employeeId: ssoEmpId,
+                            email: ssoEmpId.includes('@') ? ssoEmpId.toLowerCase() : undefined,
+                            name: ssoEmpId.includes('@') ? ssoEmpId.split('@')[0] : ssoEmpId,
+                            role: 'EMP',
+                            roleName: 'Employee',
+                            designation: 'Staff',
+                            department: 'Development',
+                            location: 'Bhopal',
+                            avatar: null,
+                            isActive: true,
+                        };
+                    }
 
-                try {
-                    await authenticateUser(localUser);
-                } catch (err) {
-                    console.error('SSO authentication failed:', err?.message || err);
+                    try {
+                        // Remove the SSO token before authenticating — Knome backend will issue its own JWT
+                        localStorage.removeItem('knome_jwt');
+                        localStorage.removeItem('accessToken');
+                        await authenticateUser(localUser);
+                        // Sync users list now that we have a valid Knome JWT
+                        syncUsersList();
+                        
+                        // Force browser navigation to the return URL so React Router initializes properly on it
+                        window.location.href = ssoReturnUrl;
+                    } catch (err) {
+                        console.error('SSO authentication failed:', err?.message || err);
+                        localStorage.removeItem('knome_jwt');
+                        localStorage.removeItem('accessToken');
+                        localStorage.removeItem('knome_employeeId');
+                        setCurrentUser(null);
+                        setIsAuthenticated(false);
+                        setIsAuthLoading(false);
+                        window.history.replaceState({}, document.title, '/login');
+                        window.location.href = '/login?error=' + encodeURIComponent(err?.message || ('SSO authentication failed for user: ' + ssoEmpId));
+                    }
+                } else {
+                    // No employeeId in SSO params — cannot authenticate
+                    console.warn('SSO redirect received but no employeeId could be extracted from token. Token:', ssoToken);
                     localStorage.removeItem('knome_jwt');
-                    localStorage.removeItem('knome_employeeId');
-                    setCurrentUser(null);
-                    setIsAuthenticated(false);
+                    localStorage.removeItem('accessToken');
                     setIsAuthLoading(false);
+                    setIsAuthenticated(false);
+                    window.history.replaceState({}, document.title, '/login');
+                    window.location.href = '/login?error=' + encodeURIComponent('SSO token received but no user identity could be extracted.');
                 }
                 return;
             }
@@ -241,7 +376,10 @@ export const UserProvider = ({ children }) => {
             const savedEmployeeId = localStorage.getItem('knome_employeeId');
 
             if (savedEmployeeId) {
-                let localUser = usersList.find(u => u.employeeId?.toUpperCase() === savedEmployeeId.toUpperCase());
+                let localUser = usersList.find(u => 
+                    u.employeeId?.toUpperCase() === savedEmployeeId.toUpperCase() ||
+                    u.email?.toLowerCase() === savedEmployeeId.toLowerCase()
+                );
                 if (!localUser) {
                     localUser = {
                         id: Date.now(),
@@ -252,7 +390,7 @@ export const UserProvider = ({ children }) => {
                         designation: 'Staff',
                         department: 'Development',
                         location: 'Bhopal',
-                        avatar: 'https://randomuser.me/api/portraits/men/75.jpg',
+                        avatar: null,
                         isActive: true,
                     };
                 }
@@ -275,6 +413,7 @@ export const UserProvider = ({ children }) => {
                             setCurrentUser(mergeProfile(localUser, profile));
                             setIsAuthenticated(true);
                             setIsAuthLoading(false);
+                            syncUsersList(); // background sync after session confirmed
                             return;
                         }
                     } catch {
@@ -285,6 +424,7 @@ export const UserProvider = ({ children }) => {
                 // Re-authenticate with backend to get fresh JWT token
                 try {
                     await authenticateUser(localUser);
+                    syncUsersList(); // background sync after fresh auth
                     return;
                 } catch (err) {
                     console.warn('Session verification failed:', err?.message || err);
@@ -345,7 +485,7 @@ export const UserProvider = ({ children }) => {
                 designation: 'Staff',
                 department: 'Development',
                 location: 'Bhopal',
-                avatar: 'https://randomuser.me/api/portraits/men/75.jpg',
+                avatar: null,
                 isActive: true,
             };
         }
@@ -362,6 +502,8 @@ export const UserProvider = ({ children }) => {
             if (refreshToken) await authApi.logout(refreshToken);
         } catch { /* ignore logout errors */ }
         localStorage.removeItem('knome_jwt');
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('userProfile');
         localStorage.removeItem('knome_refresh');
         localStorage.removeItem('knome_employeeId');
         
@@ -369,10 +511,18 @@ export const UserProvider = ({ children }) => {
         const isIis = window.location.port === '8080';
         const ehPort = isIis ? '8081' : '5001';
         const knomePort = window.location.port || (isIis ? '8080' : '5173');
-        const ehBase = `http://${host}:${ehPort}`;
-        const knomeBase = `http://${host}:${knomePort}`;
+        const knomeBase = `${window.location.protocol}//${host}${knomePort ? `:${knomePort}` : ''}`;
         
-        window.location.href = `${ehBase}/?logout=true&client_id=knome-web-portal&redirect_uri=${encodeURIComponent(knomeBase)}`;
+        const isLocal = host === 'localhost' || host === '127.0.0.1';
+        const myAppLoginUrl = `${knomeBase}/login`;
+        
+        if (isLocal) {
+            const ehBase = `http://${host}:${ehPort}`;
+            window.location.href = `${ehBase}/?logout=true&client_id=Knome-2026&returnUrl=${encodeURIComponent(myAppLoginUrl)}&redirect_uri=${encodeURIComponent(knomeBase)}`;
+        } else {
+            const bffSignoutUrl = "https://counselling-1.mponline.demo.gov.in:3001/api/bff/signout";
+            window.location.href = `${bffSignoutUrl}?returnUrl=${encodeURIComponent(myAppLoginUrl)}`;
+        }
     }, []);
 
     /**

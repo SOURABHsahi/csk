@@ -10,6 +10,8 @@ import GlobalAudioPlayer from './components/widgets/GlobalAudioPlayer'
 
 // Lazy Load Pages for Faster Initial Load Time
 const Login = lazy(() => import('./pages/Login'))
+const SsoPage = lazy(() => import('./pages/auth/SsoPage'))
+const SsoLogoutPage = lazy(() => import('./pages/auth/SsoLogoutPage'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Communities = lazy(() => import('./pages/Communities'))
 const CommunityView = lazy(() => import('./pages/CommunityView'))
@@ -106,12 +108,15 @@ function App() {
             <Router>
               <Suspense fallback={<PageLoader />}>
                 <Routes>
-                  {/* Public Route */}
+                  {/* Public & SSO Routes */}
                   <Route path="/login" element={<Login />} />
+                  <Route path="/sso" element={<SsoPage />} />
+                  <Route path="/sso-logout" element={<SsoLogoutPage />} />
 
                   {/* Protected Routes */}
                   <Route path="/"                element={<ProtectedPage><Dashboard /></ProtectedPage>} />
                   <Route path="/community"       element={<ProtectedPage><Communities /></ProtectedPage>} />
+                  <Route path="/communities"     element={<ProtectedPage><Communities /></ProtectedPage>} />
                   <Route path="/community/view"  element={<ProtectedPage><CommunityView /></ProtectedPage>} />
                   <Route path="/jobs"            element={<ProtectedPage><Jobs /></ProtectedPage>} />
                   <Route path="/videos"          element={<ProtectedPage><Videos /></ProtectedPage>} />
@@ -125,6 +130,7 @@ function App() {
                   <Route path="/search"          element={<ProtectedPage><Search /></ProtectedPage>} />
                   <Route path="/karma-history"   element={<ProtectedPage><KarmaHistory /></ProtectedPage>} />
                   <Route path="/suggested-people" element={<ProtectedPage><Network /></ProtectedPage>} />
+                  <Route path="/network"         element={<ProtectedPage><Network /></ProtectedPage>} />
                   <Route path="/saved-content"   element={<ProtectedPage><SavedContent /></ProtectedPage>} />
                   <Route path="/posts"           element={<ProtectedPage><Posts /></ProtectedPage>} />
                   <Route path="*"               element={<Navigate to="/" replace />} />

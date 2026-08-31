@@ -2,18 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import CreateCommunityModal from '../components/modals/CreateCommunityModal';
-import { communitiesApi, getCommunityImages } from '../utils/apiService';
+import { communitiesApi, getCommunityImages, resolveMediaUrl } from '../utils/apiService';
 
 const defaultSeeds = [
-    { id: 101, name: 'DotNet Developers Community', type: 'Public', members: '12 members', activity: '14 posts', description: 'Collaborative space for DotNet & C# engineering teams across MPOnline.', banner: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'none' },
-    { id: 109, name: 'Executive AI & Data Labs', type: 'Private', members: '1 member', activity: 'New', description: 'Exclusive private community for AI research, LLM architecture, and enterprise data science leadership.', banner: 'https://images.unsplash.com/photo-1677442136019-21780efad99a?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'none' },
-    { id: 107, name: 'Fullstack Engineering Guild', type: 'Public', members: '1 member', activity: 'New', description: 'Test Public Community created for fullstack engineering teams to test joining, discussions, and live member tracking.', banner: 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'none' },
-    { id: 108, name: 'AI & Data Science Innovation Lab', type: 'Private', members: '3 members', activity: '5 posts', description: 'Test Private Community requiring Community Admin approval for join requests.', banner: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'none' },
-    { id: 102, name: 'Technology & Architecture Hub', type: 'Default (Org)', members: '84 members', activity: '32 posts', description: 'Official Organization Technology channel auto-subscribed for all tech employees.', banner: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200&h=400', membershipStatus: 'none' },
-    { id: 103, name: 'HR & People Operations', type: 'Default (Org)', members: '120 members', activity: '45 posts', description: 'Central HR announcements, policy updates, and employee engagement.', banner: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'none' },
-    { id: 104, name: 'Finance & Accounting Operations', type: 'Default (Org)', members: '45 members', activity: '19 posts', description: 'Finance guidelines, travel reimbursement procedures, and budget updates.', banner: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'none' },
-    { id: 105, name: 'Marketing & Brand Strategy', type: 'Public', members: '28 members', activity: '8 posts', description: 'Brand assets, event promotions, and internal marketing initiatives.', banner: 'https://images.unsplash.com/photo-1533750349088-cd871a92f312?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'none' },
-    { id: 106, name: 'CTO Leadership & Strategy Circle', type: 'Private', members: '6 members', activity: '5 posts', description: 'Private discussion channel for CTO leadership and technical directors.', banner: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&q=80&w=600&h=300', membershipStatus: 'none' }
+    { id: 101, name: 'DotNet Developers Community', category: 'Technology', type: 'Public', members: '12 members', activity: '14 posts', description: 'Collaborative space for DotNet & C# engineering teams across MPOnline.', banner: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' },
+    { id: 109, name: 'Executive AI & Data Labs', category: 'Technology', type: 'Private', members: '1 member', activity: 'New', description: 'Exclusive private community for AI research, LLM architecture, and enterprise data science leadership.', banner: 'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' },
+    { id: 107, name: 'Fullstack Engineering Guild', category: 'Technology', type: 'Public', members: '1 member', activity: 'New', description: 'Test Public Community created for fullstack engineering teams to test joining, discussions, and live member tracking.', banner: 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' },
+    { id: 108, name: 'AI & Data Science Innovation Lab', category: 'Technology', type: 'Private', members: '3 members', activity: '5 posts', description: 'Test Private Community requiring Community Admin approval for join requests.', banner: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' },
+    { id: 102, name: 'Technology & Architecture Hub', category: 'Technology', type: 'Default (Org)', members: '84 members', activity: '32 posts', description: 'Official Organization Technology channel auto-subscribed for all tech employees.', banner: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' },
+    { id: 103, name: 'HR & People Operations', category: 'Culture & HR', type: 'Default (Org)', members: '120 members', activity: '45 posts', description: 'Central HR announcements, policy updates, and employee engagement.', banner: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' },
+    { id: 104, name: 'Finance & Accounting Operations', category: 'Finance', type: 'Default (Org)', members: '45 members', activity: '19 posts', description: 'Finance guidelines, travel reimbursement procedures, and budget updates.', banner: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' },
+    { id: 105, name: 'Marketing & Brand Strategy', category: 'Marketing', type: 'Public', members: '28 members', activity: '8 posts', description: 'Brand assets, event promotions, and internal marketing initiatives.', banner: 'https://images.unsplash.com/photo-1533750349088-cd871a92f312?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' },
+    { id: 106, name: 'CTO Leadership & Strategy Circle', category: 'Leadership', type: 'Private', members: '6 members', activity: '5 posts', description: 'Private discussion channel for CTO leadership and technical directors.', banner: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' }
 ];
 
 const getInitialCommunities = (userId) => {
@@ -32,14 +32,17 @@ const getInitialCommunities = (userId) => {
     const customMapped = custom.map(c => {
         const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${c.id}`) || '[]');
         const count = localMembers.length > 0 ? localMembers.length : (parseInt(c.members) || 1);
+        const imgs = getCommunityImages(c.name, c.category);
         return {
             id: c.id,
             name: c.name,
             type: c.type || 'Public',
+            category: c.category || 'General',
             members: `${count} ${count === 1 ? 'member' : 'members'}`,
             activity: 'New',
             description: c.description || 'A new community created for MPOnline teams.',
-            banner: c.banner || 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300',
+            banner: resolveMediaUrl(c.banner) || imgs.banner,
+            thumbnail: resolveMediaUrl(c.thumbnail) || imgs.thumbnail,
             membershipStatus: getStatus(c.id, c.type)
         };
     });
@@ -47,9 +50,12 @@ const getInitialCommunities = (userId) => {
     const seedsMapped = defaultSeeds.map(s => {
         const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${s.id}`) || '[]');
         const count = localMembers.length > 0 ? localMembers.length : (parseInt(s.members) || 1);
+        const imgs = getCommunityImages(s.name, s.category);
         return {
             ...s,
             members: `${count} ${count === 1 ? 'member' : 'members'}`,
+            banner: resolveMediaUrl(s.banner) || imgs.banner,
+            thumbnail: resolveMediaUrl(s.thumbnail) || imgs.thumbnail,
             membershipStatus: getStatus(s.id, s.type)
         };
     });
@@ -102,44 +108,81 @@ export default function Communities() {
                 return 'none';
             };
 
+            let combinedList = [];
+            const existingNames = new Set();
+            const existingIds = new Set();
+
             if (data && Array.isArray(data) && data.length > 0) {
                 const apiMapped = data.map(c => {
                     const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${c.communityId}`) || '[]');
                     const count = localMembers.length > 0 ? localMembers.length : (c.membersCount || 1);
                     const imgs = getCommunityImages(c.name, c.categoryName);
+                    const bannerResolved = resolveMediaUrl(c.bannerUrl || c.bannerImageUrl) || imgs.banner;
+                    const thumbResolved = resolveMediaUrl(c.thumbnailUrl) || imgs.thumbnail;
+                    existingNames.add((c.name || '').toLowerCase().trim());
+                    existingIds.add(String(c.communityId));
                     return {
                         id: c.communityId,
                         name: c.name,
                         type: c.communityType || 'Public',
+                        category: c.categoryName || 'General',
                         members: `${count} ${count === 1 ? 'member' : 'members'}`,
                         activity: `${c.postsCount || 0} posts`,
                         description: c.description || 'No description provided.',
-                        banner: c.bannerUrl || imgs.banner,
-                        thumbnail: c.thumbnailUrl || imgs.thumbnail,
+                        banner: bannerResolved,
+                        thumbnail: thumbResolved,
                         membershipStatus: getStatus(c.communityId, c.currentUserMembershipStatus, c.communityType)
                     };
                 });
-                const existingIds = new Set(apiMapped.map(c => String(c.id)));
-                const custom = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
-                custom.forEach(c => {
-                    if (!existingIds.has(String(c.id))) {
-                        const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${c.id}`) || '[]');
-                        const count = localMembers.length > 0 ? localMembers.length : (parseInt(c.members) || 1);
-                        const imgs = getCommunityImages(c.name);
-                        apiMapped.unshift({
-                            id: c.id,
-                            name: c.name,
-                            type: c.type || 'Public',
-                            members: `${count} ${count === 1 ? 'member' : 'members'}`,
-                            activity: 'New',
-                            description: c.description || 'A new community created for MPOnline teams.',
-                            banner: c.banner || imgs.banner,
-                            thumbnail: c.thumbnail || imgs.thumbnail,
-                            membershipStatus: getStatus(c.id, null, c.type)
-                        });
-                    }
-                });
-                setCommunities(apiMapped);
+                combinedList.push(...apiMapped);
+            }
+
+            // Merge Custom Created Communities
+            const custom = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+            custom.forEach(c => {
+                const cleanName = (c.name || '').toLowerCase().trim();
+                if (!existingIds.has(String(c.id)) && !existingNames.has(cleanName)) {
+                    const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${c.id}`) || '[]');
+                    const count = localMembers.length > 0 ? localMembers.length : (parseInt(c.members) || 1);
+                    const imgs = getCommunityImages(c.name, c.category);
+                    existingNames.add(cleanName);
+                    existingIds.add(String(c.id));
+                    combinedList.unshift({
+                        id: c.id,
+                        name: c.name,
+                        type: c.type || 'Public',
+                        category: c.category || 'General',
+                        members: `${count} ${count === 1 ? 'member' : 'members'}`,
+                        activity: 'New',
+                        description: c.description || 'A new community created for MPOnline teams.',
+                        banner: resolveMediaUrl(c.banner) || imgs.banner,
+                        thumbnail: resolveMediaUrl(c.thumbnail) || imgs.thumbnail,
+                        membershipStatus: getStatus(c.id, null, c.type)
+                    });
+                }
+            });
+
+            // Merge Default Seed Communities so all project communities are ALWAYS visible
+            defaultSeeds.forEach(s => {
+                const cleanName = (s.name || '').toLowerCase().trim();
+                if (!existingIds.has(String(s.id)) && !existingNames.has(cleanName)) {
+                    const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${s.id}`) || '[]');
+                    const count = localMembers.length > 0 ? localMembers.length : (parseInt(s.members) || 1);
+                    const imgs = getCommunityImages(s.name, s.category);
+                    existingNames.add(cleanName);
+                    existingIds.add(String(s.id));
+                    combinedList.push({
+                        ...s,
+                        members: `${count} ${count === 1 ? 'member' : 'members'}`,
+                        banner: resolveMediaUrl(s.banner) || imgs.banner,
+                        thumbnail: resolveMediaUrl(s.thumbnail) || imgs.thumbnail,
+                        membershipStatus: getStatus(s.id, null, s.type)
+                    });
+                }
+            });
+
+            if (combinedList.length > 0) {
+                setCommunities(combinedList);
             }
         } catch (err) {
             console.error('Failed to load communities:', err);
@@ -506,7 +549,15 @@ export default function Communities() {
                                 {pendingApprovals.map(comm => (
                                     <div key={comm.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm flex flex-col hover:border-amber-300 dark:hover:border-amber-700 transition-all">
                                         <div className="h-28 relative overflow-hidden bg-slate-200 dark:bg-slate-800">
-                                            <img src={comm.banner} alt={comm.name} className="w-full h-full object-cover" />
+                                            <img 
+                                                src={comm.banner || getCommunityImages(comm.name, comm.category).banner} 
+                                                alt={comm.name} 
+                                                onError={(e) => {
+                                                    e.currentTarget.onerror = null;
+                                                    e.currentTarget.src = getCommunityImages(comm.name, comm.category).banner;
+                                                }}
+                                                className="w-full h-full object-cover" 
+                                            />
                                             <div className="absolute inset-0 bg-slate-900/20"></div>
                                             <div className="absolute top-3 left-3">
                                                 <span className="px-2.5 py-1 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white shadow-sm">
@@ -663,7 +714,15 @@ export default function Communities() {
                                     {myPendingCommunities.map(c => (
                                         <div key={c.id} className="bg-white dark:bg-slate-900 border-2 border-dashed border-amber-300 dark:border-amber-700/60 rounded-2xl overflow-hidden shadow-sm flex flex-col opacity-90">
                                             <div className="h-28 relative overflow-hidden bg-slate-200 dark:bg-slate-800">
-                                                <img src={c.banner} alt={c.name} className="w-full h-full object-cover" />
+                                                <img 
+                                                    src={c.banner || getCommunityImages(c.name, c.category).banner} 
+                                                    alt={c.name} 
+                                                    onError={(e) => {
+                                                        e.currentTarget.onerror = null;
+                                                        e.currentTarget.src = getCommunityImages(c.name, c.category).banner;
+                                                    }}
+                                                    className="w-full h-full object-cover" 
+                                                />
                                                 <div className="absolute inset-0 bg-slate-900/40"></div>
                                                 <div className="absolute top-3 left-3">
                                                     <span className="px-2.5 py-1 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white shadow-sm flex items-center gap-1">
@@ -691,7 +750,15 @@ export default function Communities() {
                             {filteredCommunities.map(community => (
                                 <div key={community.id} onClick={() => navigate(`/community/view?id=${community.id}`)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer group flex flex-col h-full">
                                     <div className="h-32 relative overflow-hidden bg-slate-200 dark:bg-slate-800">
-                                        <img src={community.banner} alt="Banner" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                        <img 
+                                            src={community.banner || getCommunityImages(community.name, community.category).banner} 
+                                            alt={community.name} 
+                                            onError={(e) => {
+                                                e.currentTarget.onerror = null;
+                                                e.currentTarget.src = getCommunityImages(community.name, community.category).banner;
+                                            }}
+                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                                        />
                                         <div className="absolute inset-0 bg-slate-900/10"></div>
                                         {isSysAdmin && (
                                             <button 

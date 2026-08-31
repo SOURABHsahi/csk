@@ -12,4 +12,5 @@ public interface IAuthService
 {
     Task<LoginResponseDto> LoginAsync(LoginRequestDto request);
     Task<CurrentUserDto> GetCurrentUserAsync(int userId);
+    Task<CurrentUserDto> GetCurrentUserByIdentifierAsync(string identifier);
 }

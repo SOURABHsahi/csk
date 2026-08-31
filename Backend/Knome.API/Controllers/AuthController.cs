@@ -48,6 +48,7 @@ public class AuthController : KnomeControllerBase
 
     /// <summary>
     /// Returns the authenticated user's profile derived from the JWT claims.
+    /// Supports both Knome symmetric tokens and MPO OIDC RS256 tokens.
     /// </summary>
     [HttpGet("me")]
     [Authorize]
@@ -55,8 +56,34 @@ public class AuthController : KnomeControllerBase
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Me()
     {
-        var userId = GetCurrentUserId();
-        var currentUser = await _authService.GetCurrentUserAsync(userId);
+        // 1. Check for numeric UserId in uid, NameIdentifier or sub claim
+        var uidClaim = User.FindFirst("uid")?.Value
+                    ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                    ?? User.FindFirst("sub")?.Value;
+
+        var emailClaim = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+                      ?? User.FindFirst("email")?.Value
+                      ?? User.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
+                      ?? User.FindFirst("name")?.Value;
+
+        var empIdClaim = User.FindFirst("employeeId")?.Value
+                      ?? User.FindFirst("empId")?.Value;
+
+        CurrentUserDto? currentUser = null;
+
+        if (int.TryParse(uidClaim, out var userId))
+        {
+            currentUser = await _authService.GetCurrentUserAsync(userId);
+        }
+        else
+        {
+            var identifier = emailClaim ?? empIdClaim ?? uidClaim;
+            if (string.IsNullOrEmpty(identifier))
+                return Unauthorized(ApiResponse.FailureResponse(401, "Invalid token: Missing identity claims."));
+
+            currentUser = await _authService.GetCurrentUserByIdentifierAsync(identifier);
+        }
+
         return Ok(ApiResponse<CurrentUserDto>.SuccessResponse(200, ApiConstants.Messages.Success, currentUser));
     }
 }

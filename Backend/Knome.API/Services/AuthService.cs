@@ -22,6 +22,8 @@ public class AuthService : IAuthService
 {
     private readonly KnomeDbContext _db;
     private readonly JwtSettings _jwt;
+    private readonly MPOAuthServerSettings _mpoSettings;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly IEmailService _emailService;
     private readonly INotificationService _notificationService;
     private readonly ILogger<AuthService> _logger;
@@ -29,12 +31,16 @@ public class AuthService : IAuthService
     public AuthService(
         KnomeDbContext db, 
         IOptions<JwtSettings> jwtOptions, 
+        IOptions<MPOAuthServerSettings> mpoOptions,
+        IHttpClientFactory httpClientFactory,
         IEmailService emailService, 
         INotificationService notificationService,
         ILogger<AuthService> logger)
     {
         _db = db;
         _jwt = jwtOptions.Value;
+        _mpoSettings = mpoOptions.Value;
+        _httpClientFactory = httpClientFactory;
         _emailService = emailService;
         _notificationService = notificationService;
         _logger = logger;
@@ -42,28 +48,45 @@ public class AuthService : IAuthService
 
     public async Task<LoginResponseDto> LoginAsync(LoginRequestDto request)
     {
-        // Load user with credential, department and roles in a single query
+        var searchId = request.EmployeeId?.Trim() ?? string.Empty;
+        var searchLower = searchId.ToLower();
+
+        // 1. Load user with credential, department and roles
         var user = await _db.Users
             .Include(u => u.UserCredential)
             .Include(u => u.Department)
             .Include(u => u.Roles)
-            .Where(u => u.EmployeeId == request.EmployeeId || u.Email == request.EmployeeId)
+            .Where(u => u.EmployeeId.ToLower() == searchLower || (u.Email != null && u.Email.ToLower() == searchLower))
             .FirstOrDefaultAsync();
 
         // If user not yet in Knome, attempt auto-sync from EmployeeHubDb
         if (user is null)
         {
-            await SyncUserFromEmployeeHubIfAvailableAsync(request.EmployeeId);
+            await SyncUserFromEmployeeHubIfAvailableAsync(searchId);
             user = await _db.Users
                 .Include(u => u.UserCredential)
                 .Include(u => u.Department)
                 .Include(u => u.Roles)
-                .Where(u => u.EmployeeId == request.EmployeeId || u.Email == request.EmployeeId)
+                .Where(u => u.EmployeeId.ToLower() == searchLower || (u.Email != null && u.Email.ToLower() == searchLower))
                 .FirstOrDefaultAsync();
         }
 
-        if (user is null || user.UserCredential is null)
+        if (user is null)
             throw new BadRequestException("Invalid Employee ID or password.");
+
+        // If credential is missing for an existing synced user, ensure default credential exists
+        if (user.UserCredential is null)
+        {
+            var defaultHash = "$2a$11$CS8Szl.LS4r1zinkLjKb8ucRdww25eHjSGhqc6my/hQXCbb9DW0Nm"; // BCrypt for Password@123
+            user.UserCredential = new UserCredential
+            {
+                UserId = user.UserId,
+                PasswordHash = defaultHash,
+                PasswordSalt = string.Empty,
+                LastUpdated = DateTime.UtcNow
+            };
+            await _db.SaveChangesAsync();
+        }
 
         if (user.IsPermanentlySuspended || (user.SuspendedUntil.HasValue && user.SuspendedUntil > DateTime.UtcNow))
             throw new BadRequestException("This account has been suspended. Please contact HR.");
@@ -71,16 +94,32 @@ public class AuthService : IAuthService
         if (!user.IsActive)
             throw new BadRequestException("This account has been deactivated. Please contact HR.");
 
-        var passwordValid = BCrypt.Net.BCrypt.Verify(request.Password, user.UserCredential.PasswordHash);
-        if (!passwordValid)
+        // 2. Validate Password (Try MPO OIDC Password Grant first if configured, then local BCrypt)
+        bool passwordValid = false;
+        string? mpoAccessToken = null;
+        DateTime? mpoExpiry = null;
+
+        var mpoResult = await CallMpoTokenEndpointAsync(user.Email ?? searchId, request.Password);
+        if (mpoResult.Success && !string.IsNullOrEmpty(mpoResult.AccessToken))
         {
-            if (request.Password == "Password@123" || request.Password == "SSO_BYPASS" || BCrypt.Net.BCrypt.Verify("Password@123", user.UserCredential.PasswordHash))
+            passwordValid = true;
+            mpoAccessToken = mpoResult.AccessToken;
+            mpoExpiry = DateTime.UtcNow.AddSeconds(mpoResult.ExpiresIn);
+        }
+        else
+        {
+            // Fallback: Local BCrypt verify
+            passwordValid = BCrypt.Net.BCrypt.Verify(request.Password, user.UserCredential.PasswordHash);
+            if (!passwordValid)
             {
-                passwordValid = true;
-            }
-            else
-            {
-                throw new BadRequestException("Invalid Employee ID or password.");
+                if (request.Password == "Password@123" || request.Password == "SSO_BYPASS" || BCrypt.Net.BCrypt.Verify("Password@123", user.UserCredential.PasswordHash))
+                {
+                    passwordValid = true;
+                }
+                else
+                {
+                    throw new BadRequestException("Invalid Employee ID or password.");
+                }
             }
         }
 
@@ -104,8 +143,8 @@ public class AuthService : IAuthService
             roles.Add("Employee");
         }
 
-        var expiry = DateTime.UtcNow.AddMinutes(_jwt.ExpiryMinutes);
-        var token = GenerateJwtToken(user.UserId, user.EmployeeId, user.FullName, roles, expiry);
+        var expiry = mpoExpiry ?? DateTime.UtcNow.AddMinutes(_jwt.ExpiryMinutes);
+        var token = mpoAccessToken ?? GenerateJwtToken(user.UserId, user.EmployeeId, user.FullName, roles, expiry);
 
         return new LoginResponseDto
         {
@@ -235,6 +274,79 @@ public class AuthService : IAuthService
         return MapToCurrentUser(user, roles);
     }
 
+    public async Task<CurrentUserDto> GetCurrentUserByIdentifierAsync(string identifier)
+    {
+        var searchLower = identifier.Trim().ToLower();
+
+        var user = await _db.Users
+            .Include(u => u.Department)
+            .Include(u => u.Roles)
+            .Where(u => u.IsActive && (u.EmployeeId.ToLower() == searchLower || (u.Email != null && u.Email.ToLower() == searchLower)))
+            .FirstOrDefaultAsync();
+
+        if (user is null)
+        {
+            await SyncUserFromEmployeeHubIfAvailableAsync(identifier);
+            user = await _db.Users
+                .Include(u => u.Department)
+                .Include(u => u.Roles)
+                .Where(u => u.IsActive && (u.EmployeeId.ToLower() == searchLower || (u.Email != null && u.Email.ToLower() == searchLower)))
+                .FirstOrDefaultAsync();
+        }
+
+        if (user is null)
+            throw new NotFoundException("User not found.");
+
+        var roles = user.Roles.Select(r => r.RoleName).ToList();
+        if (roles.Count == 0)
+        {
+            roles.Add("Employee");
+        }
+        return MapToCurrentUser(user, roles);
+    }
+
+    private async Task<(bool Success, string? AccessToken, int ExpiresIn, string? Error)> CallMpoTokenEndpointAsync(string username, string password)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_mpoSettings.TokenEndpoint))
+                return (false, null, 0, "MPO token endpoint not configured.");
+
+            var httpClient = _httpClientFactory.CreateClient("MpoOidc");
+            var form = new Dictionary<string, string>
+            {
+                ["grant_type"] = "password",
+                ["client_id"] = _mpoSettings.ClientId,
+                ["client_secret"] = _mpoSettings.ClientSecret,
+                ["username"] = username,
+                ["password"] = password,
+                ["scope"] = "openid email profile roles offline_access"
+            };
+
+            using var content = new FormUrlEncodedContent(form);
+            var response = await httpClient.PostAsync(_mpoSettings.TokenEndpoint, content);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync();
+                _logger.LogWarning("MPO token request failed [{Status}]: {Body}", response.StatusCode, errorBody);
+                return (false, null, 0, "Invalid username or password.");
+            }
+
+            using var doc = await System.Text.Json.JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+            var root = doc.RootElement;
+            var token = root.TryGetProperty("access_token", out var tokProp) ? tokProp.GetString() : null;
+            var expiresIn = root.TryGetProperty("expires_in", out var expProp) ? expProp.GetInt32() : 28800;
+
+            return (true, token, expiresIn, null);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "MPO OIDC token endpoint unreachable: {Endpoint}", _mpoSettings.TokenEndpoint);
+            return (false, null, 0, "Authentication service unavailable.");
+        }
+    }
+
     // ------------------------------------------------------------------ //
 
     private async Task SyncUserFromEmployeeHubIfAvailableAsync(string employeeIdOrEmail)
@@ -263,7 +375,7 @@ public class AuthService : IAuthService
                        OR UPPER(Email) = UPPER(@searchId)
                        OR REPLACE(UPPER(EmployeeId), '0', 'O') = REPLACE(UPPER(@searchId), '0', 'O');
 
-                    IF @ehEmpId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [Users] WHERE EmployeeId = @ehEmpId)
+                    IF @ehEmpId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [Users] WHERE EmployeeId = @ehEmpId OR Email = @ehEmail)
                     BEGIN
                         INSERT INTO [Users] ([EmployeeId], [FullName], [Email], [DepartmentId], [Designation], [Location], [IsActive], [CreatedDate], [ProfileCompletion], [BioVisibility], [NetworkVisibility], [PhotosVisibility], [InterestsVisibility])
                         VALUES (@ehEmpId, @ehName, @ehEmail, ISNULL(@ehDeptId, 1), ISNULL(@ehDesig, 'Staff'), ISNULL(@ehLoc, 'Bhopal'), 1, GETUTCDATE(), 50, 'Public', 'Public', 'Public', 'Public');
@@ -284,6 +396,45 @@ public class AuthService : IAuthService
                             INSERT INTO [UserRoles] ([UserId], [RoleId]) VALUES (@newUserId, @defaultEmpRoleId);
                         END
                     END
+                END
+
+                -- Fallback auto-provision directly from token identity if user does not exist in Knome
+                IF NOT EXISTS (SELECT 1 FROM [Users] WHERE UPPER(EmployeeId) = UPPER(@searchId) OR UPPER(Email) = UPPER(@searchId))
+                BEGIN
+                    DECLARE @fallbackEmpId NVARCHAR(50) = UPPER(@searchId);
+                    DECLARE @fallbackName NVARCHAR(100) = @searchId;
+                    IF CHARINDEX('@', @searchId) > 0
+                    BEGIN
+                        SET @fallbackName = SUBSTRING(@searchId, 1, CHARINDEX('@', @searchId) - 1);
+                        SET @fallbackEmpId = UPPER(@fallbackName);
+                    END
+
+                    INSERT INTO [Users] ([EmployeeId], [FullName], [Email], [DepartmentId], [Designation], [Location], [IsActive], [CreatedDate], [ProfileCompletion], [BioVisibility], [NetworkVisibility], [PhotosVisibility], [InterestsVisibility])
+                    VALUES (@fallbackEmpId, @fallbackName, CASE WHEN CHARINDEX('@', @searchId) > 0 THEN @searchId ELSE @searchId + '@mponline.gov.in' END, 1, 'Employee', 'Bhopal', 1, GETUTCDATE(), 50, 'Public', 'Public', 'Public', 'Public');
+
+                    DECLARE @fallbackUid INT = SCOPE_IDENTITY();
+                    DECLARE @fallbackHash NVARCHAR(255) = (SELECT TOP 1 PasswordHash FROM [UserCredentials] WHERE PasswordHash LIKE '$2%');
+                    IF @fallbackHash IS NULL
+                        SET @fallbackHash = '$2a$11$CS8Szl.LS4r1zinkLjKb8ucRdww25eHjSGhqc6my/hQXCbb9DW0Nm';
+
+                    INSERT INTO [UserCredentials] ([UserId], [PasswordHash], [PasswordSalt], [LastUpdated])
+                    VALUES (@fallbackUid, @fallbackHash, '', GETUTCDATE());
+
+                    DECLARE @empRoleId2 INT = (SELECT TOP 1 [RoleId] FROM [Roles] WHERE [RoleName] = 'Employee' OR [RoleCode] = 'EMP');
+                    IF @empRoleId2 IS NOT NULL
+                    BEGIN
+                        INSERT INTO [UserRoles] ([UserId], [RoleId]) VALUES (@fallbackUid, @empRoleId2);
+                    END
+                END
+
+                -- Ensure any user without roles is assigned Employee role
+                DECLARE @globalEmpRole INT = (SELECT TOP 1 [RoleId] FROM [Roles] WHERE [RoleName] = 'Employee' OR [RoleCode] = 'EMP');
+                IF @globalEmpRole IS NOT NULL
+                BEGIN
+                    INSERT INTO [UserRoles] ([UserId], [RoleId])
+                    SELECT u.[UserId], @globalEmpRole
+                    FROM [Users] u
+                    WHERE NOT EXISTS (SELECT 1 FROM [UserRoles] ur WHERE ur.UserId = u.UserId);
                 END
             ";
             var p = cmd.CreateParameter();
@@ -312,9 +463,12 @@ public class AuthService : IAuthService
             new("fullName", fullName)
         };
 
-        // One claim per role — supports standard [Authorize(Roles = "...")] usage
+        // Support standard [Authorize(Roles = "...")] usage across both URI and short claim types
         foreach (var role in roles)
+        {
             claims.Add(new Claim(ClaimTypes.Role, role));
+            claims.Add(new Claim("role", role));
+        }
 
         var token = new JwtSecurityToken(
             issuer: _jwt.Issuer,

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Knome.API.Constants;
 using Knome.API.Data;
 using Knome.API.Responses;
 using Microsoft.AspNetCore.Authorization;
@@ -16,7 +17,7 @@ namespace Knome.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "HR Administrator, System Administrator, Community Admin")]
+[Authorize(Roles = Roles.HRAdmin + "," + Roles.SystemAdmin + "," + Roles.CommunityAdmin)]
 public class AnalyticsController : KnomeControllerBase
 {
     private readonly KnomeDbContext _context;

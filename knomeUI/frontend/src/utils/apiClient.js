@@ -198,8 +198,9 @@ export const apiClient = {
                 }
             }
 
-            localStorage.removeItem('knome_jwt');
-            localStorage.removeItem('knome_refresh');
+            // Only remove tokens if we truly cannot recover
+            // Do NOT remove knome_jwt here blindly — it may be set by SSO flow mid-restore.
+            // The caller (restoreSession) manages token lifecycle.
             const err = new Error('Unauthorized');
             err.isApiError = true;
             err.status = 401;

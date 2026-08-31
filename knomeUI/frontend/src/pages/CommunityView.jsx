@@ -617,8 +617,8 @@ export default function CommunityView() {
                     category: commData.categoryName || 'Technology',
                     membersCount: commData.membersCount || 1,
                     adminContact: commData.createdByUserName || 'Admin',
-                    banner: commData.bannerUrl || imgs.banner,
-                    thumbnail: commData.thumbnailUrl || imgs.thumbnail,
+                    banner: resolveMediaUrl(commData.bannerUrl || commData.bannerImageUrl) || imgs.banner,
+                    thumbnail: resolveMediaUrl(commData.thumbnailUrl) || imgs.thumbnail,
                     description: commData.description || 'Community for MPOnline team members.',
                     rules: commData.rules ? (Array.isArray(commData.rules) ? commData.rules : commData.rules.split('\n')) : ['1. Be respectful and constructive.', '2. Keep discussions relevant.', '3. Follow company guidelines.'],
                     faq: (() => {
@@ -1480,11 +1480,27 @@ export default function CommunityView() {
             {/* Hero Section (FR-CM-08: Banner, Thumbnail, Member Count) */}
 
             <section className="relative min-h-[300px] md:min-h-[340px] w-full rounded-b-3xl overflow-hidden -mt-8 shadow-xl border-b border-slate-800">
-                <img src={community.banner} alt="Banner" className="w-full h-full object-cover absolute inset-0" />
+                <img 
+                    src={community.banner || getCommunityImages(community.name, community.category).banner} 
+                    alt={community.name} 
+                    onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        e.currentTarget.src = getCommunityImages(community.name, community.category).banner;
+                    }}
+                    className="w-full h-full object-cover absolute inset-0" 
+                />
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-slate-900/50"></div>
                 
                 <div className="relative z-10 bottom-0 left-0 w-full p-6 md:p-8 flex flex-col md:flex-row items-start md:items-end gap-6 max-w-7xl mx-auto pt-16">
-                    <img src={community.thumbnail} alt="Thumbnail" className="w-24 h-24 md:w-32 md:h-32 rounded-2xl border-4 border-slate-900 object-cover shadow-2xl bg-white shrink-0" />
+                    <img 
+                        src={community.thumbnail || getCommunityImages(community.name, community.category).thumbnail} 
+                        alt={community.name} 
+                        onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = getCommunityImages(community.name, community.category).thumbnail;
+                        }}
+                        className="w-24 h-24 md:w-32 md:h-32 rounded-2xl border-4 border-slate-900 object-cover shadow-2xl bg-white shrink-0" 
+                    />
                     
                     <div className="flex-1 text-white">
                         <div className="flex items-center gap-3 mb-2 flex-wrap">

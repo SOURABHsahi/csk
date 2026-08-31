@@ -270,25 +270,33 @@ export const communitiesApi = {
 /** Helper to resolve high-res cover banner & avatar photo for enterprise communities */
 export const getCommunityImages = (name = '', category = '') => {
     const n = (name || '').toLowerCase().trim();
-    if (n.includes('dotnet') || n.includes('c#')) {
+    const c = (category || '').toLowerCase().trim();
+
+    if (n.includes('devops') || n.includes('cloud') || n.includes('kubernetes') || n.includes('docker') || n.includes('ci/cd')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('ai') || n.includes('data') || n.includes('executive') || n.includes('ml') || n.includes('labs') || n.includes('intelligence')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('dotnet') || n.includes('c#') || n.includes('.net')) {
         return {
             banner: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&q=80&w=1200&h=400',
             thumbnail: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=300&h=300'
         };
     }
-    if (n.includes('executive') || n.includes('ai') || n.includes('data') || n.includes('ml')) {
-        return {
-            banner: 'https://images.unsplash.com/photo-1677442136019-21780efad99a?auto=format&fit=crop&q=80&w=1200&h=400',
-            thumbnail: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=300&h=300'
-        };
-    }
-    if (n.includes('fullstack') || n.includes('frontend') || n.includes('guild') || n.includes('web')) {
+    if (n.includes('fullstack') || n.includes('frontend') || n.includes('guild') || n.includes('web') || n.includes('higher') || n.includes('engineering')) {
         return {
             banner: 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&q=80&w=1200&h=400',
             thumbnail: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&q=80&w=300&h=300'
         };
     }
-    if (n.includes('tech') || n.includes('architecture') || n.includes('engineering')) {
+    if (n.includes('tech') || n.includes('architecture') || n.includes('hub')) {
         return {
             banner: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200&h=400',
             thumbnail: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&q=80&w=300&h=300'
@@ -320,7 +328,7 @@ export const getCommunityImages = (name = '', category = '') => {
     }
 
     return {
-        banner: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=1200&h=400',
+        banner: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200&h=400',
         thumbnail: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=300&h=300'
     };
 };
@@ -616,6 +624,8 @@ export const mediaApi = {
         });
     }
 };
+
+
 
 // ─────────────────────────────────────────────
 //  ANALYTICS (HR)

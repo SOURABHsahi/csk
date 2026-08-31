@@ -48,7 +48,12 @@ export default function AuthGuard({ children }) {
 
     if (!isAuthenticated) {
         // Automatic Single Sign-On Redirect to Employee Hub
-        window.location.href = 'http://localhost:5001/?client_id=knome-web-portal&redirect_uri=http%3A%2F%2Flocalhost%3A5173';
+        // redirect_uri is built dynamically from current window origin so it works on any host:
+        // localhost:5173 (Vite dev), localhost:8080 (IIS), or any production domain.
+        const ssoRedirectUri = encodeURIComponent(window.location.origin);
+        // Save the current page URL so we can return the user here after SSO login
+        sessionStorage.setItem('knome_sso_return_url', window.location.pathname + window.location.search);
+        window.location.href = `https://counselling-1.mponline.demo.gov.in:3001/applications?client_id=knome-web-portal&redirect_uri=${ssoRedirectUri}`;
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
                 <div className="flex flex-col items-center gap-3">
@@ -97,11 +102,10 @@ export default function AuthGuard({ children }) {
         );
     }
 
-    // Strict Role Pending Guard — Block all portal access until System Admin assigns role
+    // Role Pending Guard — only applies if explicitly marked PENDING (never for standard new users)
     const isRolePending = currentUser && (
         currentUser.role === 'PENDING' ||
         currentUser.roleName === 'Pending Role Assignment' ||
-        (Array.isArray(currentUser.roles) && currentUser.roles.length === 0) ||
         (Array.isArray(currentUser.roles) && currentUser.roles.length === 1 && currentUser.roles[0] === 'Pending Role Assignment')
     );
 
@@ -112,7 +116,7 @@ export default function AuthGuard({ children }) {
                 <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 rounded-full bg-amber-500/10 blur-[120px] pointer-events-none"></div>
 
                 <div className="max-w-lg w-full bg-slate-900/90 border border-amber-500/40 rounded-3xl p-8 sm:p-10 shadow-2xl shadow-amber-500/10 text-center space-y-6 animate-in fade-in zoom-in duration-300 relative backdrop-blur-xl">
-                    
+
                     {/* Animated Pending Icon */}
                     <div className="relative w-20 h-20 rounded-2xl bg-gradient-to-tr from-amber-500/20 via-amber-400/10 to-orange-500/20 border border-amber-400/40 flex items-center justify-center mx-auto shadow-lg shadow-amber-500/20">
                         <span className="material-symbols-outlined text-amber-400 text-4xl animate-pulse">hourglass_top</span>

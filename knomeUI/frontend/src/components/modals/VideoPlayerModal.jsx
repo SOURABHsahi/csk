@@ -315,22 +315,6 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
         }
     };
 
-    const activeUsersList = (users || [
-        { id: 2, userId: 2, name: 'Priya Verma', roleName: 'Product Design Lead', department: 'UI/UX Lab' },
-        { id: 3, userId: 3, name: 'Sourabh Sahu', roleName: 'Community Admin', department: 'HR & People Ops' },
-        { id: 4, userId: 4, name: 'Vishendra Sharma', roleName: 'AI Engineer', department: 'AI Lab' },
-        { id: 5, userId: 5, name: 'Mayur Verma', roleName: 'UX Researcher', department: 'Product Design' },
-        { id: 6, userId: 6, name: 'Meghna Tiwari', roleName: 'Brand Strategist', department: 'Marketing' },
-        { id: 7, userId: 7, name: 'Rajesh Kumar', roleName: 'Financial Analyst', department: 'Finance' }
-    ]).filter(u => {
-        const uId = u.id || u.userId;
-        const currentId = currentUser?.id || currentUser?.userId;
-        if (String(uId) === String(currentId)) return false;
-        if (!userSearchQuery) return true;
-        const q = userSearchQuery.toLowerCase();
-        return (u.name || u.fullName || '').toLowerCase().includes(q) || (u.department || '').toLowerCase().includes(q);
-    });
-
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={onClose}></div>

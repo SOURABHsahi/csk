@@ -87,35 +87,218 @@ public static class ServiceCollectionExtensions
             options.ExpiryMinutes = jwtSettings.ExpiryMinutes;
         });
 
+        // MPO Employee Hub SSO Auth Server Settings
+        var mpoSection = configuration.GetSection("MPOAuthServer");
+        var mpoSettings = mpoSection.Get<MPOAuthServerSettings>() ?? new MPOAuthServerSettings();
+        services.Configure<MPOAuthServerSettings>(mpoSection);
+
         var key = Encoding.UTF8.GetBytes(jwtSettings.SecretKey);
+        var mpoAuthority = mpoSettings.Authority ?? "https://counselling-1.mponline.demo.gov.in:3001";
+
+        // Named HttpClient for MPO OIDC Token Proxying
+        services.AddHttpClient("MpoOidc", client =>
+        {
+            client.BaseAddress = new Uri(mpoAuthority);
+            client.Timeout = TimeSpan.FromSeconds(30);
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+        });
 
         services.AddAuthentication(options =>
         {
-            options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-            options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            options.DefaultAuthenticateScheme = "DynamicJwt";
+            options.DefaultChallengeScheme = "DynamicJwt";
         })
-        .AddJwtBearer(options =>
+        .AddPolicyScheme("DynamicJwt", "DynamicJwt", options =>
         {
+            options.ForwardDefaultSelector = context =>
+            {
+                var authHeader = context.Request.Headers.Authorization.ToString();
+                if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                {
+                    var tokenQuery = context.Request.Query["access_token"].ToString();
+                    if (!string.IsNullOrEmpty(tokenQuery))
+                    {
+                        if (tokenQuery.StartsWith("eyJhbGciOiJSUz", StringComparison.OrdinalIgnoreCase))
+                            return "MPO";
+                        return JwtBearerDefaults.AuthenticationScheme;
+                    }
+                    return "MPO";
+                }
+
+                var token = authHeader.Substring("Bearer ".Length).Trim();
+                if (token.StartsWith("eyJhbGciOiJSUz", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "MPO";
+                }
+
+                return JwtBearerDefaults.AuthenticationScheme;
+            };
+        })
+        .AddJwtBearer("MPO", options =>
+        {
+            // MPO OIDC discovery will fetch public keys from Authority
+            options.Authority = mpoAuthority;
+            options.RequireHttpsMetadata = false;
+
+            options.BackchannelHttpHandler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+            };
+
+            options.TokenValidationParameters = new TokenValidationParameters
+            {
+                ValidateIssuer = true,
+                ValidIssuers = new[]
+                {
+                    mpoAuthority,
+                    mpoAuthority.TrimEnd('/') + "/",
+                    mpoAuthority.TrimEnd('/'),
+                    "https://counselling-1.mponline.demo.gov.in:3001",
+                    "https://counselling-1.mponline.demo.gov.in:3001/",
+                    "https://counselling-1.mponline.demo.gov.in",
+                    "https://counselling-1.mponline.demo.gov.in/",
+                    "http://api:8080",
+                    "http://api:8080/"
+                },
+                ValidateAudience = false,
+                ValidateLifetime = true,
+                ValidateIssuerSigningKey = true,
+                ClockSkew = TimeSpan.Zero,
+                NameClaimType = "sub",
+                RoleClaimType = "role"
+            };
+
+            options.Events = new JwtBearerEvents
+            {
+                OnAuthenticationFailed = context =>
+                {
+                    var tokenHeader = context.Request.Headers.Authorization.ToString();
+                    var tokenSnippet = tokenHeader.Length > 7 ? tokenHeader.Substring(7) : "";
+                    if (tokenSnippet.Length > 30) tokenSnippet = tokenSnippet.Substring(0, 30) + "...";
+                    return Task.CompletedTask;
+                },
+                OnMessageReceived = context =>
+                {
+                    var accessToken = context.Request.Query["access_token"];
+                    var path = context.HttpContext.Request.Path;
+                    if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+                        context.Token = accessToken;
+                    return Task.CompletedTask;
+                },
+                OnTokenValidated = async context =>
+                {
+                    var email = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+                             ?? context.Principal?.FindFirst("email")?.Value
+                             ?? context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
+                             ?? context.Principal?.FindFirst("name")?.Value;
+
+                    var sub = context.Principal?.FindFirst("sub")?.Value
+                           ?? context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+                    if (context.Principal?.Identity is System.Security.Claims.ClaimsIdentity identity)
+                    {
+                        var dbContext = context.HttpContext.RequestServices.GetRequiredService<KnomeDbContext>();
+
+                        var user = await dbContext.Users
+                            .Include(u => u.Roles)
+                            .AsNoTracking()
+                            .FirstOrDefaultAsync(u =>
+                                (!string.IsNullOrEmpty(email) && u.Email.ToLower() == email.ToLower()) ||
+                                (!string.IsNullOrEmpty(sub) && (u.EmployeeId.ToLower() == sub.ToLower() || (u.Email != null && u.Email.ToLower() == sub.ToLower()))));
+
+                        if (user == null && (!string.IsNullOrEmpty(email) || !string.IsNullOrEmpty(sub)))
+                        {
+                            try
+                            {
+                                var authService = context.HttpContext.RequestServices.GetRequiredService<IAuthService>();
+                                var searchId = !string.IsNullOrEmpty(email) ? email : sub!;
+                                var currentUserDto = await authService.GetCurrentUserByIdentifierAsync(searchId);
+                                if (currentUserDto != null)
+                                {
+                                    user = await dbContext.Users
+                                        .Include(u => u.Roles)
+                                        .AsNoTracking()
+                                        .FirstOrDefaultAsync(u => u.UserId == currentUserDto.UserId);
+                                }
+                            }
+                            catch
+                            {
+                                // fallback gracefully
+                            }
+                        }
+
+                        if (user != null)
+                        {
+                            if (!identity.HasClaim(c => c.Type == "uid"))
+                                identity.AddClaim(new System.Security.Claims.Claim("uid", user.UserId.ToString()));
+                            if (!identity.HasClaim(c => c.Type == "employeeId"))
+                                identity.AddClaim(new System.Security.Claims.Claim("employeeId", user.EmployeeId));
+                            if (!identity.HasClaim(c => c.Type == "username"))
+                                identity.AddClaim(new System.Security.Claims.Claim("username", user.EmployeeId));
+                            if (!identity.HasClaim(c => c.Type == System.Security.Claims.ClaimTypes.NameIdentifier))
+                                identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, user.UserId.ToString()));
+
+                            var hasRole = false;
+                            foreach (var role in user.Roles)
+                            {
+                                hasRole = true;
+                                if (!identity.HasClaim(c => c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == role.RoleName))
+                                    identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, role.RoleName));
+                                if (!identity.HasClaim(c => c.Type == "role" && c.Value == role.RoleName))
+                                    identity.AddClaim(new System.Security.Claims.Claim("role", role.RoleName));
+                            }
+
+                            if (!hasRole)
+                            {
+                                if (!identity.HasClaim(c => c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == "Employee"))
+                                    identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "Employee"));
+                                if (!identity.HasClaim(c => c.Type == "role" && c.Value == "Employee"))
+                                    identity.AddClaim(new System.Security.Claims.Claim("role", "Employee"));
+                            }
+                        }
+                        else
+                        {
+                            // Default fallback claims for brand new identity
+                            var fallbackId = !string.IsNullOrEmpty(email) ? email.Split('@')[0] : (sub ?? "EMP");
+                            if (!identity.HasClaim(c => c.Type == "employeeId"))
+                                identity.AddClaim(new System.Security.Claims.Claim("employeeId", fallbackId));
+                            if (!identity.HasClaim(c => c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == "Employee"))
+                                identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "Employee"));
+                            if (!identity.HasClaim(c => c.Type == "role" && c.Value == "Employee"))
+                                identity.AddClaim(new System.Security.Claims.Claim("role", "Employee"));
+                        }
+                    }
+                }
+            };
+        })
+        .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
+        {
+            // LEGACY / SYMMETRIC: Knome-issued tokens
             options.TokenValidationParameters = new TokenValidationParameters
             {
                 ValidateIssuer = true,
                 ValidateAudience = true,
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
-                ValidIssuers = new[] { jwtSettings.Issuer, "EmployeeHub.Identity", "Knome.API" },
-                ValidAudiences = new[] { jwtSettings.Audience, "Knome.Client", "EmployeeHub.Client" },
+                ValidIssuer = jwtSettings.Issuer,
+                ValidAudience = jwtSettings.Audience,
                 IssuerSigningKey = new SymmetricSecurityKey(key),
-                ClockSkew = System.TimeSpan.Zero
+                ClockSkew = TimeSpan.Zero,
+                NameClaimType = System.Security.Claims.ClaimTypes.NameIdentifier,
+                RoleClaimType = System.Security.Claims.ClaimTypes.Role
             };
             options.Events = new JwtBearerEvents
             {
-                OnChallenge = async context =>
+                OnMessageReceived = context =>
                 {
-                    context.HandleResponse();
-                    context.Response.StatusCode = 401;
-                    context.Response.ContentType = "application/json";
-                    var apiResponse = Knome.API.Responses.ApiResponse.FailureResponse(401, "Unauthorized access.");
-                    await Microsoft.AspNetCore.Http.HttpResponseWritingExtensions.WriteAsync(context.Response, System.Text.Json.JsonSerializer.Serialize(apiResponse));
+                    var accessToken = context.Request.Query["access_token"];
+                    var path = context.HttpContext.Request.Path;
+                    if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+                        context.Token = accessToken;
+                    return Task.CompletedTask;
                 }
             };
         });
@@ -125,10 +308,15 @@ public static class ServiceCollectionExtensions
     {
         services.AddAuthorization(options =>
         {
-            options.AddPolicy(Roles.Employee,       p => p.RequireRole(Roles.Employee));
-            options.AddPolicy(Roles.CommunityAdmin, p => p.RequireRole(Roles.CommunityAdmin));
-            options.AddPolicy(Roles.HRAdmin,        p => p.RequireRole(Roles.HRAdmin));
-            options.AddPolicy(Roles.SystemAdmin,    p => p.RequireRole(Roles.SystemAdmin));
+            options.DefaultPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder(
+                    JwtBearerDefaults.AuthenticationScheme, "MPO")
+                .RequireAuthenticatedUser()
+                .Build();
+
+            options.AddPolicy(Roles.Employee,       p => p.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme, "MPO").RequireRole(Roles.Employee));
+            options.AddPolicy(Roles.CommunityAdmin, p => p.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme, "MPO").RequireRole(Roles.CommunityAdmin));
+            options.AddPolicy(Roles.HRAdmin,        p => p.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme, "MPO").RequireRole(Roles.HRAdmin));
+            options.AddPolicy(Roles.SystemAdmin,    p => p.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme, "MPO").RequireRole(Roles.SystemAdmin));
         });
     }
 

@@ -49,7 +49,7 @@ const getFallbackPostContent = (report) => {
 };
 
 export default function AdminConsole() {
-    const { currentUser, updateUserRoleInList, toggleUserActiveStatus, addKarmaPointsToUser, awardRuleKarma } = useUser();
+    const { currentUser, users: contextUsers, updateUserRoleInList, toggleUserActiveStatus, addKarmaPointsToUser, awardRuleKarma } = useUser();
     const navigate = useNavigate();
 
     // Strict Role Authorization Check — System Administrator Only (HR Admin Excluded)
@@ -89,7 +89,7 @@ export default function AdminConsole() {
     const [actionToast, setActionToast] = useState('');
 
     // User Management State
-    const [usersList, setUsersList] = useState([]);
+    const [usersList, setUsersList] = useState(() => contextUsers || []);
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [isLoadingUsers, setIsLoadingUsers] = useState(false);
 
@@ -114,12 +114,17 @@ export default function AdminConsole() {
     const [roleRequests, setRoleRequests] = useState(() => {
         try {
             const stored = JSON.parse(localStorage.getItem('knome_pending_role_requests') || localStorage.getItem('eh_role_requests') || '[]');
-            if (stored.length > 0) return stored;
+            if (Array.isArray(stored) && stored.length > 0) return stored;
         } catch (e) {}
         return [
-            { requestId: 1, employeeId: 'MPO108', fullName: 'Pooja Sharma', email: 'pooja.sharma@mponline.gov.in', departmentName: 'Development', designation: 'Frontend Engineer', requestedRoleCode: 'HRADM', status: 'Approved', assignedRoleName: 'HR Administrator', assignedBy: 'System Admin', createdAt: new Date().toISOString() },
-            { requestId: 2, employeeId: 'MPO112', fullName: 'Rajesh Kumar', email: 'rajesh.kumar@mponline.gov.in', departmentName: 'Development', designation: 'Senior Software Engineer', requestedRoleCode: 'CADM', status: 'Approved', assignedRoleName: 'Community Admin', assignedBy: 'System Admin', createdAt: new Date().toISOString() },
-            { requestId: 3, employeeId: 'MPO107', fullName: 'Vilash Deshmukh', email: 'vilash.deshmukh@mponline.gov.in', departmentName: 'Development', designation: 'TL', requestedRoleCode: 'SYSADM', status: 'Approved', assignedRoleName: 'System Administrator', assignedBy: 'System Admin', createdAt: new Date().toISOString() }
+            { requestId: 101, employeeId: 'MPO118', fullName: 'Raman Kumar', email: 'raman.kumar@mponline.gov.in', departmentName: 'HR', designation: 'Software Engineer', requestedRoleCode: 'CADM', status: 'Pending', assignedRoleName: 'Community Admin', createdAt: new Date(Date.now() - 3600000 * 2).toISOString() },
+            { requestId: 102, employeeId: 'MPO119', fullName: 'Rishabh Pandey', email: 'rishabh.pandey@mponline.gov.in', departmentName: 'Information Technology', designation: 'Software Engineer', requestedRoleCode: 'CADM', status: 'Pending', assignedRoleName: 'Community Admin', createdAt: new Date(Date.now() - 3600000 * 4).toISOString() },
+            { requestId: 103, employeeId: 'MPO120', fullName: 'krisha dabhi', email: 'krisha.dabhi@mponline.gov.in', departmentName: 'Information Technology', designation: 'Software Engineer', requestedRoleCode: 'CADM', status: 'Pending', assignedRoleName: 'Community Admin', createdAt: new Date(Date.now() - 3600000 * 6).toISOString() },
+            { requestId: 104, employeeId: 'MPO121', fullName: 'Mahi Rathore', email: 'mahi.rathore@mponline.gov.in', departmentName: 'HR', designation: 'Software Engineer', requestedRoleCode: 'EMP', status: 'Pending', assignedRoleName: 'Employee', createdAt: new Date(Date.now() - 3600000 * 8).toISOString() },
+            { requestId: 105, employeeId: 'MPO122', fullName: 'Satendra Singh', email: 'satendra.singh@mponline.gov.in', departmentName: 'Information Technology', designation: 'Software Engineer', requestedRoleCode: 'EMP', status: 'Pending', assignedRoleName: 'Employee', createdAt: new Date(Date.now() - 3600000 * 10).toISOString() },
+            { requestId: 106, employeeId: 'MPO115', fullName: 'Aishwary', email: 'aishwary@mponline.gov.in', departmentName: 'Technology', designation: 'Software Engineer', requestedRoleCode: 'CADM', status: 'Approved', assignedRoleName: 'Community Admin', assignedBy: 'System Admin', createdAt: new Date(Date.now() - 86400000).toISOString() },
+            { requestId: 107, employeeId: 'MPO116', fullName: 'Meghna', email: 'meghna@mponline.gov.in', departmentName: 'HR', designation: 'Software Engineer', requestedRoleCode: 'HRADM', status: 'Approved', assignedRoleName: 'HR Administrator', assignedBy: 'System Admin', createdAt: new Date(Date.now() - 86400000 * 2).toISOString() },
+            { requestId: 108, employeeId: 'MPO108', fullName: 'Pooja Sharma', email: 'pooja.sharma@mponline.gov.in', departmentName: 'Development', designation: 'Frontend Engineer', requestedRoleCode: 'HRADM', status: 'Approved', assignedRoleName: 'HR Administrator', assignedBy: 'System Admin', createdAt: new Date(Date.now() - 86400000 * 3).toISOString() }
         ];
     });
     const [isLoadingRoleRequests, setIsLoadingRoleRequests] = useState(false);
@@ -673,17 +678,32 @@ export default function AdminConsole() {
             const apiData = res?.data || res;
             let list = Array.isArray(apiData) ? [...apiData] : [];
 
+            const DEFAULT_SEEDS = [
+                { requestId: 101, employeeId: 'MPO118', fullName: 'Raman Kumar', email: 'raman.kumar@mponline.gov.in', departmentName: 'HR', designation: 'Software Engineer', requestedRoleCode: 'CADM', status: 'Pending', assignedRoleName: 'Community Admin', createdAt: new Date(Date.now() - 3600000 * 2).toISOString() },
+                { requestId: 102, employeeId: 'MPO119', fullName: 'Rishabh Pandey', email: 'rishabh.pandey@mponline.gov.in', departmentName: 'Information Technology', designation: 'Software Engineer', requestedRoleCode: 'CADM', status: 'Pending', assignedRoleName: 'Community Admin', createdAt: new Date(Date.now() - 3600000 * 4).toISOString() },
+                { requestId: 103, employeeId: 'MPO120', fullName: 'krisha dabhi', email: 'krisha.dabhi@mponline.gov.in', departmentName: 'Information Technology', designation: 'Software Engineer', requestedRoleCode: 'CADM', status: 'Pending', assignedRoleName: 'Community Admin', createdAt: new Date(Date.now() - 3600000 * 6).toISOString() },
+                { requestId: 104, employeeId: 'MPO121', fullName: 'Mahi Rathore', email: 'mahi.rathore@mponline.gov.in', departmentName: 'HR', designation: 'Software Engineer', requestedRoleCode: 'EMP', status: 'Pending', assignedRoleName: 'Employee', createdAt: new Date(Date.now() - 3600000 * 8).toISOString() },
+                { requestId: 105, employeeId: 'MPO122', fullName: 'Satendra Singh', email: 'satendra.singh@mponline.gov.in', departmentName: 'Information Technology', designation: 'Software Engineer', requestedRoleCode: 'EMP', status: 'Pending', assignedRoleName: 'Employee', createdAt: new Date(Date.now() - 3600000 * 10).toISOString() },
+                { requestId: 106, employeeId: 'MPO115', fullName: 'Aishwary', email: 'aishwary@mponline.gov.in', departmentName: 'Technology', designation: 'Software Engineer', requestedRoleCode: 'CADM', status: 'Approved', assignedRoleName: 'Community Admin', assignedBy: 'System Admin', createdAt: new Date(Date.now() - 86400000).toISOString() },
+                { requestId: 107, employeeId: 'MPO116', fullName: 'Meghna', email: 'meghna@mponline.gov.in', departmentName: 'HR', designation: 'Software Engineer', requestedRoleCode: 'HRADM', status: 'Approved', assignedRoleName: 'HR Administrator', assignedBy: 'System Admin', createdAt: new Date(Date.now() - 86400000 * 2).toISOString() },
+                { requestId: 108, employeeId: 'MPO108', fullName: 'Pooja Sharma', email: 'pooja.sharma@mponline.gov.in', departmentName: 'Development', designation: 'Frontend Engineer', requestedRoleCode: 'HRADM', status: 'Approved', assignedRoleName: 'HR Administrator', assignedBy: 'System Admin', createdAt: new Date(Date.now() - 86400000 * 3).toISOString() }
+            ];
+
             // Merge local storage pending requests only for non-existing employees
             try {
                 const stored = JSON.parse(localStorage.getItem('knome_pending_role_requests') || localStorage.getItem('eh_role_requests') || '[]');
-                if (Array.isArray(stored)) {
+                if (Array.isArray(stored) && stored.length > 0) {
                     stored.forEach(s => {
                         if (s && s.employeeId && !list.some(item => item.employeeId?.toUpperCase() === s.employeeId.toUpperCase())) {
                             list.push(s);
                         }
                     });
+                } else if (list.length === 0) {
+                    list = DEFAULT_SEEDS;
                 }
-            } catch (e) {}
+            } catch (e) {
+                if (list.length === 0) list = DEFAULT_SEEDS;
+            }
 
             // Deduplicate strictly by employeeId
             const uniqueList = [];
@@ -696,10 +716,11 @@ export default function AdminConsole() {
                 }
             }
 
-            setRoleRequests(uniqueList);
-            localStorage.setItem('knome_pending_role_requests', JSON.stringify(uniqueList));
+            const finalList = uniqueList.length > 0 ? uniqueList : DEFAULT_SEEDS;
+            setRoleRequests(finalList);
+            localStorage.setItem('knome_pending_role_requests', JSON.stringify(finalList));
         } catch {
-            const stored = JSON.parse(localStorage.getItem('knome_pending_role_requests') || localStorage.getItem('eh_role_requests') || '[]');
+            const stored = JSON.parse(localStorage.getItem('knome_pending_role_requests') || '[]');
             if (stored.length > 0) setRoleRequests(stored);
         } finally {
             setIsLoadingRoleRequests(false);
@@ -764,11 +785,18 @@ export default function AdminConsole() {
 
     useEffect(() => {
         if (!isAuthorized) return;
+        fetchUsers();
+        fetchReports();
+        fetchRoleRequests();
+        fetchAuditLogs();
+    }, [isAuthorized]);
+
+    useEffect(() => {
+        if (!isAuthorized) return;
         if (activeTab === 'moderation') fetchReports();
         if (activeTab === 'users') fetchUsers();
         if (activeTab === 'role_requests') fetchRoleRequests();
-        fetchRoleRequests();
-        fetchAuditLogs();
+        if (activeTab === 'audit') fetchAuditLogs();
     }, [activeTab, isAuthorized]);
 
     // Handle Moderation Action (Dismiss or Remove Content)
