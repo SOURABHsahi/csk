@@ -546,6 +546,24 @@ export const adminApi = {
     createAuditLog: (action, targetType, targetId, reason) =>
         apiClient.post('/audit/logs', { action, targetType, targetId: Number(targetId) || 0, reason }).catch(() => {}),
 
+    /** GET /audit/system-logs (Serilog live logs) */
+    getSystemLogs: (lines = 200, level = '', search = '', logFile = '') => {
+        const params = new URLSearchParams({ lines: String(lines) });
+        if (level && level !== 'ALL') params.append('level', level);
+        if (search) params.append('search', search);
+        if (logFile) params.append('logFile', logFile);
+        return apiClient.get(`/audit/system-logs?${params}`);
+    },
+
+    /** GET /audit/system-logs/files */
+    getSystemLogFiles: () => apiClient.get('/audit/system-logs/files'),
+
+    /** GET /audit/system-logs/download */
+    downloadSystemLogUrl: (logFile = '') => {
+        const base = apiClient.getBaseUrl ? apiClient.getBaseUrl() : 'http://localhost:5095/api';
+        return `${base}/audit/system-logs/download${logFile ? `?logFile=${encodeURIComponent(logFile)}` : ''}`;
+    },
+
     /** GET /notifications/user */
     getAnnouncements: () => apiClient.get('/notifications').catch(() => []),
 
@@ -553,7 +571,7 @@ export const adminApi = {
     createAnnouncement: (data) => apiClient.post('/notifications/broadcast', data),
 
     /** DELETE /notifications/{id} */
-    deleteAnnouncement: (id) => apiClient.delete(`/notifications/${id}`),
+    deleteAnnouncement: (id) => apiClient.delete(`/notifications/{id}`),
 };
 
 // ─────────────────────────────────────────────

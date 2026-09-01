@@ -258,6 +258,19 @@ export default function AdminConsole() {
     });
     const [configToast, setConfigToast] = useState(false);
 
+    // ── System Logs & Serilog Live Stream State ──
+    const [systemLogs, setSystemLogs] = useState([]);
+    const [systemLogCounts, setSystemLogCounts] = useState({ total: 0, errors: 0, warnings: 0, info: 0, debug: 0 });
+    const [systemLogFiles, setSystemLogFiles] = useState([]);
+    const [selectedLogFile, setSelectedLogFile] = useState('');
+    const [logLevelFilter, setLogLevelFilter] = useState('ALL');
+    const [logSearchQuery, setLogSearchQuery] = useState('');
+    const [logLinesCount, setLogLinesCount] = useState(200);
+    const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+    const [isAutoRefreshLogs, setIsAutoRefreshLogs] = useState(false);
+    const [expandedLogIndex, setExpandedLogIndex] = useState(null);
+    const [lastLogSyncTime, setLastLogSyncTime] = useState('');
+
     // Export Dropdown State
     const [isExportOpen, setIsExportOpen] = useState(false);
 
@@ -783,12 +796,36 @@ export default function AdminConsole() {
         }
     };
 
+    const fetchSystemLogs = async () => {
+        setIsLoadingLogs(true);
+        try {
+            const res = await adminApi.getSystemLogs(logLinesCount, logLevelFilter, logSearchQuery, selectedLogFile);
+            const data = res?.data || res;
+            if (data) {
+                setSystemLogs(data.entries || []);
+                if (data.counts) setSystemLogCounts(data.counts);
+                if (data.availableFiles && data.availableFiles.length > 0) {
+                    setSystemLogFiles(data.availableFiles);
+                    if (!selectedLogFile && data.logFileName) {
+                        setSelectedLogFile(data.logFileName);
+                    }
+                }
+                setLastLogSyncTime(new Date().toLocaleTimeString());
+            }
+        } catch (err) {
+            console.error('Failed to load system logs:', err);
+        } finally {
+            setIsLoadingLogs(false);
+        }
+    };
+
     useEffect(() => {
         if (!isAuthorized) return;
         fetchUsers();
         fetchReports();
         fetchRoleRequests();
         fetchAuditLogs();
+        if (activeTab === 'serilog') fetchSystemLogs();
     }, [isAuthorized]);
 
     useEffect(() => {
@@ -797,7 +834,17 @@ export default function AdminConsole() {
         if (activeTab === 'users') fetchUsers();
         if (activeTab === 'role_requests') fetchRoleRequests();
         if (activeTab === 'audit') fetchAuditLogs();
-    }, [activeTab, isAuthorized]);
+        if (activeTab === 'serilog') fetchSystemLogs();
+    }, [activeTab, isAuthorized, selectedLogFile, logLevelFilter, logLinesCount]);
+
+    // Live Auto-Refresh for Serilogs (5s interval)
+    useEffect(() => {
+        if (activeTab !== 'serilog' || !isAutoRefreshLogs) return;
+        const timer = setInterval(() => {
+            fetchSystemLogs();
+        }, 5000);
+        return () => clearInterval(timer);
+    }, [activeTab, isAutoRefreshLogs, selectedLogFile, logLevelFilter, logLinesCount, logSearchQuery]);
 
     // Handle Moderation Action (Dismiss or Remove Content)
     const handleResolve = async (reportId, actionType, contentId = null, contentType = null) => {
@@ -1524,6 +1571,20 @@ export default function AdminConsole() {
                 >
                     <span className="material-symbols-outlined text-[16px]">history</span>
                     <span>Audit Trail ({auditTrail.length})</span>
+                </button>
+                <button
+                    onClick={() => setActiveTab('serilog')}
+                    className={`px-3 py-2 border-b-2 font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'serilog' ? 'border-cyan-500 text-cyan-600 dark:text-cyan-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                >
+                    <span className="material-symbols-outlined text-[16px] text-cyan-500">terminal</span>
+                    <span>Server Logs (Serilog)</span>
+                    {systemLogCounts.errors > 0 ? (
+                        <span className="px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[10px] font-black border border-rose-500/30 animate-pulse">
+                            {systemLogCounts.errors} Err
+                        </span>
+                    ) : (
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    )}
                 </button>
                 <button
                     onClick={() => setActiveTab('media_approvals')}
@@ -2311,6 +2372,329 @@ export default function AdminConsole() {
                                     ))}
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── TAB: LIVE SERILOG SYSTEM LOGS ─── */}
+            {activeTab === 'serilog' && (
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-4 space-y-4">
+                    {/* Header & Controls Strip */}
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <span className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-black flex items-center justify-center">
+                                    <span className="material-symbols-outlined text-[20px]">terminal</span>
+                                </span>
+                                <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                                    Live Server Logs (Serilog Stream)
+                                    {isAutoRefreshLogs && (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-black border border-emerald-500/20 animate-pulse">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                            LIVE 5s
+                                        </span>
+                                    )}
+                                </h3>
+                            </div>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                                Direct physical server logs from <code className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[11px]">{selectedLogFile || 'Backend/Knome.API/logs/'}</code>.
+                                {lastLogSyncTime && <span className="ml-2 font-medium text-slate-400">Synced: {lastLogSyncTime}</span>}
+                            </p>
+                        </div>
+
+                        {/* Top Actions: File Switcher, Auto-refresh toggle & Download */}
+                        <div className="flex flex-wrap items-center gap-2">
+                            {/* File Selector Dropdown */}
+                            <select
+                                value={selectedLogFile}
+                                onChange={e => setSelectedLogFile(e.target.value)}
+                                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs font-bold rounded-xl px-3 py-2 outline-none cursor-pointer"
+                            >
+                                {systemLogFiles.map(f => (
+                                    <option key={f.fileName} value={f.fileName}>
+                                        📄 {f.fileName} ({(f.sizeBytes / (1024 * 1024)).toFixed(1)} MB){f.isActive ? ' - Active' : ''}
+                                    </option>
+                                ))}
+                            </select>
+
+                            {/* Lines count */}
+                            <select
+                                value={logLinesCount}
+                                onChange={e => setLogLinesCount(Number(e.target.value))}
+                                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs font-bold rounded-xl px-2.5 py-2 outline-none cursor-pointer"
+                            >
+                                <option value={50}>50 Lines</option>
+                                <option value={100}>100 Lines</option>
+                                <option value={200}>200 Lines</option>
+                                <option value={500}>500 Lines</option>
+                                <option value={1000}>1000 Lines</option>
+                            </select>
+
+                            {/* Auto-Refresh Toggle */}
+                            <button
+                                onClick={() => setIsAutoRefreshLogs(!isAutoRefreshLogs)}
+                                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                                    isAutoRefreshLogs
+                                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                                        : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                                }`}
+                            >
+                                <span className={`material-symbols-outlined text-[16px] ${isAutoRefreshLogs ? 'text-emerald-500 animate-spin' : ''}`}>
+                                    {isAutoRefreshLogs ? 'autorenew' : 'sync'}
+                                </span>
+                                <span>{isAutoRefreshLogs ? 'Auto: ON' : 'Auto: OFF'}</span>
+                            </button>
+
+                            {/* Manual Refresh Button */}
+                            <button
+                                onClick={fetchSystemLogs}
+                                disabled={isLoadingLogs}
+                                className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                            >
+                                <span className={`material-symbols-outlined text-[16px] ${isLoadingLogs ? 'animate-spin' : ''}`}>refresh</span>
+                                <span>Fetch</span>
+                            </button>
+
+                            {/* Download Log File */}
+                            <a
+                                href={adminApi.downloadSystemLogUrl ? adminApi.downloadSystemLogUrl(selectedLogFile) : `#`}
+                                target="_blank"
+                                rel="noreferrer"
+                                download
+                                className="px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 cursor-pointer"
+                            >
+                                <span className="material-symbols-outlined text-[16px]">file_download</span>
+                                <span className="hidden sm:inline">Download</span>
+                            </a>
+                        </div>
+                    </div>
+
+                    {/* Metric Badges Strip */}
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                        <div
+                            onClick={() => setLogLevelFilter('ALL')}
+                            className={`p-2.5 rounded-xl border cursor-pointer transition-all ${
+                                logLevelFilter === 'ALL'
+                                    ? 'bg-slate-900 text-white border-slate-900 shadow-md ring-2 ring-slate-500/30'
+                                    : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 hover:border-slate-400'
+                            }`}
+                        >
+                            <span className="text-[10px] font-bold uppercase tracking-wider block opacity-75">Total Log Events</span>
+                            <span className="text-lg font-black">{systemLogCounts.total || systemLogs.length}</span>
+                        </div>
+
+                        <div
+                            onClick={() => setLogLevelFilter('ERR')}
+                            className={`p-2.5 rounded-xl border cursor-pointer transition-all ${
+                                logLevelFilter === 'ERR'
+                                    ? 'bg-rose-600 text-white border-rose-600 shadow-md ring-2 ring-rose-500/30'
+                                    : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 hover:border-rose-400'
+                            }`}
+                        >
+                            <span className="text-[10px] font-bold uppercase tracking-wider block opacity-75">Errors & Fatal</span>
+                            <span className="text-lg font-black">{systemLogCounts.errors || 0}</span>
+                        </div>
+
+                        <div
+                            onClick={() => setLogLevelFilter('WRN')}
+                            className={`p-2.5 rounded-xl border cursor-pointer transition-all ${
+                                logLevelFilter === 'WRN'
+                                    ? 'bg-amber-600 text-white border-amber-600 shadow-md ring-2 ring-amber-500/30'
+                                    : 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-600 dark:text-amber-400 hover:border-amber-400'
+                            }`}
+                        >
+                            <span className="text-[10px] font-bold uppercase tracking-wider block opacity-75">Warnings</span>
+                            <span className="text-lg font-black">{systemLogCounts.warnings || 0}</span>
+                        </div>
+
+                        <div
+                            onClick={() => setLogLevelFilter('INF')}
+                            className={`p-2.5 rounded-xl border cursor-pointer transition-all ${
+                                logLevelFilter === 'INF'
+                                    ? 'bg-sky-600 text-white border-sky-600 shadow-md ring-2 ring-sky-500/30'
+                                    : 'bg-sky-50/50 dark:bg-sky-950/20 border-sky-200 dark:border-sky-900/40 text-sky-600 dark:text-sky-400 hover:border-sky-400'
+                            }`}
+                        >
+                            <span className="text-[10px] font-bold uppercase tracking-wider block opacity-75">Information</span>
+                            <span className="text-lg font-black">{systemLogCounts.info || 0}</span>
+                        </div>
+
+                        <div className="p-2.5 rounded-xl border bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 flex flex-col justify-center">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Active File Size</span>
+                            <span className="text-sm font-black text-slate-800 dark:text-slate-200 font-mono">
+                                {systemLogFiles.find(f => f.fileName === selectedLogFile)
+                                    ? `${(systemLogFiles.find(f => f.fileName === selectedLogFile).sizeBytes / (1024 * 1024)).toFixed(2)} MB`
+                                    : 'Live Disk File'}
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* Search & Filter Bar */}
+                    <div className="flex flex-wrap items-center gap-2 bg-slate-50 dark:bg-slate-800/40 p-2 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                        {/* Search Input */}
+                        <div className="relative flex-1 min-w-[200px]">
+                            <span className="material-symbols-outlined absolute left-2.5 top-2 text-slate-400 text-[16px]">search</span>
+                            <input
+                                type="text"
+                                value={logSearchQuery}
+                                onChange={e => setLogSearchQuery(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') fetchSystemLogs(); }}
+                                placeholder="Search in logs (e.g. POST /api/Auth, UserId, Exception, Database)..."
+                                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg pl-8 pr-8 py-1.5 text-xs outline-none focus:border-cyan-500 font-mono text-slate-900 dark:text-white"
+                            />
+                            {logSearchQuery && (
+                                <button
+                                    onClick={() => { setLogSearchQuery(''); setTimeout(fetchSystemLogs, 50); }}
+                                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                                >
+                                    <span className="material-symbols-outlined text-[14px]">close</span>
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Log Level Filter Chips */}
+                        <div className="flex items-center gap-1">
+                            {['ALL', 'ERR', 'WRN', 'INF', 'DBG'].map(lvl => (
+                                <button
+                                    key={lvl}
+                                    onClick={() => setLogLevelFilter(lvl)}
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                                        logLevelFilter === lvl
+                                            ? lvl === 'ERR'
+                                                ? 'bg-rose-600 text-white'
+                                                : lvl === 'WRN'
+                                                ? 'bg-amber-600 text-white'
+                                                : lvl === 'INF'
+                                                ? 'bg-sky-600 text-white'
+                                                : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
+                                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-slate-400'
+                                    }`}
+                                >
+                                    {lvl === 'ALL' ? 'All Logs' : lvl}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* ─── TERMINAL CONSOLE VIEWER ─── */}
+                    <div className="rounded-xl overflow-hidden border border-slate-800 bg-slate-950 shadow-2xl font-mono text-xs">
+                        {/* Terminal Header */}
+                        <div className="bg-slate-900 px-4 py-2 flex items-center justify-between border-b border-slate-800 text-[11px] text-slate-400">
+                            <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1.5">
+                                    <div className="w-2.5 h-2.5 rounded-full bg-rose-500"></div>
+                                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500"></div>
+                                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500"></div>
+                                </div>
+                                <span className="font-bold text-slate-300 ml-1.5 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[14px] text-cyan-400">terminal</span>
+                                    Knome.API Serilog Console
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                                <span className="text-[10px] text-slate-400">
+                                    Showing <strong>{systemLogs.length}</strong> entries (Newest First)
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Terminal Log Stream Area */}
+                        <div className="p-3 max-h-[560px] overflow-y-auto space-y-1 divide-y divide-slate-900/60 selection:bg-cyan-500/30 selection:text-cyan-200">
+                            {isLoadingLogs && systemLogs.length === 0 ? (
+                                <div className="py-12 text-center text-slate-500 flex flex-col items-center gap-2">
+                                    <span className="material-symbols-outlined text-2xl animate-spin text-cyan-400">refresh</span>
+                                    <span>Reading and parsing Serilog disk files...</span>
+                                </div>
+                            ) : systemLogs.length === 0 ? (
+                                <div className="py-12 text-center text-slate-500">
+                                    <p className="text-sm">No log entries matched your filter criteria.</p>
+                                    <p className="text-xs text-slate-600 mt-1">Try changing the level filter or search keywords.</p>
+                                </div>
+                            ) : (
+                                systemLogs.map((log, idx) => {
+                                    const isExpanded = expandedLogIndex === idx;
+                                    const isError = log.Level === 'ERR' || log.Level === 'FTL';
+                                    const isWarn = log.Level === 'WRN';
+                                    const isInfo = log.Level === 'INF';
+
+                                    const badgeClass = isError
+                                        ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                        : isWarn
+                                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                        : isInfo
+                                        ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
+                                        : 'bg-slate-500/20 text-slate-400 border border-slate-500/30';
+
+                                    return (
+                                        <div
+                                            key={idx}
+                                            onClick={() => setExpandedLogIndex(isExpanded ? null : idx)}
+                                            className={`pt-1.5 pb-1.5 px-2 rounded-lg transition-colors cursor-pointer group hover:bg-slate-900/90 ${
+                                                isError ? 'bg-rose-950/20' : ''
+                                            }`}
+                                        >
+                                            <div className="flex items-start gap-2 text-[11px] leading-relaxed">
+                                                {/* Timestamp */}
+                                                <span className="text-slate-400 whitespace-nowrap shrink-0 text-[10px]">
+                                                    {log.Timestamp || '—'}
+                                                </span>
+
+                                                {/* Level Badge */}
+                                                <span className={`px-1.5 py-0.2 rounded font-black text-[9px] uppercase tracking-wider shrink-0 ${badgeClass}`}>
+                                                    {log.Level}
+                                                </span>
+
+                                                {/* Source Context */}
+                                                <span className="text-purple-400 font-semibold truncate max-w-[180px] shrink-0 opacity-90 hidden sm:inline" title={log.SourceContext}>
+                                                    [{log.SourceContext ? log.SourceContext.split('.').slice(-2).join('.') : 'API'}]
+                                                </span>
+
+                                                {/* Message */}
+                                                <span className={`flex-1 break-all ${isError ? 'text-rose-200 font-bold' : isWarn ? 'text-amber-200' : 'text-slate-200'}`}>
+                                                    {log.Message}
+                                                </span>
+
+                                                {/* Expand icon if Exception exists */}
+                                                {log.Exception && (
+                                                    <span className="material-symbols-outlined text-[14px] text-rose-400 shrink-0">
+                                                        {isExpanded ? 'expand_less' : 'bug_report'}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Expandable Exception / Stack Trace */}
+                                            {isExpanded && (
+                                                <div className="mt-2 p-3 rounded-lg bg-slate-900/90 border border-slate-800 text-[10px] space-y-2 text-slate-300">
+                                                    <div className="flex items-center justify-between text-slate-400 border-b border-slate-800 pb-1">
+                                                        <span className="font-bold text-cyan-400">Full Log Detail & Source</span>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                navigator.clipboard.writeText(log.Raw || `${log.Timestamp} [${log.Level}] [${log.SourceContext}] ${log.Message}\n${log.Exception || ''}`);
+                                                                showToast('Copied log trace to clipboard!');
+                                                            }}
+                                                            className="text-xs text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1 cursor-pointer"
+                                                        >
+                                                            <span className="material-symbols-outlined text-[13px]">content_copy</span>
+                                                            Copy Trace
+                                                        </button>
+                                                    </div>
+                                                    <div className="text-slate-400">
+                                                        <strong>Source Context:</strong> {log.SourceContext || 'N/A'}
+                                                    </div>
+                                                    {log.Exception && (
+                                                        <pre className="p-2 rounded bg-black/70 border border-rose-900/50 text-rose-300 whitespace-pre-wrap overflow-x-auto font-mono text-[10px] max-h-60">
+                                                            {log.Exception}
+                                                        </pre>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

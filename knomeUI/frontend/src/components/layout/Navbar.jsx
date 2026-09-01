@@ -618,6 +618,18 @@ export default function Navbar() {
             playChimeSound();
         });
 
+        connection.on("ReactionCountUpdated", (data) => {
+            window.dispatchEvent(new CustomEvent('knome:reaction-updated', { detail: data }));
+        });
+
+        connection.on("CommentCountUpdated", (data) => {
+            window.dispatchEvent(new CustomEvent('knome:comment-updated', { detail: data }));
+        });
+
+        connection.on("ShareCountUpdated", (data) => {
+            window.dispatchEvent(new CustomEvent('knome:share-updated', { detail: data }));
+        });
+
         connection.start().catch(() => {
             /* Silently ignore startup/re-negotiation traces */
         });
@@ -1372,10 +1384,18 @@ export default function Navbar() {
                                 border: '1px solid var(--border-mid)',
                             }}
                         >
-                            <img className="w-8 h-8 rounded-full object-cover shadow-sm shrink-0 border border-slate-200 dark:border-slate-700" alt="Avatar" src={currentUser.avatar} />
+                            <img 
+                                className="w-8 h-8 rounded-full object-cover shadow-sm shrink-0 border border-slate-200 dark:border-slate-700" 
+                                alt="Avatar" 
+                                src={resolveMediaUrl(currentUser?.profilePhotoUrl) || currentUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || currentUser?.fullName || 'User')}&background=6366f1&color=fff`}
+                                onError={(e) => {
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || currentUser?.fullName || 'User')}&background=6366f1&color=fff`;
+                                }}
+                            />
                             <div className="hidden sm:flex flex-col items-start text-left min-w-0">
-                                <span className="text-[13px] font-bold text-slate-700 dark:text-slate-200 truncate leading-tight">{currentUser.name.split(' ')[0]}</span>
-                                <span className="text-[9px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5 leading-none">{currentUser.roleName}</span>
+                                <span className="text-[13px] font-bold text-slate-700 dark:text-slate-200 truncate leading-tight">{(currentUser?.name || currentUser?.fullName || 'User').split(' ')[0]}</span>
+                                <span className="text-[9px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5 leading-none">{currentUser?.roleName || currentUser?.role || 'Employee'}</span>
                             </div>
                             <span className="material-symbols-outlined text-[16px] text-slate-400 shrink-0">expand_more</span>
                         </button>

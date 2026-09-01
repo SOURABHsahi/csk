@@ -45,7 +45,32 @@ public static class ApplicationBuilderExtensions
         // Enable CORS
         app.UseCors(ApiConstants.CorsPolicyName);
 
-        // Serve uploaded files (images, videos, audio, docs) from wwwroot/uploads
+        // Serve uploaded files (images, videos, audio, docs) from custom StorageSettings:BasePath if configured
+        var customStoragePath = app.Configuration["StorageSettings:BasePath"];
+        if (!string.IsNullOrWhiteSpace(customStoragePath))
+        {
+            if (!Directory.Exists(customStoragePath)) Directory.CreateDirectory(customStoragePath);
+            app.UseStaticFiles(new StaticFileOptions
+            {
+                FileProvider = new PhysicalFileProvider(customStoragePath),
+                RequestPath = string.Empty,
+                ServeUnknownFileTypes = true
+            });
+        }
+
+        // Serve archived uploads transparently as fallback
+        var archiveStoragePath = app.Configuration["StorageSettings:ArchivePath"];
+        if (!string.IsNullOrWhiteSpace(archiveStoragePath) && Directory.Exists(archiveStoragePath))
+        {
+            app.UseStaticFiles(new StaticFileOptions
+            {
+                FileProvider = new PhysicalFileProvider(archiveStoragePath),
+                RequestPath = string.Empty,
+                ServeUnknownFileTypes = true
+            });
+        }
+
+        // Also serve fallback from wwwroot for default / legacy assets
         var wwwroot = app.Environment.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
         if (!Directory.Exists(wwwroot)) Directory.CreateDirectory(wwwroot);
         app.UseStaticFiles(new StaticFileOptions

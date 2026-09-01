@@ -96,7 +96,15 @@ export default function Sidebar() {
 
                     <div className="relative z-10 flex items-center gap-3 mb-3">
                         <div className="relative shrink-0">
-                            <img className="w-12 h-12 rounded-full object-cover border-2 border-theme-60-surface shadow-md" alt="Avatar" src={userAvatar} />
+                            <img 
+                                className="w-12 h-12 rounded-full object-cover border-2 border-theme-60-surface shadow-md" 
+                                alt="Avatar" 
+                                src={userAvatar} 
+                                onError={(e) => {
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=6366f1&color=fff`;
+                                }}
+                            />
                             <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-400 rounded-full border-2 border-theme-60-surface"></div>
                         </div>
                         <div className="min-w-0">

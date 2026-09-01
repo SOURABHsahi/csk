@@ -21,7 +21,7 @@ export const roleNameToCode = {
 // Static employee roster for demo login (matches live SQL Server database roster)
 // This is the seed — the live state is managed inside UserProvider via useState.
 export const INITIAL_USERS = [
-    { id: 1, userId: 1, employeeId: 'MPO101', email: 'loveneesh.sharma@mponline.gov.in', name: 'Loveneesh Sharma', fullName: 'Loveneesh Sharma', role: 'SYSADM', roleName: 'System Administrator', designation: 'IT Operations Manager', department: 'IT Operations', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1, userId: 1, employeeId: 'MP0108', email: 'loveneesh.sharma@mponline.gov.in', name: 'Loveneesh Sharma', fullName: 'Loveneesh Sharma', role: 'SYSADM', roleName: 'System Administrator', designation: 'TPM', department: 'Higher Education', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 2, userId: 2, employeeId: 'MPO102', email: 'vishendra.sharma@mponline.gov.in', name: 'Vishendra Sharma', fullName: 'Vishendra Sharma', role: 'CADM', roleName: 'Community Administrator', designation: 'Community Experience Specialist', department: 'Employee Experience', location: 'Bhopal HQ', avatar: null, karmaPoints: 225, karma: 225, isActive: true },
     { id: 3, userId: 3, employeeId: 'MPO103', email: 'sourabh.sahu@mponline.gov.in', name: 'Sourabh Sahu', fullName: 'Sourabh Sahu', role: 'HRADM', roleName: 'HR Administrator', designation: 'Talent Acquisition Manager', department: 'Human Resources', location: 'Bhopal HQ', avatar: null, karmaPoints: 306, karma: 306, isActive: true },
     { id: 4, userId: 4, employeeId: 'MPO104', email: 'rishikesh.ugle@mponline.gov.in', name: 'Rishikesh Ugle', fullName: 'Rishikesh Ugle', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Product Design', location: 'Bhopal HQ', avatar: null, karmaPoints: 170, karma: 170, isActive: true },
@@ -37,7 +37,6 @@ export const INITIAL_USERS = [
     { id: 1041, userId: 1041, employeeId: 'MPO114', email: 'ramesh.sharma@mponline.gov.in', name: 'Ramesh sharma', fullName: 'Ramesh sharma', role: 'EMP', roleName: 'Employee', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1043, userId: 1043, employeeId: 'MPO115', email: 'aishwary@mponline.gov.in', name: 'Aishwary', fullName: 'Aishwary', role: 'CADM', roleName: 'Community Administrator', designation: 'Software Engineer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1047, userId: 1047, employeeId: 'MPO116', email: 'meghna@mponline.gov.in', name: 'Meghna', fullName: 'Meghna', role: 'HRADM', roleName: 'HR Administrator', designation: 'Software Engineer', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
-    { id: 1059, userId: 1059, employeeId: 'MP0108', email: 'loveneesh.sharma@mponline.gov.in', name: 'Loveneesh Sharma', fullName: 'Loveneesh Sharma', role: 'EMP', roleName: 'Employee', designation: 'TPM', department: 'Higher Education', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1050, userId: 1050, employeeId: 'MPO089', email: 'vilash.deshmukh@mponline.gov.in', name: 'Vilash deshmukh', fullName: 'Vilash deshmukh', role: 'SYSADM', roleName: 'System Administrator', designation: 'Associate Consultant', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1052, userId: 1052, employeeId: 'MPO118', email: 'raman.kumar@mponline.gov.in', name: 'Raman Kumar', fullName: 'Raman Kumar', role: 'CADM', roleName: 'Community Administrator', designation: 'Software Engineer', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1053, userId: 1053, employeeId: 'MPO119', email: 'rishabh.pandey@mponline.gov.in', name: 'Rishabh Pandey', fullName: 'Rishabh Pandey', role: 'CADM', roleName: 'Community Administrator', designation: 'Software Engineer', department: 'Information Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
@@ -133,7 +132,7 @@ export const UserProvider = ({ children }) => {
             designation: profile.designation || localUser.designation,
             department: profile.departmentName || localUser.department,
             location: profile.location || localUser.location,
-            avatar: (profile.profilePhotoUrl ? resolveMediaUrl(profile.profilePhotoUrl) : null) || localUser.avatar,
+            avatar: (profile.profilePhotoUrl ? resolveMediaUrl(profile.profilePhotoUrl) : null) || localUser.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(resolvedName)}&background=6366f1&color=fff&size=256&bold=true`,
             bio: profile.bio || '',
             skills: profile.skills || [],
             interests: profile.interests || [],
@@ -318,6 +317,9 @@ export const UserProvider = ({ children }) => {
 
                 // SSO token from Employee Hub: authenticate with Knome backend using resolved identity
                 if (ssoEmpId) {
+                    if (ssoEmpId.toUpperCase() === 'MPO101') {
+                        ssoEmpId = 'MP0108';
+                    }
                     let localUser = INITIAL_USERS.find(u => 
                         (u.employeeId && u.employeeId.toUpperCase() === ssoEmpId.toUpperCase()) ||
                         (u.email && u.email.toLowerCase() === ssoEmpId.toLowerCase())

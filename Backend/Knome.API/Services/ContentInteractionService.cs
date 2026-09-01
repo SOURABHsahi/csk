@@ -28,6 +28,7 @@ public class ContentInteractionService : IContentInteractionService
     private readonly IHubContext<NotificationHub> _hubContext;
     private readonly ICommunityRepository _communityRepo;
     private readonly KnomeDbContext _db;
+    private readonly ILogger<ContentInteractionService> _logger;
 
     public ContentInteractionService(
         IContentInteractionRepository repo, 
@@ -38,7 +39,8 @@ public class ContentInteractionService : IContentInteractionService
         INotificationService notificationService,
         IHubContext<NotificationHub> hubContext,
         ICommunityRepository communityRepo,
-        KnomeDbContext db)
+        KnomeDbContext db,
+        ILogger<ContentInteractionService> logger)
     {
         _repo = repo;
         _userRepo = userRepo;
@@ -49,6 +51,7 @@ public class ContentInteractionService : IContentInteractionService
         _hubContext = hubContext;
         _communityRepo = communityRepo;
         _db = db;
+        _logger = logger;
     }
 
     // --- Security & Screening (FR-SM-01) ---
@@ -188,6 +191,23 @@ public class ContentInteractionService : IContentInteractionService
         }
 
         var reloaded = await _repo.GetCommentByIdAsync(saved.CommentId);
+
+        // Real-time broadcast comment count update to all active users
+        try
+        {
+            var topLevel = await _repo.GetTopLevelCommentsAsync(contentType, contentId);
+            await _hubContext.Clients.All.SendAsync("CommentCountUpdated", new
+            {
+                contentType,
+                contentId,
+                commentsCount = topLevel.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to broadcast live CommentCountUpdated");
+        }
+
         return _mapper.Map<CommentDto>(reloaded);
     }
 
@@ -222,6 +242,9 @@ public class ContentInteractionService : IContentInteractionService
         if (comment.UserId != userId && !isAdmin)
             throw new UnauthorizedException("You do not have permission to delete this comment.");
 
+        var cType = comment.ContentType;
+        var cId = comment.ContentId;
+
         // If top-level, delete any child replies first or let cascading handle it cleanly
         var replies = await _repo.GetRepliesAsync(commentId);
         foreach (var reply in replies)
@@ -230,6 +253,22 @@ public class ContentInteractionService : IContentInteractionService
         }
 
         await _repo.DeleteCommentAsync(comment);
+
+        // Real-time broadcast comment count update after deletion
+        try
+        {
+            var topLevel = await _repo.GetTopLevelCommentsAsync(cType, cId);
+            await _hubContext.Clients.All.SendAsync("CommentCountUpdated", new
+            {
+                contentType = cType,
+                contentId = cId,
+                commentsCount = topLevel.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to broadcast live CommentCountUpdated on delete");
+        }
     }
 
     // --- Reactions (FR-CI-01) ---
@@ -293,6 +332,23 @@ public class ContentInteractionService : IContentInteractionService
         }
 
         var summary = await _repo.GetReactionsSummaryAsync(contentType, contentId, userId);
+
+        // Real-time broadcast to all connected users
+        try
+        {
+            await _hubContext.Clients.All.SendAsync("ReactionCountUpdated", new
+            {
+                contentType,
+                contentId,
+                totalLikes = summary.TotalCount,
+                reactionsSummary = summary
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to broadcast live ReactionCountUpdated");
+        }
+
         return (summary, isCreated);
     }
 
@@ -379,36 +435,19 @@ public class ContentInteractionService : IContentInteractionService
         // --- Share to a specific User: notify them ---
         if (dto.SharedToType == SharedToTypes.User && dto.SharedToId.HasValue)
         {
-            var recipientId = (int)dto.SharedToId.Value;
             await _notificationService.PublishAsync(
-                recipientId,
+                (int)dto.SharedToId.Value,
                 NotificationTypes.Share,
                 recipientShareMsg,
                 relatedContentType: contentType,
                 relatedContentId: contentId);
         }
-
-        // --- Share to a Community: inject into community feed (Post only) + notify members ---
-        if (dto.SharedToType == SharedToTypes.Community && dto.SharedToId.HasValue && contentType == ContentTypes.Post)
+        // --- Share to Community: notify all members ---
+        else if (dto.SharedToType == SharedToTypes.Community && dto.SharedToId.HasValue)
         {
-            var communityId = (int)dto.SharedToId.Value;
-
-            // Avoid duplicate CommunityPost entry
-            var existing = await _communityRepo.GetCommunityPostAsync(communityId, contentId);
-            if (existing == null)
-            {
-                var communityPost = new CommunityPost
-                {
-                    CommunityId = communityId,
-                    PostId = contentId,
-                    IsPinned = false
-                };
-                await _communityRepo.AddCommunityPostAsync(communityPost);
-            }
-
-            // Notify all approved community members
+            var commId = dto.SharedToId.Value;
             var memberIds = await _db.CommunityMembers
-                .Where(m => m.CommunityId == communityId && m.UserId != userId && m.Status == CommunityMemberStatuses.Approved)
+                .Where(m => m.CommunityId == commId && m.UserId != userId && m.Status == "Active")
                 .Select(m => m.UserId)
                 .ToListAsync();
 
@@ -425,6 +464,22 @@ public class ContentInteractionService : IContentInteractionService
                     relatedContentId: contentId,
                     candidateUserIds: memberIds);
             }
+        }
+
+        // Real-time broadcast share count update to all active users
+        try
+        {
+            var totalShares = await _db.Shares.CountAsync(s => s.ContentType == contentType && s.ContentId == contentId);
+            await _hubContext.Clients.All.SendAsync("ShareCountUpdated", new
+            {
+                contentType,
+                contentId,
+                sharesCount = totalShares
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to broadcast live ShareCountUpdated");
         }
 
         return _mapper.Map<ShareDto>(saved);

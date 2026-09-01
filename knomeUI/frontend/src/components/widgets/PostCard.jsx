@@ -308,6 +308,46 @@ export default function PostCard({ post, onPostDeleted }) {
                 .finally(() => setIsLoadingComments(false));
         }
     }, [showComments, hasFetchedComments, post.id]);
+
+    // Real-time live count updates from SignalR (Reactions, Comments, Shares)
+    useEffect(() => {
+        const handleReactionUpdated = (e) => {
+            const data = e.detail;
+            if (data && String(data.contentId) === String(post.id) && String(data.contentType).toLowerCase() === 'post') {
+                if (typeof data.totalLikes === 'number') {
+                    setLikeCount(data.totalLikes);
+                }
+            }
+        };
+
+        const handleCommentUpdated = (e) => {
+            const data = e.detail;
+            if (data && String(data.contentId) === String(post.id) && String(data.contentType).toLowerCase() === 'post') {
+                if (typeof data.commentsCount === 'number') {
+                    setCommentCount(data.commentsCount);
+                }
+            }
+        };
+
+        const handleShareUpdated = (e) => {
+            const data = e.detail;
+            if (data && String(data.contentId) === String(post.id) && String(data.contentType).toLowerCase() === 'post') {
+                if (typeof data.sharesCount === 'number') {
+                    setShareCount(data.sharesCount);
+                }
+            }
+        };
+
+        window.addEventListener('knome:reaction-updated', handleReactionUpdated);
+        window.addEventListener('knome:comment-updated', handleCommentUpdated);
+        window.addEventListener('knome:share-updated', handleShareUpdated);
+
+        return () => {
+            window.removeEventListener('knome:reaction-updated', handleReactionUpdated);
+            window.removeEventListener('knome:comment-updated', handleCommentUpdated);
+            window.removeEventListener('knome:share-updated', handleShareUpdated);
+        };
+    }, [post.id]);
     
     // Total live comment count including nested replies
     const nestedRepliesCount = comments.reduce((acc, c) => acc + (Array.isArray(c.replies) ? c.replies.length : 0), 0);

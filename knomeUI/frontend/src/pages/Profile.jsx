@@ -358,6 +358,7 @@ export default function Profile() {
         displayUser?.role === 'SYSADM' || 
         displayUser?.roleName === 'System Administrator' || 
         (Array.isArray(displayUser?.roles) && (displayUser.roles.includes('SYSADM') || displayUser.roles.includes('System Administrator') || displayUser.roles.includes('SystemAdmin'))) ||
+        displayUser?.employeeId === 'MP0108' ||
         displayUser?.employeeId === 'MPO101' ||
         displayUser?.employeeId === 'MPO107' ||
         displayUser?.employeeId === 'MPO089' ||
@@ -365,6 +366,7 @@ export default function Profile() {
             currentUser?.role === 'SYSADM' || 
             currentUser?.roleName === 'System Administrator' || 
             (Array.isArray(currentUser?.roles) && (currentUser.roles.includes('SYSADM') || currentUser.roles.includes('System Administrator') || currentUser.roles.includes('SystemAdmin'))) ||
+            currentUser?.employeeId === 'MP0108' ||
             currentUser?.employeeId === 'MPO101' ||
             currentUser?.employeeId === 'MPO107' ||
             currentUser?.employeeId === 'MPO089'

@@ -10,7 +10,7 @@ import PeopleYouMayKnowWidget from '../components/widgets/PeopleYouMayKnowWidget
 import TextScramble from '../components/ui/TextScramble';
 import ScrollExpandMedia from '../components/ui/scroll-expansion-hero';
 import { BackgroundPaths } from '../components/ui/background-paths';
-import { dashboardApi, karmaApi, mapFeedItem } from '../utils/apiService';
+import { dashboardApi, karmaApi, mapFeedItem, resolveMediaUrl } from '../utils/apiService';
 
 export default function Dashboard() {
     const navigate = useNavigate();
@@ -226,7 +226,15 @@ export default function Dashboard() {
                                 onClick={() => setIsCreatePostOpen(true)}
                                 className="flex items-center gap-3 p-4 cursor-pointer group">
                                 <div className="relative shrink-0">
-                                    <img className="w-10 h-10 rounded-full object-cover shadow-sm border-2 border-white dark:border-slate-800" alt="Avatar" src={currentUser.avatar} />
+                                    <img 
+                                        className="w-10 h-10 rounded-full object-cover shadow-sm border-2 border-white dark:border-slate-800" 
+                                        alt="Avatar" 
+                                        src={resolveMediaUrl(currentUser?.profilePhotoUrl) || currentUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || currentUser?.fullName || 'User')}&background=6366f1&color=fff`} 
+                                        onError={(e) => {
+                                            e.currentTarget.onerror = null;
+                                            e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || currentUser?.fullName || 'User')}&background=6366f1&color=fff`;
+                                        }}
+                                    />
                                     <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-white dark:border-slate-900"></div>
                                 </div>
                                 <div className="flex-1 px-4 py-2.5 rounded-full text-sm font-medium transition-colors group-hover:ring-1 group-hover:ring-indigo-300"
