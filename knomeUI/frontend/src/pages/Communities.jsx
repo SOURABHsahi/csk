@@ -4,64 +4,7 @@ import { useUser } from '../components/contexts/UserContext';
 import CreateCommunityModal from '../components/modals/CreateCommunityModal';
 import { communitiesApi, getCommunityImages, resolveMediaUrl } from '../utils/apiService';
 
-const defaultSeeds = [
-    { id: 101, name: 'DotNet Developers Community', category: 'Technology', type: 'Public', members: '12 members', activity: '14 posts', description: 'Collaborative space for DotNet & C# engineering teams across MPOnline.', banner: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' },
-    { id: 109, name: 'Executive AI & Data Labs', category: 'Technology', type: 'Private', members: '1 member', activity: 'New', description: 'Exclusive private community for AI research, LLM architecture, and enterprise data science leadership.', banner: 'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' },
-    { id: 107, name: 'Fullstack Engineering Guild', category: 'Technology', type: 'Public', members: '1 member', activity: 'New', description: 'Test Public Community created for fullstack engineering teams to test joining, discussions, and live member tracking.', banner: 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' },
-    { id: 108, name: 'AI & Data Science Innovation Lab', category: 'Technology', type: 'Private', members: '3 members', activity: '5 posts', description: 'Test Private Community requiring Community Admin approval for join requests.', banner: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' },
-    { id: 102, name: 'Technology & Architecture Hub', category: 'Technology', type: 'Default (Org)', members: '84 members', activity: '32 posts', description: 'Official Organization Technology channel auto-subscribed for all tech employees.', banner: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' },
-    { id: 103, name: 'HR & People Operations', category: 'Culture & HR', type: 'Default (Org)', members: '120 members', activity: '45 posts', description: 'Central HR announcements, policy updates, and employee engagement.', banner: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' },
-    { id: 104, name: 'Finance & Accounting Operations', category: 'Finance', type: 'Default (Org)', members: '45 members', activity: '19 posts', description: 'Finance guidelines, travel reimbursement procedures, and budget updates.', banner: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' },
-    { id: 105, name: 'Marketing & Brand Strategy', category: 'Marketing', type: 'Public', members: '28 members', activity: '8 posts', description: 'Brand assets, event promotions, and internal marketing initiatives.', banner: 'https://images.unsplash.com/photo-1533750349088-cd871a92f312?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' },
-    { id: 106, name: 'CTO Leadership & Strategy Circle', category: 'Leadership', type: 'Private', members: '6 members', activity: '5 posts', description: 'Private discussion channel for CTO leadership and technical directors.', banner: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&q=80&w=800&h=400', membershipStatus: 'none' }
-];
-
-const getInitialCommunities = (userId) => {
-    // Load user's joined/subscribed communities from localStorage
-    const userJoinedList = JSON.parse(localStorage.getItem(`knome_joined_communities_${userId || 'guest'}`) || '[]');
-    const getStatus = (id, type) => {
-        const entry = userJoinedList.find(c => String(c.id) === String(id));
-        if (entry) return entry.status === 'joined' ? 'Approved' : 'Subscribed';
-        if (type?.toLowerCase().includes('default') || type?.toLowerCase().includes('org')) return 'Approved';
-        const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${id}`) || '[]');
-        if (userId && localMembers.some(m => String(m.userId || m.id) === String(userId))) return 'Approved';
-        return 'none';
-    };
-
-    const custom = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
-    const customMapped = custom.map(c => {
-        const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${c.id}`) || '[]');
-        const count = localMembers.length > 0 ? localMembers.length : (parseInt(c.members) || 1);
-        const imgs = getCommunityImages(c.name, c.category);
-        return {
-            id: c.id,
-            name: c.name,
-            type: c.type || 'Public',
-            category: c.category || 'General',
-            members: `${count} ${count === 1 ? 'member' : 'members'}`,
-            activity: 'New',
-            description: c.description || 'A new community created for MPOnline teams.',
-            banner: resolveMediaUrl(c.banner) || imgs.banner,
-            thumbnail: resolveMediaUrl(c.thumbnail) || imgs.thumbnail,
-            membershipStatus: getStatus(c.id, c.type)
-        };
-    });
-
-    const seedsMapped = defaultSeeds.map(s => {
-        const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${s.id}`) || '[]');
-        const count = localMembers.length > 0 ? localMembers.length : (parseInt(s.members) || 1);
-        const imgs = getCommunityImages(s.name, s.category);
-        return {
-            ...s,
-            members: `${count} ${count === 1 ? 'member' : 'members'}`,
-            banner: resolveMediaUrl(s.banner) || imgs.banner,
-            thumbnail: resolveMediaUrl(s.thumbnail) || imgs.thumbnail,
-            membershipStatus: getStatus(s.id, s.type)
-        };
-    });
-
-    return [...customMapped, ...seedsMapped];
-};
+const getInitialCommunities = () => [];
 
 export default function Communities() {
     const { currentUser, users } = useUser();
@@ -162,28 +105,7 @@ export default function Communities() {
                 }
             });
 
-            // Merge Default Seed Communities so all project communities are ALWAYS visible
-            defaultSeeds.forEach(s => {
-                const cleanName = (s.name || '').toLowerCase().trim();
-                if (!existingIds.has(String(s.id)) && !existingNames.has(cleanName)) {
-                    const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${s.id}`) || '[]');
-                    const count = localMembers.length > 0 ? localMembers.length : (parseInt(s.members) || 1);
-                    const imgs = getCommunityImages(s.name, s.category);
-                    existingNames.add(cleanName);
-                    existingIds.add(String(s.id));
-                    combinedList.push({
-                        ...s,
-                        members: `${count} ${count === 1 ? 'member' : 'members'}`,
-                        banner: resolveMediaUrl(s.banner) || imgs.banner,
-                        thumbnail: resolveMediaUrl(s.thumbnail) || imgs.thumbnail,
-                        membershipStatus: getStatus(s.id, null, s.type)
-                    });
-                }
-            });
-
-            if (combinedList.length > 0) {
-                setCommunities(combinedList);
-            }
+            setCommunities(combinedList);
         } catch (err) {
             console.error('Failed to load communities:', err);
         }

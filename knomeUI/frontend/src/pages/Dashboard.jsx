@@ -279,7 +279,10 @@ export default function Dashboard() {
                             </div>
                         ) : posts.length > 0 ? (
                             posts.map((post, idx) => (
-                                <PostCard key={post.id ? `${post.id}-${idx}` : idx} post={post} onPostDeleted={() => loadPosts(activeFilter)} />
+                                <PostCard key={post.id ? `${post.id}-${idx}` : idx} post={post} onPostDeleted={(deletedId) => {
+                                    if (deletedId) setPosts(prev => prev.filter(p => p.id !== deletedId && p.postId !== deletedId));
+                                    loadPosts(activeFilter);
+                                }} />
                             ))
                         ) : (
                             <div className="p-12 text-center flex flex-col items-center justify-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">

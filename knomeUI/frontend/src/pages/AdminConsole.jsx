@@ -4,46 +4,18 @@ import { useUser } from '../components/contexts/UserContext';
 import { interactionsApi, adminApi, postsApi, podcastsApi, resolveMediaUrl, getVideoThumbnail } from '../utils/apiService';
 import { apiClient } from '../utils/apiClient';
 
-// Default seed data directly matching user's SQL ContentReports table
-const SEED_REPORTS = [
-    { reportId: 12, reporterUserId: 6, reporterFullName: 'Mayur Verma', reportedUserId: 4, reportedUserName: 'Rishikesh Ugle', contentType: 'Post', contentId: 10075, communityName: 'HR & People Ops', reasonCode: 'Inappropriate', severity: 'High', aiScore: '88% Risk', status: 'Pending', moderatorUserId: null, moderatorFullName: null, actionTaken: null, reportedDate: '2026-07-28 11:19', postContentSnippet: 'Unverified internal compensation memo shared without authorization.' },
-    { reportId: 11, reporterUserId: 4, reporterFullName: 'Rishikesh Ugle', reportedUserId: 4, reportedUserName: 'Rishikesh Ugle', contentType: 'Post', contentId: 10075, communityName: 'HR & People Ops', reasonCode: 'Inappropriate', severity: 'High', aiScore: '85% Risk', status: 'Pending', moderatorUserId: null, moderatorFullName: null, actionTaken: null, reportedDate: '2026-07-28 05:28', postContentSnippet: 'Unverified internal compensation memo shared without authorization.' },
-    { reportId: 10, reporterUserId: 1, reporterFullName: 'Loveneesh Sharma', reportedUserId: 1, reportedUserName: 'Loveneesh Sharma', contentType: 'Post', contentId: 10072, communityName: 'Engineering & Tech', reasonCode: 'Copyright', severity: 'Critical', aiScore: '96% Risk', status: 'Pending', moderatorUserId: null, moderatorFullName: null, actionTaken: null, reportedDate: '2026-07-27 12:43', postContentSnippet: 'Proprietary design architecture slides posted publicly.' },
-    { reportId: 9, reporterUserId: 3, reporterFullName: 'Sourabh Sahu', reportedUserId: 3, reportedUserName: 'Sourabh Sahu', contentType: 'Post', contentId: 10071, communityName: 'General Discussion', reasonCode: 'Other', severity: 'Medium', aiScore: '74% Spam', status: 'Pending', moderatorUserId: null, moderatorFullName: null, actionTaken: null, reportedDate: '2026-07-24 12:31', postContentSnippet: 'External survey link requesting user credentials.' },
-    { reportId: 8, reporterUserId: 3, reporterFullName: 'Sourabh Sahu', reportedUserId: 3, reportedUserName: 'Sourabh Sahu', contentType: 'Post', contentId: 10070, communityName: 'Engineering & Tech', reasonCode: 'Inappropriate', severity: 'Low', aiScore: '45% Toxic', status: 'Pending', moderatorUserId: null, moderatorFullName: null, actionTaken: null, reportedDate: '2026-07-24 11:13', postContentSnippet: 'Inappropriate language in project update discussion.' },
-    { reportId: 7, reporterUserId: 1, reporterFullName: 'System Administrator', reportedUserId: 3, reportedUserName: 'Sourabh Sahu', contentType: 'Post', contentId: 10070, communityName: 'Engineering & Tech', reasonCode: 'Inappropriate', severity: 'Medium', aiScore: '60% Toxic', status: 'Pending', moderatorUserId: null, moderatorFullName: null, actionTaken: null, reportedDate: '2026-07-24 10:27', postContentSnippet: 'Inappropriate language in project update discussion.' },
-    { reportId: 6, reporterUserId: 3, reporterFullName: 'Rajesh Kumar', reportedUserId: 3, reportedUserName: 'Rajesh Kumar', contentType: 'Post', contentId: 10068, communityName: 'Product Design', reasonCode: 'Inappropriate', severity: 'High', aiScore: '82% Toxic', status: 'Pending', moderatorUserId: null, moderatorFullName: null, actionTaken: null, reportedDate: '2026-07-22 12:07', postContentSnippet: 'Offensive comments regarding team policy.' },
-    { reportId: 5, reporterUserId: 5, reporterFullName: 'Priya Verma', reportedUserId: 5, reportedUserName: 'Priya Verma', contentType: 'Post', contentId: 10064, communityName: 'General Discussion', reasonCode: 'Copyright', severity: 'Medium', aiScore: '68% Copy', status: 'Action Taken', moderatorUserId: 1, moderatorFullName: 'System Admin', actionTaken: 'Removed Content', reportedDate: '2026-07-22 11:32', postContentSnippet: 'Copied internal API documentation sheet.' },
-    { reportId: 4, reporterUserId: 5, reporterFullName: 'Priya Verma', reportedUserId: 5, reportedUserName: 'Priya Verma', contentType: 'Post', contentId: 10064, communityName: 'General Discussion', reasonCode: 'Spam', severity: 'Low', aiScore: '90% Spam', status: 'Action Taken', moderatorUserId: 1, moderatorFullName: 'System Admin', actionTaken: 'Removed Content', reportedDate: '2026-07-22 11:30', postContentSnippet: 'Copied internal API documentation sheet.' },
-    { reportId: 3, reporterUserId: 5, reporterFullName: 'Priya Verma', reportedUserId: 5, reportedUserName: 'Priya Verma', contentType: 'Post', contentId: 51, communityName: 'Engineering & Tech', reasonCode: 'Harassment', severity: 'Critical', aiScore: '98% Toxic', status: 'Action Taken', moderatorUserId: 1, moderatorFullName: 'System Admin', actionTaken: 'Removed Content', reportedDate: '2026-07-22 11:30', postContentSnippet: 'Direct personal targeted harassment in community comments.' },
-    { reportId: 2, reporterUserId: 5, reporterFullName: 'Priya Verma', reportedUserId: 5, reportedUserName: 'Priya Verma', contentType: 'Post', contentId: 10060, communityName: 'Product Design', reasonCode: 'Inappropriate', severity: 'Medium', aiScore: '55% Risk', status: 'Action Taken', moderatorUserId: 1, moderatorFullName: 'System Admin', actionTaken: 'Removed Content', reportedDate: '2026-07-22 11:28', postContentSnippet: 'Inappropriate attachment shared in team channel.' },
-    { reportId: 1, reporterUserId: 6, reporterFullName: 'Loveneesh Sharma', reportedUserId: 6, reportedUserName: 'Loveneesh Sharma', contentType: 'Post', contentId: 1, communityName: 'General Discussion', reasonCode: 'Spam', severity: 'Low', aiScore: '12% Low', status: 'Reviewed', moderatorUserId: 1, moderatorFullName: 'System Admin', actionTaken: 'None', reportedDate: '2026-07-13 06:10', postContentSnippet: 'Automated test post created during setup.' }
-];
-
 // Helper to provide realistic reported post content if live API call returns empty/404
 const getFallbackPostContent = (report) => {
-    const postMap = {
-        10075: { authorName: 'Rishikesh Ugle', userId: 4, content: 'Sharing internal compensation & payroll policy update draft documents without prior HR governance clearance. Please review attached details for team evaluation.', createdAt: '2026-07-28T05:20:00Z', audienceType: 'Public', likeCount: 3, commentCount: 8, shareCount: 1 },
-        10072: { authorName: 'Loveneesh Sharma', userId: 1, content: 'Attached architectural diagram & secret source code schema slide deck export from Q3 internal sprint roadmap.', createdAt: '2026-07-27T12:30:00Z', audienceType: 'Public', likeCount: 5, commentCount: 12, shareCount: 2 },
-        10071: { authorName: 'Sourabh Sahu', userId: 3, content: 'Please click this external link to complete our mandatory annual feedback survey: http://external-survey-phish.net/form', createdAt: '2026-07-24T12:00:00Z', audienceType: 'Public', likeCount: 1, commentCount: 4, shareCount: 0 },
-        10070: { authorName: 'Sourabh Sahu', userId: 3, content: 'This update is completely unacceptable and poorly planned. Using inappropriate language to express frustration with project timelines.', createdAt: '2026-07-24T10:15:00Z', audienceType: 'Public', likeCount: 2, commentCount: 6, shareCount: 0 },
-        10068: { authorName: 'Rajesh Kumar', userId: 3, content: 'Discussion post containing offensive language violating community guidelines and employee code of conduct.', createdAt: '2026-07-22T12:00:00Z', audienceType: 'Public', likeCount: 0, commentCount: 2, shareCount: 0 },
-        10064: { authorName: 'Priya Verma (Removed)', userId: 5, content: '[Content Removed by Admin Governance Policy]', createdAt: '2026-07-22T11:25:00Z', audienceType: 'Public', likeCount: 0, commentCount: 0, shareCount: 0 },
-        51: { authorName: 'Priya Verma (Removed)', userId: 5, content: '[Content Removed by Admin Governance Policy]', createdAt: '2026-07-22T11:20:00Z', audienceType: 'Public', likeCount: 0, commentCount: 0, shareCount: 0 },
-        10060: { authorName: 'Priya Verma (Removed)', userId: 5, content: '[Content Removed by Admin Governance Policy]', createdAt: '2026-07-22T11:15:00Z', audienceType: 'Public', likeCount: 0, commentCount: 0, shareCount: 0 },
-        1: { authorName: 'Loveneesh Sharma', userId: 6, content: 'Initial platform test post for content interaction verification.', createdAt: '2026-07-13T06:00:00Z', audienceType: 'Public', likeCount: 10, commentCount: 2, shareCount: 1 }
-    };
-
-    if (postMap[report.contentId]) return postMap[report.contentId];
-
+    if (!report) return null;
     return {
-        authorName: report.reportedUserName || report.reporterFullName || `User #${report.reporterUserId}`,
+        authorName: report.reportedUserName || report.reporterFullName || `User #${report.reportedUserId || report.reporterUserId}`,
+        authorFullName: report.reportedUserName || report.reporterFullName || `User #${report.reportedUserId || report.reporterUserId}`,
         userId: report.reportedUserId || report.reporterUserId,
         content: report.postContentSnippet || `Reported content for ${report.contentType} #${report.contentId} (${report.reasonCode}). Flagged for internal moderation review.`,
         createdAt: report.reportedDate,
         audienceType: 'Public',
-        likeCount: 2,
-        commentCount: 1,
+        likeCount: 0,
+        commentCount: 0,
         shareCount: 0
     };
 };
@@ -63,7 +35,7 @@ export default function AdminConsole() {
     const [isRefreshing, setIsRefreshing] = useState(false);
 
     // Moderation Reports & Selection State
-    const [reports, setReports] = useState(SEED_REPORTS);
+    const [reports, setReports] = useState([]);
     const [isLoadingReports, setIsLoadingReports] = useState(false);
     const [selectedReportIds, setSelectedReportIds] = useState([]);
     
@@ -493,9 +465,9 @@ export default function AdminConsole() {
     const fetchReports = async () => {
         setIsLoadingReports(true);
         try {
-            const res = await interactionsApi.getPendingReports();
-            if (res && (Array.isArray(res) ? res.length > 0 : (res.items && res.items.length > 0))) {
-                const apiItems = Array.isArray(res) ? res : (res.items || []);
+            const res = await interactionsApi.getAllReports();
+            const apiItems = res?.data || (Array.isArray(res) ? res : (res?.items || []));
+            if (Array.isArray(apiItems) && apiItems.length > 0) {
                 const mapped = apiItems.map(r => ({
                     reportId: r.reportId,
                     reporterUserId: r.reporterUserId || 0,
@@ -506,24 +478,23 @@ export default function AdminConsole() {
                     contentId: r.contentId,
                     communityName: r.communityName || 'Engineering & Tech',
                     reasonCode: r.reasonCode,
-                    severity: r.reasonCode === 'Harassment' || r.reasonCode === 'Copyright' ? 'Critical' : (r.reasonCode === 'Inappropriate' ? 'High' : 'Medium'),
-                    aiScore: r.reasonCode === 'Harassment' ? '98% Toxic' : (r.reasonCode === 'Copyright' ? '96% Risk' : '75% AI'),
+                    severity: r.severity || (r.reasonCode === 'Harassment' || r.reasonCode === 'Copyright' ? 'Critical' : (r.reasonCode === 'Inappropriate' ? 'High' : 'Medium')),
+                    aiScore: r.aiScore || (r.reasonCode === 'Harassment' ? '98% Toxic' : (r.reasonCode === 'Copyright' ? '96% Risk' : '75% AI')),
                     status: r.status || 'Pending',
                     moderatorUserId: r.moderatorUserId,
                     moderatorFullName: r.moderatorFullName,
                     actionTaken: r.actionTaken,
+                    postContentSnippet: r.postContentSnippet || '',
                     reportedDate: r.reportedDate ? new Date(r.reportedDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
                     actionDate: r.actionDate ? new Date(r.actionDate).toLocaleString() : null
                 }));
-                
-                const existingIds = new Set(mapped.map(m => m.reportId));
-                const combined = [...mapped, ...SEED_REPORTS.filter(s => !existingIds.has(s.reportId))];
-                setReports(combined);
+                setReports(mapped);
             } else {
-                setReports(SEED_REPORTS);
+                setReports([]);
             }
         } catch (err) {
-            setReports(SEED_REPORTS);
+            console.error("Failed to load live moderation reports from backend:", err);
+            setReports([]);
         } finally {
             setIsLoadingReports(false);
         }

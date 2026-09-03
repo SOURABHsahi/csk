@@ -148,35 +148,32 @@ public class PostRepository : IPostRepository
 
     public async Task DeletePostAsync(Post post)
     {
-        // Remove community post mappings first
-        var communityPosts = await _db.CommunityPosts.Where(cp => cp.PostId == post.PostId).ToListAsync();
-        _db.CommunityPosts.RemoveRange(communityPosts);
+        // 1. Clear many-to-many audience and mention tables to prevent FK constraint violations
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM [dbo].[PostMentions] WHERE [PostId] = {0}", post.PostId);
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM [dbo].[PostAudienceCommunities] WHERE [PostId] = {0}", post.PostId);
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM [dbo].[PostAudienceUsers] WHERE [PostId] = {0}", post.PostId);
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM [dbo].[CommunityPosts] WHERE [PostId] = {0}", post.PostId);
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM [dbo].[PostAttachments] WHERE [PostId] = {0}", post.PostId);
 
-        // Remove attachments first
-        var attachments = await _db.PostAttachments.Where(pa => pa.PostId == post.PostId).ToListAsync();
-        _db.PostAttachments.RemoveRange(attachments);
+        // 2. Remove comment reactions, comment bookmarks, and comments (replies first, then top-level comments)
+        await _db.Database.ExecuteSqlRawAsync(@"
+            DELETE FROM [dbo].[Reactions] WHERE [ContentType] = 'Comment' AND [ContentId] IN (SELECT [CommentId] FROM [dbo].[Comments] WHERE [ContentType] = 'Post' AND [ContentId] = {0});
+            DELETE FROM [dbo].[Bookmarks] WHERE [ContentType] = 'Comment' AND [ContentId] IN (SELECT [CommentId] FROM [dbo].[Comments] WHERE [ContentType] = 'Post' AND [ContentId] = {0});
+            DELETE FROM [dbo].[Comments] WHERE [ContentType] = 'Post' AND [ContentId] = {0} AND [ParentCommentId] IS NOT NULL;
+            DELETE FROM [dbo].[Comments] WHERE [ContentType] = 'Post' AND [ContentId] = {0};
+        ", post.PostId);
 
-        // Remove Reactions
-        var reactions = await _db.Reactions.Where(r => r.ContentId == post.PostId && r.ContentType == "Post").ToListAsync();
-        _db.Reactions.RemoveRange(reactions);
+        // 3. Remove interactions, karma transactions, moderation reports, and notifications for this post
+        await _db.Database.ExecuteSqlRawAsync(@"
+            DELETE FROM [dbo].[Reactions] WHERE [ContentType] = 'Post' AND [ContentId] = {0};
+            DELETE FROM [dbo].[Bookmarks] WHERE [ContentType] = 'Post' AND [ContentId] = {0};
+            DELETE FROM [dbo].[Shares] WHERE [ContentType] = 'Post' AND [ContentId] = {0};
+            DELETE FROM [dbo].[KarmaTransactions] WHERE [RelatedContentType] = 'Post' AND [RelatedContentId] = {0};
+            DELETE FROM [dbo].[ModerationReports] WHERE [ContentType] = 'Post' AND [ContentId] = {0};
+            DELETE FROM [dbo].[Notifications] WHERE [RelatedContentType] = 'Post' AND [RelatedContentId] = {0};
+        ", post.PostId);
 
-        // Remove Comments
-        var comments = await _db.Comments.Where(c => c.ContentId == post.PostId && c.ContentType == "Post").ToListAsync();
-        _db.Comments.RemoveRange(comments);
-
-        // Remove Bookmarks
-        var bookmarks = await _db.Bookmarks.Where(b => b.ContentId == post.PostId && b.ContentType == "Post").ToListAsync();
-        _db.Bookmarks.RemoveRange(bookmarks);
-
-        // Remove Shares
-        var shares = await _db.Shares.Where(s => s.ContentId == post.PostId && s.ContentType == "Post").ToListAsync();
-        _db.Shares.RemoveRange(shares);
-
-        // Remove KarmaTransactions
-        var karmaTx = await _db.KarmaTransactions.Where(kt => kt.RelatedContentId == post.PostId && kt.RelatedContentType == "Post").ToListAsync();
-        _db.KarmaTransactions.RemoveRange(karmaTx);
-
-        _db.Posts.Remove(post);
-        await _db.SaveChangesAsync();
+        // 4. Finally remove the post record
+        await _db.Database.ExecuteSqlRawAsync("DELETE FROM [dbo].[Posts] WHERE [PostId] = {0}", post.PostId);
     }
 }

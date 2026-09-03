@@ -13,9 +13,11 @@ export const authApi = {
     login: (employeeId) =>
         apiClient.post('/Auth/login', { employeeId, password: 'Password@123' }),
 
-    /** POST /Auth/refresh — refresh access token */
-    refresh: (refreshToken) =>
-        apiClient.post('/Auth/refresh', { refreshToken }),
+    /** Refresh access token (Stateless token preservation) */
+    refresh: async (refreshToken) => {
+        const token = localStorage.getItem('knome_jwt');
+        return { token, refreshToken };
+    },
 
     /** POST /Auth/logout */
     logout: (refreshToken) =>
@@ -35,18 +37,18 @@ export const profileApi = {
     /** PUT /users/profile */
     update: (data) => apiClient.put('/users/profile', data),
 
-    /** PUT /users/profile/visibility */
-    updateVisibility: (data) => apiClient.put('/users/profile/visibility', data),
+    /** PUT /users/profile — updates privacy visibility */
+    updateVisibility: (data) => apiClient.put('/users/profile', data),
 
     /** POST /users/profile/image */
     uploadImage: (file) => apiClient.uploadProfileImage(file),
 
-    /** GET /Profiles/search?query=&departmentId= */
+    /** GET /Search/users?query=&department= */
     search: (query, departmentId) => {
         const params = new URLSearchParams();
         if (query) params.append('query', query);
-        if (departmentId) params.append('departmentId', departmentId);
-        return apiClient.get(`/Profiles/search?${params}`);
+        if (departmentId) params.append('department', departmentId);
+        return apiClient.get(`/Search/users?${params}`);
     },
 
     /** GET /users/suggestions */
@@ -185,7 +187,7 @@ export const savedContentApi = {
 // ─────────────────────────────────────────────
 export const articlesApi = {
     /** GET /Articles */
-    getAll: () => apiClient.get('/Articles'),
+    getAll: (pageNumber = 1, pageSize = 20) => apiClient.get(`/Articles?pageNumber=${pageNumber}&pageSize=${pageSize}`),
 
     /** GET /Articles/{id} */
     getById: (id) => apiClient.get(`/Articles/${id}`),
@@ -348,6 +350,11 @@ export const interactionsApi = {
     shareContent: (type, id, sharedToType, sharedToId = null) => apiClient.post(`/interactions/${type}/${id}/share`, { sharedToType, sharedToId }),
     reportContent: (type, id, data) => apiClient.post(`/interactions/${type}/${id}/report`, data),
     getPendingReports: (pageNumber = 1, pageSize = 20) => apiClient.get(`/interactions/reports/pending?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+    getAllReports: (status = null, pageNumber = 1, pageSize = 100) => {
+        let url = `/interactions/reports?pageNumber=${pageNumber}&pageSize=${pageSize}`;
+        if (status && status !== 'All') url += `&status=${encodeURIComponent(status)}`;
+        return apiClient.get(url);
+    },
     resolveReport: (reportId, action, notes = '') => {
         const isDismiss = action === 'Ignore' || action === 'Dismiss';
         const status = isDismiss ? 'Dismissed' : 'Resolved';
@@ -607,8 +614,9 @@ export const mediaApi = {
             if (type) formData.append('type', type);
 
             const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : 'localhost';
+            const protocol = (typeof window !== 'undefined' && window.location && window.location.protocol === 'https:') ? 'https:' : 'http:';
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', `http://${host}:5095/api/media/upload`, true);
+            xhr.open('POST', `${protocol}//${host}:5095/api/media/upload`, true);
             
             const token = localStorage.getItem('knome_jwt');
             if (token) {

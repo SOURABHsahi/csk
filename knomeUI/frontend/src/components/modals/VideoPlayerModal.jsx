@@ -3,6 +3,7 @@ import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
 import { deleteVideo } from '../../utils/videoService';
 import { resolveMediaUrl } from '../../utils/apiService';
+import { checkRestrictedContent } from '../../utils/restrictedWords';
 import ReportModal from './ReportModal';
 import ArticleShareModal from './ArticleShareModal';
 
@@ -230,6 +231,16 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
         e.preventDefault();
         if (!commentInput.trim()) return;
 
+        const foundKeyword = checkRestrictedContent(commentInput.trim());
+        if (foundKeyword) {
+            if (addToast) {
+                addToast(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}".`, 'error');
+            } else {
+                alert(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}".`);
+            }
+            return;
+        }
+
         const targetAuthorId = video.authorId || video.userId || 1;
         const newC = {
             id: Date.now(),
@@ -429,13 +440,25 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
                                             onChange={(e) => setCommentInput(e.target.value)}
                                             className="w-full bg-transparent outline-none text-sm text-white placeholder-slate-500"
                                         />
-                                        <button 
-                                            type="submit" 
-                                            disabled={!commentInput.trim()}
-                                            className="px-2.5 py-1 bg-cyan-500 disabled:opacity-30 hover:bg-cyan-600 text-white font-bold text-xs rounded-lg transition-all cursor-pointer shrink-0"
-                                        >
-                                            Send
-                                        </button>
+                                        {(() => {
+                                            const restrictedInComment = checkRestrictedContent(commentInput);
+                                            if (restrictedInComment) {
+                                                return (
+                                                    <span className="text-rose-400 text-xs font-semibold shrink-0 bg-rose-500/10 px-2.5 py-1 rounded border border-rose-500/20">
+                                                        ⚠️ Restricted word ("{restrictedInComment}")
+                                                    </span>
+                                                );
+                                            }
+                                            return (
+                                                <button 
+                                                    type="submit" 
+                                                    disabled={!commentInput.trim()}
+                                                    className="px-2.5 py-1 bg-cyan-500 disabled:opacity-30 hover:bg-cyan-600 text-white font-bold text-xs rounded-lg transition-all cursor-pointer shrink-0"
+                                                >
+                                                    Send
+                                                </button>
+                                            );
+                                        })()}
                                     </div>
                                 </form>
 

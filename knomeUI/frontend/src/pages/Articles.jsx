@@ -16,18 +16,45 @@ export default function Articles() {
     // Page view mode: 'list' or 'create'
     const [viewMode, setViewMode] = useState('list');
     
-    const [allArticles, setAllArticles] = useState([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const [allArticles, setAllArticles] = useState(() => {
+        try {
+            const cached = sessionStorage.getItem('knome_cached_articles');
+            return cached ? JSON.parse(cached) : [];
+        } catch {
+            return [];
+        }
+    });
+    const [isLoading, setIsLoading] = useState(() => {
+        try {
+            const cached = sessionStorage.getItem('knome_cached_articles');
+            return !(cached && JSON.parse(cached).length > 0);
+        } catch {
+            return true;
+        }
+    });
     const [savedMap, setSavedMap] = useState({});
     const [reportingArticle, setReportingArticle] = useState(null);
     const [savingArticleModal, setSavingArticleModal] = useState(null);
     const [sharingArticleModal, setSharingArticleModal] = useState(null);
 
     const loadData = async () => {
-        setIsLoading(true);
-        const data = await getArticles();
-        setAllArticles(data);
-        setIsLoading(false);
+        // Only trigger visible spinner if no articles are in cache
+        if (allArticles.length === 0) {
+            setIsLoading(true);
+        }
+        try {
+            const data = await getArticles();
+            if (Array.isArray(data) && data.length > 0) {
+                setAllArticles(data);
+                try {
+                    sessionStorage.setItem('knome_cached_articles', JSON.stringify(data));
+                } catch {}
+            }
+        } catch (err) {
+            console.error('Failed to load articles:', err);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     useEffect(() => {
@@ -41,6 +68,7 @@ export default function Articles() {
     // Editor State (FR-AB-01)
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
+    const [editorBodyText, setEditorBodyText] = useState('');
     const [category, setCategory] = useState('7'); // Default to Engineering ID
     
     // Tags State
@@ -61,6 +89,7 @@ export default function Articles() {
     
     const editorRef = useRef(null);
     const fileInputRef = useRef(null);
+    const editorImageInputRef = useRef(null);
     const [currentUploadType, setCurrentUploadType] = useState(null);
     const [isUploadingMedia, setIsUploadingMedia] = useState(false);
 
@@ -147,24 +176,156 @@ export default function Articles() {
         });
     };
 
+    const updateActiveFormats = () => {
+        try {
+            const block = (document.queryCommandValue('formatBlock') || '').toLowerCase();
+            setActiveFormats({
+                bold: document.queryCommandState('bold'),
+                italic: document.queryCommandState('italic'),
+                underline: document.queryCommandState('underline'),
+                list: document.queryCommandState('insertUnorderedList'),
+                numlist: document.queryCommandState('insertOrderedList'),
+                heading: block === 'h2' || block === 'h1' || block === 'h3',
+                quote: block === 'blockquote'
+            });
+        } catch (e) {}
+    };
+
     const toggleFormat = (format) => {
         editorRef.current?.focus();
         
-        let command = format;
-        let value = null;
-        
-        if (format === 'list') command = 'insertUnorderedList';
-        else if (format === 'numlist') command = 'insertOrderedList';
-        else if (format === 'heading') {
-            command = 'formatBlock';
-            value = 'H2';
-        } else if (format === 'quote') {
-            command = 'formatBlock';
-            value = 'BLOCKQUOTE';
+        // Ensure a valid block exists if editor is empty or pristine
+        if (!editorRef.current?.innerHTML?.trim() || editorRef.current?.innerHTML?.includes('Start writing your long-form article here')) {
+            editorRef.current.innerHTML = '<p><br></p>';
+            const range = document.createRange();
+            const sel = window.getSelection();
+            if (editorRef.current.firstChild) {
+                range.setStart(editorRef.current.firstChild, 0);
+                range.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
         }
         
-        document.execCommand(command, false, value);
-        setActiveFormats({ ...activeFormats, [format]: !activeFormats[format] });
+        if (format === 'bold') {
+            document.execCommand('bold', false, null);
+        } else if (format === 'italic') {
+            document.execCommand('italic', false, null);
+        } else if (format === 'underline') {
+            document.execCommand('underline', false, null);
+        } else if (format === 'heading') {
+            const block = (document.queryCommandValue('formatBlock') || '').toLowerCase();
+            const isH2 = block.includes('h2');
+            try {
+                document.execCommand('formatBlock', false, isH2 ? '<p>' : '<h2>');
+            } catch (e) {
+                document.execCommand('formatBlock', false, isH2 ? 'p' : 'h2');
+            }
+        } else if (format === 'list') {
+            document.execCommand('insertUnorderedList', false, null);
+        } else if (format === 'numlist') {
+            document.execCommand('insertOrderedList', false, null);
+        } else if (format === 'quote') {
+            const block = (document.queryCommandValue('formatBlock') || '').toLowerCase();
+            const isQuote = block.includes('blockquote');
+            if (isQuote) {
+                try {
+                    document.execCommand('formatBlock', false, '<p>');
+                } catch (e) {
+                    document.execCommand('formatBlock', false, 'p');
+                }
+            } else {
+                try {
+                    document.execCommand('formatBlock', false, '<blockquote>');
+                } catch (e) {
+                    document.execCommand('formatBlock', false, 'blockquote');
+                }
+            }
+        } else if (format === 'link') {
+            const selection = window.getSelection();
+            const selectedText = selection ? selection.toString() : '';
+            const url = window.prompt('Enter website or reference URL (e.g. https://example.com):', 'https://');
+            if (url && url.trim() && url.trim() !== 'https://') {
+                if (selectedText) {
+                    document.execCommand('createLink', false, url.trim());
+                } else {
+                    const linkText = window.prompt('Enter link text to display:', url.trim()) || url.trim();
+                    const linkHtml = `<a href="${url.trim()}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 underline font-semibold hover:text-blue-700">${linkText}</a>&nbsp;`;
+                    document.execCommand('insertHTML', false, linkHtml);
+                }
+            }
+        } else if (format === 'image') {
+            const imgUrl = window.prompt('Enter Image URL (or leave blank to select an image from your computer):');
+            if (imgUrl && imgUrl.trim()) {
+                const imgHtml = `<figure class="my-4"><img src="${imgUrl.trim()}" alt="Article illustration" class="rounded-2xl max-w-full h-auto shadow-md border border-slate-200 dark:border-slate-800" /><figcaption class="text-xs text-slate-400 mt-1.5 text-center italic">Image caption</figcaption></figure><p><br></p>`;
+                document.execCommand('insertHTML', false, imgHtml);
+            } else if (imgUrl === '') {
+                editorImageInputRef.current?.click();
+            }
+        } else if (format === 'table') {
+            const rowsInput = window.prompt('Enter number of table rows:', '3');
+            if (rowsInput === null) return;
+            const colsInput = window.prompt('Enter number of table columns:', '3');
+            if (colsInput === null) return;
+            const rows = Math.min(Math.max(parseInt(rowsInput) || 3, 1), 12);
+            const cols = Math.min(Math.max(parseInt(colsInput) || 3, 1), 8);
+
+            let tableHtml = '<div class="overflow-x-auto my-6"><table class="w-full border-collapse border border-slate-300 dark:border-slate-700 rounded-xl text-sm overflow-hidden shadow-sm"><thead><tr class="bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold">';
+            for (let c = 1; c <= cols; c++) {
+                tableHtml += `<th class="border border-slate-300 dark:border-slate-700 p-2.5 text-left">Header ${c}</th>`;
+            }
+            tableHtml += '</tr></thead><tbody>';
+            for (let r = 1; r <= rows; r++) {
+                tableHtml += '<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">';
+                for (let c = 1; c <= cols; c++) {
+                    tableHtml += `<td class="border border-slate-300 dark:border-slate-700 p-2.5 text-slate-700 dark:text-slate-300">Data ${r}.${c}</td>`;
+                }
+                tableHtml += '</tr>';
+            }
+            tableHtml += '</tbody></table></div><p><br></p>';
+            document.execCommand('insertHTML', false, tableHtml);
+        } else if (format === 'code') {
+            const selection = window.getSelection();
+            const selectedText = selection ? selection.toString() : '';
+            if (selectedText && !selectedText.includes('\n')) {
+                const isCode = selection.anchorNode?.parentElement?.tagName === 'CODE';
+                if (isCode) {
+                    document.execCommand('removeFormat', false, null);
+                } else {
+                    document.execCommand('insertHTML', false, `<code class="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-rose-500 font-mono text-xs rounded border border-slate-200 dark:border-slate-700 font-medium">${selectedText}</code>`);
+                }
+            } else {
+                const codeSnippet = selectedText || '// Enter your code snippet here\nfunction calculateMetrics() {\n  return { uptime: "99.99%", latencyMs: 14 };\n}';
+                const escapedCode = codeSnippet.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const blockHtml = `<pre class="my-4 p-4 rounded-xl bg-slate-900 text-emerald-400 font-mono text-xs overflow-x-auto border border-slate-800 shadow-inner"><code>${escapedCode}</code></pre><p><br></p>`;
+                document.execCommand('insertHTML', false, blockHtml);
+            }
+        }
+        
+        updateActiveFormats();
+    };
+
+    const handleEditorImageUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        editorRef.current?.focus();
+        try {
+            const result = await apiClient.uploadFile('/Media/upload', file, 'image');
+            const resolvedUrl = resolveMediaUrl(result.url || result.data?.url);
+            const imgHtml = `<figure class="my-4"><img src="${resolvedUrl}" alt="${file.name}" class="rounded-2xl max-w-full h-auto shadow-md border border-slate-200 dark:border-slate-800" /><figcaption class="text-xs text-slate-400 mt-1.5 text-center italic">${file.name}</figcaption></figure><p><br></p>`;
+            document.execCommand('insertHTML', false, imgHtml);
+        } catch (err) {
+            console.error('Editor image upload failed', err);
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const imgHtml = `<figure class="my-4"><img src="${ev.target.result}" alt="${file.name}" class="rounded-2xl max-w-full h-auto shadow-md border border-slate-200 dark:border-slate-800" /><figcaption class="text-xs text-slate-400 mt-1.5 text-center italic">${file.name}</figcaption></figure><p><br></p>`;
+                document.execCommand('insertHTML', false, imgHtml);
+            };
+            reader.readAsDataURL(file);
+        } finally {
+            if (editorImageInputRef.current) editorImageInputRef.current.value = '';
+        }
     };
 
     const handlePublish = async () => {
@@ -561,12 +722,25 @@ export default function Articles() {
                                 <button className="px-5 py-2 text-[13px] font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors border border-slate-200 dark:border-slate-700">
                                     Schedule
                                 </button>
-                                <button 
-                                    onClick={handlePublish}
-                                    disabled={isPublishing || !title.trim()}
-                                    className="px-8 py-2 text-[13px] font-bold text-white bg-indigo-500 hover:bg-indigo-600 rounded-xl transition-all shadow-lg shadow-indigo-500/30 disabled:opacity-50">
-                                    {isPublishing ? 'Publishing...' : 'Publish'}
-                                </button>
+                                {(() => {
+                                    const restrictedInArticle = checkRestrictedContent(`${title} ${description} ${editorBodyText}`);
+                                    if (restrictedInArticle) {
+                                        return (
+                                            <div className="flex items-center gap-1.5 text-rose-500 text-xs font-semibold px-4 py-2 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-xl shadow-sm">
+                                                <span className="material-symbols-outlined text-[16px]">warning</span>
+                                                <span>Restricted word ("{restrictedInArticle}") detected! Remove it to publish.</span>
+                                            </div>
+                                        );
+                                    }
+                                    return (
+                                        <button 
+                                            onClick={handlePublish}
+                                            disabled={isPublishing || !title.trim()}
+                                            className="px-8 py-2 text-[13px] font-bold text-white bg-indigo-500 hover:bg-indigo-600 rounded-xl transition-all shadow-lg shadow-indigo-500/30 disabled:opacity-50">
+                                            {isPublishing ? 'Publishing...' : 'Publish'}
+                                        </button>
+                                    );
+                                })()}
                             </div>
                         </div>
 
@@ -591,14 +765,30 @@ export default function Articles() {
                         {/* Rich Text Editor Container (FR-AB-02) */}
                         <div className="rounded-2xl border border-theme-30 bg-theme-60-surface shadow-sm overflow-hidden flex flex-col min-h-[500px]">
                             
+                            {/* Hidden file input for inline editor image upload */}
+                            <input 
+                                type="file" 
+                                ref={editorImageInputRef} 
+                                accept="image/jpeg,image/png,image/gif,image/webp" 
+                                className="hidden" 
+                                onChange={handleEditorImageUpload} 
+                            />
+
                             {/* Toolbar */}
-                            <div className="bg-theme-subtle p-2 border-b border-theme-30 flex flex-wrap gap-1 items-center sticky top-0 z-10">
+                            <div className="bg-theme-subtle p-2 border-b border-theme-30 flex flex-wrap gap-1 items-center sticky top-0 z-10 select-none">
                                 {[
-                                    { id: 'bold', icon: 'format_bold' },
-                                    { id: 'italic', icon: 'format_italic' },
-                                    { id: 'underline', icon: 'format_underlined' }
+                                    { id: 'bold', icon: 'format_bold', label: 'Bold (Ctrl+B)' },
+                                    { id: 'italic', icon: 'format_italic', label: 'Italic (Ctrl+I)' },
+                                    { id: 'underline', icon: 'format_underlined', label: 'Underline (Ctrl+U)' }
                                 ].map(btn => (
-                                    <button key={btn.id} onClick={() => toggleFormat(btn.id)} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${activeFormats[btn.id] ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+                                    <button 
+                                        key={btn.id} 
+                                        type="button"
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={() => toggleFormat(btn.id)} 
+                                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${activeFormats[btn.id] ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                                        title={btn.label}
+                                    >
                                         <span className="material-symbols-outlined text-[20px]">{btn.icon}</span>
                                     </button>
                                 ))}
@@ -606,41 +796,56 @@ export default function Articles() {
                                 <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-2"></div>
                                 
                                 {[
-                                    { id: 'heading', icon: 'title' },
-                                    { id: 'list', icon: 'format_list_bulleted' },
-                                    { id: 'numlist', icon: 'format_list_numbered' },
-                                    { id: 'quote', icon: 'format_quote' }
+                                    { id: 'heading', icon: 'title', label: 'Heading (H2)' },
+                                    { id: 'list', icon: 'format_list_bulleted', label: 'Bulleted List' },
+                                    { id: 'numlist', icon: 'format_list_numbered', label: 'Numbered List' },
+                                    { id: 'quote', icon: 'format_quote', label: 'Quote / Blockquote' }
                                 ].map(btn => (
-                                    <button key={btn.id} onClick={() => toggleFormat(btn.id)} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${activeFormats[btn.id] ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+                                    <button 
+                                        key={btn.id} 
+                                        type="button"
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={() => toggleFormat(btn.id)} 
+                                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${activeFormats[btn.id] ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                                        title={btn.label}
+                                    >
                                         <span className="material-symbols-outlined text-[20px]">{btn.icon}</span>
                                     </button>
                                 ))}
                                 
-                                <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-2"></div>
-                                
-                                {[
-                                    { id: 'link', icon: 'link' },
-                                    { id: 'image', icon: 'image' },
-                                    { id: 'table', icon: 'table_chart' },
-                                    { id: 'code', icon: 'code' }
-                                ].map(btn => (
-                                    <button key={btn.id} type="button" className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-                                        <span className="material-symbols-outlined text-[20px]">{btn.icon}</span>
-                                    </button>
-                                ))}
+
                             </div>
 
                             {/* Editable Area */}
                             <div 
                                 ref={editorRef}
                                 contentEditable="true"
-                                className="flex-1 p-8 focus:outline-none prose dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 min-h-[400px] empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 empty:before:pointer-events-none"
+                                className="rich-editor-content flex-1 p-8 focus:outline-none max-w-none text-slate-800 dark:text-slate-200 min-h-[400px] empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 empty:before:pointer-events-none"
                                 suppressContentEditableWarning={true}
                                 data-placeholder="Start writing your long-form article here..."
                                 onFocus={(e) => {
                                     if (e.currentTarget.innerHTML.includes('Start writing your long-form article here')) {
                                         e.currentTarget.innerHTML = '<p><br></p>';
                                     }
+                                    updateActiveFormats();
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Tab') {
+                                        e.preventDefault();
+                                        if (e.shiftKey) {
+                                            document.execCommand('outdent', false, null);
+                                        } else {
+                                            document.execCommand('indent', false, null);
+                                        }
+                                        updateActiveFormats();
+                                    }
+                                }}
+                                onKeyUp={updateActiveFormats}
+                                onMouseUp={updateActiveFormats}
+                                onSelect={updateActiveFormats}
+                                onInput={(e) => {
+                                    setEditorBodyText(e.currentTarget.innerText || '');
+                                    updateActiveFormats();
                                 }}
                             >
                             </div>

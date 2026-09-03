@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { resolveMediaUrl } from '../../utils/apiService';
+import { checkRestrictedContent } from '../../utils/restrictedWords';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,11 @@ function CommentInput({ currentUser, placeholder = 'Add a comment...', onSubmit,
 
     const handleSubmit = () => {
         if (!value.trim()) return;
+        const foundKeyword = checkRestrictedContent(value.trim());
+        if (foundKeyword) {
+            alert(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}".`);
+            return;
+        }
         onSubmit(value.trim());
         setValue('');
         setFocused(false);
@@ -70,19 +76,32 @@ function CommentInput({ currentUser, placeholder = 'Add a comment...', onSubmit,
                     />
                 </div>
                 {focused && (
-                    <div className="flex justify-end gap-2 mt-3">
+                    <div className="flex justify-end items-center gap-2 mt-3">
+                        {(() => {
+                            const restrictedWord = checkRestrictedContent(value);
+                            if (restrictedWord) {
+                                return (
+                                    <div className="flex items-center gap-1.5 text-rose-500 text-xs font-semibold px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-lg">
+                                        <span className="material-symbols-outlined text-[15px]">warning</span>
+                                        <span>Restricted word ("{restrictedWord}") detected! Remove it to post.</span>
+                                    </div>
+                                );
+                            }
+                            return (
+                                <button
+                                    onClick={handleSubmit}
+                                    disabled={!value.trim()}
+                                    className="px-4 py-1.5 rounded-full text-sm font-bold bg-cyan-600 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:cursor-not-allowed text-white hover:bg-cyan-700 transition-all cursor-pointer"
+                                >
+                                    {initialValue ? 'Save' : 'Comment'}
+                                </button>
+                            );
+                        })()}
                         <button
                             onClick={() => { setValue(''); setFocused(false); onCancel?.(); }}
                             className="px-4 py-1.5 rounded-full text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
                         >
                             Cancel
-                        </button>
-                        <button
-                            onClick={handleSubmit}
-                            disabled={!value.trim()}
-                            className="px-4 py-1.5 rounded-full text-sm font-bold bg-cyan-600 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 dark:disabled:text-slate-600 disabled:cursor-not-allowed text-white hover:bg-cyan-700 transition-all cursor-pointer"
-                        >
-                            {initialValue ? 'Save' : 'Comment'}
                         </button>
                     </div>
                 )}

@@ -31,9 +31,11 @@ public interface IContentInteractionService
 
     // Polymorphic Content Engagement Summary
     Task<ContentSummaryDto> GetContentSummaryAsync(string contentType, long contentId, int currentUserId);
+    Task<Dictionary<long, ContentSummaryDto>> GetContentSummariesBatchAsync(string contentType, IEnumerable<long> contentIds, int currentUserId);
 
     // Moderation & Governance
     Task<ModerationReportDto> ReportContentAsync(string contentType, long contentId, int reporterUserId, CreateReportDto dto);
     Task<List<ModerationReportDto>> GetPendingReportsAsync(int pageNumber, int pageSize);
+    Task<List<ModerationReportDto>> GetAllReportsAsync(string? status, int pageNumber, int pageSize);
     Task<ModerationReportDto> ResolveReportAsync(long reportId, int moderatorUserId, ResolveReportDto dto);
 }

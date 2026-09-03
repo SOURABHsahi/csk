@@ -70,12 +70,16 @@ public class ArticleService : IArticleService
     public async Task<List<ArticleDto>> GetArticlesAsync(int? categoryId, string? tag, string? status, string? search, int pageNumber, int pageSize, int currentUserId)
     {
         var articles = await _repo.GetArticlesAsync(categoryId, tag, status, search, pageNumber, pageSize);
-        var dtos = new List<ArticleDto>();
+        var ids = articles.Select(a => a.ArticleId).ToList();
+        var summaries = ids.Count > 0 
+            ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Article, ids, currentUserId)
+            : new Dictionary<long, Knome.API.DTOs.Interactions.ContentSummaryDto>();
 
+        var dtos = new List<ArticleDto>();
         foreach (var a in articles)
         {
             var dto = _mapper.Map<ArticleDto>(a);
-            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Article, a.ArticleId, currentUserId);
+            dto.EngagementSummary = summaries.TryGetValue(a.ArticleId, out var s) ? s : new Knome.API.DTOs.Interactions.ContentSummaryDto { ContentType = ContentTypes.Article, ContentId = a.ArticleId };
             dtos.Add(dto);
         }
 
@@ -90,12 +94,16 @@ public class ArticleService : IArticleService
     public async Task<List<ArticleDto>> GetUserArticlesAsync(int authorUserId, int currentUserId, int pageNumber = 1, int pageSize = 20)
     {
         var articles = await _repo.GetMyArticlesAsync(authorUserId, pageNumber, pageSize);
-        var dtos = new List<ArticleDto>();
+        var ids = articles.Select(a => a.ArticleId).ToList();
+        var summaries = ids.Count > 0 
+            ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Article, ids, currentUserId)
+            : new Dictionary<long, Knome.API.DTOs.Interactions.ContentSummaryDto>();
 
+        var dtos = new List<ArticleDto>();
         foreach (var a in articles)
         {
             var dto = _mapper.Map<ArticleDto>(a);
-            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Article, a.ArticleId, currentUserId);
+            dto.EngagementSummary = summaries.TryGetValue(a.ArticleId, out var s) ? s : new Knome.API.DTOs.Interactions.ContentSummaryDto { ContentType = ContentTypes.Article, ContentId = a.ArticleId };
             dtos.Add(dto);
         }
 

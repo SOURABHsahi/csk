@@ -6,6 +6,7 @@ import UploadPodcastModal from '../components/modals/UploadPodcastModal';
 import SaveToCategoryModal from '../components/modals/SaveToCategoryModal';
 import ArticleShareModal from '../components/modals/ArticleShareModal';
 import { podcastsApi, savedContentApi, interactionsApi, resolveMediaUrl, getPersonalizedRecommendations } from '../utils/apiService';
+import { checkRestrictedContent } from '../utils/restrictedWords';
 
 // Helper function to recursively insert a new reply into a nested comments tree
 function addReplyToTree(items, targetId, newReply) {
@@ -86,12 +87,24 @@ function ThreadedCommentItem({ item, ep, level = 0, onAddReply, activeReplyId, s
                         autoFocus
                         className="flex-1 bg-slate-50 dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 text-xs text-slate-900 dark:text-white rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-indigo-500"
                     />
-                    <button 
-                        onClick={() => onAddReply(ep, item, replyInputMap[itemId])}
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer shrink-0"
-                    >
-                        Send
-                    </button>
+                    {(() => {
+                        const restrictedInReply = checkRestrictedContent(replyInputMap[itemId]);
+                        if (restrictedInReply) {
+                            return (
+                                <span className="text-rose-500 text-xs font-semibold px-2 py-1 bg-rose-50 dark:bg-rose-950/40 rounded border border-rose-200 dark:border-rose-900/50 shrink-0">
+                                    ⚠️ Restricted word ("{restrictedInReply}")
+                                </span>
+                            );
+                        }
+                        return (
+                            <button 
+                                onClick={() => onAddReply(ep, item, replyInputMap[itemId])}
+                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer shrink-0"
+                            >
+                                Send
+                            </button>
+                        );
+                    })()}
                     <button 
                         onClick={() => setActiveReplyId(null)}
                         className="px-2 py-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs font-bold cursor-pointer"
@@ -279,6 +292,12 @@ export default function Podcasts() {
         const text = (newCommentInput[epId] || '').trim();
         if (!text) return;
 
+        const foundKeyword = checkRestrictedContent(text);
+        if (foundKeyword) {
+            alert(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}". Comment cannot be posted.`);
+            return;
+        }
+
         try {
             const createdComment = await interactionsApi.addComment('Podcast', epId, text);
             const newCommentObj = {
@@ -314,6 +333,13 @@ export default function Podcasts() {
     const handleAddReply = async (ep, targetItem, textInput) => {
         const text = (textInput || '').trim();
         if (!text) return;
+
+        const foundKeyword = checkRestrictedContent(text);
+        if (foundKeyword) {
+            alert(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}". Reply cannot be posted.`);
+            return;
+        }
+
         const targetId = targetItem.commentId || targetItem.replyId || targetItem.id;
         const authorName = targetItem.commenterFullName || targetItem.replierFullName || targetItem.author || 'Employee';
 
@@ -777,12 +803,24 @@ export default function Podcasts() {
                                                             placeholder="Write a comment..."
                                                             className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white rounded-lg px-3 py-2 outline-none focus:border-indigo-500"
                                                         />
-                                                        <button 
-                                                            onClick={() => handleAddComment(ep)}
-                                                            className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer shrink-0"
-                                                        >
-                                                            Post
-                                                        </button>
+                                                        {(() => {
+                                                            const restrictedInComment = checkRestrictedContent(newCommentInput[ep.id]);
+                                                            if (restrictedInComment) {
+                                                                return (
+                                                                    <span className="text-rose-500 text-xs font-semibold px-2.5 py-1 bg-rose-50 dark:bg-rose-950/40 rounded border border-rose-200 dark:border-rose-900/50 shrink-0">
+                                                                        ⚠️ Restricted word ("{restrictedInComment}")
+                                                                    </span>
+                                                                );
+                                                            }
+                                                            return (
+                                                                <button 
+                                                                    onClick={() => handleAddComment(ep)}
+                                                                    className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition-colors cursor-pointer shrink-0"
+                                                                >
+                                                                    Post
+                                                                </button>
+                                                            );
+                                                        })()}
                                                     </div>
                                                 </div>
                                             )}

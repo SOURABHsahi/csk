@@ -209,9 +209,17 @@ export const UserProvider = ({ children }) => {
     useEffect(() => {
         const restoreSession = async () => {
             // Helper: sync users list from backend (only called after token is confirmed present)
-            const syncUsersList = async () => {
+            const syncUsersList = async (userRoles = null) => {
                 try {
-                    const res = await apiClient.get('/users?pageNumber=1&pageSize=100').catch(() => null);
+                    const rolesToCheck = userRoles 
+                        ? (Array.isArray(userRoles) ? userRoles : [userRoles]) 
+                        : (currentUser?.roles || [currentUser?.role, currentUser?.roleName].filter(Boolean));
+                    const isAdmin = rolesToCheck.some(r => ['SYSADM', 'HRADM', 'CADM', 'System Administrator', 'HR Administrator', 'Community Administrator', 'Community Admin'].includes(r));
+
+                    const res = isAdmin 
+                        ? await apiClient.get('/users?pageNumber=1&pageSize=100').catch(() => null)
+                        : await apiClient.get('/users/suggestions').catch(() => null);
+
                     if (res) {
                         const apiItems = Array.isArray(res) ? res : (res.items || res.data || []);
                         if (apiItems.length > 0) {
@@ -415,7 +423,8 @@ export const UserProvider = ({ children }) => {
                             setCurrentUser(mergeProfile(localUser, profile));
                             setIsAuthenticated(true);
                             setIsAuthLoading(false);
-                            syncUsersList(); // background sync after session confirmed
+                            const resolvedRoles = profile.roles && profile.roles.length > 0 ? profile.roles : [profile.roleName || localUser.roleName];
+                            syncUsersList(resolvedRoles); // background sync after session confirmed
                             return;
                         }
                     } catch {
@@ -426,7 +435,7 @@ export const UserProvider = ({ children }) => {
                 // Re-authenticate with backend to get fresh JWT token
                 try {
                     await authenticateUser(localUser);
-                    syncUsersList(); // background sync after fresh auth
+                    syncUsersList(localUser.roles || [localUser.roleName]); // background sync after fresh auth
                     return;
                 } catch (err) {
                     console.warn('Session verification failed:', err?.message || err);

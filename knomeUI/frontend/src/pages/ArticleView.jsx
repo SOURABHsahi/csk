@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import { getArticles, deleteArticle } from '../utils/articleService';
 import { resolveMediaUrl, interactionsApi } from '../utils/apiService';
+import { checkRestrictedContent } from '../utils/restrictedWords';
 import ReportModal from '../components/modals/ReportModal';
 import SaveToCategoryModal from '../components/modals/SaveToCategoryModal';
 import ArticleShareModal from '../components/modals/ArticleShareModal';
@@ -166,6 +167,12 @@ export default function ArticleView() {
         if (!newComment.trim() || !article?.id) return;
         
         const commentText = newComment.trim();
+        const foundKeyword = checkRestrictedContent(commentText);
+        if (foundKeyword) {
+            alert(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}". Comment cannot be posted.`);
+            return;
+        }
+
         const authorName = currentUser?.fullName || currentUser?.name || 'You';
         const authorAvatar = currentUser?.profilePhotoUrl ? resolveMediaUrl(currentUser.profilePhotoUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=6366f1&color=fff`;
 
@@ -212,6 +219,13 @@ export default function ArticleView() {
     const handleReplyComment = async (parentCommentId, replyText) => {
         if (!replyText || !replyText.trim() || !article?.id) return;
 
+        const trimmedReply = replyText.trim();
+        const foundKeyword = checkRestrictedContent(trimmedReply);
+        if (foundKeyword) {
+            alert(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}". Reply cannot be posted.`);
+            return;
+        }
+
         const authorName = currentUser?.fullName || currentUser?.name || 'You';
         const authorAvatar = currentUser?.profilePhotoUrl ? resolveMediaUrl(currentUser.profilePhotoUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=6366f1&color=fff`;
 
@@ -220,7 +234,7 @@ export default function ArticleView() {
             author: authorName,
             avatar: authorAvatar,
             time: 'Just now',
-            text: replyText.trim(),
+            text: trimmedReply,
             replies: []
         };
 
@@ -234,7 +248,7 @@ export default function ArticleView() {
         } catch (err) {}
 
         try {
-            await interactionsApi.addComment('Article', article.id, replyText.trim(), parentCommentId);
+            await interactionsApi.addComment('Article', article.id, trimmedReply, parentCommentId);
         } catch (err) {}
     };
 
@@ -385,7 +399,13 @@ export default function ArticleView() {
                             </button>
 
                             <button 
-                                onClick={() => setSavingArticleModal(article)}
+                                onClick={() => setSavingArticleModal({
+                                    ...article,
+                                    contentType: 'Article',
+                                    title: article.title,
+                                    text: article.subtitle || article.description || article.content || '',
+                                    image: article.image
+                                })}
                                 className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full text-xs font-bold transition-colors"
                             >
                                 <span className="material-symbols-outlined text-sm">bookmark</span>
@@ -640,13 +660,26 @@ export default function ArticleView() {
                                 className="w-full p-4 border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all resize-none h-24 mb-3" 
                                 placeholder="Add a thoughtful comment..."
                             ></textarea>
-                            <div className="flex justify-end">
-                                <button 
-                                    onClick={handleAddComment}
-                                    className="bg-blue-500 text-white px-6 py-2 rounded-lg font-bold text-xs hover:bg-blue-600 transition-all shadow-sm"
-                                >
-                                    Post Comment
-                                </button>
+                            <div className="flex justify-end items-center">
+                                {(() => {
+                                    const restrictedInComment = checkRestrictedContent(newComment);
+                                    if (restrictedInComment) {
+                                        return (
+                                            <div className="flex items-center gap-1.5 text-rose-500 text-xs font-semibold px-3 py-1.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-lg">
+                                                <span className="material-symbols-outlined text-[16px]">warning</span>
+                                                <span>Restricted word ("{restrictedInComment}") detected! Remove it to post comment.</span>
+                                            </div>
+                                        );
+                                    }
+                                    return (
+                                        <button 
+                                            onClick={handleAddComment}
+                                            className="bg-blue-500 text-white px-6 py-2 rounded-lg font-bold text-xs hover:bg-blue-600 transition-all shadow-sm"
+                                        >
+                                            Post Comment
+                                        </button>
+                                    );
+                                })()}
                             </div>
                         </div>
                     </div>
@@ -803,14 +836,27 @@ function ArticleCommentThread({ comment, depth = 0, onReply, currentUser }) {
                                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full pl-4 pr-3 py-1.5 text-xs focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 dark:text-white"
                             />
                         </div>
-                        <button 
-                            type="submit"
-                            disabled={!replyText.trim()}
-                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-full text-xs font-semibold flex items-center gap-1 transition-all shrink-0 shadow-sm"
-                        >
-                            <span className="material-symbols-outlined text-[14px]">send</span>
-                            <span>Reply</span>
-                        </button>
+                        {(() => {
+                            const restrictedInReply = checkRestrictedContent(replyText);
+                            if (restrictedInReply) {
+                                return (
+                                    <div className="flex items-center gap-1 text-rose-500 text-xs font-semibold px-2.5 py-1 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-full shrink-0">
+                                        <span className="material-symbols-outlined text-[14px]">warning</span>
+                                        <span>Restricted word ("{restrictedInReply}")</span>
+                                    </div>
+                                );
+                            }
+                            return (
+                                <button 
+                                    type="submit"
+                                    disabled={!replyText.trim()}
+                                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-full text-xs font-semibold flex items-center gap-1 transition-all shrink-0 shadow-sm"
+                                >
+                                    <span className="material-symbols-outlined text-[14px]">send</span>
+                                    <span>Reply</span>
+                                </button>
+                            );
+                        })()}
                         <button 
                             type="button"
                             onClick={() => { setIsReplying(false); setReplyText(''); }}

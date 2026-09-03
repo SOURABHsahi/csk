@@ -382,6 +382,44 @@ public class ContentInteractionRepository : IContentInteractionRepository
             .ToListAsync();
     }
 
+    public async Task<List<ModerationReport>> GetAllReportsAsync(string? status, int pageNumber, int pageSize)
+    {
+        var query = _db.ModerationReports
+            .Include(m => m.ReporterUser)
+            .Include(m => m.ModeratorUser)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(status) && !status.Equals("All", StringComparison.OrdinalIgnoreCase))
+        {
+            if (status.Equals("Pending", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(m => m.Status == ReportStatuses.Pending || m.Status == ReportStatuses.UnderReview);
+            }
+            else if (status.Equals("Resolved", StringComparison.OrdinalIgnoreCase) || status.Equals("Action Taken", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(m => m.Status == ReportStatuses.Resolved || m.Status == "Action Taken" || m.Status == "Resolved");
+            }
+            else if (status.Equals("Reviewed", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(m => m.Status == "Reviewed" || m.Status == ReportStatuses.Dismissed);
+            }
+            else if (status.Equals("Dismissed", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(m => m.Status == ReportStatuses.Dismissed || m.Status == "Dismissed");
+            }
+            else
+            {
+                query = query.Where(m => m.Status == status);
+            }
+        }
+
+        return await query
+            .OrderByDescending(m => m.ReportedDate)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+    }
+
     public async Task UpdateReportAsync(ModerationReport report)
     {
         _db.ModerationReports.Update(report);

@@ -150,33 +150,22 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
             setShowHashtagDropdown(false);
         }
 
-        // Real-time Validation (FR-SM-01, FR-SM-06, FR-SM-07)
-        if (val.length > 5) {
-            if (!scanComplete && !isScanning) {
-                runSecurityScan(val);
-            }
+        // Real-time Immediate Validation for Restricted Keywords
+        const immediateRestricted = checkRestrictedContent(val);
+        if (immediateRestricted) {
+            setSecurityWarning(`Security Alert: Please don't use this word - "${immediateRestricted}". It is restricted and cannot be published.`);
+        } else if (val.toLowerCase().includes('malicious.com') || val.toLowerCase().includes('scam-link.net')) {
+            setSecurityWarning('Security Alert: This URL is flagged as potentially malicious and cannot be published.');
         } else {
             setSecurityWarning(null);
-            setScanComplete(false);
         }
     };
 
     const runSecurityScan = (content) => {
-        setIsScanning(true);
-        setSecurityWarning(null);
-        setTimeout(() => {
-            setIsScanning(false);
-            setScanComplete(true);
-            const lowerContent = content.toLowerCase();
-            if (lowerContent.includes('malicious.com') || lowerContent.includes('scam-link.net')) {
-                setSecurityWarning('Security Alert: This URL is flagged as potentially malicious and cannot be published.');
-                return;
-            }
-            const foundKeyword = checkRestrictedContent(content);
-            if (foundKeyword) {
-                setSecurityWarning(`Security Alert: Please don't use this word - "${foundKeyword}". It is restricted.`);
-            }
-        }, 800);
+        const foundKeyword = checkRestrictedContent(content);
+        if (foundKeyword) {
+            setSecurityWarning(`Security Alert: Please don't use this word - "${foundKeyword}". It is restricted and cannot be published.`);
+        }
     };
 
     const insertMention = (user) => {
@@ -908,34 +897,49 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <button 
-                            onClick={() => handleSubmit('Draft')}
-                            disabled={!text.trim() || securityWarning || isPublishing}
-                            className="px-4 py-2 rounded-xl text-[13px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                            Save Draft
-                        </button>
-                        <button 
-                            onClick={() => setIsScheduling(!isScheduling)}
-                            disabled={isPublishing}
-                            className={`p-2 rounded-xl border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isScheduling ? 'bg-indigo-100 dark:bg-indigo-900/50 border-indigo-200 text-indigo-600' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
-                            <span className="material-symbols-outlined text-[18px]">schedule</span>
-                        </button>
-                        <button
-                            onClick={() => handleSubmit(isScheduling && scheduledTime ? 'Scheduled' : 'Published')}
-                            disabled={!text.trim() || securityWarning || isPublishing || (isScheduling && !scheduledTime)}
-                            className={`px-5 py-2 rounded-xl text-[13px] font-bold transition-all shadow-sm flex items-center gap-2
-                                ${(!text.trim() || securityWarning || isPublishing || (isScheduling && !scheduledTime)) ? 'bg-slate-100 text-slate-400 cursor-not-allowed dark:bg-slate-800 dark:text-slate-500' : 'bg-indigo-500 text-white hover:bg-indigo-600 hover:shadow-md hover:scale-105'}
-                            `}
-                        >
-                            {isPublishing ? (
+                        {(() => {
+                            const restrictedInPost = checkRestrictedContent(text);
+                            if (restrictedInPost) {
+                                return (
+                                    <div className="flex items-center gap-2 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 px-4 py-2 rounded-xl text-xs font-bold">
+                                        <span className="material-symbols-outlined text-[18px]">warning</span>
+                                        <span>Restricted word ("{restrictedInPost}") detected! Remove it to publish.</span>
+                                    </div>
+                                );
+                            }
+                            return (
                                 <>
-                                    <span className="material-symbols-outlined text-[16px] animate-spin">refresh</span>
-                                    Publishing...
+                                    <button 
+                                        onClick={() => handleSubmit('Draft')}
+                                        disabled={!text.trim() || securityWarning || isPublishing}
+                                        className="px-4 py-2 rounded-xl text-[13px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                                        Save Draft
+                                    </button>
+                                    <button 
+                                        onClick={() => setIsScheduling(!isScheduling)}
+                                        disabled={isPublishing}
+                                        className={`p-2 rounded-xl border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isScheduling ? 'bg-indigo-100 dark:bg-indigo-900/50 border-indigo-200 text-indigo-600' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
+                                        <span className="material-symbols-outlined text-[18px]">schedule</span>
+                                    </button>
+                                    <button
+                                        onClick={() => handleSubmit(isScheduling && scheduledTime ? 'Scheduled' : 'Published')}
+                                        disabled={!text.trim() || securityWarning || isPublishing || (isScheduling && !scheduledTime)}
+                                        className={`px-5 py-2 rounded-xl text-[13px] font-bold transition-all shadow-sm flex items-center gap-2
+                                            ${(!text.trim() || securityWarning || isPublishing || (isScheduling && !scheduledTime)) ? 'bg-slate-100 text-slate-400 cursor-not-allowed dark:bg-slate-800 dark:text-slate-500' : 'bg-indigo-500 text-white hover:bg-indigo-600 hover:shadow-md hover:scale-105'}
+                                        `}
+                                    >
+                                        {isPublishing ? (
+                                            <>
+                                                <span className="material-symbols-outlined text-[16px] animate-spin">refresh</span>
+                                                Publishing...
+                                            </>
+                                        ) : (
+                                            isScheduling && scheduledTime ? 'Schedule' : 'Publish'
+                                        )}
+                                    </button>
                                 </>
-                            ) : (
-                                isScheduling && scheduledTime ? 'Schedule' : 'Publish'
-                            )}
-                        </button>
+                            );
+                        })()}
                     </div>
                 </div>
 

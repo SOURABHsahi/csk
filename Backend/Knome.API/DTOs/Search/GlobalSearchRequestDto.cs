@@ -18,9 +18,9 @@ public class GlobalSearchRequestDto
     [Range(1, 100, ErrorMessage = "Page size must be between 1 and 100.")]
     public int PageSize { get; set; } = 20;
 
-    /// <summary>Optional type filter: User, Community, Post, Article, Video, Podcast, Job.</summary>
-    [RegularExpression("^(User|Community|Post|Article|Video|Podcast|Job)$",
-        ErrorMessage = "Content type must be one of: User, Community, Post, Article, Video, Podcast, Job.")]
+    /// <summary>Optional type filter: User, People, Community, Post, Article, Video, Podcast, Job, Hashtags, Documents, Content.</summary>
+    [RegularExpression("^(?i)(User|Users|People|Community|Communities|Post|Posts|Article|Articles|Video|Videos|Podcast|Podcasts|Job|Jobs|Hashtags|Documents|Content|All)$",
+        ErrorMessage = "Content type must be one of: User, People, Community, Post, Article, Video, Podcast, Job, Hashtags, Documents, Content.")]
     public string? ContentType { get; set; }
 
     /// <summary>Restrict results created/on or after this date (UTC).</summary>

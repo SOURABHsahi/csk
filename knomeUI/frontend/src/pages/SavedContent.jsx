@@ -98,16 +98,33 @@ export default function SavedContent() {
         try {
             const res = await savedContentApi.getSavedCounts();
             const payload = res?.data ?? res;
-            if (payload && typeof payload === 'object') {
-                setCounts({
-                    totalCount: payload.totalCount || 0,
-                    postsCount: payload.postsCount || 0,
-                    articlesCount: payload.articlesCount || 0,
-                    videosCount: payload.videosCount || 0,
-                    podcastsCount: payload.podcastsCount || 0,
-                    documentsCount: payload.documentsCount || 0,
-                });
-            }
+            const apiCounts = (payload && typeof payload === 'object') ? {
+                totalCount: payload.totalCount || 0,
+                postsCount: payload.postsCount || 0,
+                articlesCount: payload.articlesCount || 0,
+                videosCount: payload.videosCount || 0,
+                podcastsCount: payload.podcastsCount || 0,
+                documentsCount: payload.documentsCount || 0,
+            } : { totalCount: 0, postsCount: 0, articlesCount: 0, videosCount: 0, podcastsCount: 0, documentsCount: 0 };
+
+            const localCustomSaved = JSON.parse(localStorage.getItem('knome_saved_items_custom') || '[]');
+            let localPosts = 0, localArticles = 0, localVideos = 0, localPodcasts = 0;
+            localCustomSaved.forEach(item => {
+                const t = (item.contentType || 'Post').toLowerCase();
+                if (t === 'post') localPosts++;
+                else if (t === 'article') localArticles++;
+                else if (t === 'video') localVideos++;
+                else if (t === 'podcast') localPodcasts++;
+            });
+
+            setCounts({
+                totalCount: Math.max(apiCounts.totalCount, localCustomSaved.length),
+                postsCount: Math.max(apiCounts.postsCount, localPosts),
+                articlesCount: Math.max(apiCounts.articlesCount, localArticles),
+                videosCount: Math.max(apiCounts.videosCount, localVideos),
+                podcastsCount: Math.max(apiCounts.podcastsCount, localPodcasts),
+                documentsCount: apiCounts.documentsCount,
+            });
         } catch (e) {
             console.error('Failed to load saved counts', e);
         }
@@ -131,19 +148,30 @@ export default function SavedContent() {
 
             // Merge local custom category bookmarks from SaveToCategoryModal
             const localCustomSaved = JSON.parse(localStorage.getItem('knome_saved_items_custom') || '[]');
-            const formattedLocal = localCustomSaved.map(s => ({
-                id: s.id,
-                contentId: s.contentId || s.id,
-                contentType: s.contentType || 'Post',
-                title: extractText(s.title),
-                summary: extractText(s.content),
-                contentText: extractText(s.content),
-                thumbnailUrl: s.thumbnailUrl || s.image || s.thumbnail || s.coverImage || s.mediaUrl || (Array.isArray(s.mediaUrls) ? s.mediaUrls[0] : null) || (Array.isArray(s.attachmentUrls) ? s.attachmentUrls[0] : null),
-                authorFullName: extractText(s.author),
-                savedAt: s.savedAt,
-                userCategory: s.category,
-                categoryName: s.category
-            }));
+            const formattedLocal = localCustomSaved
+                .filter(s => {
+                    if (activeTab === 'All') return true;
+                    const type = (s.contentType || 'Post').toLowerCase();
+                    const tab = activeTab.toLowerCase();
+                    if (tab === 'posts') return type === 'post';
+                    if (tab === 'articles') return type === 'article';
+                    if (tab === 'videos') return type === 'video';
+                    if (tab === 'podcasts') return type === 'podcast';
+                    return true;
+                })
+                .map(s => ({
+                    id: s.id,
+                    contentId: s.contentId || s.id,
+                    contentType: s.contentType || 'Post',
+                    title: extractText(s.title),
+                    summary: extractText(s.content),
+                    contentText: extractText(s.content),
+                    thumbnailUrl: s.thumbnailUrl || s.image || s.thumbnail || s.coverImage || s.mediaUrl || (Array.isArray(s.mediaUrls) ? s.mediaUrls[0] : null) || (Array.isArray(s.attachmentUrls) ? s.attachmentUrls[0] : null),
+                    authorFullName: extractText(s.author),
+                    savedAt: s.savedAt,
+                    userCategory: s.category,
+                    categoryName: s.category
+                }));
 
             const combined = [...formattedLocal, ...items];
             const deduped = Array.from(new Map(combined.map(i => [String(i.contentId || i.id), i])).values());
@@ -154,19 +182,30 @@ export default function SavedContent() {
             console.error('Failed to load saved content', e);
             // Fall back to local saved items if API fails
             const localCustomSaved = JSON.parse(localStorage.getItem('knome_saved_items_custom') || '[]');
-            const formattedLocal = localCustomSaved.map(s => ({
-                id: s.id,
-                contentId: s.contentId || s.id,
-                contentType: s.contentType || 'Post',
-                title: extractText(s.title),
-                summary: extractText(s.content),
-                contentText: extractText(s.content),
-                thumbnailUrl: s.thumbnailUrl || s.image || s.thumbnail || s.coverImage || s.mediaUrl || (Array.isArray(s.mediaUrls) ? s.mediaUrls[0] : null) || (Array.isArray(s.attachmentUrls) ? s.attachmentUrls[0] : null),
-                authorFullName: extractText(s.author),
-                savedAt: s.savedAt,
-                userCategory: s.category,
-                categoryName: s.category
-            }));
+            const formattedLocal = localCustomSaved
+                .filter(s => {
+                    if (activeTab === 'All') return true;
+                    const type = (s.contentType || 'Post').toLowerCase();
+                    const tab = activeTab.toLowerCase();
+                    if (tab === 'posts') return type === 'post';
+                    if (tab === 'articles') return type === 'article';
+                    if (tab === 'videos') return type === 'video';
+                    if (tab === 'podcasts') return type === 'podcast';
+                    return true;
+                })
+                .map(s => ({
+                    id: s.id,
+                    contentId: s.contentId || s.id,
+                    contentType: s.contentType || 'Post',
+                    title: extractText(s.title),
+                    summary: extractText(s.content),
+                    contentText: extractText(s.content),
+                    thumbnailUrl: s.thumbnailUrl || s.image || s.thumbnail || s.coverImage || s.mediaUrl || (Array.isArray(s.mediaUrls) ? s.mediaUrls[0] : null) || (Array.isArray(s.attachmentUrls) ? s.attachmentUrls[0] : null),
+                    authorFullName: extractText(s.author),
+                    savedAt: s.savedAt,
+                    userCategory: s.category,
+                    categoryName: s.category
+                }));
             setSavedItems(formattedLocal);
             setTotalCount(formattedLocal.length);
         } finally {
@@ -296,18 +335,25 @@ export default function SavedContent() {
         }
     };
 
+    const getItemCategoryId = (item) => {
+        if (!item) return 'all';
+        const itemKey1 = `${item.contentType}_${item.contentId}`;
+        const itemKey2 = `${item.contentType}_${item.id}`;
+        return itemCategoryMap[itemKey1] || 
+               itemCategoryMap[itemKey2] || 
+               itemCategoryMap[item.contentId] || 
+               itemCategoryMap[item.id] || 
+               item.categoryId || 
+               (item.userCategory ? item.userCategory.toLowerCase().replace(/\s+/g, '_') : null) || 
+               (item.category ? item.category.toLowerCase().replace(/\s+/g, '_') : null) || 
+               (item.categoryName ? item.categoryName.toLowerCase().replace(/\s+/g, '_') : null) || 
+               'all';
+    };
+
     // Filter items by category
     const categoryFilteredItems = savedItems.filter(item => {
         if (selectedCategory === 'all') return true;
-        const itemKey1 = `${item.contentType}_${item.contentId}`;
-        const itemKey2 = `${item.contentType}_${item.id}`;
-        const itemCatId = itemCategoryMap[itemKey1] || 
-                          itemCategoryMap[itemKey2] || 
-                          itemCategoryMap[item.contentId] || 
-                          itemCategoryMap[item.id] || 
-                          item.categoryId || 
-                          (item.userCategory ? item.userCategory.toLowerCase().replace(/\s+/g, '_') : null) || 
-                          'all';
+        const itemCatId = getItemCategoryId(item);
         return itemCatId === selectedCategory;
     });
 
@@ -360,13 +406,6 @@ export default function SavedContent() {
                             Category Folders ({categories.length - 1})
                         </h2>
                     </div>
-                    <button
-                        onClick={() => setIsCreateCatModalOpen(true)}
-                        className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 cursor-pointer"
-                    >
-                        <span className="material-symbols-outlined text-[16px]">add</span>
-                        <span>New Category</span>
-                    </button>
                 </div>
 
                 {/* Categories Pills */}
@@ -375,7 +414,7 @@ export default function SavedContent() {
                         const isSelected = selectedCategory === cat.id;
                         const catItemCount = cat.id === 'all' 
                             ? savedItems.length 
-                            : savedItems.filter(item => (itemCategoryMap[`${item.contentType}_${item.contentId}`] || 'all') === cat.id).length;
+                            : savedItems.filter(item => getItemCategoryId(item) === cat.id).length;
 
                         return (
                             <button

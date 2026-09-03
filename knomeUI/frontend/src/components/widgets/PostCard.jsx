@@ -591,14 +591,35 @@ export default function PostCard({ post, onPostDeleted }) {
         return () => { isMounted = false; };
     }, [shareMode, shareCommunities.length]);
 
+    const currentUserId = currentUser?.userId || currentUser?.id;
+    const postAuthorId = post.author?.id || post.author?.userId || post.authorUserId || post.authorId || post.userId;
+    const isAuthor = Boolean(currentUserId && postAuthorId && String(currentUserId) === String(postAuthorId));
+
+    const isUserAdmin = Boolean(
+        currentUser?.isAdmin === true ||
+        ['SYSADM', 'HRADM', 'CADM'].includes(currentUser?.role) ||
+        ['System Administrator', 'HR Administrator', 'Community Admin', 'Community Administrator'].includes(currentUser?.roleName) ||
+        (currentUser?.role && currentUser.role.toLowerCase().includes('admin')) ||
+        (currentUser?.roleName && currentUser.roleName.toLowerCase().includes('admin')) ||
+        (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => typeof r === 'string' && (r.toLowerCase().includes('admin') || ['SYSADM', 'HRADM', 'CADM'].includes(r))))
+    );
+
+    const canDeletePost = isAuthor || isUserAdmin;
+
     const handleDeletePost = async () => {
         if (!window.confirm("Are you sure you want to delete this post?")) return;
+        const targetPostId = post.id || post.postId;
+        if (!targetPostId) return;
         try {
-            await postsApi.delete(post.id);
+            await postsApi.delete(targetPostId);
             setIsMenuOpen(false);
-            if (onPostDeleted) onPostDeleted();
+            window.dispatchEvent(new CustomEvent('post-deleted', { detail: { id: targetPostId } }));
+            if (onPostDeleted) onPostDeleted(targetPostId);
+            addToast("Post deleted successfully", "success");
         } catch (error) {
-            alert("Failed to delete post");
+            console.error("Failed to delete post:", error);
+            const errMsg = error?.response?.data?.message || "Failed to delete post";
+            addToast(errMsg, "error");
         }
     };
 
@@ -737,7 +758,7 @@ export default function PostCard({ post, onPostDeleted }) {
                                         >
                                             <span className="material-symbols-outlined text-[16px]">report</span> Report Post
                                         </button>
-                                        {(currentUser?.userId === post.author?.userId || currentUser?.role === 'SYSADM' || currentUser?.role === 'HRADM') && (
+                                        {canDeletePost && (
                                             <button 
                                                 onClick={handleDeletePost}
                                                 className="w-full text-left px-4 py-2 text-[13px] font-bold text-red-600 dark:text-red-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 border-t border-slate-100 dark:border-slate-800 mt-1"
@@ -784,7 +805,7 @@ export default function PostCard({ post, onPostDeleted }) {
                 )}
                 {post.title && (
                     <h3 
-                        onClick={() => post.type === 'article' && navigate('/article-view?id=' + (post.id === 1 ? '2' : post.id))}
+                        onClick={() => post.type === 'article' && navigate('/article-view?id=' + (post.articleId || post.contentId || post.id))}
                         className={`text-base font-extrabold text-slate-900 dark:text-white mb-1.5 leading-snug ${post.type === 'article' ? 'hover:text-blue-500 cursor-pointer transition-colors' : ''}`}
                     >
                         {post.title}
@@ -894,7 +915,7 @@ export default function PostCard({ post, onPostDeleted }) {
 
                 {post.type === 'article' && (
                     <button 
-                        onClick={() => navigate('/article-view?id=' + (post.id === 1 ? '2' : post.id))}
+                        onClick={() => navigate('/article-view?id=' + (post.articleId || post.contentId || post.id))}
                         className="mt-3 text-xs font-black text-blue-500 hover:text-blue-600 hover:underline flex items-center gap-1"
                     >
                         Read Full Article
@@ -957,8 +978,13 @@ export default function PostCard({ post, onPostDeleted }) {
                             );
                         } else if (att.type === 'doc') {
                             const isPdf = att.name?.toLowerCase().endsWith('.pdf') || att.url?.toLowerCase().includes('.pdf');
+                            const resolvedDocUrl = resolveMediaUrl(att.url);
                             return (
-                                <div key={att.id} className="mx-5 mb-3 p-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl flex items-center justify-between gap-4 shadow-sm hover:shadow-md transition-all group">
+                                <div 
+                                    key={att.id} 
+                                    onClick={() => setActiveDocViewer(att)}
+                                    className="mx-5 mb-3 p-3.5 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl flex items-center justify-between gap-4 shadow-sm hover:shadow-md transition-all group cursor-pointer"
+                                >
                                     <div className="flex items-center gap-3.5 overflow-hidden">
                                         <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-sm transition-transform group-hover:scale-105 ${
                                             isPdf ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/20'
@@ -968,22 +994,37 @@ export default function PostCard({ post, onPostDeleted }) {
                                             </span>
                                         </div>
                                         <div className="min-w-0">
-                                            <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate" title={att.name}>{att.name}</p>
+                                            <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" title={att.name}>{att.name}</p>
                                             <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                                                <span className="font-semibold uppercase tracking-wider text-[10px] px-1.5 py-0.5 bg-slate-200/70 dark:bg-slate-700/70 rounded text-slate-700 dark:text-slate-300">
+                                                <span className={`font-semibold uppercase tracking-wider text-[10px] px-1.5 py-0.5 rounded ${
+                                                    isPdf ? 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300' : 'bg-slate-200/70 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300'
+                                                }`}>
                                                     {isPdf ? 'PDF' : 'DOC'}
                                                 </span>
-                                                <span>Document (View Only)</span>
+                                                <span>Document</span>
                                             </div>
                                         </div>
                                     </div>
-                                    <button 
-                                        onClick={() => setActiveDocViewer(att)}
-                                        className="shrink-0 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-500/20 active:scale-95 cursor-pointer"
-                                    >
-                                        <span className="material-symbols-outlined text-[16px]">visibility</span>
-                                        View File
-                                    </button>
+                                    <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                        {resolvedDocUrl && (
+                                            <a
+                                                href={resolvedDocUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-700/60 rounded-xl transition-all"
+                                                title="Open in new tab"
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">open_in_new</span>
+                                            </a>
+                                        )}
+                                        <button 
+                                            onClick={() => setActiveDocViewer(att)}
+                                            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-500/20 active:scale-95 cursor-pointer"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">visibility</span>
+                                            View File
+                                        </button>
+                                    </div>
                                 </div>
                             );
                         }
@@ -1198,17 +1239,29 @@ export default function PostCard({ post, onPostDeleted }) {
                                 rows={2}
                                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white resize-none"
                             />
-                            <div className="flex items-center justify-between mt-2">
-                                <button type="button" className="text-slate-400 hover:text-indigo-500 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors" title="Attach Image">
-                                    <span className="material-symbols-outlined text-[18px]">image</span>
-                                </button>
-                                <button 
-                                    type="submit"
-                                    className="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-lg text-xs transition-colors shadow-sm"
-                                >
-                                    Post Comment
-                                </button>
-                            </div>
+                            {(() => {
+                                const restrictedInComment = checkRestrictedContent(newComment);
+                                return (
+                                    <div className="flex items-center justify-between mt-2">
+                                        <button type="button" className="text-slate-400 hover:text-indigo-500 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors" title="Attach Image">
+                                            <span className="material-symbols-outlined text-[18px]">image</span>
+                                        </button>
+                                        {restrictedInComment ? (
+                                            <div className="flex items-center gap-1.5 text-rose-500 text-xs font-semibold px-2.5 py-1 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-lg">
+                                                <span className="material-symbols-outlined text-[15px]">warning</span>
+                                                <span>Restricted word ("{restrictedInComment}") detected! Remove it to post.</span>
+                                            </div>
+                                        ) : (
+                                            <button 
+                                                type="submit"
+                                                className="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-lg text-xs transition-colors shadow-sm"
+                                            >
+                                                Post Comment
+                                            </button>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </form>
 
@@ -1240,11 +1293,8 @@ export default function PostCard({ post, onPostDeleted }) {
                     time: post.createdDate || post.time || 'Just now',
                     tags: post.tags || []
                 }}
-                onSaved={async (savedItem) => {
+                onSaved={(savedItem) => {
                     setIsSaved(true);
-                    try {
-                        await interactionsApi.toggleBookmark('Post', post.id);
-                    } catch (_) {}
                     addToast(`✅ Saved to "${savedItem.category}"!`, 'success');
                 }}
             />
@@ -1265,6 +1315,12 @@ function CommentThread({ postId, comment, depth = 0, onReplyAdded }) {
     const submitReply = async (e) => {
         e.preventDefault();
         if (!replyText.trim()) return;
+
+        const foundKeyword = checkRestrictedContent(replyText.trim());
+        if (foundKeyword) {
+            alert(`Security Alert: Please don't use restricted or abusive words ("${foundKeyword}").`);
+            return;
+        }
 
         try {
             const c = await interactionsApi.addComment('Post', postId, replyText.trim(), comment.id);
@@ -1330,14 +1386,27 @@ function CommentThread({ postId, comment, depth = 0, onReplyAdded }) {
                                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full pl-4 pr-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white"
                             />
                         </div>
-                        <button 
-                            type="submit"
-                            disabled={!replyText.trim()}
-                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-full text-xs font-semibold flex items-center gap-1 transition-all shrink-0 shadow-sm"
-                        >
-                            <span className="material-symbols-outlined text-[14px]">send</span>
-                            <span>Reply</span>
-                        </button>
+                        {(() => {
+                            const restrictedInReply = checkRestrictedContent(replyText);
+                            if (restrictedInReply) {
+                                return (
+                                    <div className="flex items-center gap-1 text-rose-500 text-xs font-semibold px-2.5 py-1 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-full shrink-0">
+                                        <span className="material-symbols-outlined text-[14px]">warning</span>
+                                        <span>Restricted word ("{restrictedInReply}")</span>
+                                    </div>
+                                );
+                            }
+                            return (
+                                <button 
+                                    type="submit"
+                                    disabled={!replyText.trim()}
+                                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-full text-xs font-semibold flex items-center gap-1 transition-all shrink-0 shadow-sm"
+                                >
+                                    <span className="material-symbols-outlined text-[14px]">send</span>
+                                    <span>Reply</span>
+                                </button>
+                            );
+                        })()}
                         <button 
                             type="button"
                             onClick={() => { setIsReplying(false); setReplyText(''); }}

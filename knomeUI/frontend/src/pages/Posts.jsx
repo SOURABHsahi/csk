@@ -54,6 +54,14 @@ export default function Posts() {
 
     useEffect(() => {
         loadPosts();
+        const handlePostDeleted = (e) => {
+            const deletedId = e?.detail?.id || e;
+            if (deletedId) {
+                setPosts(prev => prev.filter(p => p.id !== deletedId && p.postId !== deletedId));
+            }
+        };
+        window.addEventListener('post-deleted', handlePostDeleted);
+        return () => window.removeEventListener('post-deleted', handlePostDeleted);
     }, [targetPostId]);
 
     const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -346,7 +354,10 @@ export default function Posts() {
                 ) : filteredPosts.length > 0 ? (
                     <>
                         {filteredPosts.slice(0, visibleCount).map(post => (
-                            <PostCard key={post.id} post={post} onPostDeleted={() => loadPosts()} />
+                            <PostCard key={post.id} post={post} onPostDeleted={(deletedId) => {
+                                if (deletedId) setPosts(prev => prev.filter(p => p.id !== deletedId && p.postId !== deletedId));
+                                loadPosts();
+                            }} />
                         ))}
 
                         {/* Infinite Scroll Progress Indicator */}

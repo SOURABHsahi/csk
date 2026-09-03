@@ -115,10 +115,6 @@ export default function CreateArticleModal({ isOpen, onClose, onArticleCreated }
                         <div className="w-px h-5 bg-border-subtle mx-1"></div>
                         <button className="p-1 hover:bg-surface-container-high rounded text-slate-gray"><span className="material-symbols-outlined text-[18px]">format_list_bulleted</span></button>
                         <button className="p-1 hover:bg-surface-container-high rounded text-slate-gray"><span className="material-symbols-outlined text-[18px]">format_list_numbered</span></button>
-                        <div className="w-px h-5 bg-border-subtle mx-1"></div>
-                        <button className="p-1 hover:bg-surface-container-high rounded text-slate-gray"><span className="material-symbols-outlined text-[18px]">link</span></button>
-                        <button className="p-1 hover:bg-surface-container-high rounded text-slate-gray"><span className="material-symbols-outlined text-[18px]">image</span></button>
-                        <button className="p-1 hover:bg-surface-container-high rounded text-slate-gray"><span className="material-symbols-outlined text-[18px]">table_chart</span></button>
                     </div>
                     <textarea 
                         className="w-full h-64 p-4 bg-surface-container-lowest focus:outline-none resize-none font-body-md text-primary"
@@ -134,15 +130,31 @@ export default function CreateArticleModal({ isOpen, onClose, onArticleCreated }
                 </div>
 
                 {/* Actions */}
-                <div className="flex justify-end gap-3 mt-4 border-t border-border-subtle pt-4">
+                <div className="flex justify-end items-center gap-3 mt-4 border-t border-border-subtle pt-4">
                     <button onClick={onClose} className="px-4 py-2 text-slate-gray font-label-md hover:bg-surface-container rounded-lg transition-all">Cancel</button>
-                    <button className="px-4 py-2 border border-border-subtle text-primary font-label-md hover:bg-surface-container rounded-lg transition-all">Save Draft</button>
-                    <button className="px-4 py-2 border border-border-subtle text-primary font-label-md hover:bg-surface-container rounded-lg transition-all flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[16px]">schedule</span> Schedule
-                    </button>
-                    <button onClick={handlePublish} className="px-4 py-2 bg-electric-blue text-white font-label-md rounded-lg hover:opacity-90 transition-all shadow-sm">
-                        Publish Article
-                    </button>
+                    {(() => {
+                        const textToScan = `${title} ${tags} ${content}`;
+                        const restrictedWord = checkRestrictedContent(textToScan);
+                        if (restrictedWord) {
+                            return (
+                                <div className="flex items-center gap-1.5 text-rose-500 text-xs font-semibold px-3 py-2 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-lg">
+                                    <span className="material-symbols-outlined text-[16px]">warning</span>
+                                    <span>Restricted word ("{restrictedWord}") detected! Remove it to publish.</span>
+                                </div>
+                            );
+                        }
+                        return (
+                            <>
+                                <button className="px-4 py-2 border border-border-subtle text-primary font-label-md hover:bg-surface-container rounded-lg transition-all">Save Draft</button>
+                                <button className="px-4 py-2 border border-border-subtle text-primary font-label-md hover:bg-surface-container rounded-lg transition-all flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[16px]">schedule</span> Schedule
+                                </button>
+                                <button onClick={handlePublish} className="px-4 py-2 bg-electric-blue text-white font-label-md rounded-lg hover:opacity-90 transition-all shadow-sm">
+                                    Publish Article
+                                </button>
+                            </>
+                        );
+                    })()}
                 </div>
             </div>
         </Modal>

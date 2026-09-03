@@ -153,6 +153,15 @@ public class InteractionController : KnomeControllerBase
     }
 
     [Authorize(Roles = $"{Roles.CommunityAdmin},{Roles.HRAdmin},{Roles.SystemAdmin}")]
+    [HttpGet("reports")]
+    [ProducesResponseType(typeof(ApiResponse<List<ModerationReportDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetReports([FromQuery] string? status = null, [FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 100)
+    {
+        var reports = await _interactionService.GetAllReportsAsync(status, pageNumber, pageSize);
+        return Ok(ApiResponse<List<ModerationReportDto>>.SuccessResponse(200, "Moderation reports retrieved successfully.", reports));
+    }
+
+    [Authorize(Roles = $"{Roles.CommunityAdmin},{Roles.HRAdmin},{Roles.SystemAdmin}")]
     [HttpGet("reports/pending")]
     [ProducesResponseType(typeof(ApiResponse<List<ModerationReportDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetPendingReports([FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 20)

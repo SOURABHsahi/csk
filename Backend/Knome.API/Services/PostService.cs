@@ -39,7 +39,12 @@ public class PostService : IPostService
         if (post.AuthorUserId == currentUserId) return;
 
         var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
-        if (user == null || !user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.HRAdmin))
+        if (user == null || !user.Roles.Any(r => 
+            r.RoleName == Roles.SystemAdmin || r.RoleCode == "SYSADM" ||
+            r.RoleName == Roles.HRAdmin || r.RoleCode == "HRADM" ||
+            r.RoleName == Roles.CommunityAdmin || r.RoleCode == "CADM" ||
+            (r.RoleName != null && r.RoleName.Contains("Admin")) ||
+            (r.RoleCode != null && r.RoleCode.Contains("ADM"))))
         {
             throw new UnauthorizedException("You must be the author of this post or an Administrator to modify/delete it.");
         }
@@ -59,12 +64,16 @@ public class PostService : IPostService
     public async Task<List<PostDto>> GetPostsAsync(string? audienceType, string? search, int pageNumber, int pageSize, int currentUserId)
     {
         var posts = await _repo.GetPostsAsync(audienceType, search, pageNumber, pageSize, currentUserId);
-        var dtos = new List<PostDto>();
+        var ids = posts.Select(p => p.PostId).ToList();
+        var summaries = ids.Count > 0 
+            ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Post, ids, currentUserId)
+            : new Dictionary<long, Knome.API.DTOs.Interactions.ContentSummaryDto>();
 
+        var dtos = new List<PostDto>();
         foreach (var p in posts)
         {
             var dto = _mapper.Map<PostDto>(p);
-            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Post, p.PostId, currentUserId);
+            dto.EngagementSummary = summaries.TryGetValue(p.PostId, out var s) ? s : new Knome.API.DTOs.Interactions.ContentSummaryDto { ContentType = ContentTypes.Post, ContentId = p.PostId };
             dtos.Add(dto);
         }
 
@@ -79,12 +88,16 @@ public class PostService : IPostService
     public async Task<List<PostDto>> GetUserPostsAsync(int authorUserId, int currentUserId, int pageNumber = 1, int pageSize = 20)
     {
         var posts = await _repo.GetMyPostsAsync(authorUserId, pageNumber, pageSize);
-        var dtos = new List<PostDto>();
+        var ids = posts.Select(p => p.PostId).ToList();
+        var summaries = ids.Count > 0 
+            ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Post, ids, currentUserId)
+            : new Dictionary<long, Knome.API.DTOs.Interactions.ContentSummaryDto>();
 
+        var dtos = new List<PostDto>();
         foreach (var p in posts)
         {
             var dto = _mapper.Map<PostDto>(p);
-            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Post, p.PostId, currentUserId);
+            dto.EngagementSummary = summaries.TryGetValue(p.PostId, out var s) ? s : new Knome.API.DTOs.Interactions.ContentSummaryDto { ContentType = ContentTypes.Post, ContentId = p.PostId };
             dtos.Add(dto);
         }
 

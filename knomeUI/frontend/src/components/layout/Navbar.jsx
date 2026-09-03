@@ -1111,26 +1111,7 @@ export default function Navbar() {
                                             </div>
                                         )}
 
-                                        {/* Trending Searches */}
-                                        {trendingSearches.length > 0 && (
-                                            <div className="px-4 pt-1 pb-2">
-                                                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1 mb-2">
-                                                    <span className="material-symbols-outlined text-[13px] text-amber-500" style={{fontVariationSettings: "'FILL' 1"}}>trending_up</span>
-                                                    Trending Searches
-                                                </span>
-                                                <div className="flex flex-wrap gap-1.5">
-                                                    {trendingSearches.map((term, idx) => (
-                                                        <button
-                                                            key={`trend-${idx}`}
-                                                            onMouseDown={() => handleSearch(term)}
-                                                            className="px-3 py-1 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-indigo-500 hover:text-white dark:hover:bg-indigo-600 transition-all border border-slate-200 dark:border-slate-700"
-                                                        >
-                                                            🔥 {term}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
+
                                     </div>
                                 )}
                             </div>

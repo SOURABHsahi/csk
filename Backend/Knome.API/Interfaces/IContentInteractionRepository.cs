@@ -39,6 +39,7 @@ public interface IContentInteractionRepository
     Task<ModerationReport> AddReportAsync(ModerationReport report);
     Task<ModerationReport?> GetReportByIdAsync(long reportId);
     Task<List<ModerationReport>> GetPendingReportsAsync(int pageNumber, int pageSize);
+    Task<List<ModerationReport>> GetAllReportsAsync(string? status, int pageNumber, int pageSize);
     Task UpdateReportAsync(ModerationReport report);
 
     // Security Screening

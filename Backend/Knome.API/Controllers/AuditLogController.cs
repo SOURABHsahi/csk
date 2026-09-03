@@ -270,7 +270,18 @@ public class AuditLogController : KnomeControllerBase
 
         var fullPath = Path.Combine(logsDir, cleanFileName);
         if (!System.IO.File.Exists(fullPath))
-            throw new NotFoundException($"Log file '{cleanFileName}' not found.");
+        {
+            var archiveDir = @"\\172.16.8.11\Services\INTERNSHIP 2.0\Higher_Education\Knowme Summary\quick links backup\logs backup";
+            var archivePath = Path.Combine(archiveDir, cleanFileName);
+            if (System.IO.File.Exists(archivePath))
+            {
+                fullPath = archivePath;
+            }
+            else
+            {
+                throw new NotFoundException($"Log file '{cleanFileName}' not found.");
+            }
+        }
 
         var fs = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         return File(fs, "text/plain", cleanFileName);
@@ -299,6 +310,9 @@ public class AuditLogController : KnomeControllerBase
 
     private static string GetLogsDirectory()
     {
+        var networkLogs = @"\\172.16.8.11\Services\INTERNSHIP 2.0\Higher_Education\Knowme Summary\quick links\knome\logs";
+        if (Directory.Exists(networkLogs)) return networkLogs;
+
         var currentDirLogs = Path.Combine(Directory.GetCurrentDirectory(), "logs");
         if (Directory.Exists(currentDirLogs)) return currentDirLogs;
 

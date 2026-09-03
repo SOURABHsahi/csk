@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import { apiClient } from '../utils/apiClient';
 import { communitiesApi, mediaApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages } from '../utils/apiService';
+import { checkRestrictedContent } from '../utils/restrictedWords';
 
 const ENTERPRISE_CHANNELS_SEED = {
     '1': {
@@ -972,6 +973,12 @@ export default function CommunityView() {
         e.preventDefault();
         if (!postText.trim()) return;
         
+        const foundKeyword = checkRestrictedContent(postText.trim());
+        if (foundKeyword) {
+            alert(`Security Alert: Please don't use this word - "${foundKeyword}". It is restricted and your post cannot be published.`);
+            return;
+        }
+
         try {
             const res = await apiClient.post(`/communities/${communityId}/posts`, { contentText: postText.trim(), audienceType: 'Community' });
             const p = res?.data || res;
@@ -1707,9 +1714,21 @@ export default function CommunityView() {
                                             placeholder={`Share an update with ${community.name}...`} 
                                             className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500" 
                                         />
-                                        <button type="submit" className="px-5 py-2.5 bg-indigo-500 text-white rounded-xl text-xs font-bold hover:bg-indigo-600 transition-colors shadow-md shadow-indigo-500/20 shrink-0">
-                                            Post
-                                        </button>
+                                        {(() => {
+                                            const restrictedInPost = checkRestrictedContent(postText);
+                                            if (restrictedInPost) {
+                                                return (
+                                                    <span className="text-rose-500 text-xs font-semibold px-3 py-2 bg-rose-50 dark:bg-rose-950/40 rounded-xl border border-rose-200 dark:border-rose-900/50 shrink-0">
+                                                        ⚠️ Restricted word ("{restrictedInPost}")
+                                                    </span>
+                                                );
+                                            }
+                                            return (
+                                                <button type="submit" className="px-5 py-2.5 bg-indigo-500 text-white rounded-xl text-xs font-bold hover:bg-indigo-600 transition-colors shadow-md shadow-indigo-500/20 shrink-0">
+                                                    Post
+                                                </button>
+                                            );
+                                        })()}
                                     </div>
                                 </form>
                             ) : membershipStatus === 'requested' ? (

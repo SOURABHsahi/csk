@@ -131,12 +131,16 @@ public class PodcastService : IPodcastService
     public async Task<List<PodcastDto>> GetPodcastsAsync(int? seriesId, int? categoryId, string? search, int pageNumber, int pageSize, int currentUserId)
     {
         var podcasts = await _repo.GetPodcastsAsync(seriesId, categoryId, search, pageNumber, pageSize);
-        var dtos = new List<PodcastDto>();
+        var ids = podcasts.Select(p => (long)p.PodcastId).ToList();
+        var summaries = ids.Count > 0
+            ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Podcast, ids, currentUserId)
+            : new Dictionary<long, Knome.API.DTOs.Interactions.ContentSummaryDto>();
 
+        var dtos = new List<PodcastDto>();
         foreach (var p in podcasts)
         {
             var dto = _mapper.Map<PodcastDto>(p);
-            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Podcast, p.PodcastId, currentUserId);
+            dto.EngagementSummary = summaries.TryGetValue(p.PodcastId, out var s) ? s : new Knome.API.DTOs.Interactions.ContentSummaryDto { ContentType = ContentTypes.Podcast, ContentId = p.PodcastId };
             dtos.Add(dto);
         }
 
@@ -151,12 +155,16 @@ public class PodcastService : IPodcastService
     public async Task<List<PodcastDto>> GetUserPodcastsAsync(int hostUserId, int currentUserId, int pageNumber = 1, int pageSize = 20)
     {
         var podcasts = await _repo.GetMyPodcastsAsync(hostUserId, pageNumber, pageSize);
-        var dtos = new List<PodcastDto>();
+        var ids = podcasts.Select(p => (long)p.PodcastId).ToList();
+        var summaries = ids.Count > 0
+            ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Podcast, ids, currentUserId)
+            : new Dictionary<long, Knome.API.DTOs.Interactions.ContentSummaryDto>();
 
+        var dtos = new List<PodcastDto>();
         foreach (var p in podcasts)
         {
             var dto = _mapper.Map<PodcastDto>(p);
-            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Podcast, p.PodcastId, currentUserId);
+            dto.EngagementSummary = summaries.TryGetValue(p.PodcastId, out var s) ? s : new Knome.API.DTOs.Interactions.ContentSummaryDto { ContentType = ContentTypes.Podcast, ContentId = p.PodcastId };
             dtos.Add(dto);
         }
 
