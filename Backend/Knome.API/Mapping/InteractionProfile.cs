@@ -19,6 +19,7 @@ public class InteractionProfile : Profile
 
         CreateMap<Reaction, ReactionDto>()
             .ForMember(dest => dest.UserFullName, opt => opt.MapFrom(src => src.User != null ? src.User.FullName : "Unknown"))
+            .ForMember(dest => dest.UserDesignation, opt => opt.MapFrom(src => src.User != null ? src.User.Designation : null))
             .ForMember(dest => dest.UserProfilePhotoUrl, opt => opt.MapFrom(src => src.User != null ? src.User.ProfilePhotoUrl : null));
 
         CreateMap<Share, ShareDto>()

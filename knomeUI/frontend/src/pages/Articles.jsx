@@ -1,17 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useUser } from '../components/contexts/UserContext';
 import { Link, useNavigate } from 'react-router-dom';
-import { getArticles, saveArticle, deleteArticle } from '../utils/articleService';
+import { getArticles, saveArticle, deleteArticle, getArticleCategories, createArticleCategory } from '../utils/articleService';
 import { savedContentApi, getPersonalizedRecommendations, resolveMediaUrl } from '../utils/apiService';
 import { apiClient } from '../utils/apiClient';
 import { checkRestrictedContent } from '../utils/restrictedWords';
 import ReportModal from '../components/modals/ReportModal';
 import SaveToCategoryModal from '../components/modals/SaveToCategoryModal';
 import ArticleShareModal from '../components/modals/ArticleShareModal';
+import { useToast } from '../components/contexts/ToastContext';
+import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 
 export default function Articles() {
     const { currentUser } = useUser();
     const navigate = useNavigate();
+    const { addToast } = useToast();
+    const confirm = useConfirm();
     
     // Page view mode: 'list' or 'create'
     const [viewMode, setViewMode] = useState('list');
@@ -37,13 +41,13 @@ export default function Articles() {
     const [savingArticleModal, setSavingArticleModal] = useState(null);
     const [sharingArticleModal, setSharingArticleModal] = useState(null);
 
-    const loadData = async () => {
+    const loadData = async (forceFresh = false) => {
         // Only trigger visible spinner if no articles are in cache
         if (allArticles.length === 0) {
             setIsLoading(true);
         }
         try {
-            const data = await getArticles();
+            const data = await getArticles(null, null, null, 1, 50, forceFresh);
             if (Array.isArray(data) && data.length > 0) {
                 setAllArticles(data);
                 try {
@@ -65,6 +69,61 @@ export default function Articles() {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
     
+    const isSysAdmin = currentUser?.role === 'SYSADM' || 
+                       currentUser?.roleName === 'System Administrator' || 
+                       (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => ['SYSADM', 'System Administrator', 'SystemAdmin'].includes(r)));
+
+    // Dynamic Categories State
+    const [availableCategories, setAvailableCategories] = useState([
+        { categoryId: 1, name: 'Technology' },
+        { categoryId: 7, name: 'Engineering' },
+        { categoryId: 8, name: 'Design' },
+        { categoryId: 9, name: 'Product Management' },
+        { categoryId: 10, name: 'Company Culture' }
+    ]);
+    const [isAddingCategory, setIsAddingCategory] = useState(false);
+    const [newCategoryName, setNewCategoryName] = useState('');
+    const [isSavingCategory, setIsSavingCategory] = useState(false);
+
+    useEffect(() => {
+        getArticleCategories().then(cats => {
+            if (Array.isArray(cats) && cats.length > 0) {
+                setAvailableCategories(cats);
+            }
+        }).catch(err => {
+            console.warn("Failed to fetch article categories:", err);
+        });
+    }, []);
+
+    const handleCreateCategory = async (e) => {
+        e?.preventDefault();
+        if (!newCategoryName.trim()) {
+            addToast('Please enter a category name.', 'warning');
+            return;
+        }
+        setIsSavingCategory(true);
+        try {
+            const res = await createArticleCategory(newCategoryName.trim());
+            const created = res?.data || res;
+            if (created && created.categoryId) {
+                setAvailableCategories(prev => {
+                    if (prev.some(c => c.categoryId === created.categoryId)) return prev;
+                    return [...prev, created];
+                });
+                setCategory(String(created.categoryId));
+                setNewCategoryName('');
+                setIsAddingCategory(false);
+                addToast(`Category "${created.name}" created successfully! 🎉`, 'success');
+            }
+        } catch (err) {
+            console.error("Failed to add category:", err);
+            const msg = err.data?.message || err.message || 'Failed to add category.';
+            addToast(msg, 'error');
+        } finally {
+            setIsSavingCategory(false);
+        }
+    };
+
     // Editor State (FR-AB-01)
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
@@ -109,7 +168,7 @@ export default function Articles() {
 
     const addAttachment = (type) => {
         if (attachments.length >= 4) {
-            alert('Maximum 4 attachments allowed.');
+            addToast('Maximum 4 attachments allowed.', 'warning');
             return;
         }
         setCurrentUploadType(type);
@@ -157,7 +216,7 @@ export default function Articles() {
             } catch (error) {
                 console.error('File upload failed', error);
                 setAttachments(prev => prev.filter(att => att.id !== tempId));
-                alert('File upload failed. Please try again.');
+                addToast('File upload failed. Please try again.', 'error');
             } finally {
                 setIsUploadingMedia(false);
                 if (fileInputRef.current) {
@@ -330,17 +389,37 @@ export default function Articles() {
 
     const handlePublish = async () => {
         if (isUploadingMedia) {
-            alert('Please wait for media to finish uploading.');
+            addToast('Please wait for media to finish uploading.', 'warning');
             return;
         }
 
-        const editorText = editorRef.current ? editorRef.current.innerText : '';
-        const editorHtml = editorRef.current ? editorRef.current.innerHTML : '';
+        if (!title.trim()) {
+            addToast('Please enter an article title before publishing.', 'warning');
+            const titleInput = document.getElementById('article-title-input');
+            if (titleInput) titleInput.focus();
+            return;
+        }
+
+        const editorText = editorRef.current ? (editorRef.current.innerText || '').trim() : '';
+        const editorHtml = editorRef.current ? (editorRef.current.innerHTML || '').trim() : '';
+
+        let cleanHtml = (editorHtml || '')
+            .replace(/<p class="opacity-50">Start writing your long-form article here\.{0,3}<\/p>/gi, '')
+            .replace(/Start writing your long-form article here\.{0,3}/gi, '')
+            .replace(/class="[^"]*opacity-50[^"]*"/gi, '');
+
+        // Check if there is actual content
+        const hasContent = editorText.length > 0 || cleanHtml.includes('<img') || cleanHtml.includes('<table');
+        if (!hasContent) {
+            addToast('Please write some content for your article before publishing.', 'warning');
+            editorRef.current?.focus();
+            return;
+        }
+
         const fullContent = `${title} ${description} ${editorText}`;
-        
         const foundKeyword = checkRestrictedContent(fullContent);
         if (foundKeyword) {
-            alert(`Security Alert: Please don't use this word - "${foundKeyword}". It is restricted and your article cannot be published.`);
+            addToast(`Security Alert: Please don't use this word - "${foundKeyword}". It is restricted and your article cannot be published.`, 'warning');
             return;
         }
         
@@ -353,17 +432,13 @@ export default function Articles() {
         }
 
         const resolvedAttachments = attachments.map(a => a.backendUrl || a.url).filter(url => !url.startsWith('blob:'));
-        
-        let cleanHtml = (editorHtml || '')
-            .replace(/<p class="opacity-50">Start writing your long-form article here\.{0,3}<\/p>/gi, '')
-            .replace(/Start writing your long-form article here\.{0,3}/gi, '')
-            .replace(/Start writi(?:ng)?/gi, '')
-            .replace(/class="[^"]*opacity-50[^"]*"/gi, '');
+
+        const finalContentHtml = cleanHtml.trim() || `<p>${editorText}</p>`;
 
         const dto = {
             title: title.trim(),
             description: description.trim() || null,
-            contentHtml: cleanHtml.trim(),
+            contentHtml: finalContentHtml,
             categoryId: parseInt(category) || 7,
             status: "Published",
             tags: finalTags,
@@ -372,7 +447,13 @@ export default function Articles() {
         
         try {
             await saveArticle(dto);
-            await loadData();
+
+            // Invalidate cached articles so fresh list is displayed
+            try {
+                sessionStorage.removeItem('knome_cached_articles');
+            } catch {}
+
+            await loadData(true);
             
             setShowToast(true);
             
@@ -390,7 +471,11 @@ export default function Articles() {
             setTimeout(() => setShowToast(false), 5000); // hide toast after 5s
             setViewMode('list'); // Switch back to listing
         } catch (e) {
-            alert('Failed to publish article: ' + (e.message || 'Please try again.'));
+            console.error('Failed to publish article:', e);
+            const errorMsg = e.data?.errors 
+                ? Object.values(e.data.errors).flat().join(' ') 
+                : (e.data?.message || e.message || 'Failed to publish article. Please try again.');
+            addToast('Failed to publish article: ' + errorMsg, 'error');
         } finally {
             setIsPublishing(false);
         }
@@ -415,7 +500,11 @@ export default function Articles() {
         ? getPersonalizedRecommendations(rawFiltered, currentUser)
         : rawFiltered;
 
-    const categories = ['All', '✨ Recommended', 'Design', 'Product Management', 'Engineering', 'Company Culture'];
+    const categories = [
+        'All', 
+        '✨ Recommended', 
+        ...availableCategories.map(c => c.name).filter(n => n && !['All', '✨ Recommended'].includes(n))
+    ];
 
     return (
         <>
@@ -656,12 +745,12 @@ export default function Articles() {
                                                     <button
                                                         onClick={async (e) => {
                                                             e.stopPropagation();
-                                                            if (!window.confirm('Are you sure you want to delete this article?')) return;
+                                                            if (!await confirm({ title: 'Delete Article', message: 'Are you sure you want to delete this article? This action cannot be undone.', confirmText: 'Delete', variant: 'danger' })) return;
                                                             try {
                                                                 await deleteArticle(art.id);
                                                                 setAllArticles(prev => prev.filter(a => a.id !== art.id));
                                                             } catch (err) {
-                                                                alert('Failed to delete article.');
+                                                                addToast('Failed to delete article.', 'error');
                                                             }
                                                         }}
                                                         className="p-1 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
@@ -734,10 +823,21 @@ export default function Articles() {
                                     }
                                     return (
                                         <button 
+                                            type="button"
                                             onClick={handlePublish}
-                                            disabled={isPublishing || !title.trim()}
-                                            className="px-8 py-2 text-[13px] font-bold text-white bg-indigo-500 hover:bg-indigo-600 rounded-xl transition-all shadow-lg shadow-indigo-500/30 disabled:opacity-50">
-                                            {isPublishing ? 'Publishing...' : 'Publish'}
+                                            disabled={isPublishing}
+                                            className="px-8 py-2 text-[13px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-xl transition-all shadow-lg shadow-indigo-500/30 disabled:opacity-50 cursor-pointer flex items-center gap-2">
+                                            {isPublishing ? (
+                                                <>
+                                                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                                                    <span>Publishing...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="material-symbols-outlined text-[16px]">publish</span>
+                                                    <span>Publish</span>
+                                                </>
+                                            )}
                                         </button>
                                     );
                                 })()}
@@ -747,6 +847,7 @@ export default function Articles() {
                         {/* Meta Data Inputs */}
                         <div className="flex flex-col gap-4">
                             <input 
+                                id="article-title-input"
                                 type="text" 
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
@@ -863,16 +964,75 @@ export default function Articles() {
                             </h3>
                             <div className="flex flex-col gap-4">
                                 <div>
-                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Category</label>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Category</label>
+                                        {isSysAdmin && !isAddingCategory && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsAddingCategory(true)}
+                                                className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 flex items-center gap-1 transition-colors cursor-pointer"
+                                                title="Add a new category (System Admin only)"
+                                            >
+                                                <span className="material-symbols-outlined text-[14px]">add_circle</span>
+                                                <span>Add Category</span>
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Inline Add Category Form for System Admin */}
+                                    {isSysAdmin && isAddingCategory && (
+                                        <div className="mb-3 p-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-xl animate-in fade-in duration-200">
+                                            <label className="block text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-1.5">
+                                                New Category Name
+                                            </label>
+                                            <div className="flex flex-col gap-2">
+                                                <input
+                                                    type="text"
+                                                    autoFocus
+                                                    value={newCategoryName}
+                                                    onChange={(e) => setNewCategoryName(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            handleCreateCategory();
+                                                        } else if (e.key === 'Escape') {
+                                                            setIsAddingCategory(false);
+                                                        }
+                                                    }}
+                                                    placeholder="e.g. Artificial Intelligence"
+                                                    className="w-full bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-700 rounded-lg px-3 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                />
+                                                <div className="flex items-center justify-end gap-1.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setIsAddingCategory(false); setNewCategoryName(''); }}
+                                                        className="px-2.5 py-1 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 rounded-md transition-colors cursor-pointer"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={isSavingCategory || !newCategoryName.trim()}
+                                                        onClick={handleCreateCategory}
+                                                        className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                                    >
+                                                        {isSavingCategory && <span className="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>}
+                                                        <span>Save Category</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <select 
                                         value={category}
                                         onChange={(e) => setCategory(e.target.value)}
                                         className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium">
-                                        <option value="1">Technology</option>
-                                        <option value="7">Engineering</option>
-                                        <option value="8">Design</option>
-                                        <option value="9">Product Management</option>
-                                        <option value="10">Company Culture</option>
+                                        {availableCategories.map(cat => (
+                                            <option key={cat.categoryId} value={String(cat.categoryId)}>
+                                                {cat.name}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div>
@@ -953,28 +1113,44 @@ export default function Articles() {
                             </div>
                         </div>
 
-                        {/* Article Settings & Post-Publication Mock (FR-AB-06, FR-AB-07) */}
+                        {/* Article Publication Actions */}
                         <div className="rounded-2xl border shadow-sm p-5 glass card-lift bg-slate-50/50 dark:bg-slate-800/30 border-slate-200 dark:border-slate-800">
-                            <h3 className="text-[14px] font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                                <span className="material-symbols-outlined text-teal-500">settings</span>
-                                Post-Publication Settings
+                            <h3 className="text-[14px] font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                                <span className="material-symbols-outlined text-indigo-500">send</span>
+                                Ready to Publish?
                             </h3>
                             <p className="text-[11px] font-medium text-slate-500 mb-4 leading-relaxed">
-                                Once published, you will be able to track analytics and manage version history here.
+                                Your article will be immediately published to the Knowledge Hub, visible to all colleagues, and indexed for global search.
                             </p>
-                            <div className="grid grid-cols-2 gap-3 mb-4">
-                                <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl">
-                                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Views</p>
-                                    <p className="text-lg font-black text-slate-900 dark:text-white">--</p>
-                                </div>
-                                <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl">
-                                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Read Time</p>
-                                    <p className="text-lg font-black text-slate-900 dark:text-white">--</p>
-                                </div>
-                            </div>
-                            <div className="flex gap-2">
-                                <button className="flex-1 py-2 text-[11px] font-bold text-slate-500 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg opacity-50 cursor-not-allowed">Edit Post</button>
-                                <button className="flex-1 py-2 text-[11px] font-bold text-red-500 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/50 rounded-lg opacity-50 cursor-not-allowed">Delete Post</button>
+                            <div className="flex flex-col gap-2.5">
+                                <button 
+                                    type="button"
+                                    onClick={handlePublish}
+                                    disabled={isPublishing}
+                                    className="w-full py-2.5 text-[13px] font-bold text-white rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer hover:brightness-110 active:scale-95 disabled:opacity-50"
+                                    style={{
+                                        background: 'linear-gradient(135deg, #4f46e5 0%, #2563eb 100%)'
+                                    }}
+                                >
+                                    {isPublishing ? (
+                                        <>
+                                            <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                                            <span>Publishing Article...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="material-symbols-outlined text-[18px]">publish</span>
+                                            <span>Publish Article Now</span>
+                                        </>
+                                    )}
+                                </button>
+                                <button 
+                                    type="button"
+                                    onClick={() => setViewMode('list')}
+                                    className="w-full py-2 text-[12px] font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                >
+                                    Cancel & Return
+                                </button>
                             </div>
                         </div>
 

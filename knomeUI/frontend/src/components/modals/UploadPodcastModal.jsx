@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { mediaApi, podcastsApi } from '../../utils/apiService';
 import { useUser } from '../contexts/UserContext';
+import { useToast } from '../contexts/ToastContext';
 import { checkRestrictedContent } from '../../utils/restrictedWords';
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB (FR-PD-05)
@@ -8,6 +9,7 @@ const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.aac', '.ogg', '.m4a', '.webm'];
 
 export default function UploadPodcastModal({ isOpen, onClose }) {
     const { currentUser } = useUser();
+    const { addToast } = useToast();
     const isCurrentUserAdmin = ['SYSADM', 'CADM', 'HRADM'].includes(currentUser?.role) ||
         ['System Administrator', 'HR Administrator', 'Community Administrator', 'System Admin'].includes(currentUser?.roleName);
 
@@ -134,7 +136,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                 setIsRecording(true);
             } catch (err) {
                 console.error("Microphone access error:", err);
-                alert("Microphone permission denied or unavailable in this browser.");
+                addToast("Microphone permission denied or unavailable in this browser.", 'error');
             }
         }
     };
@@ -145,7 +147,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
             const file = e.target.files[0];
 
             if (file.size > MAX_FILE_SIZE) {
-                alert(`File size exceeds the 100MB limit. Current size: ${(file.size / (1024 * 1024)).toFixed(1)}MB.`);
+                addToast(`File size exceeds the 100MB limit. Current size: ${(file.size / (1024 * 1024)).toFixed(1)}MB.`, 'warning');
                 e.target.value = '';
                 return;
             }
@@ -153,7 +155,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
             const fileName = file.name.toLowerCase();
             const isValid = ALLOWED_EXTENSIONS.some(ext => fileName.endsWith(ext));
             if (!isValid) {
-                alert(`Unsupported audio format. Supported formats: ${ALLOWED_EXTENSIONS.join(', ')}.`);
+                addToast(`Unsupported audio format. Supported formats: ${ALLOWED_EXTENSIONS.join(', ')}.`, 'warning');
                 e.target.value = '';
                 return;
             }
@@ -188,7 +190,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
     // Series Creation Workflow (FR-PD-03)
     const handleCreateSeries = async () => {
         if (!newSeriesTitle.trim()) {
-            alert('Series title is required.');
+            addToast('Series title is required.', 'warning');
             return;
         }
         try {
@@ -197,7 +199,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                 description: newSeriesDesc.trim()
             });
             const created = res?.data || res;
-            alert(`Series "${newSeriesTitle}" created successfully!`);
+            addToast(`Series "${newSeriesTitle}" created successfully!`, 'success');
             await fetchSeries();
             if (created && created.seriesId) {
                 setSeriesId(created.seriesId.toString());
@@ -207,30 +209,30 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
             setNewSeriesDesc('');
         } catch (err) {
             console.error('Failed to create series:', err);
-            alert('Failed to create series.');
+            addToast('Failed to create series.', 'error');
         }
     };
 
     const handleUpload = async () => {
         if (currentUser?.isActive === false) {
-            alert("Your account is currently suspended by System Administrator. You cannot upload podcasts for approval.");
+            addToast("Your account is currently suspended by System Administrator. You cannot upload podcasts for approval.", 'error');
             return;
         }
 
         if (!title.trim()) {
-            alert('Episode title is required.');
+            addToast('Episode title is required.', 'warning');
             return;
         }
 
         const textToScan = `${title} ${description} ${categoryName}`;
         const foundKeyword = checkRestrictedContent(textToScan);
         if (foundKeyword) {
-            alert(`Podcast episode cannot be uploaded. It contains the restricted term: "${foundKeyword}".`);
+            addToast(`Podcast episode cannot be uploaded. It contains the restricted term: "${foundKeyword}".`, 'warning');
             return;
         }
 
         if (!audioFile) {
-            alert('Please upload an audio file or record audio in-browser before publishing.');
+            addToast('Please upload an audio file or record audio in-browser before publishing.', 'warning');
             return;
         }
 
@@ -281,7 +283,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
 
             if (isCurrentUserAdmin) {
                 await podcastsApi.create(podcastData);
-                alert("Podcast episode published successfully!");
+                addToast("Podcast episode published successfully!", 'success');
                 window.dispatchEvent(new CustomEvent('podcast-published'));
             } else {
                 const pendingItem = {
@@ -321,14 +323,14 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                 const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
                 localStorage.setItem('knome_notifications', JSON.stringify([adminNotif, ...existingNotifs]));
 
-                alert(`Podcast episode "${title.trim()}" submitted successfully! It has been sent to the Admin for approval before going live.`);
+                addToast(`Podcast episode "${title.trim()}" submitted successfully! It has been sent to the Admin for approval before going live.`, 'success');
             }
             
             setIsUploading(false);
             onClose();
         } catch (error) {
             console.error('Failed to publish podcast:', error);
-            alert('Failed to publish podcast. Please try again.');
+            addToast('Failed to publish podcast. Please try again.', 'error');
             setIsUploading(false);
         }
     };

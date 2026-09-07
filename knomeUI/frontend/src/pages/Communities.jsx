@@ -1,13 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
+import { useToast } from '../components/contexts/ToastContext';
+import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import CreateCommunityModal from '../components/modals/CreateCommunityModal';
 import { communitiesApi, getCommunityImages, resolveMediaUrl } from '../utils/apiService';
+
+const defaultSeeds = [];
 
 const getInitialCommunities = () => [];
 
 export default function Communities() {
     const { currentUser, users } = useUser();
+    const { addToast } = useToast();
+    const confirm = useConfirm();
     const navigate = useNavigate();
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [activeTab, setActiveTab] = useState('Discover');
@@ -108,6 +114,8 @@ export default function Communities() {
             setCommunities(combinedList);
         } catch (err) {
             console.error('Failed to load communities:', err);
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -136,23 +144,29 @@ export default function Communities() {
 
     const handleDeleteCommunityCard = async (e, community) => {
         e.stopPropagation();
-        if (!window.confirm(`Are you sure you want to delete/remove "${community.name}"? This action cannot be undone.`)) {
-            return;
-        }
+        const ok = await confirm({
+            title: 'Delete Community',
+            message: `Are you sure you want to delete/remove "${community.name}"? This action cannot be undone.`,
+            confirmText: 'Delete Community',
+            cancelText: 'Cancel',
+            variant: 'danger'
+        });
+        if (!ok) return;
+
         try {
             await communitiesApi.delete(community.id);
             const customList = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
             const updatedCustom = customList.filter(c => String(c.id) !== String(community.id));
             localStorage.setItem('knome_custom_communities', JSON.stringify(updatedCustom));
             setCommunities(prev => prev.filter(c => c.id !== community.id));
-            alert(`Community "${community.name}" has been removed.`);
+            addToast(`Community "${community.name}" has been removed.`, 'info');
         } catch (err) {
             console.error('Failed to delete community:', err);
             const customList = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
             const updatedCustom = customList.filter(c => String(c.id) !== String(community.id));
             localStorage.setItem('knome_custom_communities', JSON.stringify(updatedCustom));
             setCommunities(prev => prev.filter(c => c.id !== community.id));
-            alert(`Community "${community.name}" has been removed.`);
+            addToast(`Community "${community.name}" has been removed.`, 'info');
         }
     };
 
@@ -249,9 +263,16 @@ export default function Communities() {
         loadCommunities();
     };
 
-    const handleRejectCommunity = (e, comm) => {
+    const handleRejectCommunity = async (e, comm) => {
         e.stopPropagation();
-        if (!window.confirm(`Are you sure you want to reject the community creation request for "${comm.name}"?`)) {
+        const ok = await confirm({
+            title: 'Reject Request',
+            message: `Are you sure you want to reject the community creation request for "${comm.name}"?`,
+            confirmText: 'Reject',
+            cancelText: 'Cancel',
+            variant: 'warning'
+        });
+        if (!ok) {
             return;
         }
 

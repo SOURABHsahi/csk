@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useUser, users } from '../components/contexts/UserContext';
 import { useToast } from '../components/contexts/ToastContext';
+import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import { getKarmaBadge } from '../utils/karmaEngine';
 import { 
     profileApi, 
@@ -18,9 +19,55 @@ import {
 } from '../utils/apiService';
 import ShareProfileModal from '../components/modals/ShareProfileModal';
 
+const PRESET_BANNERS = [
+    {
+        id: 'trupeer-violet',
+        name: 'Trupeer Violet',
+        style: 'linear-gradient(135deg, #4338ca 0%, #6366f1 35%, #8b5cf6 70%, #a855f7 100%)',
+        subtitle: 'AI & Creative Studio',
+        previewClass: 'from-indigo-600 via-purple-600 to-fuchsia-600'
+    },
+    {
+        id: 'linkedin-blue',
+        name: 'LinkedIn Corporate Blue',
+        style: 'linear-gradient(135deg, #0a66c2 0%, #004182 60%, #082f49 100%)',
+        subtitle: 'Enterprise Corporate',
+        previewClass: 'from-sky-600 via-blue-700 to-indigo-950'
+    },
+    {
+        id: 'cyber-dark',
+        name: 'Dark Titanium',
+        style: 'linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%)',
+        subtitle: 'Deep Minimal Dark',
+        previewClass: 'from-slate-900 via-slate-800 to-slate-700'
+    },
+    {
+        id: 'emerald-growth',
+        name: 'Emerald Enterprise',
+        style: 'linear-gradient(135deg, #064e3b 0%, #047857 50%, #059669 100%)',
+        subtitle: 'Innovation & Growth',
+        previewClass: 'from-emerald-900 via-emerald-700 to-teal-600'
+    },
+    {
+        id: 'sunset-amber',
+        name: 'Sunset Horizon',
+        style: 'linear-gradient(135deg, #7c2d12 0%, #c2410c 50%, #f97316 100%)',
+        subtitle: 'Vibrant Energy',
+        previewClass: 'from-amber-950 via-orange-600 to-amber-500'
+    },
+    {
+        id: 'aurora-teal',
+        name: 'Aurora Borealis',
+        style: 'linear-gradient(135deg, #0c4a6e 0%, #0284c7 40%, #0d9488 75%, #10b981 100%)',
+        subtitle: 'Modern Gradient Flow',
+        previewClass: 'from-sky-900 via-cyan-600 to-emerald-500'
+    }
+];
+
 export default function Profile() {
     const { currentUser, refreshCurrentUser } = useUser();
     const { addToast } = useToast();
+    const confirm = useConfirm();
     const location = useLocation();
     const navigate = useNavigate();
     const params = useParams();
@@ -155,6 +202,58 @@ export default function Profile() {
     const [isSaving, setIsSaving] = useState(false);
     const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
     const fileInputRef = useRef(null);
+    const bannerFileInputRef = useRef(null);
+
+    // Banner & Contact Customization states
+    const [bannerImage, setBannerImage] = useState(() => {
+        const key = `knome_user_banner_${currentProfileUserId || 'me'}`;
+        return localStorage.getItem(key) || null;
+    });
+    const [isBannerModalOpen, setIsBannerModalOpen] = useState(false);
+    const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+
+    useEffect(() => {
+        if (currentProfileUserId) {
+            const saved = localStorage.getItem(`knome_user_banner_${currentProfileUserId}`);
+            setBannerImage(saved || null);
+        }
+    }, [currentProfileUserId]);
+
+    const handleBannerUpload = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (file.size > 10 * 1024 * 1024) {
+            addToast('Banner image must be under 10MB', 'warning');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            const dataUrl = evt.target.result;
+            setBannerImage(dataUrl);
+            const key = `knome_user_banner_${currentProfileUserId || 'me'}`;
+            localStorage.setItem(key, dataUrl);
+            addToast('Profile banner updated successfully! ✨', 'success');
+            setIsBannerModalOpen(false);
+        };
+        reader.readAsDataURL(file);
+        if (bannerFileInputRef.current) bannerFileInputRef.current.value = '';
+    };
+
+    const handleSelectPresetBanner = (gradientStr) => {
+        setBannerImage(gradientStr);
+        const key = `knome_user_banner_${currentProfileUserId || 'me'}`;
+        localStorage.setItem(key, gradientStr);
+        addToast('Profile banner updated! ✨', 'success');
+        setIsBannerModalOpen(false);
+    };
+
+    const handleRemoveBanner = () => {
+        setBannerImage(null);
+        const key = `knome_user_banner_${currentProfileUserId || 'me'}`;
+        localStorage.removeItem(key);
+        addToast('Profile banner reset to default', 'info');
+        setIsBannerModalOpen(false);
+    };
 
     const handlePhotoUpload = async (e) => {
         const file = e.target.files?.[0];
@@ -381,193 +480,329 @@ export default function Profile() {
 
     return (
         <main className="flex-1 min-w-0">
-            {/* Profile Header & Stats */}
-            <div className="relative rounded-2xl overflow-hidden mb-6 shadow-sm border border-slate-200 dark:border-slate-800 glass">
+            {/* Profile Header Card (LinkedIn Design) */}
+            <div className="relative rounded-3xl overflow-hidden mb-6 shadow-sm border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900">
                 {/* Banner Background */}
-                <div className="h-48 w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 relative">
-                    <div className="absolute inset-0 bg-black/10"></div>
-                </div>
-                
-                {/* Profile Info */}
-                <div className="px-8 pb-8 relative">
-                    <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 -mt-16 mb-6">
-                        <div className="flex items-end gap-6">
-                            <div className="w-32 h-32 rounded-2xl border-4 border-white dark:border-slate-900 shadow-lg bg-indigo-100 dark:bg-indigo-900 flex items-center justify-center text-indigo-600 dark:text-indigo-400 text-4xl font-black relative overflow-hidden group">
-                                {avatarSource ? (
-                                    <img 
-                                        src={avatarSource} 
-                                        alt="Avatar" 
-                                        className="w-full h-full object-cover" 
-                                        onError={(e) => {
-                                            const fallback = users.find(u => u.name === (displayUser?.name || displayUser?.fullName) || u.employeeId === displayUser?.employeeId)?.avatar;
-                                            if (fallback && e.currentTarget.src !== fallback) {
-                                                e.currentTarget.src = fallback;
-                                            } else {
-                                                e.currentTarget.style.display = 'none';
-                                                if (e.currentTarget.nextElementSibling) {
-                                                    e.currentTarget.nextElementSibling.style.display = 'flex';
-                                                }
-                                            }
-                                        }}
-                                    />
-                                ) : null}
-                                <div 
-                                    className="w-full h-full flex items-center justify-center bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-400 text-4xl font-black"
-                                    style={{ display: avatarSource ? 'none' : 'flex' }}
-                                >
-                                    {(displayUser?.name || displayUser?.fullName || currentUser?.fullName || 'User').charAt(0).toUpperCase()}
+                <div className="h-52 sm:h-60 md:h-64 w-full relative overflow-hidden group">
+                    {bannerImage ? (
+                        bannerImage.startsWith('data:') || bannerImage.startsWith('http') ? (
+                            <img 
+                                src={bannerImage} 
+                                alt="Cover Banner" 
+                                className="w-full h-full object-cover" 
+                            />
+                        ) : (
+                            <div 
+                                className="w-full h-full relative" 
+                                style={{ background: bannerImage }}
+                            >
+                                <div className="absolute inset-0 bg-black/10" />
+                            </div>
+                        )
+                    ) : (
+                        // Default Trupeer-inspired Violet Banner with Knome branding
+                        <div 
+                            className="w-full h-full relative"
+                            style={{
+                                background: 'linear-gradient(135deg, #4338ca 0%, #6366f1 35%, #8b5cf6 70%, #a855f7 100%)'
+                            }}
+                        >
+                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-white/20 via-transparent to-black/25 pointer-events-none" />
+                            {/* Watermark in right side of banner */}
+                            <div className="absolute right-6 sm:right-10 top-1/2 -translate-y-1/2 hidden sm:flex flex-col items-start select-none pointer-events-none opacity-90 pr-4">
+                                <div className="flex items-center gap-2 text-white font-black text-xl tracking-wide drop-shadow-md">
+                                    <span className="material-symbols-outlined text-[26px]">hub</span>
+                                    <span>MPOnline Knome</span>
                                 </div>
-                                {isOwnProfile && (
-                                    <div 
-                                        className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-white" 
-                                        onClick={() => fileInputRef.current?.click()}
-                                        title="Change Profile Photo"
-                                    >
-                                        <span className="material-symbols-outlined text-[28px]">photo_camera</span>
-                                        <span className="text-[10px] font-bold mt-1 uppercase">Change</span>
-                                    </div>
+                                <p className="text-white/85 text-xs font-semibold mt-1 drop-shadow-sm">
+                                    Enterprise Knowledge & Collaboration Platform
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Hidden Banner File Input */}
+                    <input 
+                        type="file" 
+                        ref={bannerFileInputRef} 
+                        accept="image/*" 
+                        onChange={handleBannerUpload} 
+                        className="hidden" 
+                    />
+
+                    {/* Edit Banner Button (Top Right of Banner) */}
+                    {isOwnProfile && (
+                        <button
+                            type="button"
+                            onClick={() => setIsBannerModalOpen(true)}
+                            className="absolute top-4 right-4 z-20 w-9 h-9 rounded-full bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-900 shadow-lg backdrop-blur-md flex items-center justify-center transition-all hover:scale-110 cursor-pointer border border-white/40 dark:border-slate-700"
+                            title="Edit background banner"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">edit</span>
+                        </button>
+                    )}
+                </div>
+
+                {/* Top Row below banner: Avatar & Right Edit Pencil */}
+                <div className="flex justify-between items-end -mt-20 md:-mt-24 px-6 md:px-8 mb-3">
+                    {/* Avatar */}
+                    <div className="w-36 h-36 md:w-40 md:h-40 rounded-full border-4 border-white dark:border-slate-900 shadow-xl bg-indigo-100 dark:bg-indigo-900 flex items-center justify-center text-indigo-600 dark:text-indigo-400 text-5xl font-black relative overflow-hidden group ring-4 ring-black/5 dark:ring-white/5">
+                        {avatarSource ? (
+                            <img 
+                                src={avatarSource} 
+                                alt={displayUser?.name || 'Avatar'} 
+                                className="w-full h-full object-cover rounded-full" 
+                                onError={(e) => {
+                                    const fallback = users.find(u => u.name === (displayUser?.name || displayUser?.fullName) || u.employeeId === displayUser?.employeeId)?.avatar;
+                                    if (fallback && e.currentTarget.src !== fallback) {
+                                        e.currentTarget.src = fallback;
+                                    } else {
+                                        e.currentTarget.style.display = 'none';
+                                        if (e.currentTarget.nextElementSibling) {
+                                            e.currentTarget.nextElementSibling.style.display = 'flex';
+                                        }
+                                    }
+                                }}
+                            />
+                        ) : null}
+                        <div 
+                            className="w-full h-full flex items-center justify-center bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-400 text-5xl font-black rounded-full"
+                            style={{ display: avatarSource ? 'none' : 'flex' }}
+                        >
+                            {(displayUser?.name || displayUser?.fullName || currentUser?.fullName || 'User').charAt(0).toUpperCase()}
+                        </div>
+                        {isOwnProfile && (
+                            <div 
+                                className="absolute inset-0 rounded-full bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-white" 
+                                onClick={() => fileInputRef.current?.click()}
+                                title="Change Profile Photo"
+                            >
+                                <span className="material-symbols-outlined text-[28px]">photo_camera</span>
+                                <span className="text-[10px] font-bold mt-1 uppercase">Change</span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Right Edit Profile Pencil Button (LinkedIn Style) */}
+                    {isOwnProfile && (
+                        <button
+                            type="button"
+                            onClick={handleOpenEdit}
+                            className="w-10 h-10 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+                            title="Edit profile information"
+                        >
+                            <span className="material-symbols-outlined text-[22px]">edit</span>
+                        </button>
+                    )}
+                </div>
+
+                {/* Profile Information & Details */}
+                <div className="px-6 md:px-8 pb-6">
+                    <div className="flex flex-col md:flex-row justify-between items-start gap-4">
+                        {/* Left Side: Name, headline, location, connections */}
+                        <div className="flex-1 max-w-2xl">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
+                                    {displayUser?.fullName || displayUser?.name || currentUser?.fullName || 'User'}
+                                </h1>
+                                {/* Verified Badge */}
+                                <span 
+                                    className="material-symbols-outlined text-[20px] text-blue-500 font-bold" 
+                                    style={{ fontVariationSettings: "'FILL' 1" }}
+                                    title="Verified MPOnline Employee"
+                                >
+                                    verified
+                                </span>
+                                {/* Pronouns */}
+                                <span className="text-slate-500 dark:text-slate-400 text-sm font-normal">
+                                    ({displayUser?.pronouns || 'He/Him'})
+                                </span>
+                                {/* Employee ID tag */}
+                                {displayUser?.employeeId && (
+                                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                        {displayUser.employeeId}
+                                    </span>
                                 )}
                             </div>
-                            <div className="pb-2">
-                                <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-3">
-                                    {displayUser?.fullName || displayUser?.name || currentUser?.fullName || 'User'}
-                                    {displayUser?.employeeId && (
-                                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                                            {displayUser.employeeId}
-                                        </span>
-                                    )}
-                                </h1>
-                                <p className="text-slate-600 dark:text-slate-400 font-medium text-lg mt-1 flex items-center gap-2">
-                                    {displayUser?.designation || displayUser?.roleName || displayUser?.role || 'Employee'} 
-                                    <span className="opacity-50">•</span> 
-                                    {displayUser?.departmentName || displayUser?.department || 'General'}
-                                </p>
-                                <p className="text-slate-500 dark:text-slate-500 text-sm mt-1 flex items-center gap-1">
-                                    <span className="material-symbols-outlined text-[16px]">location_on</span>
-                                    {displayUser?.location || 'Main Office'}
-                                </p>
+
+                            {/* Headline */}
+                            <p className="text-slate-800 dark:text-slate-200 font-normal text-[15px] md:text-base mt-1 leading-snug">
+                                {displayUser?.bio 
+                                    ? displayUser.bio.split('\n')[0]
+                                    : `${displayUser?.designation || 'Software Engineer'} | ${displayUser?.departmentName || 'Technology & Architecture'} | MPOnline Limited`
+                                }
+                            </p>
+
+                            {/* Location & Contact Info */}
+                            <div className="flex flex-wrap items-center gap-1.5 text-slate-500 dark:text-slate-400 text-xs md:text-sm mt-2">
+                                <span>{displayUser?.location || 'Bhopal, Madhya Pradesh, India'}</span>
+                                <span>·</span>
+                                <button 
+                                    type="button"
+                                    onClick={() => setIsContactModalOpen(true)}
+                                    className="text-blue-600 dark:text-blue-400 font-bold hover:underline cursor-pointer"
+                                >
+                                    Contact info
+                                </button>
+                            </div>
+
+                            {/* Connections link */}
+                            <div className="mt-1.5">
+                                <button 
+                                    type="button"
+                                    onClick={() => { setActiveTab('Network'); setNetworkFilter('All'); }}
+                                    className="text-blue-600 dark:text-blue-400 font-bold hover:underline text-xs md:text-sm cursor-pointer"
+                                >
+                                    {stats.mutuals + stats.followers > 0 ? `${stats.mutuals + stats.followers}+ connections` : '500+ connections'}
+                                </button>
                             </div>
                         </div>
-                        
-                        <div className="flex gap-3 w-full md:w-auto">
-                            {isOwnProfile ? (
-                                <button 
-                                    onClick={handleOpenEdit}
-                                    className="flex-1 md:flex-none px-6 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all border border-slate-200 dark:border-slate-700 flex items-center gap-2 cursor-pointer">
-                                    <span className="material-symbols-outlined text-[18px]">edit</span>
-                                    Edit Profile
-                                </button>
-                            ) : (
-                                <div className="flex gap-2">
-                                    {displayUser.connectionStatus === 'PendingReceived' ? (
-                                        <>
-                                            <button
-                                                onClick={async () => {
-                                                    try {
-                                                        if (displayUser.requestId) {
-                                                            await userApi.acceptConnection(displayUser.requestId);
-                                                        } else {
-                                                            await userApi.connect(displayUser.userId);
-                                                        }
-                                                        window.location.reload();
-                                                    } catch (e) {
-                                                        console.error(e);
-                                                    }
-                                                }}
-                                                className="px-6 py-2.5 bg-blue-600 text-white font-bold text-sm rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-500/20"
-                                            >
-                                                Accept Request
-                                            </button>
-                                            <button
-                                                onClick={async () => {
-                                                    try {
-                                                        if (displayUser.requestId) {
-                                                            await userApi.rejectConnection(displayUser.requestId);
-                                                        }
-                                                        window.location.reload();
-                                                    } catch (e) {
-                                                        console.error(e);
-                                                    }
-                                                }}
-                                                className="px-5 py-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold text-sm rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all border border-slate-200 dark:border-slate-700"
-                                            >
-                                                Ignore
-                                            </button>
-                                        </>
-                                    ) : displayUser.connectionStatus === 'PendingSent' || displayUser.connectionStatus === 'Pending' ? (
-                                        <button 
-                                            onClick={async () => {
-                                                try {
-                                                    await userApi.cancelConnection(displayUser.userId);
-                                                    window.location.reload();
-                                                } catch (e) {
-                                                    console.error(e);
-                                                }
-                                            }}
-                                            className="px-6 py-2.5 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 font-bold text-sm rounded-xl hover:bg-amber-100 transition-all border border-amber-300 dark:border-amber-700 flex items-center gap-2 cursor-pointer"
-                                            title="Click to cancel connection request"
-                                        >
-                                            <span className="material-symbols-outlined text-[18px]">schedule</span>
-                                            Pending • Cancel
-                                        </button>
-                                    ) : displayUser.connectionStatus === 'Connected' ? (
-                                        <button 
-                                            onClick={async () => {
-                                                if (!window.confirm('Remove 1st-degree connection?')) return;
-                                                try {
-                                                    await userApi.removeConnection(displayUser.userId);
-                                                    window.location.reload();
-                                                } catch (e) {
-                                                    console.error(e);
-                                                }
-                                            }}
-                                            className="px-6 py-2.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 font-bold text-sm rounded-xl hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 transition-all border border-emerald-200 dark:border-emerald-800 flex items-center gap-2 cursor-pointer"
-                                        >
-                                            <span className="material-symbols-outlined text-[18px]">how_to_reg</span>
-                                            Connected
-                                        </button>
-                                    ) : (
-                                        <button 
-                                            onClick={async () => {
-                                                try {
-                                                    await userApi.connect(displayUser.userId);
-                                                    window.location.reload();
-                                                } catch (e) {
-                                                    console.error(e);
-                                                }
-                                            }}
-                                            className="px-6 py-2.5 bg-indigo-500 text-white font-bold text-sm rounded-xl hover:bg-indigo-600 transition-all shadow-md shadow-indigo-500/20 flex items-center gap-2 cursor-pointer"
-                                        >
-                                            <span className="material-symbols-outlined text-[18px]">person_add</span>
-                                            Connect
-                                        </button>
-                                    )}
 
-                                    {/* Follow / Following Toggle Button (FR-PN-01 & FR-PN-04) */}
-                                    <button
-                                        onClick={handleToggleFollow}
-                                        disabled={isFollowLoading}
-                                        className={`px-5 py-2.5 font-bold text-sm rounded-xl transition-all border flex items-center gap-2 cursor-pointer disabled:opacity-50 ${
-                                            isFollowing 
-                                                ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 shadow-xs' 
-                                                : 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-transparent hover:opacity-90 shadow-md shadow-slate-900/10'
-                                        }`}
-                                    >
-                                        <span className="material-symbols-outlined text-[18px]">
-                                            {isFollowing ? 'check_circle' : 'person_add'}
-                                        </span>
-                                        {isFollowing ? 'Following ✔' : 'Follow'}
-                                    </button>
+                        {/* Right Side: Company Badge */}
+                        <div className="flex flex-col gap-2.5 shrink-0 pt-1">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
+                                    <span className="material-symbols-outlined text-[18px]">corporate_fare</span>
                                 </div>
-                            )}
-                            <button 
-                                onClick={() => setIsShareModalOpen(true)}
-                                className="flex-1 md:flex-none px-6 py-2.5 bg-indigo-500 text-white font-bold rounded-xl hover:bg-indigo-600 transition-all shadow-md shadow-indigo-500/20 cursor-pointer flex items-center gap-2"
-                            >
-                                <span className="material-symbols-outlined text-[18px]">share</span>
-                                Share Profile
-                            </button>
+                                <span className="font-bold text-sm text-slate-800 dark:text-slate-200">
+                                    MPOnline Limited
+                                </span>
+                            </div>
                         </div>
+                    </div>
+
+                    {/* Action Buttons Row */}
+                    <div className="flex flex-wrap items-center gap-2 mt-5">
+                        {isOwnProfile ? (
+                            <button 
+                                type="button"
+                                onClick={handleOpenEdit}
+                                className="px-4 py-1.5 border border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 font-bold text-sm rounded-full transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                            >
+                                <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                                <span>Add profile section</span>
+                            </button>
+                        ) : (
+                            <div className="flex flex-wrap items-center gap-2">
+                                {displayUser.connectionStatus === 'PendingReceived' ? (
+                                    <>
+                                        <button
+                                            onClick={async () => {
+                                                try {
+                                                    if (displayUser.requestId) {
+                                                        await userApi.acceptConnection(displayUser.requestId);
+                                                    } else {
+                                                        await userApi.connect(displayUser.userId);
+                                                    }
+                                                    window.location.reload();
+                                                } catch (e) {
+                                                    console.error(e);
+                                                }
+                                            }}
+                                            className="px-5 py-1.5 bg-blue-600 text-white font-bold text-sm rounded-full hover:bg-blue-700 transition-all shadow-xs"
+                                        >
+                                            Accept Request
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                try {
+                                                    if (displayUser.requestId) {
+                                                        await userApi.rejectConnection(displayUser.requestId);
+                                                    }
+                                                    window.location.reload();
+                                                } catch (e) {
+                                                    console.error(e);
+                                                }
+                                            }}
+                                            className="px-4 py-1.5 border border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-sm rounded-full transition-all"
+                                        >
+                                            Ignore
+                                        </button>
+                                    </>
+                                ) : displayUser.connectionStatus === 'PendingSent' || displayUser.connectionStatus === 'Pending' ? (
+                                    <button 
+                                        onClick={async () => {
+                                            try {
+                                                await userApi.cancelConnection(displayUser.userId);
+                                                window.location.reload();
+                                            } catch (e) {
+                                                console.error(e);
+                                            }
+                                        }}
+                                        className="px-4 py-1.5 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 font-bold text-sm rounded-full hover:bg-amber-100 transition-all border border-amber-300 dark:border-amber-700 flex items-center gap-1.5 cursor-pointer"
+                                        title="Click to cancel connection request"
+                                    >
+                                        <span className="material-symbols-outlined text-[16px]">schedule</span>
+                                        Pending • Cancel
+                                    </button>
+                                ) : displayUser.connectionStatus === 'Connected' ? (
+                                    <button 
+                                        onClick={async () => {
+                                            const ok = await confirm({
+                                                title: 'Remove Connection',
+                                                message: `Are you sure you want to remove your 1st-degree connection with ${displayUser.name || 'this user'}?`,
+                                                confirmText: 'Remove Connection',
+                                                cancelText: 'Cancel',
+                                                variant: 'warning'
+                                            });
+                                            if (!ok) return;
+                                            try {
+                                                await userApi.removeConnection(displayUser.userId);
+                                                addToast && addToast('Connection removed.', 'info');
+                                                window.location.reload();
+                                            } catch (e) {
+                                                console.error(e);
+                                            }
+                                        }}
+                                        className="px-4 py-1.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 font-bold text-sm rounded-full hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 transition-all border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                        <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
+                                        Connected
+                                    </button>
+                                ) : (
+                                    <button 
+                                        onClick={async () => {
+                                            try {
+                                                await userApi.connect(displayUser.userId);
+                                                window.location.reload();
+                                            } catch (e) {
+                                                console.error(e);
+                                            }
+                                        }}
+                                        className="px-5 py-1.5 bg-blue-600 text-white font-bold text-sm rounded-full hover:bg-blue-700 transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                        <span className="material-symbols-outlined text-[16px]">person_add</span>
+                                        Connect
+                                    </button>
+                                )}
+
+                                {/* Follow / Following Toggle Button */}
+                                <button
+                                    onClick={handleToggleFollow}
+                                    disabled={isFollowLoading}
+                                    className={`px-4 py-1.5 font-bold text-sm rounded-full transition-all border flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                                        isFollowing 
+                                            ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 shadow-xs' 
+                                            : 'border border-blue-600 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                                    }`}
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">
+                                        {isFollowing ? 'check_circle' : 'person_add'}
+                                    </span>
+                                    {isFollowing ? 'Following ✔' : 'Follow'}
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Share Profile button */}
+                        <button 
+                            type="button"
+                            onClick={() => setIsShareModalOpen(true)}
+                            className="px-4 py-1.5 border border-slate-600 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-sm rounded-full transition-all cursor-pointer flex items-center gap-1.5"
+                        >
+                            <span className="material-symbols-outlined text-[16px]">share</span>
+                            Share profile
+                        </button>
                     </div>
 
                     {/* Interactive Stats Row */}
@@ -1270,6 +1505,248 @@ export default function Profile() {
                 onClose={() => setIsShareModalOpen(false)} 
                 user={displayUser} 
             />
+
+            {/* Background Banner Customization Modal */}
+            {isBannerModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsBannerModalOpen(false)}></div>
+                    <div className="relative bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in duration-200 overflow-hidden">
+                        
+                        <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800">
+                            <div>
+                                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Background Photo</h2>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Customize your profile header banner</p>
+                            </div>
+                            <button 
+                                onClick={() => setIsBannerModalOpen(false)} 
+                                className="w-8 h-8 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                            >
+                                <span className="material-symbols-outlined text-[20px]">close</span>
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
+                            {/* Current Banner Preview */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2.5">
+                                    Current Preview
+                                </label>
+                                <div className="h-36 w-full rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-700 relative shadow-inner">
+                                    {bannerImage ? (
+                                        bannerImage.startsWith('data:') || bannerImage.startsWith('http') ? (
+                                            <img src={bannerImage} alt="Banner Preview" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <div className="w-full h-full" style={{ background: bannerImage }} />
+                                        )
+                                    ) : (
+                                        <div 
+                                            className="w-full h-full relative flex items-center justify-center"
+                                            style={{ background: 'linear-gradient(135deg, #4338ca 0%, #6366f1 35%, #8b5cf6 70%, #a855f7 100%)' }}
+                                        >
+                                            <span className="text-white/90 font-bold text-sm">Default Trupeer Violet</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Direct File Upload Button */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2.5">
+                                    Upload Custom Image
+                                </label>
+                                <div className="flex items-center gap-3">
+                                    <button 
+                                        type="button"
+                                        onClick={() => bannerFileInputRef.current?.click()}
+                                        className="flex-1 py-3 px-4 rounded-xl border-2 border-dashed border-blue-500/50 hover:border-blue-500 bg-blue-50/50 dark:bg-blue-900/10 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
+                                    >
+                                        <span className="material-symbols-outlined text-[20px]">cloud_upload</span>
+                                        Upload Photo from Device (JPG, PNG, WebP)
+                                    </button>
+                                </div>
+                                <p className="text-[11px] text-slate-500 mt-1.5">Recommended dimensions: 1584 × 396 px (up to 10MB)</p>
+                            </div>
+
+                            {/* Preset Gradients Palette */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2.5">
+                                    Or Choose an Enterprise Preset
+                                </label>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                    {PRESET_BANNERS.map(preset => {
+                                        const isSelected = bannerImage === preset.style;
+                                        return (
+                                            <button
+                                                key={preset.id}
+                                                type="button"
+                                                onClick={() => handleSelectPresetBanner(preset.style)}
+                                                className={`group relative h-20 rounded-xl overflow-hidden border-2 transition-all text-left p-2.5 flex flex-col justify-end cursor-pointer shadow-xs ${
+                                                    isSelected 
+                                                        ? 'border-blue-600 ring-2 ring-blue-500/30 scale-[1.02]' 
+                                                        : 'border-slate-200 dark:border-slate-700 hover:scale-[1.02]'
+                                                }`}
+                                                style={{ background: preset.style }}
+                                            >
+                                                <div className="absolute inset-0 bg-black/20 group-hover:bg-black/10 transition-colors" />
+                                                {isSelected && (
+                                                    <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-white text-blue-600 flex items-center justify-center shadow-md">
+                                                        <span className="material-symbols-outlined text-[14px] font-black">check</span>
+                                                    </div>
+                                                )}
+                                                <span className="relative text-white font-bold text-xs drop-shadow-md leading-tight">
+                                                    {preset.name}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-4 sm:p-6 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
+                            {bannerImage ? (
+                                <button
+                                    type="button"
+                                    onClick={handleRemoveBanner}
+                                    className="text-xs font-bold text-red-500 hover:text-red-600 hover:underline cursor-pointer flex items-center gap-1"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">delete</span>
+                                    Reset to Default
+                                </button>
+                            ) : <div />}
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsBannerModalOpen(false)}
+                                    className="px-5 py-2 text-sm font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer shadow-xs"
+                                >
+                                    Done
+                                </button>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            )}
+
+            {/* LinkedIn-Style Contact Info Modal */}
+            {isContactModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsContactModalOpen(false)}></div>
+                    <div className="relative bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in duration-200 overflow-hidden">
+                        
+                        <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800">
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                                {displayUser?.fullName || displayUser?.name || 'User'}
+                            </h2>
+                            <button 
+                                onClick={() => setIsContactModalOpen(false)} 
+                                className="w-8 h-8 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                            >
+                                <span className="material-symbols-outlined text-[20px]">close</span>
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto custom-scrollbar space-y-5">
+                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                Contact Information
+                            </h3>
+
+                            {/* Knome Profile Link */}
+                            <div className="flex items-start gap-3.5">
+                                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 mt-0.5">
+                                    <span className="material-symbols-outlined text-[20px]">link</span>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Your Knome Profile</p>
+                                    <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 truncate mt-0.5">
+                                        {window.location.origin}/profile{displayUser?.id ? `?id=${displayUser.id}` : ''}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        navigator.clipboard?.writeText(`${window.location.origin}/profile${displayUser?.id ? `?id=${displayUser.id}` : ''}`);
+                                        addToast('Profile link copied to clipboard!', 'success');
+                                    }}
+                                    className="p-1.5 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                                    title="Copy Link"
+                                >
+                                    <span className="material-symbols-outlined text-[18px]">content_copy</span>
+                                </button>
+                            </div>
+
+                            {/* Email */}
+                            <div className="flex items-start gap-3.5">
+                                <div className="w-9 h-9 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 mt-0.5">
+                                    <span className="material-symbols-outlined text-[20px]">mail</span>
+                                </div>
+                                <div className="flex-1">
+                                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Official Email</p>
+                                    <a 
+                                        href={`mailto:${displayUser?.email || `${displayUser?.employeeId?.toLowerCase() || 'emp'}@mponline.gov.in`}`}
+                                        className="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline block mt-0.5"
+                                    >
+                                        {displayUser?.email || `${displayUser?.employeeId?.toLowerCase() || 'employee'}@mponline.gov.in`}
+                                    </a>
+                                </div>
+                            </div>
+
+                            {/* Phone / Mobile */}
+                            <div className="flex items-start gap-3.5">
+                                <div className="w-9 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+                                    <span className="material-symbols-outlined text-[20px]">phone</span>
+                                </div>
+                                <div className="flex-1">
+                                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Contact Number</p>
+                                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
+                                        {displayUser?.mobileNo || displayUser?.phone || '+91 755 401 9400'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Department & Location */}
+                            <div className="flex items-start gap-3.5">
+                                <div className="w-9 h-9 rounded-xl bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+                                    <span className="material-symbols-outlined text-[20px]">domain</span>
+                                </div>
+                                <div className="flex-1">
+                                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Department & Location</p>
+                                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 mt-0.5">
+                                        {displayUser?.departmentName || displayUser?.department || 'General'}, {displayUser?.location || 'Bhopal, MP'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Employee ID */}
+                            {displayUser?.employeeId && (
+                                <div className="flex items-start gap-3.5">
+                                    <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center shrink-0 mt-0.5">
+                                        <span className="material-symbols-outlined text-[20px]">badge</span>
+                                    </div>
+                                    <div className="flex-1">
+                                        <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Employee ID</p>
+                                        <p className="text-sm font-bold text-slate-800 dark:text-slate-200 mt-0.5">
+                                            {displayUser.employeeId}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="p-4 sm:p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end bg-slate-50 dark:bg-slate-800/50">
+                            <button
+                                type="button"
+                                onClick={() => setIsContactModalOpen(false)}
+                                className="px-5 py-2 text-sm font-bold rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors cursor-pointer"
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+            )}
         </main>
     );
 }

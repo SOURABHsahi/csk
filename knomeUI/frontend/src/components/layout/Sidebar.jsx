@@ -44,10 +44,17 @@ export default function Sidebar() {
         };
     }, [isMobileOpen]);
 
+    const isItemActive = (item) => {
+        if (item.matchPaths && Array.isArray(item.matchPaths)) {
+            return item.matchPaths.some(p => pathname === p || (p !== '/' && pathname.startsWith(p + '/')));
+        }
+        return item.to === '/' ? pathname === '/' : pathname === item.to || pathname.startsWith(item.to + '/');
+    };
+
     const navItems = [
         { to: '/',                 icon: 'home',         label: 'Home',          color: '#6366f1' },
-        { to: '/community',        icon: 'group',        label: 'Communities',   color: '#0ea5e9' },
-        { to: '/suggested-people', icon: 'person_add',   label: 'People',        color: '#10b981' },
+        { to: '/community',        icon: 'group',        label: 'Communities',   color: '#0ea5e9', matchPaths: ['/community', '/communities'] },
+        { to: '/suggested-people', icon: 'person_add',   label: 'People',        color: '#10b981', matchPaths: ['/suggested-people', '/network'] },
         { to: '/saved-content',    icon: 'bookmark',     label: 'Saved',         color: '#f59e0b' },
         { to: '/search',           icon: 'search',       label: 'Discover',      color: '#8b5cf6' },
     ];
@@ -69,10 +76,10 @@ export default function Sidebar() {
 
     const quickLinks = [
         { to: '/posts',    label: 'Posts',     icon: 'dynamic_feed', color: '#6366f1' },
-        { to: '/articles', label: 'Articles',  icon: 'article',      color: '#0ea5e9' },
+        { to: '/articles', label: 'Articles',  icon: 'article',      color: '#0ea5e9', matchPaths: ['/articles', '/article-view'] },
         { to: '/videos',   label: 'Videos',    icon: 'videocam',     color: '#ef4444' },
         { to: '/podcasts', label: 'Podcasts',  icon: 'podcasts',     color: '#8b5cf6' },
-        { to: '/jobs',     label: 'Jobs',      icon: 'work',         color: '#10b981' },
+        { to: '/jobs',     label: 'Openings',  icon: 'work',         color: '#10b981' },
     ];
 
     const userAvatar = resolveMediaUrl(currentUser?.profilePhotoUrl) || currentUser?.avatar || 'https://ui-avatars.com/api/?name=User&background=6366f1&color=fff';
@@ -138,7 +145,7 @@ export default function Sidebar() {
             <nav className="flex flex-col gap-0.5">
                 <p className="text-[10px] font-black uppercase tracking-widest px-3 mb-1" style={{color: 'var(--text-muted)'}}>Menu</p>
                 {navItems.map(item => {
-                    const isActive = pathname === item.to;
+                    const isActive = isItemActive(item);
                     return (
                         <Link
                             key={item.to}
@@ -201,18 +208,46 @@ export default function Sidebar() {
                 }}>
                 <p className="text-[10px] font-black uppercase tracking-widest mb-2.5 px-1" style={{color: 'var(--text-muted)'}}>Quick Access</p>
                 <div className="flex flex-col gap-1">
-                    {quickLinks.map(link => (
-                        <Link key={link.to} to={link.to}
-                            onClick={() => isMobile && setIsMobileOpen(false)}
-                            className="flex flex-row items-center gap-3 p-1.5 rounded-lg transition-all hover:translate-x-1 hover:bg-theme-30-hover"
-                            title={link.label}>
-                            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                                style={{background: `${link.color}15`}}>
-                                <span className="material-symbols-outlined text-[16px]" style={{color: link.color}}>{link.icon}</span>
-                            </div>
-                            <span className="text-[12px] font-bold text-theme-30-text">{link.label}</span>
-                        </Link>
-                    ))}
+                    {quickLinks.map(link => {
+                        const isActive = isItemActive(link);
+                        return (
+                            <Link key={link.to} to={link.to}
+                                onClick={() => isMobile && setIsMobileOpen(false)}
+                                className={`flex flex-row items-center gap-3 px-2 py-2 rounded-xl transition-all duration-200 group relative ${
+                                    isActive ? 'shadow-xs' : 'hover:translate-x-0.5 hover:bg-theme-30-hover'
+                                }`}
+                                style={isActive ? {
+                                    background: `${link.color}18`,
+                                    border: `1px solid ${link.color}35`,
+                                } : {
+                                    border: '1px solid transparent',
+                                }}
+                                title={link.label}>
+                                {isActive && (
+                                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r-full" style={{background: link.color}}></div>
+                                )}
+                                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all"
+                                    style={{
+                                        background: isActive ? `${link.color}28` : `${link.color}15`,
+                                        boxShadow: isActive ? `0 2px 8px ${link.color}25` : 'none'
+                                    }}>
+                                    <span className="material-symbols-outlined text-[17px] transition-all"
+                                        style={{
+                                            color: link.color,
+                                            fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0"
+                                        }}>
+                                        {link.icon}
+                                    </span>
+                                </div>
+                                <span className="text-[12px] font-bold transition-colors truncate"
+                                    style={{
+                                        color: isActive ? link.color : 'var(--text-secondary)'
+                                    }}>
+                                    {link.label}
+                                </span>
+                            </Link>
+                        );
+                    })}
                 </div>
             </div>
         </>

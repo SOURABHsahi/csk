@@ -115,7 +115,7 @@ public class ContentInteractionService : IContentInteractionService
     }
 
     // --- Comments (FR-CI-02, FR-CI-05) ---
-    public async Task<List<CommentDto>> GetContentCommentsAsync(string contentType, long contentId)
+    public async Task<List<CommentDto>> GetContentCommentsAsync(string contentType, long contentId, int? currentUserId = null)
     {
         ValidateContentType(contentType);
 
@@ -128,6 +128,45 @@ public class ContentInteractionService : IContentInteractionService
             dto.Replies = await BuildRepliesTreeAsync(comment.CommentId);
             dto.RepliesCount = dto.Replies.Count;
             dtos.Add(dto);
+        }
+
+        // Populate LikesCount and IsLiked for all comments and nested replies
+        var allDtos = new List<CommentDto>();
+        void CollectDtos(IEnumerable<CommentDto> list)
+        {
+            foreach (var item in list)
+            {
+                allDtos.Add(item);
+                if (item.Replies != null && item.Replies.Count > 0)
+                    CollectDtos(item.Replies);
+            }
+        }
+        CollectDtos(dtos);
+
+        if (allDtos.Count > 0)
+        {
+            var commentIds = allDtos.Select(c => c.CommentId).Distinct().ToList();
+            var reactions = await _db.Reactions
+                .AsNoTracking()
+                .Where(r => r.ContentType == ContentTypes.Comment && commentIds.Contains(r.ContentId))
+                .Select(r => new { r.ContentId, r.UserId, r.ReactionType })
+                .ToListAsync();
+
+            foreach (var item in allDtos)
+            {
+                var commentReactions = reactions.Where(r => r.ContentId == item.CommentId).ToList();
+                item.LikesCount = commentReactions.Count;
+                item.IsLiked = currentUserId.HasValue && commentReactions.Any(r => r.UserId == currentUserId.Value);
+                item.UserReactionType = currentUserId.HasValue 
+                    ? commentReactions.FirstOrDefault(r => r.UserId == currentUserId.Value)?.ReactionType 
+                    : null;
+                item.TopReactionTypes = commentReactions
+                    .Select(r => r.ReactionType)
+                    .Where(t => !string.IsNullOrEmpty(t))
+                    .Distinct()
+                    .Take(4)
+                    .ToList();
+            }
         }
 
         return dtos;
@@ -165,6 +204,9 @@ public class ContentInteractionService : IContentInteractionService
         // Award karma to the user who added the comment
         await _karmaService.AwardKarmaAsync(userId, KarmaActivityTypes.AddComment, KarmaPoints.AddCommentPoints, contentType, contentId);
 
+        var commenter = await _userRepo.GetByIdAsync(userId);
+        var commenterName = commenter?.FullName ?? "Someone";
+
         var authorId = await _repo.GetContentAuthorUserIdAsync(contentType, contentId);
         if (authorId.HasValue && authorId.Value != userId)
         {
@@ -172,7 +214,7 @@ public class ContentInteractionService : IContentInteractionService
             await _notificationService.PublishAsync(
                 authorId.Value,
                 NotificationTypes.Comment,
-                $"Your {contentType} received a new comment.",
+                $"{commenterName} commented on your {contentType.ToLowerInvariant()}.",
                 relatedContentType: contentType,
                 relatedContentId: contentId);
         }
@@ -184,7 +226,7 @@ public class ContentInteractionService : IContentInteractionService
                 await _notificationService.PublishAsync(
                     parentComment.UserId,
                     NotificationTypes.Comment,
-                    $"Someone replied to your comment on a {contentType}.",
+                    $"{commenterName} replied to your comment on a {contentType.ToLowerInvariant()}.",
                     relatedContentType: contentType,
                     relatedContentId: contentId);
             }
@@ -317,17 +359,80 @@ public class ContentInteractionService : IContentInteractionService
             // Award karma to the user who reacted
             await _karmaService.AwardKarmaAsync(userId, KarmaActivityTypes.AddLike, KarmaPoints.AddLikePoints, contentType, contentId);
 
-            // FR-NT-01: notify the content author of a new reaction and award ReceiveLike karma
-            var authorId = await _repo.GetContentAuthorUserIdAsync(contentType, contentId);
-            if (authorId.HasValue && authorId.Value != userId)
+            var reactor = await _userRepo.GetByIdAsync(userId);
+            var reactorName = reactor?.FullName ?? "Someone";
+
+            if (contentType == ContentTypes.Comment)
             {
-                await _karmaService.AwardKarmaAsync(authorId.Value, KarmaActivityTypes.ReceiveLike, KarmaPoints.ReceiveLikePoints, contentType, contentId);
-                await _notificationService.PublishAsync(
-                    authorId.Value,
-                    NotificationTypes.Reaction,
-                    $"Your {contentType} received a new reaction.",
-                    relatedContentType: contentType,
-                    relatedContentId: contentId);
+                var comment = await _repo.GetCommentByIdAsync(contentId);
+                if (comment != null)
+                {
+                    // 1. Notify the comment author (jisne comment kiya hai)
+                    if (comment.UserId != userId)
+                    {
+                        await _karmaService.AwardKarmaAsync(comment.UserId, KarmaActivityTypes.ReceiveLike, KarmaPoints.ReceiveLikePoints, contentType, contentId);
+
+                        string commentNotifText = comment.ContentType switch
+                        {
+                            ContentTypes.Post => $"{reactorName} liked your comment on a post.",
+                            ContentTypes.Article => $"{reactorName} liked your comment on an article.",
+                            ContentTypes.Video => $"{reactorName} liked your comment on a video.",
+                            ContentTypes.Podcast => $"{reactorName} liked your comment on a podcast.",
+                            _ => $"{reactorName} liked your comment."
+                        };
+
+                        await _notificationService.PublishAsync(
+                            comment.UserId,
+                            NotificationTypes.Reaction,
+                            commentNotifText,
+                            relatedContentType: comment.ContentType,
+                            relatedContentId: comment.ContentId);
+                    }
+
+                    // 2. Also notify the author of the parent content (jisne post / article create kiya hai)
+                    var parentAuthorId = await _repo.GetContentAuthorUserIdAsync(comment.ContentType, comment.ContentId);
+                    if (parentAuthorId.HasValue && parentAuthorId.Value != userId && parentAuthorId.Value != comment.UserId)
+                    {
+                        string parentNotifText = comment.ContentType switch
+                        {
+                            ContentTypes.Post => $"{reactorName} liked a comment on your post.",
+                            ContentTypes.Article => $"{reactorName} liked a comment on your article.",
+                            ContentTypes.Video => $"{reactorName} liked a comment on your video.",
+                            ContentTypes.Podcast => $"{reactorName} liked a comment on your podcast.",
+                            _ => $"{reactorName} liked a comment on your {comment.ContentType.ToLowerInvariant()}."
+                        };
+
+                        await _notificationService.PublishAsync(
+                            parentAuthorId.Value,
+                            NotificationTypes.Reaction,
+                            parentNotifText,
+                            relatedContentType: comment.ContentType,
+                            relatedContentId: comment.ContentId);
+                    }
+                }
+            }
+            else
+            {
+                // Direct reaction to Post, Article, Video, Podcast, etc.
+                var authorId = await _repo.GetContentAuthorUserIdAsync(contentType, contentId);
+                if (authorId.HasValue && authorId.Value != userId)
+                {
+                    await _karmaService.AwardKarmaAsync(authorId.Value, KarmaActivityTypes.ReceiveLike, KarmaPoints.ReceiveLikePoints, contentType, contentId);
+                    string notifText = contentType switch
+                    {
+                        ContentTypes.Post => $"{reactorName} liked your post.",
+                        ContentTypes.Article => $"{reactorName} liked your article.",
+                        ContentTypes.Video => $"{reactorName} liked your video.",
+                        ContentTypes.Podcast => $"{reactorName} liked your podcast.",
+                        _ => $"{reactorName} reacted to your {contentType.ToLowerInvariant()}."
+                    };
+                    await _notificationService.PublishAsync(
+                        authorId.Value,
+                        NotificationTypes.Reaction,
+                        notifText,
+                        relatedContentType: contentType,
+                        relatedContentId: contentId);
+                }
             }
         }
 
@@ -356,6 +461,13 @@ public class ContentInteractionService : IContentInteractionService
     {
         ValidateContentType(contentType);
         return await _repo.GetReactionsSummaryAsync(contentType, contentId, currentUserId);
+    }
+
+    public async Task<List<ReactionDto>> GetReactionsListAsync(string contentType, long contentId)
+    {
+        ValidateContentType(contentType);
+        var reactions = await _repo.GetReactionsAsync(contentType, contentId);
+        return _mapper.Map<List<ReactionDto>>(reactions);
     }
 
     // --- Shares (FR-CI-03) ---

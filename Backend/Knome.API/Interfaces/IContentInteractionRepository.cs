@@ -22,6 +22,7 @@ public interface IContentInteractionRepository
     Task RemoveReactionAsync(Reaction reaction);
     Task UpdateReactionAsync(Reaction reaction);
     Task<ReactionSummaryDto> GetReactionsSummaryAsync(string contentType, long contentId, int currentUserId);
+    Task<List<Reaction>> GetReactionsAsync(string contentType, long contentId);
 
     // Shares
     Task<Share> AddShareAsync(Share share);

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
+import { useToast } from '../components/contexts/ToastContext';
+import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import { getArticles, deleteArticle } from '../utils/articleService';
 import { resolveMediaUrl, interactionsApi } from '../utils/apiService';
 import { checkRestrictedContent } from '../utils/restrictedWords';
@@ -8,11 +10,21 @@ import ReportModal from '../components/modals/ReportModal';
 import SaveToCategoryModal from '../components/modals/SaveToCategoryModal';
 import ArticleShareModal from '../components/modals/ArticleShareModal';
 import DocumentViewerModal from '../components/modals/DocumentViewerModal';
+import ReactionsModal from '../components/modals/ReactionsModal';
+
+const REACTION_TYPES = {
+    like: { icon: '👍', label: 'Like', color: 'text-blue-500' },
+    celebrate: { icon: '🎉', label: 'Celebrate', color: 'text-amber-500' },
+    support: { icon: '🤝', label: 'Support', color: 'text-purple-500' },
+    heart: { icon: '❤️', label: 'Heart', color: 'text-pink-500' }
+};
 
 export default function ArticleView() {
     const location = useLocation();
     const navigate = useNavigate();
     const { currentUser } = useUser();
+    const { addToast } = useToast();
+    const confirm = useConfirm();
 
     const [isReportOpen, setIsReportOpen] = useState(false);
     const [savingArticleModal, setSavingArticleModal] = useState(null);
@@ -84,13 +96,20 @@ export default function ArticleView() {
 
     const handleDeleteArticle = async () => {
         if (!article?.id) return;
-        if (!window.confirm('Are you sure you want to delete this article?')) return;
+        const ok = await confirm({
+            title: 'Delete Article',
+            message: 'Are you sure you want to delete this article? This action cannot be undone.',
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            variant: 'danger'
+        });
+        if (!ok) return;
         try {
             await deleteArticle(article.id);
-            alert('Article deleted successfully.');
+            addToast('Article deleted successfully.', 'success');
             navigate('/articles');
         } catch (err) {
-            alert('Failed to delete article.');
+            addToast('Failed to delete article.', 'error');
         }
     };
     
@@ -115,12 +134,17 @@ export default function ArticleView() {
                 avatar: c.authorProfilePhotoUrl ? resolveMediaUrl(c.authorProfilePhotoUrl) : (c.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName || 'User')}&background=6366f1&color=fff`),
                 time: c.createdAt ? new Date(c.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : (c.time || 'Recently'),
                 text: c.commentText || c.text || '',
+                likesCount: c.likesCount || 0,
+                isLiked: Boolean(c.isLiked),
                 replies: (c.replies || []).map(r => ({
                     id: r.commentId || r.id,
                     author: r.authorFullName || r.author?.name || r.author || 'User',
                     avatar: r.authorProfilePhotoUrl ? resolveMediaUrl(r.authorProfilePhotoUrl) : (r.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(r.authorFullName || 'User')}&background=6366f1&color=fff`),
                     time: r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : (r.time || 'Recently'),
-                    text: r.commentText || r.text || ''
+                    text: r.commentText || r.text || '',
+                    likesCount: r.likesCount || 0,
+                    isLiked: Boolean(r.isLiked),
+                    replies: []
                 }))
             }));
 
@@ -140,10 +164,18 @@ export default function ArticleView() {
     // Update state when articleId changes or article loads
     useEffect(() => {
         if (article) {
-            setLikes(article.likes);
+            setLikes(Number(article.likes || article.reactionsCount || 0));
             setUserLiked(false);
             setNewComment('');
             
+            // Fetch live reaction status from backend API
+            interactionsApi.getSummary('Article', article.id).then(summary => {
+                if (summary) {
+                    setLikes(summary.totalCount ?? summary.reactionsCount ?? summary.totalLikes ?? Number(article.likes || 0));
+                    setUserLiked(Boolean(summary.userReaction || summary.hasReacted || summary.isLiked));
+                }
+            }).catch(() => {});
+
             // Scroll to top of page when changing articles
             window.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -152,13 +184,18 @@ export default function ArticleView() {
         }
     }, [article?.id]);
 
-    const handleLike = () => {
-        if (userLiked) {
-            setLikes(prev => prev - 1);
-            setUserLiked(false);
-        } else {
-            setLikes(prev => prev + 1);
-            setUserLiked(true);
+    const handleLike = async () => {
+        if (!article?.id) return;
+        const nextLiked = !userLiked;
+        setUserLiked(nextLiked);
+        setLikes(prev => nextLiked ? prev + 1 : Math.max(0, prev - 1));
+
+        try {
+            await interactionsApi.toggleReaction('Article', article.id, 'Like');
+        } catch (err) {
+            console.error('Failed to toggle article reaction', err);
+            setUserLiked(!nextLiked);
+            setLikes(prev => !nextLiked ? prev + 1 : Math.max(0, prev - 1));
         }
     };
 
@@ -169,7 +206,7 @@ export default function ArticleView() {
         const commentText = newComment.trim();
         const foundKeyword = checkRestrictedContent(commentText);
         if (foundKeyword) {
-            alert(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}". Comment cannot be posted.`);
+            addToast(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}". Comment cannot be posted.`, 'warning');
             return;
         }
 
@@ -222,7 +259,7 @@ export default function ArticleView() {
         const trimmedReply = replyText.trim();
         const foundKeyword = checkRestrictedContent(trimmedReply);
         if (foundKeyword) {
-            alert(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}". Reply cannot be posted.`);
+            addToast(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}". Reply cannot be posted.`, 'warning');
             return;
         }
 
@@ -790,7 +827,62 @@ export default function ArticleView() {
 function ArticleCommentThread({ comment, depth = 0, onReply, currentUser }) {
     const [isReplying, setIsReplying] = useState(false);
     const [replyText, setReplyText] = useState('');
+    const [likesCount, setLikesCount] = useState(comment.likesCount || 0);
+    const initialReaction = comment.userReaction || (comment.isLiked ? 'like' : null);
+    const [reaction, setReaction] = useState(initialReaction);
+    const [reactionHover, setReactionHover] = useState(false);
+    const hoverTimeoutRef = React.useRef(null);
+    const [isReactionsModalOpen, setIsReactionsModalOpen] = useState(false);
     const replies = comment.replies || [];
+
+    useEffect(() => {
+        setLikesCount(comment.likesCount || 0);
+        setReaction(comment.userReaction || (comment.isLiked ? 'like' : null));
+    }, [comment.likesCount, comment.isLiked, comment.userReaction]);
+
+    const activeCommentReactionTypes = React.useMemo(() => {
+        const types = new Set();
+        if (Array.isArray(comment.topReactionTypes)) {
+            comment.topReactionTypes.forEach(t => t && types.add(t.toLowerCase()));
+        }
+        if (reaction) {
+            types.add(reaction.toLowerCase());
+        }
+        if (types.size === 0 && likesCount > 0) {
+            types.add('like');
+        }
+        return Array.from(types);
+    }, [comment.topReactionTypes, reaction, likesCount]);
+
+    const toggleCommentReaction = async (type) => {
+        if (!comment.id) return;
+        const previousReaction = reaction;
+        const newReaction = reaction === type ? null : type;
+
+        setReaction(newReaction);
+        if (previousReaction && !newReaction) {
+            setLikesCount(prev => Math.max(0, prev - 1));
+        } else if (!previousReaction && newReaction) {
+            setLikesCount(prev => prev + 1);
+        }
+        setReactionHover(false);
+
+        const reactionTypeToSend = newReaction || previousReaction;
+        if (!reactionTypeToSend) return;
+        const formattedReaction = reactionTypeToSend.charAt(0).toUpperCase() + reactionTypeToSend.slice(1);
+
+        try {
+            await interactionsApi.toggleReaction('Comment', comment.id, formattedReaction);
+        } catch (error) {
+            console.error('Failed to toggle comment reaction', error);
+            setReaction(previousReaction);
+            if (previousReaction && !newReaction) {
+                setLikesCount(prev => prev + 1);
+            } else if (!previousReaction && newReaction) {
+                setLikesCount(prev => Math.max(0, prev - 1));
+            }
+        }
+    };
 
     const submitReply = (e) => {
         e.preventDefault();
@@ -803,10 +895,28 @@ function ArticleCommentThread({ comment, depth = 0, onReply, currentUser }) {
         setIsReplying(false);
     };
 
+    const avatarUrl = comment.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.author || 'User')}&background=6366f1&color=fff`;
+
     return (
         <div className="flex gap-4">
+            {/* ── Comment Reactions Modal ── */}
+            <ReactionsModal
+                isOpen={isReactionsModalOpen}
+                onClose={() => setIsReactionsModalOpen(false)}
+                contentType="Comment"
+                contentId={comment.id}
+            />
+
             <div className="h-9 w-9 shrink-0 rounded-full bg-slate-100 border border-slate-200 dark:border-slate-800 overflow-hidden">
-                <img className="w-full h-full object-cover" src={comment.avatar} alt={comment.author} />
+                <img 
+                    className="w-full h-full object-cover" 
+                    src={avatarUrl} 
+                    alt={comment.author || 'Avatar'} 
+                    onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.author || 'User')}&background=6366f1&color=fff`;
+                    }}
+                />
             </div>
             <div className="flex-1">
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200/60 dark:border-slate-800/80 inline-block max-w-full">
@@ -819,9 +929,104 @@ function ArticleCommentThread({ comment, depth = 0, onReply, currentUser }) {
                     </p>
                 </div>
                 
-                <div className="flex items-center gap-4 mt-1.5 ml-2 text-[10px] font-black text-slate-400">
-                    <button className="hover:text-blue-500 transition-colors">Like</button>
-                    <button onClick={() => setIsReplying(!isReplying)} className="hover:text-blue-500 transition-colors">Reply</button>
+                <div className="flex items-center gap-3 mt-1.5 ml-2 text-[11px] font-bold text-slate-500">
+                    <div 
+                        className="relative flex items-center"
+                        onMouseEnter={() => {
+                            if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                            hoverTimeoutRef.current = setTimeout(() => setReactionHover(true), 150);
+                        }}
+                        onMouseLeave={() => {
+                            if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                            hoverTimeoutRef.current = setTimeout(() => setReactionHover(false), 350);
+                        }}
+                    >
+                        {/* Reaction Popover */}
+                        {reactionHover && (
+                            <div 
+                                className="absolute bottom-full left-0 mb-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-full px-2 py-1.5 flex gap-1.5 animate-in fade-in slide-in-from-bottom-2 z-30"
+                                onMouseEnter={() => {
+                                    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                                    setReactionHover(true);
+                                }}
+                                onMouseLeave={() => {
+                                    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                                    hoverTimeoutRef.current = setTimeout(() => setReactionHover(false), 350);
+                                }}
+                            >
+                                <div className="absolute top-full left-0 right-0 h-3" />
+                                {Object.entries(REACTION_TYPES).map(([key, data]) => (
+                                    <button 
+                                        key={key}
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleCommentReaction(key);
+                                        }}
+                                        className="w-7 h-7 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-transform hover:scale-125 cursor-pointer"
+                                        title={data.label}
+                                    >
+                                        <span className="text-[16px]">{data.icon}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        <button 
+                            type="button"
+                            onClick={() => toggleCommentReaction(reaction ? null : 'like')} 
+                            className={`transition-colors flex items-center gap-1 cursor-pointer ${reaction ? (REACTION_TYPES[reaction]?.color || 'text-blue-600') : 'hover:text-blue-500'}`}
+                        >
+                            {reaction ? (
+                                <>
+                                    <span className="text-[14px]">{REACTION_TYPES[reaction]?.icon || '👍'}</span>
+                                    <span>{REACTION_TYPES[reaction]?.label || 'Liked'}</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="material-symbols-outlined text-[14px]">thumb_up</span>
+                                    <span>Like</span>
+                                </>
+                            )}
+                        </button>
+                    </div>
+
+                    {/* Reaction Counter Pill (only if likesCount > 0) */}
+                    {likesCount > 0 && (
+                        <button 
+                            type="button"
+                            onClick={() => setIsReactionsModalOpen(true)}
+                            className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer group text-[11px]"
+                            title="View who reacted"
+                        >
+                            <div className="flex items-center -space-x-1">
+                                {activeCommentReactionTypes.map(t => {
+                                    const meta = REACTION_TYPES[t] || REACTION_TYPES.like;
+                                    const bgClass = t === 'heart' ? 'bg-rose-500' : t === 'celebrate' ? 'bg-amber-500' : t === 'support' ? 'bg-purple-500' : 'bg-blue-500';
+                                    return (
+                                        <span 
+                                            key={t}
+                                            className={`w-3.5 h-3.5 rounded-full ${bgClass} text-white flex items-center justify-center text-[8px] shadow-xs`}
+                                        >
+                                            {meta.icon}
+                                        </span>
+                                    );
+                                })}
+                            </div>
+                            <span className="font-bold text-slate-700 dark:text-slate-300 group-hover:underline">
+                                {likesCount}
+                            </span>
+                        </button>
+                    )}
+
+                    <button 
+                        type="button"
+                        onClick={() => setIsReplying(!isReplying)} 
+                        className="hover:text-blue-500 transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                        <span className="material-symbols-outlined text-[14px]">reply</span>
+                        <span>Reply</span>
+                    </button>
                 </div>
 
                 {isReplying && (

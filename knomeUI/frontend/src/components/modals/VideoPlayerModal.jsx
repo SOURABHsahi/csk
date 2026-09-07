@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmDialogContext';
 import { deleteVideo } from '../../utils/videoService';
 import { resolveMediaUrl } from '../../utils/apiService';
 import { checkRestrictedContent } from '../../utils/restrictedWords';
@@ -21,6 +22,7 @@ const ENTERPRISE_COMMUNITIES = [
 export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDeleted }) {
     const { currentUser, users, awardRuleKarma } = useUser();
     const { addToast } = useToast();
+    const confirm = useConfirm();
 
     const videoId = video?.id || 'demo';
     
@@ -99,7 +101,14 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
     const canDelete = currentUser?.role === 'SYSADM' || currentUser?.role === 'COMADM' || currentUser?.id === video.authorId || currentUser?.userId === video.authorId;
 
     const handleDelete = async () => {
-        if (window.confirm("Are you sure you want to delete this video? This action cannot be undone.")) {
+        const ok = await confirm({
+            title: 'Delete Video',
+            message: 'Are you sure you want to delete this video? This action cannot be undone.',
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            variant: 'danger'
+        });
+        if (ok) {
             try {
                 await deleteVideo(video.id).catch(() => {});
                 addToast('Video deleted successfully.', 'info');
@@ -233,11 +242,7 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
 
         const foundKeyword = checkRestrictedContent(commentInput.trim());
         if (foundKeyword) {
-            if (addToast) {
-                addToast(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}".`, 'error');
-            } else {
-                alert(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}".`);
-            }
+            addToast(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}".`, 'error');
             return;
         }
 

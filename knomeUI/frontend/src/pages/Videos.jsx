@@ -691,187 +691,193 @@ export default function Videos() {
             <SaveToCategoryModal isOpen={!!savingVideoModal} onClose={() => setSavingVideoModal(null)} item={savingVideoModal} onSaved={(s) => setSavedMap(p => ({ ...p, [s.contentId || s.id]: true }))} />
 
             {/* Create Playlist / Series Modal */}
+            {/* Create Playlist / Series Modal */}
             {isCreatePlaylistOpen && (
-                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
+                <div className="fixed inset-0 bg-slate-950/60 dark:bg-slate-950/80 backdrop-blur-sm z-[100] flex items-center justify-center p-3 sm:p-4 md:p-6 overflow-y-auto animate-in fade-in duration-200"
                     onClick={() => setIsCreatePlaylistOpen(false)}>
-                    <div className="bg-slate-900 border border-slate-700/80 w-full max-w-xl rounded-3xl p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200"
+                    <div className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-xl rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[88vh] my-auto animate-in zoom-in-95 duration-200"
                         onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                            <div className="flex items-center gap-2">
-                                <div className="w-9 h-9 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center font-bold">
+                        
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 p-4 sm:p-5 shrink-0 bg-white dark:bg-slate-900 z-10">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-cyan-500 text-white flex items-center justify-center font-bold shadow-md shadow-indigo-500/25 shrink-0">
                                     <span className="material-symbols-outlined text-[22px]">playlist_add</span>
                                 </div>
                                 <div>
-                                    <h3 className="font-black text-base text-white">Create or Import Series</h3>
-                                    <p className="text-xs text-slate-400">Import YouTube Playlist or create a custom video series</p>
+                                    <h3 className="font-black text-base text-slate-900 dark:text-white">Create or Import Series</h3>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Import YouTube Playlist or create a custom video series</p>
                                 </div>
                             </div>
                             <button onClick={() => setIsCreatePlaylistOpen(false)}
-                                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-all cursor-pointer">
+                                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center justify-center transition-all cursor-pointer">
                                 <span className="material-symbols-outlined text-[18px]">close</span>
                             </button>
                         </div>
 
-                        {/* Modal Tab Switcher */}
-                        <div className="flex p-1 bg-slate-800 rounded-xl border border-slate-700">
-                            <button type="button" onClick={() => setPlaylistImportMode('yt_link')}
-                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${playlistImportMode === 'yt_link' ? 'bg-red-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>
-                                <span className="material-symbols-outlined text-[16px]">play_circle</span>
-                                Import YouTube Playlist Link
-                            </button>
-                            <button type="button" onClick={() => setPlaylistImportMode('custom')}
-                                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${playlistImportMode === 'custom' ? 'bg-cyan-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>
-                                <span className="material-symbols-outlined text-[16px]">video_library</span>
-                                Custom Playlist
-                            </button>
-                        </div>
+                        <div className="p-4 sm:p-5 space-y-4 overflow-y-auto custom-scrollbar flex-1 min-h-0">
+                            {/* Modal Tab Switcher */}
+                            <div className="flex p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700">
+                                <button type="button" onClick={() => setPlaylistImportMode('yt_link')}
+                                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${playlistImportMode === 'yt_link' ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-md shadow-indigo-500/20' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}>
+                                    <span className="material-symbols-outlined text-[16px]">play_circle</span>
+                                    Import YouTube Playlist Link
+                                </button>
+                                <button type="button" onClick={() => setPlaylistImportMode('custom')}
+                                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${playlistImportMode === 'custom' ? 'bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-md shadow-indigo-500/20' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}>
+                                    <span className="material-symbols-outlined text-[16px]">video_library</span>
+                                    Custom Playlist
+                                </button>
+                            </div>
 
-                        {playlistImportMode === 'yt_link' ? (
-                            <form onSubmit={handleImportYtPlaylistSubmit} className="space-y-4">
-                                <div>
-                                    <div className="flex items-center justify-between mb-1">
-                                        <label className="block text-[11px] font-bold text-slate-300">YouTube Playlist URL or Video Link *</label>
-                                        {isFetchingYtMeta && (
-                                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-cyan-400">
-                                                <span className="material-symbols-outlined text-[13px] animate-spin">progress_activity</span>
-                                                Auto-fetching playlist details...
-                                            </span>
+                            {playlistImportMode === 'yt_link' ? (
+                                <form onSubmit={handleImportYtPlaylistSubmit} className="space-y-4">
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">YouTube Playlist URL or Video Link *</label>
+                                            {isFetchingYtMeta && (
+                                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
+                                                    <span className="material-symbols-outlined text-[13px] animate-spin">progress_activity</span>
+                                                    Auto-fetching playlist details...
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="relative">
+                                            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-indigo-500 text-[18px]">link</span>
+                                            <input type="url" required
+                                                placeholder="e.g. https://www.youtube.com/watch?v=ajDRvxDWH4w&list=PLGjplNEQ1it_oTvuLRNqX"
+                                                value={ytPlaylistUrl} onChange={handleYtUrlChange}
+                                                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs text-slate-900 dark:text-white outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-semibold placeholder-slate-400 dark:placeholder-slate-500 transition-all" />
+                                        </div>
+                                        {autoFetchedMeta ? (
+                                            <div className="mt-2 p-2.5 bg-emerald-50 dark:bg-emerald-500/15 border border-emerald-200 dark:border-emerald-500/30 rounded-xl flex items-center justify-between text-emerald-700 dark:text-emerald-400 text-[11px] font-bold">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="material-symbols-outlined text-[18px] text-emerald-500">check_circle</span>
+                                                    <span>Auto-Fetched: <span className="text-slate-900 dark:text-white font-extrabold">{autoFetchedMeta.title}</span> by <span className="text-emerald-600 dark:text-emerald-300">{autoFetchedMeta.author}</span></span>
+                                                </div>
+                                                <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 rounded-lg text-[10px] font-extrabold border border-emerald-200 dark:border-emerald-500/30">
+                                                    {autoFetchedMeta.episodes} Episodes
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Paste any YouTube link — title, channel & episode count will be auto-detected!</p>
                                         )}
                                     </div>
-                                    <div className="relative">
-                                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-red-500 text-[18px]">link</span>
-                                        <input type="url" required
-                                            placeholder="e.g. https://www.youtube.com/watch?v=ajDRvxDWH4w&list=PLGjplNEQ1it_oTvuLRNqX"
-                                            value={ytPlaylistUrl} onChange={handleYtUrlChange}
-                                            className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 py-2.5 text-xs text-white outline-none focus:border-red-500 font-semibold placeholder-slate-500" />
-                                    </div>
-                                    {autoFetchedMeta ? (
-                                        <div className="mt-2 p-2.5 bg-emerald-500/15 border border-emerald-500/30 rounded-xl flex items-center justify-between text-emerald-400 text-[11px] font-bold">
-                                            <div className="flex items-center gap-2">
-                                                <span className="material-symbols-outlined text-[18px] text-emerald-400">check_circle</span>
-                                                <span>Auto-Fetched: <span className="text-white">{autoFetchedMeta.title}</span> by <span className="text-emerald-300">{autoFetchedMeta.author}</span></span>
-                                            </div>
-                                            <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded-lg text-[10px] font-extrabold border border-emerald-500/30">
-                                                {autoFetchedMeta.episodes} Episodes
-                                            </span>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Series Title</label>
+                                            <input type="text" placeholder="e.g. JavaScript Tutorials for Beginners"
+                                                value={ytSeriesTitle} onChange={e => setYtSeriesTitle(e.target.value)}
+                                                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-semibold placeholder-slate-400 dark:placeholder-slate-500 transition-all" />
                                         </div>
-                                    ) : (
-                                        <p className="text-[10px] text-slate-400 mt-1">Paste any YouTube link — title, channel & episode count will be auto-detected!</p>
-                                    )}
-
-                                </div>
-
-
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-slate-400 mb-1">Series Title</label>
-                                        <input type="text" placeholder="e.g. JavaScript Tutorials for Beginners"
-                                            value={ytSeriesTitle} onChange={e => setYtSeriesTitle(e.target.value)}
-                                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500 font-semibold placeholder-slate-500" />
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Channel / Creator Name</label>
+                                            <input type="text" placeholder="e.g. CodeWithHarry"
+                                                value={ytAuthorName} onChange={e => setYtAuthorName(e.target.value)}
+                                                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-semibold placeholder-slate-400 dark:placeholder-slate-500 transition-all" />
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-slate-400 mb-1">Channel / Creator Name</label>
-                                        <input type="text" placeholder="e.g. CodeWithHarry"
-                                            value={ytAuthorName} onChange={e => setYtAuthorName(e.target.value)}
-                                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500 font-semibold placeholder-slate-500" />
-                                    </div>
-                                </div>
 
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-slate-400 mb-1">Category</label>
-                                        <select value={newPlaylist.category} onChange={e => setNewPlaylist(p => ({ ...p, category: e.target.value }))}
-                                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500 font-bold">
-                                            <option value="Training & Tutorials">Training & Tutorials</option>
-                                            <option value="Engineering Tech Talks">Engineering Tech Talks</option>
-                                            <option value="Townhalls">Townhalls</option>
-                                            <option value="Leadership Updates">Leadership Updates</option>
-                                        </select>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Category</label>
+                                            <select value={newPlaylist.category} onChange={e => setNewPlaylist(p => ({ ...p, category: e.target.value }))}
+                                                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-bold transition-all">
+                                                <option value="Training & Tutorials">Training & Tutorials</option>
+                                                <option value="Engineering Tech Talks">Engineering Tech Talks</option>
+                                                <option value="Townhalls">Townhalls</option>
+                                                <option value="Leadership Updates">Leadership Updates</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Episodes to Import</label>
+                                            <input type="number" min="1" max="50" value={ytEpisodeCount} onChange={e => setYtEpisodeCount(e.target.value)}
+                                                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-bold transition-all" />
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-slate-400 mb-1">Episodes to Import</label>
-                                        <input type="number" min="1" max="50" value={ytEpisodeCount} onChange={e => setYtEpisodeCount(e.target.value)}
-                                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500 font-bold" />
+
+                                    <div className="flex gap-2 pt-2">
+                                        <button type="button" onClick={() => setIsCreatePlaylistOpen(false)} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl cursor-pointer transition-colors">Cancel</button>
+                                        <button type="submit" className="flex-1 py-2.5 bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-700 hover:to-cyan-600 text-white font-bold text-xs rounded-xl cursor-pointer shadow-md shadow-indigo-500/25 flex items-center justify-center gap-1.5 transition-all">
+                                            <span className="material-symbols-outlined text-[18px]">playlist_add</span>
+                                            Import & Save Series
+                                        </button>
                                     </div>
-                                </div>
-
-                                <div className="flex gap-2 pt-2">
-                                    <button type="button" onClick={() => setIsCreatePlaylistOpen(false)} className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl cursor-pointer">Cancel</button>
-                                    <button type="submit" className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl cursor-pointer shadow-md shadow-red-600/30 flex items-center justify-center gap-1.5">
-                                        <span className="material-symbols-outlined text-[18px]">playlist_add</span>
-                                        Import & Save Series
-                                    </button>
-                                </div>
-                            </form>
-                        ) : (
-                            <form onSubmit={handleCreatePlaylistSubmit} className="space-y-4">
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-[11px] font-bold text-slate-400 mb-1">Type</label>
-                                        <select value={newPlaylist.type} onChange={e => setNewPlaylist(p => ({ ...p, type: e.target.value }))}
-                                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500 font-bold">
-                                            <option value="Series">🎓 Masterclass Series</option>
-                                            <option value="Playlist">📺 Standard Playlist</option>
-                                        </select>
+                                </form>
+                            ) : (
+                                <form onSubmit={handleCreatePlaylistSubmit} className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Type</label>
+                                            <select value={newPlaylist.type} onChange={e => setNewPlaylist(p => ({ ...p, type: e.target.value }))}
+                                                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-bold transition-all">
+                                                <option value="Series">🎓 Masterclass Series</option>
+                                                <option value="Playlist">📺 Standard Playlist</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Category</label>
+                                            <select value={newPlaylist.category} onChange={e => setNewPlaylist(p => ({ ...p, category: e.target.value }))}
+                                                className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-bold transition-all">
+                                                <option value="Training & Tutorials">Training & Tutorials</option>
+                                                <option value="Townhalls">Townhalls</option>
+                                                <option value="Engineering Tech Talks">Engineering Tech Talks</option>
+                                                <option value="Leadership Updates">Leadership Updates</option>
+                                            </select>
+                                        </div>
                                     </div>
+
                                     <div>
-                                        <label className="block text-[11px] font-bold text-slate-400 mb-1">Category</label>
-                                        <select value={newPlaylist.category} onChange={e => setNewPlaylist(p => ({ ...p, category: e.target.value }))}
-                                            className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-cyan-500 font-bold">
-                                            <option value="Training & Tutorials">Training & Tutorials</option>
-                                            <option value="Townhalls">Townhalls</option>
-                                            <option value="Engineering Tech Talks">Engineering Tech Talks</option>
-                                            <option value="Leadership Updates">Leadership Updates</option>
-                                        </select>
+                                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Title</label>
+                                        <input type="text" required placeholder="e.g. Advanced Microservices & Cloud Security Masterclass"
+                                            value={newPlaylist.title} onChange={e => setNewPlaylist(p => ({ ...p, title: e.target.value }))}
+                                            className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 font-semibold placeholder-slate-400 dark:placeholder-slate-500 transition-all" />
                                     </div>
-                                </div>
 
-                                <div>
-                                    <label className="block text-[11px] font-bold text-slate-400 mb-1">Title</label>
-                                    <input type="text" required placeholder="e.g. Advanced Microservices & Cloud Security Masterclass"
-                                        value={newPlaylist.title} onChange={e => setNewPlaylist(p => ({ ...p, title: e.target.value }))}
-                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none focus:border-cyan-500 font-semibold placeholder-slate-500" />
-                                </div>
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Description</label>
+                                        <textarea rows={2} placeholder="Summary of what employees will learn in this playlist series..."
+                                            value={newPlaylist.description} onChange={e => setNewPlaylist(p => ({ ...p, description: e.target.value }))}
+                                            className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs text-slate-900 dark:text-white outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 resize-none placeholder-slate-400 dark:placeholder-slate-500 transition-all" />
+                                    </div>
 
-                                <div>
-                                    <label className="block text-[11px] font-bold text-slate-400 mb-1">Description</label>
-                                    <textarea rows={2} placeholder="Summary of what employees will learn in this playlist series..."
-                                        value={newPlaylist.description} onChange={e => setNewPlaylist(p => ({ ...p, description: e.target.value }))}
-                                        className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs text-white outline-none focus:border-cyan-500 resize-none placeholder-slate-500" />
-                                </div>
-
-                                <div>
-                                    <label className="block text-[11px] font-bold text-slate-400 mb-1">Select Videos to Include ({newPlaylist.selectedVideoIds.length} selected)</label>
-                                    <div className="max-h-40 overflow-y-auto custom-scrollbar border border-slate-800 p-2 rounded-2xl bg-slate-950/50 space-y-1">
-                                        {videos.map(v => {
-                                            const checked = newPlaylist.selectedVideoIds.includes(v.id);
-                                            return (
-                                                <label key={v.id} className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition-colors ${checked ? 'bg-cyan-500/20 border border-cyan-500/30' : 'hover:bg-slate-800/80'}`}>
-                                                    <div className="flex items-center gap-2.5 min-w-0">
-                                                        <img src={v.thumbnail} alt={v.title} className="w-10 aspect-video rounded-lg object-cover shrink-0" />
-                                                        <div className="min-w-0">
-                                                            <p className="text-xs font-bold text-slate-200 line-clamp-1">{v.title}</p>
-                                                            <p className="text-[10px] text-slate-400">{v.author} · {v.category}</p>
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">Select Videos to Include ({newPlaylist.selectedVideoIds.length} selected)</label>
+                                        <div className="max-h-44 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-slate-800 p-2 rounded-2xl bg-slate-50 dark:bg-slate-950/50 space-y-1">
+                                            {videos.map(v => {
+                                                const checked = newPlaylist.selectedVideoIds.includes(v.id);
+                                                return (
+                                                    <label key={v.id} className={`flex items-center justify-between p-2 rounded-xl cursor-pointer transition-colors ${checked ? 'bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60' : 'hover:bg-slate-100 dark:hover:bg-slate-800/80 border border-transparent'}`}>
+                                                        <div className="flex items-center gap-2.5 min-w-0">
+                                                            <img src={v.thumbnail} alt={v.title} className="w-10 aspect-video rounded-lg object-cover shrink-0" />
+                                                            <div className="min-w-0">
+                                                                <p className="text-xs font-bold text-slate-900 dark:text-slate-200 line-clamp-1">{v.title}</p>
+                                                                <p className="text-[10px] text-slate-500 dark:text-slate-400">{v.author} · {v.category}</p>
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                    <input type="checkbox" checked={checked}
-                                                        onChange={() => setNewPlaylist(p => ({
-                                                            ...p,
-                                                            selectedVideoIds: checked ? p.selectedVideoIds.filter(i => i !== v.id) : [...p.selectedVideoIds, v.id]
-                                                        }))}
-                                                        className="accent-cyan-500 cursor-pointer w-4 h-4 shrink-0" />
-                                                </label>
-                                            );
-                                        })}
+                                                        <input type="checkbox" checked={checked}
+                                                            onChange={() => setNewPlaylist(p => ({
+                                                                ...p,
+                                                                selectedVideoIds: checked ? p.selectedVideoIds.filter(i => i !== v.id) : [...p.selectedVideoIds, v.id]
+                                                            }))}
+                                                            className="accent-indigo-600 cursor-pointer w-4 h-4 shrink-0" />
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
-                                </div>
 
-                                <div className="flex gap-2 pt-2">
-                                    <button type="button" onClick={() => setIsCreatePlaylistOpen(false)} className="flex-1 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl cursor-pointer">Cancel</button>
-                                    <button type="submit" className="flex-1 py-2.5 bg-cyan-500 hover:bg-cyan-600 text-white font-bold text-xs rounded-xl cursor-pointer shadow-md shadow-cyan-500/20">Create {newPlaylist.type}</button>
-                                </div>
-                            </form>
-                        )}
+                                    <div className="flex gap-2 pt-2">
+                                        <button type="button" onClick={() => setIsCreatePlaylistOpen(false)} className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl cursor-pointer transition-colors">Cancel</button>
+                                        <button type="submit" className="flex-1 py-2.5 bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-700 hover:to-cyan-600 text-white font-bold text-xs rounded-xl cursor-pointer shadow-md shadow-indigo-500/25 flex items-center justify-center gap-1.5 transition-all">
+                                            <span className="material-symbols-outlined text-[18px]">playlist_add</span>
+                                            Create {newPlaylist.type}
+                                        </button>
+                                    </div>
+                                </form>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
@@ -894,7 +900,7 @@ export default function Videos() {
                     </div>
                     <div className="flex items-center gap-2">
                         <button onClick={() => setIsCreatePlaylistOpen(true)}
-                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md transition-all cursor-pointer">
+                            className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-700 hover:to-cyan-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-indigo-500/20 transition-all cursor-pointer">
                             <span className="material-symbols-outlined text-[18px]">playlist_add</span>
                             Create Series
                         </button>
@@ -1190,7 +1196,7 @@ export default function Videos() {
                                 <p className="text-xs text-slate-500 dark:text-slate-400">Curated multi-part training series, technical courses, and townhall playlists</p>
                             </div>
                             <button onClick={() => setIsCreatePlaylistOpen(true)}
-                                className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-600 hover:to-indigo-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all">
+                                className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-cyan-500 hover:from-indigo-700 hover:to-cyan-600 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-indigo-500/20 cursor-pointer transition-all">
                                 <span className="material-symbols-outlined text-[18px]">playlist_add</span>
                                 Create Series / Playlist
                             </button>

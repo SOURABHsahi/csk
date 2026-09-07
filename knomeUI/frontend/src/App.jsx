@@ -6,6 +6,7 @@ import { ModalProvider } from './components/contexts/ModalContext'
 import { UserProvider } from './components/contexts/UserContext'
 import { AudioProvider } from './components/contexts/AudioContext'
 import { ToastProvider } from './components/contexts/ToastContext'
+import { ConfirmDialogProvider } from './components/contexts/ConfirmDialogContext'
 import GlobalAudioPlayer from './components/widgets/GlobalAudioPlayer'
 
 // Lazy Load Pages for Faster Initial Load Time
@@ -104,7 +105,8 @@ function App() {
     <UserProvider>
       <AudioProvider>
         <ToastProvider>
-          <ModalProvider>
+          <ConfirmDialogProvider>
+            <ModalProvider>
             <Router>
               <Suspense fallback={<PageLoader />}>
                 <Routes>
@@ -138,7 +140,8 @@ function App() {
               </Suspense>
               <GlobalAudioPlayer />
             </Router>
-          </ModalProvider>
+            </ModalProvider>
+          </ConfirmDialogProvider>
         </ToastProvider>
       </AudioProvider>
     </UserProvider>

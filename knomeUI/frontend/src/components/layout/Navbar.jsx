@@ -5,10 +5,12 @@ import NotificationSettingsModal from '../modals/NotificationSettingsModal';
 import NotificationToast from '../ui/NotificationToast';
 import knomeLogo from '../../assets/knome_logo.png';
 import { notificationsApi, profileApi, searchApi, karmaApi, resolveMediaUrl, saveRecentSearch, getLocalRecentSearches, clearLocalRecentSearches } from '../../utils/apiService';
+import { useConfirm } from '../contexts/ConfirmDialogContext';
 import * as signalR from '@microsoft/signalr';
 
 export default function Navbar() {
     const { currentUser, setCurrentUser, users, logout } = useUser();
+    const confirm = useConfirm();
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
     const { pathname } = useLocation();
     const navigate = useNavigate();
@@ -292,10 +294,11 @@ export default function Navbar() {
         const type = (n.notificationType || n.eventType || '').toLowerCase();
         const isFollow = type.includes('follow');
         const isConnectionReq = type.includes('connection');
-        const isReaction = type.includes('reaction') || type.includes('like');
-        const isComment = type.includes('comment');
-        const isMention = type.includes('mention');
         const msg = (n.message || n.text || n.title || '').toLowerCase();
+        const relType = (n.relatedContentType || '').toLowerCase();
+        const isReaction = type.includes('reaction') || type.includes('like') || msg.includes('liked') || msg.includes('reacted');
+        const isComment = (type.includes('comment') || msg.includes('commented') || msg.includes('replied')) && !isReaction;
+        const isMention = type.includes('mention');
         const isShare = type.includes('share') || msg.includes('shared');
 
         let icon = 'notifications';
@@ -344,16 +347,18 @@ export default function Navbar() {
         const refId = n.relatedContentId || n.referenceId;
 
         let targetUrl = n.targetUrl;
-        if (!targetUrl) {
-            if (msg.includes('post') || type.includes('post') || type.includes('share')) {
+        if (isConnectionReq || type.includes('connection') || msg.includes('connection request')) {
+            targetUrl = msg.includes('accepted') ? '/network?tab=Connections' : '/network?tab=Requests';
+        } else if (!targetUrl) {
+            if (msg.includes('post') || type.includes('post') || type.includes('share') || relType === 'post') {
                 targetUrl = refId ? `/posts?id=${refId}` : '/posts';
-            } else if (msg.includes('article') || type.includes('article')) {
+            } else if (msg.includes('article') || type.includes('article') || relType === 'article') {
                 targetUrl = refId ? `/article-view?id=${refId}` : '/articles';
-            } else if (msg.includes('community') || type.includes('community')) {
+            } else if (msg.includes('community') || type.includes('community') || relType === 'community') {
                 targetUrl = refId ? `/community/view?id=${refId}` : '/community';
-            } else if (msg.includes('video') || type.includes('video')) {
+            } else if (msg.includes('video') || type.includes('video') || relType === 'video') {
                 targetUrl = refId ? `/videos?id=${refId}` : '/videos';
-            } else if (msg.includes('podcast') || type.includes('podcast')) {
+            } else if (msg.includes('podcast') || type.includes('podcast') || relType === 'podcast') {
                 targetUrl = refId ? `/podcasts?id=${refId}` : '/podcasts';
             }
         }
@@ -616,6 +621,7 @@ export default function Navbar() {
             });
             setToastNotification(mapped);
             playChimeSound();
+            window.dispatchEvent(new CustomEvent('network-updated'));
         });
 
         connection.on("ReactionCountUpdated", (data) => {
@@ -805,6 +811,8 @@ export default function Navbar() {
             dest = refId ? `/article-view?id=${refId}` : (dest || '/articles');
         } else if (relType === 'post' || msg.includes('post') || notif.type?.includes('post')) {
             dest = refId ? `/posts?id=${refId}` : (dest || '/posts');
+        } else if (notif.type === 'follow_request' || notif.type?.includes('connection') || msg.includes('connection request') || msg.includes('connection')) {
+            dest = msg.includes('accepted') ? '/network?tab=Connections' : '/network?tab=Requests';
         } else if (relType === 'user' || notif.type?.includes('follow')) {
             const uId = refId || notif.senderUserId;
             dest = uId ? `/profile?id=${uId}` : '/profile';
@@ -890,14 +898,6 @@ export default function Navbar() {
 
     const toggleTheme = () => setIsDark(prev => !prev);
 
-    const navLinks = [
-        { to: '/', label: 'Dashboard' },
-        { to: '/jobs', label: 'Jobs' },
-    ];
-    if (isSysAdmin) {
-        navLinks.push({ to: '/admin-console', label: 'Admin' });
-    }
-
     return (
         <>
         {/* TopNavBar */}
@@ -933,42 +933,16 @@ export default function Navbar() {
                             </span>
                         </div>
                     </Link>
-
-                    {/* Pill-shaped Nav Links */}
-                    <div className="hidden md:flex items-center p-1 rounded-2xl"
-                        style={{
-                            background: 'var(--bg-surface)',
-                            border: '1px solid var(--border-subtle)',
-                            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)'
-                        }}>
-                        {navLinks.map(link => {
-                            const isActive = pathname === link.to;
-                            return (
-                                <Link key={link.to} to={link.to}
-                                    className="relative px-4 py-1.5 rounded-lg text-[13px] font-bold transition-all duration-300"
-                                    style={isActive ? {
-                                        background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-aurora))',
-                                        color: 'white',
-                                        boxShadow: '0 4px 12px rgba(37,99,235,0.25)'
-                                    } : {
-                                        color: 'var(--text-secondary)'
-                                    }}
-                                >
-                                    <span className="relative z-10">{link.label}</span>
-                                </Link>
-                            );
-                        })}
-                    </div>
                 </div>
 
                 {/* ─── CENTER: Smart Search ─── */}
                 <div className="hidden lg:flex items-center justify-center w-full">
-                    <div className="relative w-full max-w-[520px] z-50" ref={searchDropdownRef}>
-                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[18px]"
+                    <div className="relative w-full max-w-[540px] z-50" ref={searchDropdownRef}>
+                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[18px] pointer-events-none transition-colors"
                             style={{color: 'var(--text-muted)'}}>search</span>
                         <input
                             type="text"
-                            placeholder="Search Knome, posts, people or tags..."
+                            placeholder="Search posts, people, articles or tags..."
                             value={searchQuery}
                             onChange={(e) => {
                                 setSearchQuery(e.target.value);
@@ -977,7 +951,7 @@ export default function Navbar() {
                             onFocus={() => setShowSuggestions(true)}
                             onBlur={() => setTimeout(() => setShowSuggestions(false), 250)}
                             onKeyDown={handleKeyDown}
-                            className="w-full pl-10 pr-10 py-2 text-[13.5px] font-medium rounded-full outline-none transition-all focus:ring-2 focus:ring-blue-500/20 placeholder:text-slate-500 dark:placeholder:text-slate-400"
+                            className="w-full pl-10 pr-[130px] py-2 text-[13.5px] font-medium rounded-full outline-none transition-all focus:ring-2 focus:ring-blue-500/25 placeholder:text-slate-500 dark:placeholder:text-slate-400"
                             style={{
                                 background: isDark ? 'rgba(14, 26, 56, 0.7)' : 'rgba(239, 246, 255, 0.85)',
                                 border: '1px solid var(--border-mid)',
@@ -985,14 +959,38 @@ export default function Navbar() {
                                 backdropFilter: 'blur(12px)',
                             }}
                         />
-                        {searchQuery && (
+
+                        {/* Right-side controls: Clear (close) button + Theme Search button */}
+                        <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                            {searchQuery && (
+                                <button
+                                    type="button"
+                                    onMouseDown={(e) => { e.preventDefault(); setSearchQuery(''); }}
+                                    className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors flex items-center justify-center cursor-pointer"
+                                    title="Clear search"
+                                >
+                                    <span className="material-symbols-outlined text-[15px] block">close</span>
+                                </button>
+                            )}
                             <button
-                                onMouseDown={() => setSearchQuery('')}
-                                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                type="button"
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    handleSearch(searchQuery);
+                                }}
+                                onClick={() => handleSearch(searchQuery)}
+                                className="h-[31px] px-3.5 rounded-full text-[12px] font-bold text-white flex items-center gap-1.5 transition-all shadow-xs hover:shadow-md hover:brightness-110 active:scale-95 cursor-pointer select-none shrink-0"
+                                style={{
+                                    background: 'linear-gradient(135deg, var(--accent-primary, #2563eb), var(--accent-deep, #4f46e5))',
+                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    boxShadow: '0 2px 8px rgba(37, 99, 235, 0.25)'
+                                }}
+                                title="Search"
                             >
-                                <span className="material-symbols-outlined text-[16px]">close</span>
+                                <span className="material-symbols-outlined text-[15px] leading-none">search</span>
+                                <span>Search</span>
                             </button>
-                        )}
+                        </div>
 
                         {/* Search Overlay Dropdown (YouTube-style) */}
                         {showSuggestions && (
@@ -1399,8 +1397,20 @@ export default function Navbar() {
                                             <span className="material-symbols-outlined text-[16px]">person</span> My Profile
                                         </Link>
                                         <button
-                                            onClick={() => { setIsUserMenuOpen(false); logout(); }}
-                                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] font-semibold text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors mt-0.5"
+                                            onClick={async () => {
+                                                setIsUserMenuOpen(false);
+                                                const ok = await confirm({
+                                                    title: 'Confirm Logout',
+                                                    message: "Are you sure you want to log out of Knome? You'll need to sign in again to access your account.",
+                                                    confirmText: 'Yes, Log Out',
+                                                    cancelText: 'Cancel',
+                                                    variant: 'danger'
+                                                });
+                                                if (ok) {
+                                                    logout();
+                                                }
+                                            }}
+                                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] font-semibold text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors mt-0.5 cursor-pointer"
                                         >
                                             <span className="material-symbols-outlined text-[16px]">logout</span> Log Out
                                         </button>

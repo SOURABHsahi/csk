@@ -3,10 +3,12 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmDialogContext';
 import ReportModal from '../modals/ReportModal';
 import SaveToCategoryModal from '../modals/SaveToCategoryModal';
 import DocumentViewerModal from '../modals/DocumentViewerModal';
 import ArticleShareModal from '../modals/ArticleShareModal';
+import ReactionsModal from '../modals/ReactionsModal';
 
 import { interactionsApi, postsApi, searchApi, communitiesApi, resolveMediaUrl, getVideoThumbnail } from '../../utils/apiService';
 import { checkRestrictedContent } from '../../utils/restrictedWords';
@@ -232,6 +234,7 @@ function ImageGrid({ images, onImageClick }) {
 export default function PostCard({ post, onPostDeleted }) {
     const { currentUser, awardRuleKarma } = useUser();
     const { addToast } = useToast();
+    const confirm = useConfirm();
     const navigate = useNavigate();
     
     // Interaction States
@@ -239,6 +242,33 @@ export default function PostCard({ post, onPostDeleted }) {
     const [reaction, setReaction] = useState(initialReaction);
     const [likeCount, setLikeCount] = useState(post.likes || 0);
     const [shareCount, setShareCount] = useState(post.shares || 0);
+    const [reactionsList, setReactionsList] = useState(post.reactions || []);
+    const [isReactionsModalOpen, setIsReactionsModalOpen] = useState(false);
+
+    // Distinct reaction types currently active on this post
+    const activeReactionTypes = React.useMemo(() => {
+        const types = new Set();
+        if (Array.isArray(post.topReactionTypes)) {
+            post.topReactionTypes.forEach(t => t && types.add(t.toLowerCase()));
+        }
+        if (Array.isArray(post.reactionSummary?.topReactionTypes)) {
+            post.reactionSummary.topReactionTypes.forEach(t => t && types.add(t.toLowerCase()));
+        }
+        if (Array.isArray(reactionsList)) {
+            reactionsList.forEach(r => {
+                const t = (r.reactionType || '').toLowerCase();
+                if (t) types.add(t);
+            });
+        }
+        if (reaction) {
+            types.add(reaction.toLowerCase());
+        }
+        if (types.size === 0 && likeCount > 0) {
+            types.add('like');
+        }
+        return Array.from(types);
+    }, [post.topReactionTypes, post.reactionSummary, reactionsList, reaction, likeCount]);
+
     const [isSaved, setIsSaved] = useState(() => {
         const bookmarkedIds = JSON.parse(localStorage.getItem('knome_bookmarked_ids') || '[]');
         return post.isSaved || bookmarkedIds.includes(String(post.id));
@@ -291,12 +321,21 @@ export default function PostCard({ post, onPostDeleted }) {
                             avatar: resolveMediaUrl(c.authorProfilePhotoUrl || c.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName || 'User')}&background=6366f1&color=fff`,
                             text: c.commentText || c.text,
                             time: new Date(c.createdDate || c.createdAt || Date.now()).toLocaleDateString(),
+                            likesCount: c.likesCount || 0,
+                            isLiked: Boolean(c.isLiked),
+                            userReaction: c.userReactionType?.toLowerCase() || (c.isLiked ? 'like' : null),
+                            topReactionTypes: c.topReactionTypes || [],
                             replies: (c.replies || []).map(r => ({
                                 id: r.commentId || r.id,
                                 author: r.authorFullName || r.authorName || 'Colleague',
-                                avatar: resolveMediaUrl(r.authorProfilePhotoUrl || r.avatar),
+                                avatar: resolveMediaUrl(r.authorProfilePhotoUrl || r.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(r.authorFullName || 'User')}&background=6366f1&color=fff`,
                                 text: r.commentText || r.text,
-                                time: new Date(r.createdDate || Date.now()).toLocaleDateString()
+                                time: new Date(r.createdDate || Date.now()).toLocaleDateString(),
+                                likesCount: r.likesCount || 0,
+                                isLiked: Boolean(r.isLiked),
+                                userReaction: r.userReactionType?.toLowerCase() || (r.isLiked ? 'like' : null),
+                                topReactionTypes: r.topReactionTypes || [],
+                                replies: []
                             }))
                         }));
                         setComments(formatted);
@@ -607,7 +646,7 @@ export default function PostCard({ post, onPostDeleted }) {
     const canDeletePost = isAuthor || isUserAdmin;
 
     const handleDeletePost = async () => {
-        if (!window.confirm("Are you sure you want to delete this post?")) return;
+        if (!await confirm({ title: 'Delete Post', message: 'Are you sure you want to delete this post? This action cannot be undone.', confirmText: 'Delete', variant: 'danger' })) return;
         const targetPostId = post.id || post.postId;
         if (!targetPostId) return;
         try {
@@ -644,17 +683,48 @@ export default function PostCard({ post, onPostDeleted }) {
 
     const toggleReaction = async (type) => {
         const previousReaction = reaction;
+        const previousList = reactionsList;
         const newReaction = reaction === type ? null : type;
+
+        const currentUserIdNum = Number(currentUser?.userId || currentUser?.id || 0);
+        const currentUserName = currentUser?.fullName || currentUser?.name || 'You';
+        const currentUserPhoto = currentUser?.profilePhotoUrl || currentUser?.avatar || null;
+        const currentUserDesig = currentUser?.roleName || currentUser?.role || currentUser?.designation || 'MPOnline Team Member';
         
         // Optimistically update UI
         setReaction(newReaction);
         if (previousReaction && !newReaction) {
             setLikeCount(prev => Math.max(0, prev - 1)); // Removed reaction
+            setReactionsList(prev => prev.filter(r => Number(r.userId) !== currentUserIdNum));
         } else if (!previousReaction && newReaction) {
             setLikeCount(prev => prev + 1); // Added new reaction
+            setReactionsList(prev => [
+                {
+                    id: `local-${currentUserIdNum}-${Date.now()}`,
+                    userId: currentUserIdNum,
+                    userFullName: currentUserName,
+                    userProfilePhotoUrl: currentUserPhoto,
+                    userDesignation: currentUserDesig,
+                    reactionType: newReaction
+                },
+                ...prev.filter(r => Number(r.userId) !== currentUserIdNum)
+            ]);
             if (awardRuleKarma && (post.userId || post.authorId)) {
                 awardRuleKarma(post.userId || post.authorId, 'LIKE_RECEIVED');
             }
+        } else if (previousReaction && newReaction && previousReaction !== newReaction) {
+            // Changed reaction type
+            setReactionsList(prev => [
+                {
+                    id: `local-${currentUserIdNum}-${Date.now()}`,
+                    userId: currentUserIdNum,
+                    userFullName: currentUserName,
+                    userProfilePhotoUrl: currentUserPhoto,
+                    userDesignation: currentUserDesig,
+                    reactionType: newReaction
+                },
+                ...prev.filter(r => Number(r.userId) !== currentUserIdNum)
+            ]);
         }
         setReactionHover(false);
 
@@ -671,6 +741,7 @@ export default function PostCard({ post, onPostDeleted }) {
             console.error('Failed to toggle reaction', error);
             // Revert on failure
             setReaction(previousReaction);
+            setReactionsList(previousList);
             if (previousReaction && !newReaction) {
                 setLikeCount(prev => prev + 1);
             } else if (!previousReaction && newReaction) {
@@ -1050,18 +1121,45 @@ export default function PostCard({ post, onPostDeleted }) {
                 />
             )}
 
+            {/* ── Reactions Modal ── */}
+            <ReactionsModal
+                isOpen={isReactionsModalOpen}
+                onClose={() => setIsReactionsModalOpen(false)}
+                contentType="Post"
+                contentId={post.id || post.postId}
+                initialReactions={reactionsList}
+            />
+
             {/* Interaction Counts */}
             <div className="px-5 py-2.5 flex items-center justify-between text-[12px] text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
-                <div className="flex items-center gap-2">
-                    <div className="flex items-center -space-x-1">
-                        <span className="w-5 h-5 rounded-full bg-blue-500 text-white flex items-center justify-center text-[10px] shadow-xs">👍</span>
-                        <span className="w-5 h-5 rounded-full bg-rose-500 text-white flex items-center justify-center text-[10px] shadow-xs">❤️</span>
-                        <span className="w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px] shadow-xs">👏</span>
-                    </div>
-                    <span className="font-bold text-slate-800 dark:text-slate-200">
-                        {likeCount > 0 ? `${likeCount} ${likeCount === 1 ? 'reaction' : 'reactions'}` : '0 reactions'}
-                    </span>
-                </div>
+                {likeCount > 0 ? (
+                    <button 
+                        type="button"
+                        onClick={() => setIsReactionsModalOpen(true)}
+                        className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer group"
+                        title="View who reacted"
+                    >
+                        <div className="flex items-center -space-x-1.5">
+                            {activeReactionTypes.map(t => {
+                                const meta = REACTION_TYPES[t] || REACTION_TYPES.like;
+                                const bgClass = t === 'heart' ? 'bg-rose-500' : t === 'celebrate' ? 'bg-amber-500' : t === 'support' ? 'bg-purple-500' : 'bg-blue-500';
+                                return (
+                                    <span 
+                                        key={t}
+                                        className={`w-5 h-5 rounded-full ${bgClass} text-white flex items-center justify-center text-[10px] shadow-xs ring-2 ring-white dark:ring-slate-900`}
+                                    >
+                                        {meta.icon}
+                                    </span>
+                                );
+                            })}
+                        </div>
+                        <span className="font-bold text-slate-800 dark:text-slate-200 group-hover:underline">
+                            {likeCount} {likeCount === 1 ? 'reaction' : 'reactions'}
+                        </span>
+                    </button>
+                ) : (
+                    <div />
+                )}
                 <div className="flex items-center gap-3 text-xs font-semibold">
                     <button onClick={() => setShowComments(!showComments)} className="hover:underline hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer flex items-center gap-1 text-slate-600 dark:text-slate-300">
                         <span className="font-bold">{displayCommentCount}</span>
@@ -1154,12 +1252,20 @@ export default function PostCard({ post, onPostDeleted }) {
                                         avatar: resolveMediaUrl(c.authorProfilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName)}&background=6366f1&color=fff`,
                                         text: c.commentText,
                                         time: new Date(c.createdDate).toLocaleDateString(),
+                                        likesCount: c.likesCount || 0,
+                                        isLiked: Boolean(c.isLiked),
+                                        userReaction: c.userReactionType?.toLowerCase() || (c.isLiked ? 'like' : null),
+                                        topReactionTypes: c.topReactionTypes || [],
                                         replies: (c.replies || []).map(r => ({
                                             id: r.commentId,
                                             author: r.authorFullName,
                                             avatar: resolveMediaUrl(r.authorProfilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(r.authorFullName)}&background=6366f1&color=fff`,
                                             text: r.commentText,
                                             time: new Date(r.createdDate).toLocaleDateString(),
+                                            likesCount: r.likesCount || 0,
+                                            isLiked: Boolean(r.isLiked),
+                                            userReaction: r.userReactionType?.toLowerCase() || (r.isLiked ? 'like' : null),
+                                            topReactionTypes: r.topReactionTypes || [],
                                             replies: []
                                         }))
                                     }));
@@ -1307,10 +1413,65 @@ function CommentThread({ postId, comment, depth = 0, onReplyAdded }) {
     const [isReplying, setIsReplying] = useState(false);
     const [replyText, setReplyText] = useState('');
     const [replies, setReplies] = useState(comment.replies || []);
+    const [likesCount, setLikesCount] = useState(comment.likesCount || 0);
+    const initialReaction = comment.userReaction || (comment.isLiked ? 'like' : null);
+    const [reaction, setReaction] = useState(initialReaction);
+    const [reactionHover, setReactionHover] = useState(false);
+    const hoverTimeoutRef = useRef(null);
+    const [isReactionsModalOpen, setIsReactionsModalOpen] = useState(false);
 
     useEffect(() => {
         setReplies(comment.replies || []);
     }, [comment.replies]);
+
+    useEffect(() => {
+        setLikesCount(comment.likesCount || 0);
+        setReaction(comment.userReaction || (comment.isLiked ? 'like' : null));
+    }, [comment.likesCount, comment.isLiked, comment.userReaction]);
+
+    const activeCommentReactionTypes = React.useMemo(() => {
+        const types = new Set();
+        if (Array.isArray(comment.topReactionTypes)) {
+            comment.topReactionTypes.forEach(t => t && types.add(t.toLowerCase()));
+        }
+        if (reaction) {
+            types.add(reaction.toLowerCase());
+        }
+        if (types.size === 0 && likesCount > 0) {
+            types.add('like');
+        }
+        return Array.from(types);
+    }, [comment.topReactionTypes, reaction, likesCount]);
+
+    const toggleCommentReaction = async (type) => {
+        if (!comment.id) return;
+        const previousReaction = reaction;
+        const newReaction = reaction === type ? null : type;
+
+        setReaction(newReaction);
+        if (previousReaction && !newReaction) {
+            setLikesCount(prev => Math.max(0, prev - 1));
+        } else if (!previousReaction && newReaction) {
+            setLikesCount(prev => prev + 1);
+        }
+        setReactionHover(false);
+
+        const reactionTypeToSend = newReaction || previousReaction;
+        if (!reactionTypeToSend) return;
+        const formattedReaction = reactionTypeToSend.charAt(0).toUpperCase() + reactionTypeToSend.slice(1);
+
+        try {
+            await interactionsApi.toggleReaction('Comment', comment.id, formattedReaction);
+        } catch (error) {
+            console.error('Failed to toggle comment reaction', error);
+            setReaction(previousReaction);
+            if (previousReaction && !newReaction) {
+                setLikesCount(prev => prev + 1);
+            } else if (!previousReaction && newReaction) {
+                setLikesCount(prev => Math.max(0, prev - 1));
+            }
+        }
+    };
 
     const submitReply = async (e) => {
         e.preventDefault();
@@ -1318,7 +1479,7 @@ function CommentThread({ postId, comment, depth = 0, onReplyAdded }) {
 
         const foundKeyword = checkRestrictedContent(replyText.trim());
         if (foundKeyword) {
-            alert(`Security Alert: Please don't use restricted or abusive words ("${foundKeyword}").`);
+            addToast(`Security Alert: Please don't use restricted or abusive words ("${foundKeyword}").`, 'warning');
             return;
         }
 
@@ -1328,9 +1489,13 @@ function CommentThread({ postId, comment, depth = 0, onReplyAdded }) {
                 const newReply = {
                     id: c.commentId || Date.now(),
                     author: c.authorFullName || 'You',
-                    avatar: c.authorProfilePhotoUrl ? resolveMediaUrl(c.authorProfilePhotoUrl) : `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName || 'User')}&background=6366f1&color=fff`,
+                    avatar: resolveMediaUrl(c.authorProfilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName || 'User')}&background=6366f1&color=fff`,
                     time: 'Just now',
                     text: c.commentText || replyText.trim(),
+                    likesCount: 0,
+                    isLiked: false,
+                    userReaction: null,
+                    topReactionTypes: [],
                     replies: []
                 };
 
@@ -1347,6 +1512,10 @@ function CommentThread({ postId, comment, depth = 0, onReplyAdded }) {
                 avatar: `https://ui-avatars.com/api/?name=You&background=6366f1&color=fff`,
                 time: 'Just now',
                 text: replyText.trim(),
+                likesCount: 0,
+                isLiked: false,
+                userReaction: null,
+                topReactionTypes: [],
                 replies: []
             };
             setReplies(prev => [...prev, optimisticReply]);
@@ -1356,9 +1525,27 @@ function CommentThread({ postId, comment, depth = 0, onReplyAdded }) {
         }
     };
 
+    const avatarUrl = comment.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.author || 'User')}&background=6366f1&color=fff`;
+
     return (
         <div className="flex gap-3">
-            <img src={comment.avatar} alt="Avatar" className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 object-cover shrink-0" />
+            {/* ── Comment Reactions Modal ── */}
+            <ReactionsModal
+                isOpen={isReactionsModalOpen}
+                onClose={() => setIsReactionsModalOpen(false)}
+                contentType="Comment"
+                contentId={comment.id}
+            />
+
+            <img 
+                src={avatarUrl} 
+                alt={comment.author || 'Avatar'} 
+                className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 object-cover shrink-0" 
+                onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.author || 'User')}&background=6366f1&color=fff`;
+                }}
+            />
             <div className="flex-1">
                 <div className="bg-slate-100 dark:bg-slate-800/80 rounded-2xl rounded-tl-none px-4 py-3 inline-block max-w-full">
                     <div className="flex items-baseline justify-between gap-4 mb-1">
@@ -1370,8 +1557,103 @@ function CommentThread({ postId, comment, depth = 0, onReplyAdded }) {
                 
                 {/* Comment Actions */}
                 <div className="flex items-center gap-3 mt-1 ml-2 text-[11px] font-bold text-slate-500">
-                    <button className="hover:text-indigo-500 transition-colors">Like</button>
-                    <button onClick={() => setIsReplying(!isReplying)} className="hover:text-indigo-500 transition-colors">Reply</button>
+                    <div 
+                        className="relative flex items-center"
+                        onMouseEnter={() => {
+                            if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                            hoverTimeoutRef.current = setTimeout(() => setReactionHover(true), 150);
+                        }}
+                        onMouseLeave={() => {
+                            if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                            hoverTimeoutRef.current = setTimeout(() => setReactionHover(false), 350);
+                        }}
+                    >
+                        {/* Reaction Popover */}
+                        {reactionHover && (
+                            <div 
+                                className="absolute bottom-full left-0 mb-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-full px-2 py-1.5 flex gap-1.5 animate-in fade-in slide-in-from-bottom-2 z-30"
+                                onMouseEnter={() => {
+                                    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                                    setReactionHover(true);
+                                }}
+                                onMouseLeave={() => {
+                                    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                                    hoverTimeoutRef.current = setTimeout(() => setReactionHover(false), 350);
+                                }}
+                            >
+                                <div className="absolute top-full left-0 right-0 h-3" />
+                                {Object.entries(REACTION_TYPES).map(([key, data]) => (
+                                    <button 
+                                        key={key}
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleCommentReaction(key);
+                                        }}
+                                        className="w-7 h-7 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-transform hover:scale-125 cursor-pointer"
+                                        title={data.label}
+                                    >
+                                        <span className="text-[16px]">{data.icon}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        <button 
+                            type="button"
+                            onClick={() => toggleCommentReaction(reaction ? null : 'like')} 
+                            className={`transition-colors flex items-center gap-1 cursor-pointer ${reaction ? (REACTION_TYPES[reaction]?.color || 'text-indigo-600') : 'hover:text-indigo-500'}`}
+                        >
+                            {reaction ? (
+                                <>
+                                    <span className="text-[14px]">{REACTION_TYPES[reaction]?.icon || '👍'}</span>
+                                    <span>{REACTION_TYPES[reaction]?.label || 'Liked'}</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="material-symbols-outlined text-[14px]">thumb_up</span>
+                                    <span>Like</span>
+                                </>
+                            )}
+                        </button>
+                    </div>
+
+                    {/* Reaction Counter Pill (only if likesCount > 0) */}
+                    {likesCount > 0 && (
+                        <button 
+                            type="button"
+                            onClick={() => setIsReactionsModalOpen(true)}
+                            className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer group text-[11px]"
+                            title="View who reacted"
+                        >
+                            <div className="flex items-center -space-x-1">
+                                {activeCommentReactionTypes.map(t => {
+                                    const meta = REACTION_TYPES[t] || REACTION_TYPES.like;
+                                    const bgClass = t === 'heart' ? 'bg-rose-500' : t === 'celebrate' ? 'bg-amber-500' : t === 'support' ? 'bg-purple-500' : 'bg-blue-500';
+                                    return (
+                                        <span 
+                                            key={t}
+                                            className={`w-3.5 h-3.5 rounded-full ${bgClass} text-white flex items-center justify-center text-[8px] shadow-xs`}
+                                        >
+                                            {meta.icon}
+                                        </span>
+                                    );
+                                })}
+                            </div>
+                            <span className="font-bold text-slate-700 dark:text-slate-300 group-hover:underline">
+                                {likesCount}
+                            </span>
+                        </button>
+                    )}
+
+                    <button 
+                        type="button"
+                        onClick={() => setIsReplying(!isReplying)} 
+                        className="hover:text-indigo-500 transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                        <span className="material-symbols-outlined text-[14px]">reply</span>
+                        <span>Reply</span>
+                    </button>
                 </div>
 
                 {isReplying && (
@@ -1421,7 +1703,7 @@ function CommentThread({ postId, comment, depth = 0, onReplyAdded }) {
                 {replies && replies.length > 0 && (
                     <div className="mt-4 space-y-4 border-l border-slate-100 dark:border-slate-800 pl-4">
                         {replies.map(reply => (
-                            <CommentThread key={reply.id} postId={postId} comment={reply} depth={depth + 1} />
+                            <CommentThread key={reply.id} postId={postId} comment={reply} depth={depth + 1} onReplyAdded={onReplyAdded} />
                         ))}
                     </div>
                 )}

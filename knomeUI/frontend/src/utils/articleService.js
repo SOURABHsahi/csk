@@ -9,14 +9,14 @@ const DEFAULT_COVER_IMAGES = [
     'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&q=80&w=1200'
 ];
 
-export async function getArticles(categoryId = null, tag = null, search = null, pageNumber = 1, pageSize = 20) {
+export async function getArticles(categoryId = null, tag = null, search = null, pageNumber = 1, pageSize = 20, forceFresh = false) {
     try {
         let endpoint = `/Articles?pageNumber=${pageNumber}&pageSize=${pageSize}`;
         if (categoryId) endpoint += `&categoryId=${categoryId}`;
         if (tag) endpoint += `&tag=${encodeURIComponent(tag)}`;
         if (search) endpoint += `&search=${encodeURIComponent(search)}`;
 
-        const data = await apiClient.get(endpoint);
+        const data = await apiClient.get(endpoint, forceFresh ? { noCache: true } : {});
 
         return data.map((art, idx) => {
             // Find cover image if it exists in coverImageUrl or attachments
@@ -135,3 +135,24 @@ export async function deleteArticle(articleId) {
         throw error;
     }
 }
+
+export async function getArticleCategories() {
+    try {
+        const response = await apiClient.get('/Articles/categories');
+        return Array.isArray(response) ? response : (response?.data || []);
+    } catch (error) {
+        console.error('Failed to fetch article categories', error);
+        return [];
+    }
+}
+
+export async function createArticleCategory(name) {
+    try {
+        const response = await apiClient.post('/Articles/categories', { name });
+        return response;
+    } catch (error) {
+        console.error('Failed to create article category', error);
+        throw error;
+    }
+}
+

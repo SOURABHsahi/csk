@@ -6,6 +6,7 @@ using AutoMapper;
 using Knome.API.Constants;
 using Knome.API.Data;
 using Knome.API.DTOs.Articles;
+using Knome.API.DTOs.Categories;
 using Knome.API.Exceptions;
 using Knome.API.Interfaces;
 using Knome.API.Models;
@@ -208,4 +209,59 @@ public class ArticleService : IArticleService
         await CheckIsAuthorOrAdminAsync(article, currentUserId);
         await _repo.DeleteArticleAsync(article);
     }
+
+    public async Task<List<CategoryDto>> GetArticleCategoriesAsync()
+    {
+        return await _db.Categories
+            .AsNoTracking()
+            .Where(c => c.AppliesTo == "Article" || c.AppliesTo == "All")
+            .OrderBy(c => c.Name)
+            .Select(c => new CategoryDto
+            {
+                CategoryId = c.CategoryId,
+                Name = c.Name,
+                AppliesTo = c.AppliesTo
+            })
+            .ToListAsync();
+    }
+
+    public async Task<CategoryDto> CreateArticleCategoryAsync(CreateCategoryDto dto, int currentUserId)
+    {
+        var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
+        if (user == null || !user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleCode == "SYSADM"))
+        {
+            throw new UnauthorizedException("Only System Administrators are permitted to create article categories.");
+        }
+
+        if (string.IsNullOrWhiteSpace(dto.Name))
+            throw new BadRequestException("Category name is required.");
+
+        var trimmedName = dto.Name.Trim();
+        if (trimmedName.Length > 100)
+            throw new BadRequestException("Category name cannot exceed 100 characters.");
+
+        var exists = await _db.Categories.AnyAsync(c => 
+            (c.AppliesTo == "Article" || c.AppliesTo == "All") && 
+            c.Name.ToLower() == trimmedName.ToLower());
+
+        if (exists)
+            throw new ConflictException($"Category '{trimmedName}' already exists for articles.");
+
+        var category = new Category
+        {
+            Name = trimmedName,
+            AppliesTo = "Article"
+        };
+
+        _db.Categories.Add(category);
+        await _db.SaveChangesAsync();
+
+        return new CategoryDto
+        {
+            CategoryId = category.CategoryId,
+            Name = category.Name,
+            AppliesTo = category.AppliesTo
+        };
+    }
 }
+

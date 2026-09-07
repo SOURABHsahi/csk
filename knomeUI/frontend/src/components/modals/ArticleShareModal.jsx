@@ -2,9 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { interactionsApi, searchApi, communitiesApi, adminApi, resolveMediaUrl } from '../../utils/apiService';
 import { useUser } from '../contexts/UserContext';
+import { useToast } from '../contexts/ToastContext';
 
 export default function ArticleShareModal({ isOpen, onClose, article, post, item: propItem, contentType: propContentType, onShared }) {
     const { currentUser, users: contextUsers } = useUser();
+    const { addToast } = useToast();
     const [shareTab, setShareTab] = useState('menu'); // 'menu' | 'community' | 'users'
     const [searchQuery, setSearchQuery] = useState('');
     const [allPlatformUsers, setAllPlatformUsers] = useState([]);
@@ -206,11 +208,11 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
             } catch (e) {}
 
             if (onShared) onShared('community');
-            alert(`${contentTypeStr} successfully shared to community!`);
+            addToast(`${contentTypeStr} successfully shared to community!`, 'success');
             onClose();
         } catch (err) {
             console.error(`Failed to share ${contentTypeStr.toLowerCase()} to community`, err);
-            alert(`Failed to share ${contentTypeStr.toLowerCase()} to community. Please try again.`);
+            addToast(`Failed to share ${contentTypeStr.toLowerCase()} to community. Please try again.`, 'error');
         } finally {
             setIsSharing(false);
         }
@@ -256,11 +258,11 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
             }
 
             if (onShared) onShared('users', selectedUsers.length);
-            alert(`${contentTypeStr} successfully shared with ${selectedUsers.length} team member(s)!`);
+            addToast(`${contentTypeStr} successfully shared with ${selectedUsers.length} team member(s)!`, 'success');
             onClose();
         } catch (err) {
             console.error(`Failed to share ${contentTypeStr.toLowerCase()} with users`, err);
-            alert(`Failed to share ${contentTypeStr.toLowerCase()} with some users.`);
+            addToast(`Failed to share ${contentTypeStr.toLowerCase()} with some users.`, 'error');
         } finally {
             setIsSharing(false);
         }

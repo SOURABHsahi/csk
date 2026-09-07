@@ -183,7 +183,7 @@ public class NotificationService : INotificationService
         dto.Title = dto.EventType switch
         {
             Constants.NotificationTypes.Follower => "New Follower",
-            Constants.NotificationTypes.ConnectionRequest => "Follow Request",
+            Constants.NotificationTypes.ConnectionRequest => "Connection Request",
             Constants.NotificationTypes.Comment => "New Comment",
             Constants.NotificationTypes.CommunityJoin => "Community Access Approved",
             Constants.NotificationTypes.CommunityInvite => "Community Invitation",
@@ -217,7 +217,20 @@ public class NotificationService : INotificationService
             }
         }
 
-        if (!string.IsNullOrEmpty(dto.RelatedContentType) && dto.RelatedContentId.HasValue)
+        if (dto.EventType == Constants.NotificationTypes.ConnectionRequest)
+        {
+            if (dto.Message?.Contains("accepted", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                dto.Title = "Connection Accepted";
+                dto.TargetUrl = "/network?tab=Connections";
+            }
+            else
+            {
+                dto.Title = "Connection Request";
+                dto.TargetUrl = "/network?tab=Requests";
+            }
+        }
+        else if (!string.IsNullOrEmpty(dto.RelatedContentType) && dto.RelatedContentId.HasValue)
         {
             var type = dto.RelatedContentType.ToLower();
             var id = dto.RelatedContentId.Value;

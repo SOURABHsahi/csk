@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Knome.API.DTOs.Articles;
+using Knome.API.DTOs.Categories;
 using Knome.API.Exceptions;
 using Knome.API.Interfaces;
 using Knome.API.Responses;
@@ -81,4 +82,22 @@ public class ArticleController : KnomeControllerBase
         await _articleService.DeleteArticleAsync(articleId, GetCurrentUserId());
         return Ok(ApiResponse.SuccessResponse(200, "Article deleted successfully."));
     }
+
+    [HttpGet("categories")]
+    [ProducesResponseType(typeof(ApiResponse<List<CategoryDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetCategories()
+    {
+        var categories = await _articleService.GetArticleCategoriesAsync();
+        return Ok(ApiResponse<List<CategoryDto>>.SuccessResponse(200, "Article categories retrieved successfully.", categories));
+    }
+
+    [HttpPost("categories")]
+    [Authorize(Roles = Roles.SystemAdmin)]
+    [ProducesResponseType(typeof(ApiResponse<CategoryDto>), StatusCodes.Status201Created)]
+    public async Task<IActionResult> CreateCategory([FromBody] CreateCategoryDto dto)
+    {
+        var category = await _articleService.CreateArticleCategoryAsync(dto, GetCurrentUserId());
+        return StatusCode(StatusCodes.Status201Created, ApiResponse<CategoryDto>.SuccessResponse(201, "Category created successfully.", category));
+    }
 }
+

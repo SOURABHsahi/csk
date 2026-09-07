@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { resolveMediaUrl } from '../../utils/apiService';
 import { checkRestrictedContent } from '../../utils/restrictedWords';
+import { useToast } from '../contexts/ToastContext';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -36,6 +37,7 @@ function Avatar({ name, avatar, size = 9 }) {
 }
 
 function CommentInput({ currentUser, placeholder = 'Add a comment...', onSubmit, onCancel, autoFocus = false, initialValue = '' }) {
+    const { addToast } = useToast();
     const [value, setValue] = useState(initialValue);
     const [focused, setFocused] = useState(autoFocus);
     const ref = useRef(null);
@@ -46,7 +48,7 @@ function CommentInput({ currentUser, placeholder = 'Add a comment...', onSubmit,
         if (!value.trim()) return;
         const foundKeyword = checkRestrictedContent(value.trim());
         if (foundKeyword) {
-            alert(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}".`);
+            addToast(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}".`, 'warning');
             return;
         }
         onSubmit(value.trim());

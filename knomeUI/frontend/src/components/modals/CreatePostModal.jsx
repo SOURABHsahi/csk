@@ -114,19 +114,43 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Load Draft
-    useEffect(() => {
-        if (isOpen) {
-            const draft = localStorage.getItem('create_post_draft');
-            if (draft) {
-                try {
-                    const parsed = JSON.parse(draft);
-                    if (parsed.text) setText(parsed.text);
-                    if (parsed.audience) setAudience(parsed.audience);
-                } catch (e) {}
+    const resetForm = () => {
+        setText('');
+        attachments.forEach(a => {
+            if (a.url?.startsWith('blob:')) {
+                URL.revokeObjectURL(a.url);
             }
+        });
+        setAttachments([]);
+        setAudience('Everyone');
+        setSelectedCommunity(null);
+        setSelectedConnections([]);
+        setIsAudienceMenuOpen(false);
+        setAudienceSubView(null);
+        setAudienceSearch('');
+        setIsScheduling(false);
+        setScheduledTime('');
+        setShowMentionDropdown(false);
+        setShowHashtagDropdown(false);
+        setSecurityWarning(null);
+        setScanComplete(false);
+        try {
+            localStorage.removeItem('create_post_draft');
+        } catch (e) {}
+    };
+
+    // Reset all form state whenever modal is closed or active user changes, ensuring fresh blank state on new post
+    useEffect(() => {
+        if (!isOpen) {
+            resetForm();
         }
-    }, [isOpen]);
+    }, [isOpen, currentUser?.userId, currentUser?.id]);
+
+    const handleClose = () => {
+        if (isPublishing) return;
+        resetForm();
+        onClose();
+    };
 
     // Handle Text Change & Features
     const handleTextChange = (e) => {
@@ -266,13 +290,6 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
     };
 
     const handleSubmit = async (status = 'Published') => {
-        if (status === 'Draft') {
-            localStorage.setItem('create_post_draft', JSON.stringify({ text, audience }));
-            addToast('Draft saved locally.', 'success');
-            onClose();
-            return;
-        }
-
         const foundKeyword = checkRestrictedContent(text);
         if (foundKeyword) {
             setSecurityWarning(`Security Alert: Please don't use this word - "${foundKeyword}". It is restricted.`);
@@ -361,12 +378,10 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
             }
             
             // Success
-            localStorage.removeItem('create_post_draft');
+            resetForm();
             addToast(`Post ${status.toLowerCase()} successfully!`, 'success');
             window.dispatchEvent(new CustomEvent('post-created'));
             if (onPostCreated) onPostCreated();
-            
-            attachments.forEach(a => { if (a.url?.startsWith('blob:')) URL.revokeObjectURL(a.url); });
             onClose();
         } catch (error) {
             console.error('Failed to publish post', error);
@@ -385,21 +400,27 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
     const filteredHashtags = PREDEFINED_HASHTAGS.filter(h => h.toLowerCase().includes(hashtagFilter));
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div 
+            onClick={handleClose}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200"
+        >
+            <div 
+                onClick={(e) => e.stopPropagation()}
+                className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[88vh] my-auto animate-in fade-in zoom-in-95 duration-150"
+            >
                 
                 {/* Header */}
-                <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 z-10">
                     <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         <span className="material-symbols-outlined text-indigo-500">edit_square</span>
                         Create Post
                     </h2>
-                    <button onClick={onClose} disabled={isPublishing} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-full p-1 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50">
+                    <button onClick={handleClose} disabled={isPublishing} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-full p-1 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50">
                         <span className="material-symbols-outlined">close</span>
                     </button>
                 </div>
 
-                <div className="p-5 flex flex-col gap-4">
+                <div className="p-4 sm:p-5 flex flex-col gap-4 overflow-y-auto custom-scrollbar flex-1 min-h-0">
                     <div className="flex items-center gap-3">
                         {currentUser?.avatar ? (
                             <img src={currentUser.avatar} alt={currentUser.name} className="w-10 h-10 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shadow-md shrink-0" />
@@ -875,7 +896,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                 </div>
 
                 {/* Footer Tools & Actions */}
-                <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between rounded-b-2xl">
+                <div className="p-3 sm:p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 rounded-b-2xl">
                     <div className="flex items-center gap-1">
                         <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
                         <button onClick={() => triggerFileInput('image')} disabled={isPublishing} className="p-2 text-indigo-500 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg transition-colors group relative disabled:opacity-50">
@@ -910,10 +931,11 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                             return (
                                 <>
                                     <button 
-                                        onClick={() => handleSubmit('Draft')}
-                                        disabled={!text.trim() || securityWarning || isPublishing}
-                                        className="px-4 py-2 rounded-xl text-[13px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                                        Save Draft
+                                        type="button"
+                                        onClick={handleClose}
+                                        disabled={isPublishing}
+                                        className="px-4 py-2 rounded-xl text-[13px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50">
+                                        Cancel
                                     </button>
                                     <button 
                                         onClick={() => setIsScheduling(!isScheduling)}

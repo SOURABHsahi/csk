@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
+import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import { apiClient } from '../utils/apiClient';
 import { communitiesApi, mediaApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages } from '../utils/apiService';
 import { checkRestrictedContent } from '../utils/restrictedWords';
@@ -100,6 +101,7 @@ const ENTERPRISE_CHANNELS_SEED = {
 
 export default function CommunityView() {
     const { currentUser, users: contextUsers, awardRuleKarma } = useUser();
+    const confirm = useConfirm();
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -975,7 +977,7 @@ export default function CommunityView() {
         
         const foundKeyword = checkRestrictedContent(postText.trim());
         if (foundKeyword) {
-            alert(`Security Alert: Please don't use this word - "${foundKeyword}". It is restricted and your post cannot be published.`);
+            showToast(`Security Alert: Please don't use this word - "${foundKeyword}". It is restricted and your post cannot be published.`, 'warning');
             return;
         }
 
@@ -1018,11 +1020,18 @@ export default function CommunityView() {
             window.dispatchEvent(new CustomEvent('community-members-updated', { detail: { communityId: targetId } }));
             return updated;
         });
-        alert(`Member role updated to ${newRole}. All active users will see the updated role.`);
+        showToast(`Member role updated to ${newRole}. All active users will see the updated role.`, 'success');
     };
 
-    const handleRemoveMemberByAdmin = (memberId, memberName) => {
-        if (!window.confirm(`Are you sure you want to remove ${memberName} from this community?`)) return;
+    const handleRemoveMemberByAdmin = async (memberId, memberName) => {
+        const ok = await confirm({
+            title: 'Remove Member',
+            message: `Are you sure you want to remove ${memberName} from this community?`,
+            confirmText: 'Remove',
+            cancelText: 'Cancel',
+            variant: 'danger'
+        });
+        if (!ok) return;
         const targetId = communityId || community?.id || 101;
         setMembersList(prev => {
             const updated = prev.filter(m => String(m.userId || m.id) !== String(memberId));
@@ -1033,7 +1042,7 @@ export default function CommunityView() {
             return updated;
         });
         setCommunity(prev => ({ ...prev, membersCount: Math.max(1, (prev.membersCount || 1) - 1) }));
-        alert(`${memberName} has been removed from this community.`);
+        showToast(`${memberName} has been removed from this community.`, 'info');
     };
 
     const handleJoinAction = async () => {
@@ -1165,7 +1174,7 @@ export default function CommunityView() {
         if (!targetPost) return;
         const currentPinnedCount = posts.filter(p => p.isPinned).length;
         if (!targetPost.isPinned && currentPinnedCount >= 3) {
-            alert('Maximum 3 pinned posts allowed per community (FR-CM-06).');
+            showToast('Maximum 3 pinned posts allowed per community (FR-CM-06).', 'warning');
             return;
         }
         try {
@@ -1176,18 +1185,33 @@ export default function CommunityView() {
             }));
         } catch (err) {
             const errMsg = err?.response?.data?.message || err?.message || 'Failed to pin post. Maximum 3 pinned posts allowed.';
-            alert(errMsg);
+            showToast(errMsg, 'error');
         }
     };
 
-    const handleDelete = (postId) => {
-        if (window.confirm('Are you sure you want to delete this post?')) {
+    const handleDelete = async (postId) => {
+        const ok = await confirm({
+            title: 'Delete Post',
+            message: 'Are you sure you want to delete this post? This action cannot be undone.',
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            variant: 'danger'
+        });
+        if (ok) {
             setPosts(prev => prev.filter(p => p.id !== postId));
+            showToast('Post deleted successfully.', 'info');
         }
     };
 
-    const handleSuspend = (memberId, memberName) => {
-        if (!window.confirm(`Suspend ${memberName} from this community? They will lose access to post and view content.`)) return;
+    const handleSuspend = async (memberId, memberName) => {
+        const ok = await confirm({
+            title: 'Suspend Member',
+            message: `Suspend ${memberName} from this community? They will lose access to post and view content.`,
+            confirmText: 'Suspend',
+            cancelText: 'Cancel',
+            variant: 'warning'
+        });
+        if (!ok) return;
         const targetId = community?.id || communityId || 101;
         const memberToSuspend = membersList.find(m => String(m.userId || m.id) === String(memberId));
         if (!memberToSuspend) return;
@@ -1398,7 +1422,14 @@ export default function CommunityView() {
     const isSysAdmin = ['SYSADM', 'CADM'].includes(currentUser?.role) || ['System Administrator', 'HR Administrator', 'Community Administrator', 'System Admin'].includes(currentUser?.roleName);
 
     const handleDeleteCommunity = async () => {
-        if (!window.confirm(`Are you sure you want to delete/remove "${community?.name}"? This action cannot be undone.`)) {
+        const ok = await confirm({
+            title: 'Delete Community',
+            message: `Are you sure you want to delete/remove "${community?.name}"? This action cannot be undone.`,
+            confirmText: 'Delete Community',
+            cancelText: 'Cancel',
+            variant: 'danger'
+        });
+        if (!ok) {
             return;
         }
         try {
@@ -1406,14 +1437,14 @@ export default function CommunityView() {
             const customList = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
             const updatedCustom = customList.filter(c => String(c.id) !== String(communityId || community?.id));
             localStorage.setItem('knome_custom_communities', JSON.stringify(updatedCustom));
-            alert(`Community "${community?.name}" has been removed.`);
+            showToast(`Community "${community?.name}" has been removed.`, 'info');
             navigate('/community');
         } catch (err) {
             console.error('Failed to delete community:', err);
             const customList = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
             const updatedCustom = customList.filter(c => String(c.id) !== String(communityId || community?.id));
             localStorage.setItem('knome_custom_communities', JSON.stringify(updatedCustom));
-            alert(`Community "${community?.name}" has been removed.`);
+            showToast(`Community "${community?.name}" has been removed.`, 'info');
             navigate('/community');
         }
     };

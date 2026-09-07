@@ -190,7 +190,7 @@ export default function Posts() {
             </div>
 
             {/* Search & Modern Filter Bar (Clean & Professional) */}
-            <div className="glass bg-white dark:bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col gap-3.5 shadow-sm">
+            <div className={`glass bg-white dark:bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col gap-3.5 shadow-sm relative ${isFilterOpen ? 'z-40' : 'z-10'}`}>
                 <div className="flex items-center gap-3">
                     <div className="relative flex-1">
                         <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">search</span>
@@ -212,7 +212,7 @@ export default function Posts() {
                     </div>
 
                     {/* Filter Icon Button with Dropdown Popover */}
-                    <div className="relative" ref={filterRef}>
+                    <div className="relative z-50" ref={filterRef}>
                         <button
                             onClick={() => setIsFilterOpen(!isFilterOpen)}
                             className={`flex items-center gap-2 px-4 py-2.5 sm:py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-xs ${
@@ -231,7 +231,7 @@ export default function Posts() {
 
                         {/* Filter Popover Dropdown */}
                         {isFilterOpen && (
-                            <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-4 z-40 animate-in fade-in zoom-in-95 duration-150">
+                            <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-150">
                                 <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 mb-3">
                                     <div className="flex items-center gap-2">
                                         <span className="material-symbols-outlined text-[18px] text-indigo-500">tune</span>

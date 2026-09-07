@@ -51,7 +51,7 @@ public class InteractionController : KnomeControllerBase
     [ProducesResponseType(typeof(ApiResponse<List<CommentDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetComments(string contentType, long contentId)
     {
-        var comments = await _interactionService.GetContentCommentsAsync(contentType, contentId);
+        var comments = await _interactionService.GetContentCommentsAsync(contentType, contentId, GetCurrentUserId());
         return Ok(ApiResponse<List<CommentDto>>.SuccessResponse(200, "Comments retrieved successfully.", comments));
     }
 
@@ -85,6 +85,14 @@ public class InteractionController : KnomeControllerBase
     {
         var summary = await _interactionService.GetReactionsSummaryAsync(contentType, contentId, GetCurrentUserId());
         return Ok(ApiResponse<ReactionSummaryDto>.SuccessResponse(200, "Reactions summary retrieved successfully.", summary));
+    }
+
+    [HttpGet("{contentType}/{contentId}/reactions/list")]
+    [ProducesResponseType(typeof(ApiResponse<List<ReactionDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetReactionsList(string contentType, long contentId)
+    {
+        var list = await _interactionService.GetReactionsListAsync(contentType, contentId);
+        return Ok(ApiResponse<List<ReactionDto>>.SuccessResponse(200, "Reactions list retrieved successfully.", list));
     }
 
     [HttpPost("{contentType}/{contentId}/react")]

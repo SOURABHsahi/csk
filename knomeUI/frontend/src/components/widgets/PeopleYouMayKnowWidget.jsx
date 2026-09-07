@@ -1,10 +1,58 @@
 import React, { useState, useEffect } from 'react';
 import { useUser, users } from '../contexts/UserContext';
+import { userApi, resolveMediaUrl } from '../../utils/apiService';
+import { useNavigate } from 'react-router-dom';
+
+function getInitials(name) {
+    if (!name) return 'U';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+const AVATAR_GRADIENTS = [
+    'from-blue-600 to-indigo-600',
+    'from-indigo-600 to-purple-600',
+    'from-purple-600 to-pink-600',
+    'from-emerald-600 to-teal-600',
+    'from-cyan-600 to-blue-600',
+    'from-amber-600 to-rose-600'
+];
+
+function getAvatarGradient(name) {
+    let hash = 0;
+    const str = name || '';
+    for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
+}
+
+function UserAvatarBadge({ avatar, name, size = 'w-9 h-9', textSize = 'text-xs' }) {
+    const [imgFailed, setImgFailed] = useState(false);
+    const resolved = resolveMediaUrl(avatar);
+
+    if (!resolved || imgFailed) {
+        return (
+            <div 
+                className={`${size} rounded-full bg-gradient-to-tr ${getAvatarGradient(name)} text-white font-black ${textSize} flex items-center justify-center shrink-0 shadow-xs border-2 border-white dark:border-slate-800 tracking-tight uppercase select-none`}
+            >
+                {getInitials(name)}
+            </div>
+        );
+    }
+
+    return (
+        <img 
+            src={resolved} 
+            alt="" 
+            onError={() => setImgFailed(true)}
+            className={`${size} rounded-full object-cover shrink-0 border-2 border-white dark:border-slate-800 shadow-xs`} 
+        />
+    );
+}
 
 export default function PeopleYouMayKnowWidget() {
     const { currentUser } = useUser();
-    
-    // Map exported mock users, filter out current user, limit to 3
+    const navigate = useNavigate();
     const [people, setPeople] = useState([]);
 
     const loadStatus = () => {
@@ -13,30 +61,61 @@ export default function PeopleYouMayKnowWidget() {
         
         setPeople(prev => prev.map(p => ({
             ...p,
-            status: userRelations[p.id] || 'none'
+            status: userRelations[p.id] || p.status || 'none'
         })));
     };
 
     useEffect(() => {
-        if (currentUser) {
+        if (!currentUser) return;
+        let isMounted = true;
+
+        const loadPeople = async () => {
             const storedRelations = JSON.parse(localStorage.getItem('knome_user_relations') || '{}');
             const userRelations = storedRelations[currentUser.employeeId] || {};
 
-            const others = users
-                .filter(u => u.employeeId !== currentUser.employeeId)
+            try {
+                const res = await userApi.getSuggestions();
+                const list = Array.isArray(res) ? res : (res?.data || []);
+                const filtered = list
+                    .filter(u => String(u.id || u.userId) !== String(currentUser.userId || currentUser.id))
+                    .slice(0, 3)
+                    .map(u => ({
+                        id: u.employeeId || String(u.id || u.userId),
+                        userId: u.id || u.userId,
+                        name: u.name || u.fullName,
+                        role: u.role || u.designation || 'Employee',
+                        avatar: u.avatar || u.profilePhotoUrl,
+                        mutual: u.mutualConnections || (Math.floor(Math.random() * 5) + 1),
+                        status: userRelations[u.employeeId || String(u.id)] || 'none'
+                    }));
+
+                if (isMounted && filtered.length > 0) {
+                    setPeople(filtered);
+                    return;
+                }
+            } catch (e) {
+                // fallback to local roster
+            }
+
+            const fallback = users
+                .filter(u => u.employeeId !== currentUser.employeeId && u.isActive)
                 .slice(0, 3)
                 .map(u => ({
                     id: u.employeeId,
-                    name: u.name,
-                    role: u.designation,
+                    userId: u.id || u.userId,
+                    name: u.name || u.fullName,
+                    role: u.designation || 'Employee',
                     avatar: u.avatar,
-                    mutual: Math.floor(Math.random() * 10) + 1,
+                    mutual: Math.floor(Math.random() * 8) + 1,
                     status: userRelations[u.employeeId] || 'none'
                 }));
-            setPeople(others);
-        }
-    }, [currentUser]);
+            if (isMounted) setPeople(fallback);
+        };
 
+        loadPeople();
+
+        return () => { isMounted = false; };
+    }, [currentUser]);
 
     useEffect(() => {
         loadStatus();
@@ -60,8 +139,8 @@ export default function PeopleYouMayKnowWidget() {
         };
     }, [currentUser]);
 
-    const handleFollowClick = (person) => {
-        if (person.status !== 'none') return; // Cannot click if requested or following
+    const handleFollowClick = async (person) => {
+        if (person.status !== 'none') return;
 
         // Optimistic UI update
         const storedRelations = JSON.parse(localStorage.getItem('knome_user_relations') || '{}');
@@ -70,7 +149,16 @@ export default function PeopleYouMayKnowWidget() {
         localStorage.setItem('knome_user_relations', JSON.stringify(storedRelations));
         loadStatus();
 
-        // Dispatch follow request
+        // Send connection request via userApi if numeric userId is available
+        if (person.userId) {
+            try {
+                await userApi.connect(person.userId);
+            } catch (err) {
+                // silent
+            }
+        }
+
+        // Dispatch follow request for notifications
         window.dispatchEvent(new CustomEvent('follow-request', {
             detail: {
                 targetUserId: person.id,
@@ -81,7 +169,6 @@ export default function PeopleYouMayKnowWidget() {
         }));
     };
 
-    // Filter out the current user from the list
     const visiblePeople = people.filter(p => p.id !== currentUser?.employeeId).slice(0, 3);
 
     return (
@@ -94,10 +181,22 @@ export default function PeopleYouMayKnowWidget() {
             <div className="flex flex-col gap-3">
                 {visiblePeople.map(person => (
                     <div key={person.id} className="flex items-center gap-3">
-                        <img src={person.avatar} alt={person.name} className="w-9 h-9 rounded-full object-cover shrink-0 border-2 border-white dark:border-slate-800 shadow-sm" />
-                        <div className="flex-1 min-w-0">
-                            <p className="text-[13px] font-bold truncate" style={{color: 'var(--text-primary)'}}>{person.name}</p>
-                            <p className="text-[11px] truncate" style={{color: 'var(--text-muted)'}}>{person.role} · {person.mutual} mutual</p>
+                        <div 
+                            onClick={() => person.userId && navigate(`/profile/${person.userId}`)}
+                            className="cursor-pointer hover:scale-105 transition-transform shrink-0"
+                        >
+                            <UserAvatarBadge avatar={person.avatar} name={person.name} />
+                        </div>
+                        <div 
+                            onClick={() => person.userId && navigate(`/profile/${person.userId}`)}
+                            className="flex-1 min-w-0 cursor-pointer"
+                        >
+                            <p className="text-[13px] font-bold truncate hover:text-blue-500 transition-colors" style={{color: 'var(--text-primary)'}}>
+                                {person.name}
+                            </p>
+                            <p className="text-[11px] truncate" style={{color: 'var(--text-muted)'}}>
+                                {person.role} · {person.mutual} mutual
+                            </p>
                         </div>
                         <button 
                             onClick={() => handleFollowClick(person)}

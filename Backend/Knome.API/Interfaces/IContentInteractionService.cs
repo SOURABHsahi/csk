@@ -10,7 +10,7 @@ public interface IContentInteractionService
     Task<ContentValidationResultDto> ValidateContentSecurityAsync(string? text, string? url = null);
 
     // Comments
-    Task<List<CommentDto>> GetContentCommentsAsync(string contentType, long contentId);
+    Task<List<CommentDto>> GetContentCommentsAsync(string contentType, long contentId, int? currentUserId = null);
     Task<CommentDto> AddCommentAsync(string contentType, long contentId, int userId, CreateCommentDto dto);
     Task<CommentDto> UpdateCommentAsync(long commentId, int userId, UpdateCommentDto dto);
     Task DeleteCommentAsync(long commentId, int userId, bool isAdmin = false);
@@ -18,6 +18,7 @@ public interface IContentInteractionService
     // Reactions
     Task<(ReactionSummaryDto Summary, bool IsCreated)> ToggleReactionAsync(string contentType, long contentId, int userId, ToggleReactionDto dto);
     Task<ReactionSummaryDto> GetReactionsSummaryAsync(string contentType, long contentId, int currentUserId);
+    Task<List<ReactionDto>> GetReactionsListAsync(string contentType, long contentId);
 
     // Shares
     Task<ShareDto> ShareContentAsync(string contentType, long contentId, int userId, CreateShareDto dto);

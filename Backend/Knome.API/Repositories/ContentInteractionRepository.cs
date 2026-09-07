@@ -101,7 +101,9 @@ public class ContentInteractionRepository : IContentInteractionRepository
     public async Task<ReactionSummaryDto> GetReactionsSummaryAsync(string contentType, long contentId, int currentUserId)
     {
         var reactions = await _db.Reactions
+            .Include(r => r.User)
             .Where(r => r.ContentType == contentType && r.ContentId == contentId)
+            .OrderByDescending(r => r.CreatedDate)
             .ToListAsync();
 
         var summary = new ReactionSummaryDto
@@ -111,10 +113,32 @@ public class ContentInteractionRepository : IContentInteractionRepository
             CelebrateCount = reactions.Count(r => r.ReactionType == ReactionTypes.Celebrate),
             SupportCount = reactions.Count(r => r.ReactionType == ReactionTypes.Support),
             HeartCount = reactions.Count(r => r.ReactionType == ReactionTypes.Heart),
-            CurrentUserReactionType = reactions.FirstOrDefault(r => r.UserId == currentUserId)?.ReactionType
+            CurrentUserReactionType = reactions.FirstOrDefault(r => r.UserId == currentUserId)?.ReactionType,
+            TopReactionTypes = reactions.Select(r => r.ReactionType).Distinct().ToList(),
+            Reactions = reactions.Select(r => new ReactionDto
+            {
+                ReactionId = r.ReactionId,
+                ContentType = r.ContentType,
+                ContentId = r.ContentId,
+                UserId = r.UserId,
+                UserFullName = r.User != null ? (r.User.FullName ?? r.User.Email ?? "Colleague") : "Colleague",
+                UserDesignation = r.User?.Designation,
+                UserProfilePhotoUrl = r.User?.ProfilePhotoUrl,
+                ReactionType = r.ReactionType,
+                CreatedDate = r.CreatedDate
+            }).ToList()
         };
 
         return summary;
+    }
+
+    public async Task<List<Reaction>> GetReactionsAsync(string contentType, long contentId)
+    {
+        return await _db.Reactions
+            .Include(r => r.User)
+            .Where(r => r.ContentType == contentType && r.ContentId == contentId)
+            .OrderByDescending(r => r.CreatedDate)
+            .ToListAsync();
     }
 
     // --- Shares ---
@@ -448,6 +472,7 @@ public class ContentInteractionRepository : IContentInteractionRepository
             ContentTypes.Video => await _db.Videos.Where(v => v.VideoId == contentId).Select(v => (int?)v.UploaderUserId).FirstOrDefaultAsync(),
             ContentTypes.Podcast => await _db.Podcasts.Where(p => p.PodcastId == contentId).Select(p => (int?)p.UploaderUserId).FirstOrDefaultAsync(),
             ContentTypes.Job => await _db.Jobs.Where(j => j.JobId == (int)contentId).Select(j => (int?)j.PostedByUserId).FirstOrDefaultAsync(),
+            ContentTypes.Comment => await _db.Comments.Where(c => c.CommentId == contentId).Select(c => (int?)c.UserId).FirstOrDefaultAsync(),
             _ => null
         };
     }

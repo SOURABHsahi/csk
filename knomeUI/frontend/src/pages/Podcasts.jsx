@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import { useAudio } from '../components/contexts/AudioContext';
+import { useToast } from '../components/contexts/ToastContext';
+import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import UploadPodcastModal from '../components/modals/UploadPodcastModal';
 import SaveToCategoryModal from '../components/modals/SaveToCategoryModal';
 import ArticleShareModal from '../components/modals/ArticleShareModal';
@@ -140,6 +142,8 @@ export default function Podcasts() {
     const location = useLocation();
     const { currentUser } = useUser();
     const { playPodcast, currentPodcast, isPlaying } = useAudio();
+    const { addToast } = useToast();
+    const confirm = useConfirm();
     
     const [isUploadOpen, setIsUploadOpen] = useState(false);
     const [savingPodcastModal, setSavingPodcastModal] = useState(null);
@@ -294,7 +298,7 @@ export default function Podcasts() {
 
         const foundKeyword = checkRestrictedContent(text);
         if (foundKeyword) {
-            alert(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}". Comment cannot be posted.`);
+            addToast(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}". Comment cannot be posted.`, 'warning');
             return;
         }
 
@@ -336,7 +340,7 @@ export default function Podcasts() {
 
         const foundKeyword = checkRestrictedContent(text);
         if (foundKeyword) {
-            alert(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}". Reply cannot be posted.`);
+            addToast(`Security Alert: Please don't use this restricted or abusive word - "${foundKeyword}". Reply cannot be posted.`, 'warning');
             return;
         }
 
@@ -381,13 +385,21 @@ export default function Podcasts() {
     const isAdmin = currentUser?.role === 'SYSADM' || currentUser?.role === 'CADM' || currentUser?.role === 'HRADM';
 
     const handleDeletePodcast = async (podcastId) => {
-        if (!window.confirm('Are you sure you want to delete this podcast episode?')) return;
+        const ok = await confirm({
+            title: 'Delete Podcast',
+            message: 'Are you sure you want to delete this podcast episode? This action cannot be undone.',
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            variant: 'danger'
+        });
+        if (!ok) return;
         try {
             await podcastsApi.delete(podcastId);
+            addToast('Podcast deleted successfully.', 'success');
             fetchPodcastsData();
         } catch (error) {
             console.error('Failed to delete podcast:', error);
-            alert('Failed to delete podcast. ' + (error.message || ''));
+            addToast('Failed to delete podcast. ' + (error.message || ''), 'error');
         }
     };
 

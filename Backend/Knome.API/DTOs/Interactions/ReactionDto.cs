@@ -10,6 +10,7 @@ public class ReactionDto
     public long ContentId { get; set; }
     public int UserId { get; set; }
     public string UserFullName { get; set; } = null!;
+    public string? UserDesignation { get; set; }
     public string? UserProfilePhotoUrl { get; set; }
     public string ReactionType { get; set; } = null!;
     public DateTime CreatedDate { get; set; }
@@ -28,4 +29,6 @@ public class ReactionSummaryDto
     public long SupportCount { get; set; }
     public long HeartCount { get; set; }
     public string? CurrentUserReactionType { get; set; }
+    public List<string> TopReactionTypes { get; set; } = new();
+    public List<ReactionDto> Reactions { get; set; } = new();
 }

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import CreatePostModal from '../components/modals/CreatePostModal';
+import CreateArticleModal from '../components/modals/CreateArticleModal';
+import UploadVideoModal from '../components/modals/UploadVideoModal';
 import PostCard from '../components/widgets/PostCard';
 import HotPostsWidget from '../components/widgets/HotPostsWidget';
 import MyCommunitiesWidget from '../components/widgets/MyCommunitiesWidget';
@@ -16,6 +18,8 @@ export default function Dashboard() {
     const navigate = useNavigate();
     const { currentUser } = useUser();
     const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
+    const [isCreateArticleOpen, setIsCreateArticleOpen] = useState(false);
+    const [isUploadVideoOpen, setIsUploadVideoOpen] = useState(false);
     const [posts, setPosts] = useState([]);
     const [greeting, setGreeting] = useState('');
     const [isLoading, setIsLoading] = useState(true);
@@ -247,20 +251,20 @@ export default function Dashboard() {
                                 </div>
                             </div>
                             {/* Action Buttons */}
-                            <div className="flex items-center border-t px-4 py-2 gap-1" style={{borderColor: 'var(--border-subtle)'}}>
+                            <div className="flex items-center border-t px-4 py-2.5 gap-2" style={{borderColor: 'var(--border-subtle)'}}>
                                 {[
-                                    { icon: 'image', label: 'Photo', color: '#10b981' },
-                                    { icon: 'article', label: 'Article', color: '#8b5cf6' },
-                                    { icon: 'description', label: 'Document', color: '#3b82f6' },
-                                    { icon: 'emoji_emotions', label: 'Feeling', color: '#f59e0b' },
+                                    { icon: 'image', label: 'Post', color: '#10b981', action: () => setIsCreatePostOpen(true) },
+                                    { icon: 'article', label: 'Article', color: '#8b5cf6', action: () => setIsCreateArticleOpen(true) },
+                                    { icon: 'videocam', label: 'Videos', color: '#ef4444', action: () => setIsUploadVideoOpen(true) },
                                 ].map(btn => (
                                     <button
                                         key={btn.label}
-                                        onClick={() => setIsCreatePostOpen(true)}
-                                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-bold transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 flex-1 justify-center"
+                                        type="button"
+                                        onClick={btn.action}
+                                        className="flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] font-bold transition-all hover:bg-slate-100 dark:hover:bg-slate-800 flex-1 justify-center cursor-pointer group"
                                         style={{color: 'var(--text-secondary)'}}>
-                                        <span className="material-symbols-outlined text-[16px]" style={{color: btn.color}}>{btn.icon}</span>
-                                        <span className="hidden sm:inline">{btn.label}</span>
+                                        <span className="material-symbols-outlined text-[18px] transition-transform group-hover:scale-110" style={{color: btn.color}}>{btn.icon}</span>
+                                        <span className="font-bold">{btn.label}</span>
                                     </button>
                                 ))}
                             </div>
@@ -308,6 +312,8 @@ export default function Dashboard() {
             </div>
 
             <CreatePostModal isOpen={isCreatePostOpen} onClose={() => setIsCreatePostOpen(false)} onPostCreated={() => loadPosts(500)} />
+            <CreateArticleModal isOpen={isCreateArticleOpen} onClose={() => setIsCreateArticleOpen(false)} onArticleCreated={() => loadPosts(activeFilter)} />
+            <UploadVideoModal isOpen={isUploadVideoOpen} onClose={() => setIsUploadVideoOpen(false)} onVideoUploaded={() => loadPosts(activeFilter)} />
         </>
     );
 }

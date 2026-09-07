@@ -2,16 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useUser } from '../contexts/UserContext';
 
-const DEFAULT_JOINED = [
-    {
-        id: 3,
-        name: 'HR & Culture',
-        type: 'Default (Org)',
-        members: '5.4k',
-        description: 'Global announcements, HR policies, and discussions regarding workplace culture.',
-        banner: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600&h=300'
-    }
-];
+const DEFAULT_JOINED = [];
 
 export default function MyCommunitiesWidget() {
     const { currentUser } = useUser();

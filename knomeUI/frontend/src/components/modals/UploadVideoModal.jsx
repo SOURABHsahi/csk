@@ -1,11 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { apiClient } from '../../utils/apiClient';
 import { useUser } from '../contexts/UserContext';
-
+import { useToast } from '../contexts/ToastContext';
 import { checkRestrictedContent } from '../../utils/restrictedWords';
 
 export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
     const { currentUser } = useUser();
+    const { addToast } = useToast();
     const isCurrentUserAdmin = ['SYSADM', 'CADM', 'HRADM'].includes(currentUser?.role) ||
         ['System Administrator', 'HR Administrator', 'Community Administrator', 'System Admin'].includes(currentUser?.roleName);
 
@@ -103,7 +104,7 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
             // Validate Maximum Direct Upload File Size: 500MB (FR-VC-06)
             const maxMb = 500;
             if (file.size > maxMb * 1024 * 1024) {
-                alert(`File size (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds the maximum allowed limit of 500MB.`);
+                addToast(`File size (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds the maximum allowed limit of 500MB.`, 'warning');
                 e.target.value = '';
                 return;
             }
@@ -246,29 +247,29 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
 
     const handleUpload = async () => {
         if (!title.trim()) {
-            alert("Please enter a video title.");
+            addToast("Please enter a video title.", 'warning');
             return;
         }
 
         const textToScan = `${title} ${description} ${tagInput} ${tags.join(' ')}`;
         const foundKeyword = checkRestrictedContent(textToScan);
         if (foundKeyword) {
-            alert(`Video cannot be uploaded. It contains the restricted term: "${foundKeyword}".`);
+            addToast(`Video cannot be uploaded. It contains the restricted term: "${foundKeyword}".`, 'warning');
             return;
         }
 
         if (currentUser?.isActive === false) {
-            alert("Your account is currently suspended by System Administrator. You cannot upload videos for approval.");
+            addToast("Your account is currently suspended by System Administrator. You cannot upload videos for approval.", 'error');
             return;
         }
 
         if (sourceTab === 'direct' && !videoFile) {
-            alert("Please select a video file to upload.");
+            addToast("Please select a video file to upload.", 'warning');
             return;
         }
 
         if (sourceTab !== 'direct' && !sourceUrlInput.trim()) {
-            alert("Please enter the video URL.");
+            addToast("Please enter the video URL.", 'warning');
             return;
         }
 
@@ -329,7 +330,7 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
 
             if (isCurrentUserAdmin) {
                 await apiClient.post('/videos', dto);
-                alert("Video uploaded and published successfully!");
+                addToast("Video uploaded and published successfully!", 'success');
             } else {
                 const categoryLabel = category === '13' ? 'Training & Tutorials' : category === '14' ? 'Townhalls' : category === '15' ? 'Engineering Tech Talks' : 'Leadership Updates';
                 const pendingItem = {
@@ -371,7 +372,7 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                 const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
                 localStorage.setItem('knome_notifications', JSON.stringify([adminNotif, ...existingNotifs]));
 
-                alert(`Video "${title.trim()}" submitted successfully! It has been sent to the Admin for approval before going live.`);
+                addToast(`Video "${title.trim()}" submitted successfully! It has been sent to the Admin for approval before going live.`, 'success');
             }
             
             // Success
@@ -391,7 +392,7 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
             setSourceUrlInput('');
         } catch (error) {
             console.error("Video upload failed:", error);
-            alert("Failed to upload video: " + (error.message || "Please try again."));
+            addToast("Failed to upload video: " + (error.message || "Please try again."), 'error');
             setIsUploading(false);
         }
     };
