@@ -13,7 +13,7 @@ public interface IUserService
     Task<UserProfileDto> UpdateSkillsAsync(int userId, UpdateSkillsDto dto);
     Task<UserProfileDto> UpdateProfileImageAsync(int userId, IFormFile file);
 
-    // HR Administrator Operations
+    // HR / System Administrator Operations
     Task<PagedResultDto<UserSummaryDto>> GetPagedUsersAsync(UserFilterDto filter);
     Task<UserProfileDto> ChangeDepartmentAsync(int userId, ChangeDepartmentDto dto);
     Task<UserProfileDto> ChangeRolesAsync(int userId, ChangeRoleDto dto);
@@ -24,8 +24,8 @@ public interface IUserService
     Task FollowUserAsync(int followerUserId, int followingUserId);
     Task UnfollowUserAsync(int followerUserId, int followingUserId);
     Task<System.Collections.Generic.List<NetworkUserDto>> GetNetworkSuggestionsAsync(int userId, int limit = 10);
-    Task<System.Collections.Generic.List<NetworkUserDto>> GetFollowingAsync(int userId);
-    Task<System.Collections.Generic.List<NetworkUserDto>> GetFollowersAsync(int userId);
+    Task<System.Collections.Generic.List<NetworkUserDto>> GetFollowingAsync(int userId, int requestingUserId = 0);
+    Task<System.Collections.Generic.List<NetworkUserDto>> GetFollowersAsync(int userId, int requestingUserId = 0);
 
     // Connection Requests (FR-NT-01 Modified)
     Task SendConnectionRequestAsync(int senderId, int receiverId);
@@ -36,4 +36,11 @@ public interface IUserService
     Task<System.Collections.Generic.List<NetworkUserDto>> GetPendingReceivedRequestsAsync(int currentUserId);
     Task<System.Collections.Generic.List<NetworkUserDto>> GetPendingSentRequestsAsync(int currentUserId);
     Task<System.Collections.Generic.List<NetworkUserDto>> GetConnectionsAsync(int currentUserId, int targetUserId);
+
+    // Role Requests
+    Task<System.Collections.Generic.List<KnomeRoleRequestDto>> GetRoleRequestsAsync(string? status = null);
+    Task<bool> ApproveRoleRequestAsync(int actorUserId, int requestId, ApproveKnomeRoleRequestDto dto);
+    Task<bool> RejectRoleRequestAsync(int actorUserId, int requestId, RejectKnomeRoleRequestDto dto);
+    Task<bool> RegisterPendingRoleRequestAsync(string employeeId);
+    Task<RoleRequestStatusDto> GetRoleRequestStatusAsync(string employeeId);
 }

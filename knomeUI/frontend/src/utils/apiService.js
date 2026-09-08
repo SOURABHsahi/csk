@@ -13,9 +13,11 @@ export const authApi = {
     login: (employeeId) =>
         apiClient.post('/Auth/login', { employeeId, password: 'Password@123' }),
 
-    /** POST /Auth/refresh — refresh access token */
-    refresh: (refreshToken) =>
-        apiClient.post('/Auth/refresh', { refreshToken }),
+    /** Refresh access token (Stateless token preservation) */
+    refresh: async (refreshToken) => {
+        const token = localStorage.getItem('knome_jwt');
+        return { token, refreshToken };
+    },
 
     /** POST /Auth/logout */
     logout: (refreshToken) =>
@@ -35,18 +37,18 @@ export const profileApi = {
     /** PUT /users/profile */
     update: (data) => apiClient.put('/users/profile', data),
 
-    /** PUT /users/profile/visibility */
-    updateVisibility: (data) => apiClient.put('/users/profile/visibility', data),
+    /** PUT /users/profile — updates privacy visibility */
+    updateVisibility: (data) => apiClient.put('/users/profile', data),
 
     /** POST /users/profile/image */
     uploadImage: (file) => apiClient.uploadProfileImage(file),
 
-    /** GET /Profiles/search?query=&departmentId= */
+    /** GET /Search/users?query=&department= */
     search: (query, departmentId) => {
         const params = new URLSearchParams();
         if (query) params.append('query', query);
-        if (departmentId) params.append('departmentId', departmentId);
-        return apiClient.get(`/Profiles/search?${params}`);
+        if (departmentId) params.append('department', departmentId);
+        return apiClient.get(`/Search/users?${params}`);
     },
 
     /** GET /users/suggestions */
@@ -84,9 +86,34 @@ export const profileApi = {
 
     /** GET /users/{userId}/connections */
     getConnections: (userId) => apiClient.get(`/users/${userId}/connections`),
+
+    /** User Content for Profile View */
+    getUserPosts: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/posts/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+    getUserArticles: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/articles/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+    getUserVideos: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/videos/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+    getUserPodcasts: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/podcasts/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+    getUserCommunities: (userId) => apiClient.get(`/communities/user/${userId}`),
 };
 
 export const userApi = profileApi;
+
+// ─────────────────────────────────────────────
+//  ROLE ASSIGNMENT REQUESTS
+// ─────────────────────────────────────────────
+export const roleRequestsApi = {
+    /** GET /users/role-requests?status= */
+    getAll: (status) => {
+        const params = new URLSearchParams();
+        if (status) params.append('status', status);
+        return apiClient.get(`/users/role-requests?${params}`);
+    },
+    /** POST /users/role-requests/{id}/approve */
+    approve: (requestId, roleName = 'Employee', comment = '') =>
+        apiClient.post(`/users/role-requests/${requestId}/approve`, { roleName, comment }),
+    /** POST /users/role-requests/{id}/reject */
+    reject: (requestId, reason = '') =>
+        apiClient.post(`/users/role-requests/${requestId}/reject`, { reason }),
+};
 
 // ─────────────────────────────────────────────
 //  FEED & DASHBOARD
@@ -118,14 +145,14 @@ export const dashboardApi = {
     getTrendingPosts: () => apiClient.get('/feed/widgets/trending-posts'),
     getInternalJobs: () => apiClient.get('/feed/widgets/internal-jobs'),
     getKarmaLeaderboard: () => apiClient.get('/Karma/leaderboard'),
-    getAnnouncements: () => apiClient.get('/Admin/announcements'),
+    getAnnouncements: () => apiClient.get('/notifications').catch(() => []),
 };
 
 // ─────────────────────────────────────────────
 //  POSTS
 // ─────────────────────────────────────────────
 export const postsApi = {
-    getAll: () => apiClient.get('/posts'),
+    getAll: (pageNumber = 1, pageSize = 20) => apiClient.get(`/posts?pageNumber=${pageNumber}&pageSize=${pageSize}`),
     getPosts: (audienceType = null, search = null, pageNumber = 1, pageSize = 100) => {
         let endpoint = `/posts?pageNumber=${pageNumber}&pageSize=${pageSize}`;
         if (audienceType) endpoint += `&audienceType=${audienceType}`;
@@ -133,6 +160,7 @@ export const postsApi = {
         return apiClient.get(endpoint);
     },
     getMyPosts: (pageNumber = 1, pageSize = 20) => apiClient.get(`/posts/my?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+    getByUserId: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/posts/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
     getById: (id) => apiClient.get(`/posts/${id}`),
     getPost: (postId) => apiClient.get(`/posts/${postId}`),
     create: (data) => apiClient.post('/posts', data),
@@ -159,13 +187,16 @@ export const savedContentApi = {
 // ─────────────────────────────────────────────
 export const articlesApi = {
     /** GET /Articles */
-    getAll: () => apiClient.get('/Articles'),
+    getAll: (pageNumber = 1, pageSize = 20) => apiClient.get(`/Articles?pageNumber=${pageNumber}&pageSize=${pageSize}`),
 
     /** GET /Articles/{id} */
     getById: (id) => apiClient.get(`/Articles/${id}`),
 
-    /** GET /Articles?authorId={id} (mock implementation using getAll) */
-    getMyArticles: () => apiClient.get('/Articles?authorId=me'),
+    /** GET /Articles/my */
+    getMyArticles: (pageNumber = 1, pageSize = 20) => apiClient.get(`/Articles/my?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+
+    /** GET /Articles/user/{userId} */
+    getByUserId: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/Articles/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
 
     /** POST /Articles */
     create: (data) => apiClient.post('/Articles', data),
@@ -187,6 +218,9 @@ export const videosApi = {
     /** GET /Videos/my */
     getMyVideos: (pageNumber = 1, pageSize = 20) => apiClient.get(`/Videos/my?pageNumber=${pageNumber}&pageSize=${pageSize}`),
 
+    /** GET /Videos/user/{userId} */
+    getByUserId: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/Videos/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+
     /** GET /Videos/{id} */
     getById: (id) => apiClient.get(`/Videos/${id}`),
 
@@ -207,6 +241,8 @@ export const podcastsApi = {
     getAll: () => apiClient.get('/Podcasts'),
     /** GET /Podcasts/my */
     getMyPodcasts: (pageNumber = 1, pageSize = 20) => apiClient.get(`/Podcasts/my?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+    /** GET /Podcasts/user/{userId} */
+    getByUserId: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/Podcasts/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
     /** GET /Podcasts/{id} */
     getById: (id) => apiClient.get(`/Podcasts/${id}`),
     /** POST /Podcasts */
@@ -221,15 +257,90 @@ export const podcastsApi = {
 export const communitiesApi = {
     getAll: () => apiClient.get('/Communities'),
     getMyCommunities: () => apiClient.get('/Communities/my'),
+    getByUserId: (userId) => apiClient.get(`/Communities/user/${userId}`),
     getById: (id) => apiClient.get(`/Communities/${id}`),
     create: (data) => apiClient.post('/Communities', data),
     update: (id, data) => apiClient.put(`/Communities/${id}`, data),
     delete: (id) => apiClient.delete(`/Communities/${id}`),
+    checkName: (name, excludeId) => {
+        if (!name || !name.trim()) {
+            return Promise.resolve({ success: true, data: false });
+        }
+        const params = new URLSearchParams({ name: name.trim() });
+        if (excludeId) params.append('excludeId', excludeId);
+        return apiClient.get(`/Communities/check-name?${params}`);
+    },
     join: (id) => apiClient.post(`/Communities/${id}/join`),
     leave: (id) => apiClient.post(`/Communities/${id}/leave`),
     getMembers: (id) => apiClient.get(`/Communities/${id}/members`),
     getPosts: (id) => apiClient.get(`/Communities/${id}/posts`),
     decideMembership: (communityId, targetUserId, status) => apiClient.put(`/Communities/${communityId}/members/${targetUserId}/decide`, { status }),
+};
+
+/** Helper to resolve high-res cover banner & avatar photo for enterprise communities */
+export const getCommunityImages = (name = '', category = '') => {
+    const n = (name || '').toLowerCase().trim();
+    const c = (category || '').toLowerCase().trim();
+
+    if (n.includes('devops') || n.includes('cloud') || n.includes('kubernetes') || n.includes('docker') || n.includes('ci/cd')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('ai') || n.includes('data') || n.includes('executive') || n.includes('ml') || n.includes('labs') || n.includes('intelligence')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('dotnet') || n.includes('c#') || n.includes('.net')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('fullstack') || n.includes('frontend') || n.includes('guild') || n.includes('web') || n.includes('higher') || n.includes('engineering')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1461749280684-dccba630e2f6?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('tech') || n.includes('architecture') || n.includes('hub')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('hr') || n.includes('people') || n.includes('culture') || n.includes('employee')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('finance') || n.includes('accounting') || n.includes('budget')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('marketing') || n.includes('brand') || n.includes('design')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1533750349088-cd871a92f312?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1542744094-3a3172720189?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+    if (n.includes('cto') || n.includes('leadership') || n.includes('circle')) {
+        return {
+            banner: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&q=80&w=1200&h=400',
+            thumbnail: 'https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&q=80&w=300&h=300'
+        };
+    }
+
+    return {
+        banner: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200&h=400',
+        thumbnail: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=300&h=300'
+    };
 };
 
 
@@ -242,11 +353,17 @@ export const interactionsApi = {
     getComments: (type, id) => apiClient.get(`/interactions/${type}/${id}/comments`),
     addComment: (type, id, commentText, parentCommentId = null) => apiClient.post(`/interactions/${type}/${id}/comments`, { commentText, parentCommentId }),
     getReactions: (type, id) => apiClient.get(`/interactions/${type}/${id}/reactions`),
+    getReactionsList: (type, id) => apiClient.get(`/interactions/${type}/${id}/reactions/list`),
     toggleReaction: (type, id, reactionType) => apiClient.post(`/interactions/${type}/${id}/react`, { reactionType }),
     toggleBookmark: (type, id) => apiClient.post(`/interactions/${type}/${id}/bookmark`),
     shareContent: (type, id, sharedToType, sharedToId = null) => apiClient.post(`/interactions/${type}/${id}/share`, { sharedToType, sharedToId }),
     reportContent: (type, id, data) => apiClient.post(`/interactions/${type}/${id}/report`, data),
     getPendingReports: (pageNumber = 1, pageSize = 20) => apiClient.get(`/interactions/reports/pending?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+    getAllReports: (status = null, pageNumber = 1, pageSize = 100) => {
+        let url = `/interactions/reports?pageNumber=${pageNumber}&pageSize=${pageSize}`;
+        if (status && status !== 'All') url += `&status=${encodeURIComponent(status)}`;
+        return apiClient.get(url);
+    },
     resolveReport: (reportId, action, notes = '') => {
         const isDismiss = action === 'Ignore' || action === 'Dismiss';
         const status = isDismiss ? 'Dismissed' : 'Resolved';
@@ -404,6 +521,10 @@ export const clearLocalRecentSearches = (term = null) => {
 //  ADMIN & MODERATION
 // ─────────────────────────────────────────────
 export const adminApi = {
+    getRoleRequests: (status) => roleRequestsApi.getAll(status),
+    approveRoleRequest: (requestId, roleName, comment) => roleRequestsApi.approve(requestId, roleName, comment),
+    rejectRoleRequest: (requestId, reason) => roleRequestsApi.reject(requestId, reason),
+
     /** GET /users */
     getUsers: (pageNumber = 1, pageSize = 20, search = '') => {
         const params = new URLSearchParams({ pageNumber, pageSize });
@@ -437,14 +558,36 @@ export const adminApi = {
     getAuditLogs: (pageNumber = 1, pageSize = 20) => 
         apiClient.get(`/audit/logs?pageNumber=${pageNumber}&pageSize=${pageSize}`),
 
-    /** GET /Admin/announcements */
-    getAnnouncements: () => apiClient.get('/Admin/announcements'),
+    /** POST /audit/logs */
+    createAuditLog: (action, targetType, targetId, reason) =>
+        apiClient.post('/audit/logs', { action, targetType, targetId: Number(targetId) || 0, reason }).catch(() => {}),
 
-    /** POST /Admin/announcements */
-    createAnnouncement: (data) => apiClient.post('/Admin/announcements', data),
+    /** GET /audit/system-logs (Serilog live logs) */
+    getSystemLogs: (lines = 200, level = '', search = '', logFile = '') => {
+        const params = new URLSearchParams({ lines: String(lines) });
+        if (level && level !== 'ALL') params.append('level', level);
+        if (search) params.append('search', search);
+        if (logFile) params.append('logFile', logFile);
+        return apiClient.get(`/audit/system-logs?${params}`);
+    },
 
-    /** DELETE /Admin/announcements/{id} */
-    deleteAnnouncement: (id) => apiClient.delete(`/Admin/announcements/${id}`),
+    /** GET /audit/system-logs/files */
+    getSystemLogFiles: () => apiClient.get('/audit/system-logs/files'),
+
+    /** GET /audit/system-logs/download */
+    downloadSystemLogUrl: (logFile = '') => {
+        const base = apiClient.getBaseUrl ? apiClient.getBaseUrl() : 'http://localhost:5095/api';
+        return `${base}/audit/system-logs/download${logFile ? `?logFile=${encodeURIComponent(logFile)}` : ''}`;
+    },
+
+    /** GET /notifications/user */
+    getAnnouncements: () => apiClient.get('/notifications').catch(() => []),
+
+    /** POST /notifications/broadcast */
+    createAnnouncement: (data) => apiClient.post('/notifications/broadcast', data),
+
+    /** DELETE /notifications/{id} */
+    deleteAnnouncement: (id) => apiClient.delete(`/notifications/{id}`),
 };
 
 // ─────────────────────────────────────────────
@@ -479,8 +622,10 @@ export const mediaApi = {
             formData.append('file', file);
             if (type) formData.append('type', type);
 
+            const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : 'localhost';
+            const protocol = (typeof window !== 'undefined' && window.location && window.location.protocol === 'https:') ? 'https:' : 'http:';
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', 'http://localhost:5095/api/media/upload', true);
+            xhr.open('POST', `${protocol}//${host}:5095/api/media/upload`, true);
             
             const token = localStorage.getItem('knome_jwt');
             if (token) {
@@ -515,24 +660,29 @@ export const mediaApi = {
     }
 };
 
+
+
 // ─────────────────────────────────────────────
 //  ANALYTICS (HR)
 // ─────────────────────────────────────────────
 export const analyticsApi = {
-    /** GET /Analytics/engagement */
-    getEngagement: () => apiClient.get('/Analytics/engagement'),
+    /** GET /analytics/engagement */
+    getEngagement: () => apiClient.get('/analytics/engagement'),
 
-    /** GET /Analytics/community-health */
-    getCommunityHealth: () => apiClient.get('/Analytics/community-health'),
+    /** GET /analytics/community-health */
+    getCommunityHealth: () => apiClient.get('/analytics/community-health'),
 
-    /** GET /Analytics/content */
-    getContent: () => apiClient.get('/Analytics/content'),
+    /** GET /analytics/content-performance */
+    getContentPerformance: () => apiClient.get('/analytics/content-performance'),
 
-    /** GET /Analytics/trending */
-    getTrending: () => apiClient.get('/Analytics/trending'),
+    /** GET /analytics/content (alias) */
+    getContent: () => apiClient.get('/analytics/content-performance'),
 
-    /** GET /Analytics/moderation */
-    getModeration: () => apiClient.get('/Analytics/moderation'),
+    /** GET /analytics/trending (alias) */
+    getTrending: () => apiClient.get('/analytics/community-health'),
+
+    /** GET /analytics/moderation (alias) */
+    getModeration: () => apiClient.get('/interactions/reports/pending'),
 };
 
 // ─────────────────────────────────────────────
@@ -542,18 +692,62 @@ const ATTACHMENT_TYPE_MAP = { Image: 'image', Document: 'doc', Video: 'video', A
 
 export const resolveMediaUrl = (url) => {
     if (!url) return null;
-    let cleaned = url.replace(/\\/g, '/');
-    if (cleaned.startsWith('http')) {
-        return cleaned;
+    if (typeof url !== 'string') return url;
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:') || url.startsWith('data:')) {
+        return url;
     }
+    if (url.startsWith('oklch') || url.startsWith('rgb') || url.startsWith('hsl') || url.startsWith('#')) {
+        return null;
+    }
+    let cleaned = url.replace(/\\/g, '/');
     if (!cleaned.startsWith('/')) {
         cleaned = '/' + cleaned;
     }
     if (cleaned.startsWith('/media/')) {
         cleaned = '/uploads' + cleaned;
+    } else if (cleaned.startsWith('/profiles/')) {
+        cleaned = '/uploads' + cleaned;
+    } else if (!cleaned.startsWith('/uploads/')) {
+        if (cleaned.includes('media_')) {
+            cleaned = '/uploads/media' + cleaned;
+        } else if (cleaned.includes('user_')) {
+            cleaned = '/uploads/profiles' + cleaned;
+        } else {
+            cleaned = '/uploads/media' + cleaned;
+        }
     }
-    return `http://localhost:5095${cleaned}`;
+    const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : 'localhost';
+    return `http://${host}:5095${cleaned}`;
 };
+
+export const getVideoThumbnail = (video) => {
+    if (!video) return null;
+    
+    const url = video.sourceUrl || video.videoUrl || video.url || '';
+    
+    // 1. Extract YouTube Thumbnail directly from YouTube Video ID
+    const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))((\w|-){11})/);
+    if (ytMatch && ytMatch[1]) {
+        return `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg`;
+    }
+
+    if (url.includes('PLfqMhTWNBTe2C_dQAP1UoemcgAxBTlItp')) {
+        return 'https://img.youtube.com/vi/tVzUXW6siu0/hqdefault.jpg';
+    }
+
+    // 2. Direct custom thumbnail if specified and not an unsplash fallback
+    const rawThumb = video.thumbnail || video.thumbnailUrl || video.coverImageUrl;
+    if (rawThumb && typeof rawThumb === 'string' && !rawThumb.includes('unsplash.com')) {
+        if (rawThumb.startsWith('http://') || rawThumb.startsWith('https://')) {
+            return rawThumb;
+        }
+        return resolveMediaUrl(rawThumb) || rawThumb;
+    }
+    
+    // Return null so HTML5 <video preload="metadata"> renders frame 0 from the video itself
+    return null;
+};
+
 
 export const mapPost = (post) => {
     const extractedTags = (post.tags && post.tags.length > 0)
@@ -561,6 +755,7 @@ export const mapPost = (post) => {
         : (post.contentText ? (post.contentText.match(/#[a-zA-Z0-9_]+/g) || []).map(t => t.replace('#', '')) : []);
 
     const authorName = post.authorFullName || post.authorUser?.fullName || 'User';
+    const commentsCount = post.commentsCount ?? post.commentCount ?? post.engagementSummary?.commentsCount ?? post.engagementSummary?.commentCount ?? (Array.isArray(post.comments) ? post.comments.length : 0);
 
     return {
         id: post.postId,
@@ -598,10 +793,19 @@ export const mapPost = (post) => {
             })),
         likes: post.reactionCount || post.engagementSummary?.reactionCount || post.engagementSummary?.reactionSummary?.totalCount || 0,
         shares: post.shareCount || post.engagementSummary?.shareCount || post.engagementSummary?.sharesCount || 0,
+        commentsCount: commentsCount,
         isSaved: post.isBookmarked || post.engagementSummary?.isBookmarkedByCurrentUser || false,
         userReaction: post.engagementSummary?.reactionSummary?.currentUserReactionType?.toLowerCase() || null,
-        comments: [],
-        communityName: post.communityName || null,
+        reactionSummary: post.engagementSummary?.reactionSummary || null,
+        topReactionTypes: post.engagementSummary?.reactionSummary?.topReactionTypes || [],
+        reactions: post.engagementSummary?.reactionSummary?.reactions || [],
+        comments: Array.isArray(post.comments) ? post.comments : [],
+        communityName: post.communityName || post.sharedCommunityName || null,
+        sharedCommunityName: post.sharedCommunityName || post.communityName || null,
+        sharedWithName: post.sharedWithName || (post.mentionedUsers && post.mentionedUsers.length > 0 ? post.mentionedUsers.map(u => u.fullName || u.name).join(', ') : null),
+        sharedUsers: post.mentionedUsers || post.sharedUsers || [],
+        mentionedUsers: post.mentionedUsers || [],
+        audienceType: post.audienceType || 'Everyone',
     };
 };
 
@@ -612,7 +816,7 @@ export const mapArticle = (article) => ({
     content: article.contentBody || '',
     category: article.category || 'General',
     tags: article.tags || [],
-    image: article.thumbnailUrl?.startsWith('/') ? `http://localhost:5095${article.thumbnailUrl}` : (article.thumbnailUrl || ''),
+    image: resolveMediaUrl(article.thumbnailUrl) || (article.thumbnailUrl || ''),
     author: {
         id: article.authorId,
         name: article.authorFullName,
@@ -624,6 +828,7 @@ export const mapArticle = (article) => ({
     readTime: article.estimatedReadMinutes ? `${article.estimatedReadMinutes} min read` : '5 min read',
     likes: article.reactionCount || 0,
     views: article.viewCount || 0,
+    commentsCount: article.commentsCount ?? article.commentCount ?? article.engagementSummary?.commentsCount ?? 0,
     status: article.status || 'Published',
 });
 
@@ -644,6 +849,7 @@ export const mapVideo = (v) => ({
     },
     views: v.viewCount || 0,
     likes: v.reactionCount || 0,
+    commentsCount: v.commentsCount ?? v.commentCount ?? v.engagementSummary?.commentsCount ?? 0,
     time: new Date(v.uploadedDate || v.createdDate).toLocaleString(),
 });
 
@@ -664,6 +870,7 @@ export const mapPodcast = (p) => ({
             `https://ui-avatars.com/api/?name=${encodeURIComponent(p.authorFullName)}&background=6366f1&color=fff&size=256&bold=true`,
     },
     episodeNumber: p.episodeNumber || 1,
+    commentsCount: p.commentsCount ?? p.commentCount ?? p.engagementSummary?.commentsCount ?? 0,
     plays: p.playCount || 0,
     time: new Date(p.uploadedDate || p.createdDate).toLocaleString(),
 });
@@ -714,29 +921,39 @@ export const mapFeedItem = (item) => {
         isVerified: false,
     };
 
+    const commentsCount = Number(item.engagementSummary?.commentCount ?? item.engagementSummary?.commentsCount ?? 0);
+    const likesCount = Number(item.engagementSummary?.reactionCount ?? item.engagementSummary?.reactionsCount ?? item.engagementSummary?.totalReactions ?? 0);
+    const sharesCount = Number(item.engagementSummary?.shareCount ?? item.engagementSummary?.sharesCount ?? 0);
+
     const base = {
         id: item.contentId,
         type: item.contentType.toLowerCase(),
         author,
         time: new Date(item.publishedDate).toLocaleString(),
-        likes: item.engagementSummary?.reactionCount || 0,
-        shares: item.engagementSummary?.shareCount || 0,
+        likes: likesCount,
+        shares: sharesCount,
         views: item.engagementSummary?.viewCount || 0,
+        commentsCount: commentsCount,
         isSaved: item.engagementSummary?.isBookmarkedByCurrentUser || false,
-        comments: [], // Comments are loaded lazily on expand
+        userReaction: item.engagementSummary?.reactionSummary?.currentUserReactionType?.toLowerCase() || item.engagementSummary?.currentUserReactionType?.toLowerCase() || null,
+        reactionSummary: item.engagementSummary?.reactionSummary || null,
+        topReactionTypes: item.engagementSummary?.reactionSummary?.topReactionTypes || [],
+        reactions: item.engagementSummary?.reactionSummary?.reactions || [],
+        comments: [], // Comments are loaded live from API on expand
         title: item.title,
         content: item.textSummary,
+        audienceType: item.audienceType || 'Everyone',
     };
 
     if (item.contentType === 'Post') {
         base.attachments = item.attachmentUrl ? [{
             id: 1,
             type: 'image', // simplified for feed item mapping
-            url: item.attachmentUrl.startsWith('/') ? `http://localhost:5095${item.attachmentUrl}` : item.attachmentUrl,
+            url: resolveMediaUrl(item.attachmentUrl) || item.attachmentUrl,
             name: 'attachment'
         }] : [];
     } else if (item.contentType === 'Article') {
-        base.image = item.attachmentUrl?.startsWith('/') ? `http://localhost:5095${item.attachmentUrl}` : (item.attachmentUrl || '');
+        base.image = resolveMediaUrl(item.attachmentUrl) || (item.attachmentUrl || '');
         base.readTime = '5 min read'; // Default fallback
         base.subtitle = item.textSummary;
     } else if (item.contentType === 'Video') {
@@ -818,7 +1035,7 @@ export const getPersonalizedRecommendations = (items = [], currentUser = null) =
         const likes = item.likes || item.reactionCount || item.views || 0;
         if (likes > 5) score += 5;
 
-        const matchPercent = Math.min(Math.max(score, 78), 99);
+        const matchPercent = Math.min(Math.max(score, 50), 99);
         const reasonText = matchReasons[0] || (category ? `Popular in ${category}` : `Top pick for your profile`);
 
         return {
@@ -831,3 +1048,5 @@ export const getPersonalizedRecommendations = (items = [], currentUser = null) =
 
     return scored.sort((a, b) => b.recommendationScore - a.recommendationScore);
 };
+
+

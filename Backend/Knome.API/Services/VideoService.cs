@@ -59,12 +59,16 @@ public class VideoService : IVideoService
     public async Task<List<VideoDto>> GetVideosAsync(int? categoryId, string? tag, string? search, int pageNumber, int pageSize, int currentUserId)
     {
         var videos = await _repo.GetVideosAsync(categoryId, tag, search, pageNumber, pageSize);
-        var dtos = new List<VideoDto>();
+        var ids = videos.Select(v => (long)v.VideoId).ToList();
+        var summaries = ids.Count > 0
+            ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Video, ids, currentUserId)
+            : new Dictionary<long, Knome.API.DTOs.Interactions.ContentSummaryDto>();
 
+        var dtos = new List<VideoDto>();
         foreach (var v in videos)
         {
             var dto = _mapper.Map<VideoDto>(v);
-            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Video, v.VideoId, currentUserId);
+            dto.EngagementSummary = summaries.TryGetValue(v.VideoId, out var s) ? s : new Knome.API.DTOs.Interactions.ContentSummaryDto { ContentType = ContentTypes.Video, ContentId = v.VideoId };
             dtos.Add(dto);
         }
 
@@ -73,13 +77,22 @@ public class VideoService : IVideoService
 
     public async Task<List<VideoDto>> GetMyVideosAsync(int currentUserId, int pageNumber = 1, int pageSize = 20)
     {
-        var videos = await _repo.GetMyVideosAsync(currentUserId, pageNumber, pageSize);
-        var dtos = new List<VideoDto>();
+        return await GetUserVideosAsync(currentUserId, currentUserId, pageNumber, pageSize);
+    }
 
+    public async Task<List<VideoDto>> GetUserVideosAsync(int uploaderUserId, int currentUserId, int pageNumber = 1, int pageSize = 20)
+    {
+        var videos = await _repo.GetMyVideosAsync(uploaderUserId, pageNumber, pageSize);
+        var ids = videos.Select(v => (long)v.VideoId).ToList();
+        var summaries = ids.Count > 0
+            ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Video, ids, currentUserId)
+            : new Dictionary<long, Knome.API.DTOs.Interactions.ContentSummaryDto>();
+
+        var dtos = new List<VideoDto>();
         foreach (var v in videos)
         {
             var dto = _mapper.Map<VideoDto>(v);
-            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Video, v.VideoId, currentUserId);
+            dto.EngagementSummary = summaries.TryGetValue(v.VideoId, out var s) ? s : new Knome.API.DTOs.Interactions.ContentSummaryDto { ContentType = ContentTypes.Video, ContentId = v.VideoId };
             dtos.Add(dto);
         }
 
@@ -105,9 +118,19 @@ public class VideoService : IVideoService
                 throw new BadRequestException($"Category ID {dto.CategoryId.Value} does not exist.");
         }
 
+        int effectiveUploaderUserId = currentUserId;
+        if (dto.UploaderUserId.HasValue && dto.UploaderUserId.Value > 0)
+        {
+            var userExists = await _db.Users.AnyAsync(u => u.UserId == dto.UploaderUserId.Value);
+            if (userExists)
+            {
+                effectiveUploaderUserId = dto.UploaderUserId.Value;
+            }
+        }
+
         var video = new Video
         {
-            UploaderUserId = currentUserId,
+            UploaderUserId = effectiveUploaderUserId,
             Title = dto.Title,
             Description = dto.Description,
             CategoryId = dto.CategoryId,
@@ -120,7 +143,7 @@ public class VideoService : IVideoService
         };
 
         var saved = await _repo.AddVideoAsync(video, dto.Tags);
-        await _karmaService.AwardKarmaAsync(currentUserId, KarmaActivityTypes.CreateVideo, KarmaPoints.CreateVideoPoints, ContentTypes.Video, saved.VideoId, KarmaCaps.CreateVideoDailyCap);
+        await _karmaService.AwardKarmaAsync(effectiveUploaderUserId, KarmaActivityTypes.CreateVideo, KarmaPoints.CreateVideoPoints, ContentTypes.Video, saved.VideoId, KarmaCaps.CreateVideoDailyCap);
 
         var resDto = _mapper.Map<VideoDto>(saved);
         resDto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Video, saved.VideoId, currentUserId);

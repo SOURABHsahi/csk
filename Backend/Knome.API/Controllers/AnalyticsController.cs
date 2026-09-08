@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Knome.API.Constants;
 using Knome.API.Data;
 using Knome.API.Responses;
 using Microsoft.AspNetCore.Authorization;
@@ -16,7 +17,7 @@ namespace Knome.API.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[Authorize(Roles = "HR Administrator, System Administrator, Community Admin")]
+[Authorize(Roles = Roles.HRAdmin + "," + Roles.SystemAdmin + "," + Roles.CommunityAdmin)]
 public class AnalyticsController : KnomeControllerBase
 {
     private readonly KnomeDbContext _context;
@@ -33,7 +34,8 @@ public class AnalyticsController : KnomeControllerBase
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetEngagementMetrics()
     {
-        var totalUsers = await _context.Users.CountAsync(u => u.IsActive);
+        var totalUsers = await _context.Users.CountAsync();
+        var activeUsers = await _context.Users.CountAsync(u => u.IsActive && !u.IsPermanentlySuspended);
         var suspendedUsers = await _context.Users.CountAsync(u => !u.IsActive || u.IsPermanentlySuspended);
         
         var karmaStats = await _context.KarmaBalances
@@ -43,7 +45,7 @@ public class AnalyticsController : KnomeControllerBase
         var metrics = new
         {
             TotalUsers = totalUsers,
-            ActiveUsers = totalUsers - suspendedUsers,
+            ActiveUsers = activeUsers,
             SuspendedUsers = suspendedUsers,
             TotalKarmaDistributed = karmaStats.Sum(),
             AverageKarmaPerUser = karmaStats.Count > 0 ? (int)karmaStats.Average() : 0,

@@ -41,7 +41,7 @@ public class FeedService : IFeedService
             var posts = await _repo.GetCandidatePostsAsync(followedUserIds, myCommunityIds, currentUserId, 50);
             foreach (var p in posts)
             {
-                var item = new FeedItemDto
+                candidateItems.Add(new FeedItemDto
                 {
                     ContentType = ContentTypes.Post,
                     ContentId = p.PostId,
@@ -55,10 +55,7 @@ public class FeedService : IFeedService
                     AuthorProfilePhotoUrl = p.AuthorUser?.ProfilePhotoUrl,
                     PublishedDate = p.CreatedDate,
                     AudienceType = p.AudienceType
-                };
-                item.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Post, p.PostId, currentUserId);
-                item.HotScore = ComputeHotScore(item.EngagementSummary.EngagementScore, p.CreatedDate);
-                candidateItems.Add(item);
+                });
             }
         }
 
@@ -67,7 +64,7 @@ public class FeedService : IFeedService
             var articles = await _repo.GetCandidateArticlesAsync(followedUserIds, currentUserId, 50);
             foreach (var a in articles)
             {
-                var item = new FeedItemDto
+                candidateItems.Add(new FeedItemDto
                 {
                     ContentType = ContentTypes.Article,
                     ContentId = a.ArticleId,
@@ -81,10 +78,7 @@ public class FeedService : IFeedService
                     AuthorProfilePhotoUrl = a.AuthorUser?.ProfilePhotoUrl,
                     PublishedDate = a.PublishedDate ?? a.CreatedDate,
                     AudienceType = AudienceTypes.Everyone
-                };
-                item.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Article, a.ArticleId, currentUserId);
-                item.HotScore = ComputeHotScore(item.EngagementSummary.EngagementScore, item.PublishedDate);
-                candidateItems.Add(item);
+                });
             }
         }
 
@@ -93,7 +87,7 @@ public class FeedService : IFeedService
             var videos = await _repo.GetCandidateVideosAsync(followedUserIds, currentUserId, 30);
             foreach (var v in videos)
             {
-                var item = new FeedItemDto
+                candidateItems.Add(new FeedItemDto
                 {
                     ContentType = ContentTypes.Video,
                     ContentId = v.VideoId,
@@ -107,10 +101,7 @@ public class FeedService : IFeedService
                     AuthorProfilePhotoUrl = v.UploaderUser?.ProfilePhotoUrl,
                     PublishedDate = v.UploadedDate,
                     AudienceType = AudienceTypes.Everyone
-                };
-                item.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Video, v.VideoId, currentUserId);
-                item.HotScore = ComputeHotScore(item.EngagementSummary.EngagementScore, v.UploadedDate);
-                candidateItems.Add(item);
+                });
             }
         }
 
@@ -119,7 +110,7 @@ public class FeedService : IFeedService
             var podcasts = await _repo.GetCandidatePodcastsAsync(followedUserIds, currentUserId, 30);
             foreach (var p in podcasts)
             {
-                var item = new FeedItemDto
+                candidateItems.Add(new FeedItemDto
                 {
                     ContentType = ContentTypes.Podcast,
                     ContentId = p.PodcastId,
@@ -133,18 +124,43 @@ public class FeedService : IFeedService
                     AuthorProfilePhotoUrl = p.UploaderUser?.ProfilePhotoUrl,
                     PublishedDate = p.UploadedDate,
                     AudienceType = AudienceTypes.Everyone
-                };
-                item.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Podcast, p.PodcastId, currentUserId);
-                item.HotScore = ComputeHotScore(item.EngagementSummary.EngagementScore, p.UploadedDate);
-                candidateItems.Add(item);
+                });
             }
         }
 
+        // 1. Paginate first to only process requested page items
         var paged = candidateItems
             .OrderByDescending(x => x.PublishedDate)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .ToList();
+
+        // 2. Batch fetch engagement summaries for paged items only
+        var postIds = paged.Where(x => x.ContentType == ContentTypes.Post).Select(x => x.ContentId).ToList();
+        var articleIds = paged.Where(x => x.ContentType == ContentTypes.Article).Select(x => x.ContentId).ToList();
+        var videoIds = paged.Where(x => x.ContentType == ContentTypes.Video).Select(x => x.ContentId).ToList();
+        var podcastIds = paged.Where(x => x.ContentType == ContentTypes.Podcast).Select(x => x.ContentId).ToList();
+
+        var postSummaries = postIds.Count > 0 ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Post, postIds, currentUserId) : new();
+        var articleSummaries = articleIds.Count > 0 ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Article, articleIds, currentUserId) : new();
+        var videoSummaries = videoIds.Count > 0 ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Video, videoIds, currentUserId) : new();
+        var podcastSummaries = podcastIds.Count > 0 ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Podcast, podcastIds, currentUserId) : new();
+
+        foreach (var item in paged)
+        {
+            if (item.ContentType == ContentTypes.Post && postSummaries.TryGetValue(item.ContentId, out var s))
+                item.EngagementSummary = s;
+            else if (item.ContentType == ContentTypes.Article && articleSummaries.TryGetValue(item.ContentId, out s))
+                item.EngagementSummary = s;
+            else if (item.ContentType == ContentTypes.Video && videoSummaries.TryGetValue(item.ContentId, out s))
+                item.EngagementSummary = s;
+            else if (item.ContentType == ContentTypes.Podcast && podcastSummaries.TryGetValue(item.ContentId, out s))
+                item.EngagementSummary = s;
+            else
+                item.EngagementSummary = new Knome.API.DTOs.Interactions.ContentSummaryDto { ContentType = item.ContentType, ContentId = item.ContentId };
+
+            item.HotScore = ComputeHotScore(item.EngagementSummary.EngagementScore, item.PublishedDate);
+        }
 
         return paged;
     }

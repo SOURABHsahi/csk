@@ -20,6 +20,10 @@ public class UserProfile : Profile
 
         CreateMap<Models.User, UserSummaryDto>()
             .ForMember(dest => dest.DepartmentName, opt => opt.MapFrom(src => src.Department != null ? src.Department.Name : null))
-            .ForMember(dest => dest.Roles, opt => opt.MapFrom(src => src.Roles.Select(r => r.RoleName).ToList()));
+            .ForMember(dest => dest.Roles, opt => opt.MapFrom(src => src.Roles.Select(r => r.RoleName).ToList()))
+            .ForMember(dest => dest.KarmaPoints, opt => opt.MapFrom(src => src.KarmaBalance != null ? src.KarmaBalance.TotalPoints : 0))
+            .ForMember(dest => dest.KarmaBadgeLevel, opt => opt.MapFrom(src => src.KarmaBalance != null ? src.KarmaBalance.BadgeLevel : "Bronze"))
+            .ForMember(dest => dest.IsSuspended, opt => opt.MapFrom(src => src.IsPermanentlySuspended || (src.SuspendedUntil.HasValue && src.SuspendedUntil > System.DateTime.UtcNow)))
+            .ForMember(dest => dest.SuspendedUntil, opt => opt.MapFrom(src => src.SuspendedUntil));
     }
 }

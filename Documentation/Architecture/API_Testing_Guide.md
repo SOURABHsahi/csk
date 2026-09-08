@@ -2,7 +2,7 @@
 
 **Version**: `v1.2.1` (Production Ready - Patched & Hardened)  
 **Target Environment**: Local Development (`http://localhost:5095/swagger`)  
-**Architecture**: ASP.NET Core 9 Web API (`net9.0`) + Entity Framework Core (`Database-First`)  
+**Architecture**: ASP.NET Core 10 Web API (`net10.0`) + Entity Framework Core (`Database-First`)  
 
 ---
 

@@ -1,29 +1,64 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useUser } from '../components/contexts/UserContext';
 import { Link, useNavigate } from 'react-router-dom';
-import { getArticles, saveArticle, deleteArticle } from '../utils/articleService';
-import { savedContentApi, getPersonalizedRecommendations } from '../utils/apiService';
+import { getArticles, saveArticle, deleteArticle, getArticleCategories, createArticleCategory } from '../utils/articleService';
+import { savedContentApi, getPersonalizedRecommendations, resolveMediaUrl } from '../utils/apiService';
 import { apiClient } from '../utils/apiClient';
 import { checkRestrictedContent } from '../utils/restrictedWords';
 import ReportModal from '../components/modals/ReportModal';
+import SaveToCategoryModal from '../components/modals/SaveToCategoryModal';
+import ArticleShareModal from '../components/modals/ArticleShareModal';
+import { useToast } from '../components/contexts/ToastContext';
+import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 
 export default function Articles() {
     const { currentUser } = useUser();
     const navigate = useNavigate();
+    const { addToast } = useToast();
+    const confirm = useConfirm();
     
     // Page view mode: 'list' or 'create'
     const [viewMode, setViewMode] = useState('list');
     
-    const [allArticles, setAllArticles] = useState([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const [allArticles, setAllArticles] = useState(() => {
+        try {
+            const cached = sessionStorage.getItem('knome_cached_articles');
+            return cached ? JSON.parse(cached) : [];
+        } catch {
+            return [];
+        }
+    });
+    const [isLoading, setIsLoading] = useState(() => {
+        try {
+            const cached = sessionStorage.getItem('knome_cached_articles');
+            return !(cached && JSON.parse(cached).length > 0);
+        } catch {
+            return true;
+        }
+    });
     const [savedMap, setSavedMap] = useState({});
     const [reportingArticle, setReportingArticle] = useState(null);
+    const [savingArticleModal, setSavingArticleModal] = useState(null);
+    const [sharingArticleModal, setSharingArticleModal] = useState(null);
 
-    const loadData = async () => {
-        setIsLoading(true);
-        const data = await getArticles();
-        setAllArticles(data);
-        setIsLoading(false);
+    const loadData = async (forceFresh = false) => {
+        // Only trigger visible spinner if no articles are in cache
+        if (allArticles.length === 0) {
+            setIsLoading(true);
+        }
+        try {
+            const data = await getArticles(null, null, null, 1, 50, forceFresh);
+            if (Array.isArray(data) && data.length > 0) {
+                setAllArticles(data);
+                try {
+                    sessionStorage.setItem('knome_cached_articles', JSON.stringify(data));
+                } catch {}
+            }
+        } catch (err) {
+            console.error('Failed to load articles:', err);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     useEffect(() => {
@@ -34,9 +69,65 @@ export default function Articles() {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
     
+    const isSysAdmin = currentUser?.role === 'SYSADM' || 
+                       currentUser?.roleName === 'System Administrator' || 
+                       (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => ['SYSADM', 'System Administrator', 'SystemAdmin'].includes(r)));
+
+    // Dynamic Categories State
+    const [availableCategories, setAvailableCategories] = useState([
+        { categoryId: 1, name: 'Technology' },
+        { categoryId: 7, name: 'Engineering' },
+        { categoryId: 8, name: 'Design' },
+        { categoryId: 9, name: 'Product Management' },
+        { categoryId: 10, name: 'Company Culture' }
+    ]);
+    const [isAddingCategory, setIsAddingCategory] = useState(false);
+    const [newCategoryName, setNewCategoryName] = useState('');
+    const [isSavingCategory, setIsSavingCategory] = useState(false);
+
+    useEffect(() => {
+        getArticleCategories().then(cats => {
+            if (Array.isArray(cats) && cats.length > 0) {
+                setAvailableCategories(cats);
+            }
+        }).catch(err => {
+            console.warn("Failed to fetch article categories:", err);
+        });
+    }, []);
+
+    const handleCreateCategory = async (e) => {
+        e?.preventDefault();
+        if (!newCategoryName.trim()) {
+            addToast('Please enter a category name.', 'warning');
+            return;
+        }
+        setIsSavingCategory(true);
+        try {
+            const res = await createArticleCategory(newCategoryName.trim());
+            const created = res?.data || res;
+            if (created && created.categoryId) {
+                setAvailableCategories(prev => {
+                    if (prev.some(c => c.categoryId === created.categoryId)) return prev;
+                    return [...prev, created];
+                });
+                setCategory(String(created.categoryId));
+                setNewCategoryName('');
+                setIsAddingCategory(false);
+                addToast(`Category "${created.name}" created successfully! 🎉`, 'success');
+            }
+        } catch (err) {
+            console.error("Failed to add category:", err);
+            const msg = err.data?.message || err.message || 'Failed to add category.';
+            addToast(msg, 'error');
+        } finally {
+            setIsSavingCategory(false);
+        }
+    };
+
     // Editor State (FR-AB-01)
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
+    const [editorBodyText, setEditorBodyText] = useState('');
     const [category, setCategory] = useState('7'); // Default to Engineering ID
     
     // Tags State
@@ -57,6 +148,7 @@ export default function Articles() {
     
     const editorRef = useRef(null);
     const fileInputRef = useRef(null);
+    const editorImageInputRef = useRef(null);
     const [currentUploadType, setCurrentUploadType] = useState(null);
     const [isUploadingMedia, setIsUploadingMedia] = useState(false);
 
@@ -76,7 +168,7 @@ export default function Articles() {
 
     const addAttachment = (type) => {
         if (attachments.length >= 4) {
-            alert('Maximum 4 attachments allowed.');
+            addToast('Maximum 4 attachments allowed.', 'warning');
             return;
         }
         setCurrentUploadType(type);
@@ -124,7 +216,7 @@ export default function Articles() {
             } catch (error) {
                 console.error('File upload failed', error);
                 setAttachments(prev => prev.filter(att => att.id !== tempId));
-                alert('File upload failed. Please try again.');
+                addToast('File upload failed. Please try again.', 'error');
             } finally {
                 setIsUploadingMedia(false);
                 if (fileInputRef.current) {
@@ -138,44 +230,200 @@ export default function Articles() {
     const removeAttachment = (id) => {
         setAttachments(prev => {
             const att = prev.find(a => a.id === id);
-            if (att?.url?.startsWith('blob:')) URL.revokeObjectURL(att.url);
+            if (att?.url?.startsWith('blob:')) {
+                setTimeout(() => {
+                    try { URL.revokeObjectURL(att.url); } catch (e) {}
+                }, 3000);
+            }
             return prev.filter(a => a.id !== id);
         });
+    };
+
+    const updateActiveFormats = () => {
+        try {
+            const block = (document.queryCommandValue('formatBlock') || '').toLowerCase();
+            setActiveFormats({
+                bold: document.queryCommandState('bold'),
+                italic: document.queryCommandState('italic'),
+                underline: document.queryCommandState('underline'),
+                list: document.queryCommandState('insertUnorderedList'),
+                numlist: document.queryCommandState('insertOrderedList'),
+                heading: block === 'h2' || block === 'h1' || block === 'h3',
+                quote: block === 'blockquote'
+            });
+        } catch (e) {}
     };
 
     const toggleFormat = (format) => {
         editorRef.current?.focus();
         
-        let command = format;
-        let value = null;
-        
-        if (format === 'list') command = 'insertUnorderedList';
-        else if (format === 'numlist') command = 'insertOrderedList';
-        else if (format === 'heading') {
-            command = 'formatBlock';
-            value = 'H2';
-        } else if (format === 'quote') {
-            command = 'formatBlock';
-            value = 'BLOCKQUOTE';
+        // Ensure a valid block exists if editor is empty or pristine
+        if (!editorRef.current?.innerHTML?.trim() || editorRef.current?.innerHTML?.includes('Start writing your long-form article here')) {
+            editorRef.current.innerHTML = '<p><br></p>';
+            const range = document.createRange();
+            const sel = window.getSelection();
+            if (editorRef.current.firstChild) {
+                range.setStart(editorRef.current.firstChild, 0);
+                range.collapse(true);
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
         }
         
-        document.execCommand(command, false, value);
-        setActiveFormats({ ...activeFormats, [format]: !activeFormats[format] });
+        if (format === 'bold') {
+            document.execCommand('bold', false, null);
+        } else if (format === 'italic') {
+            document.execCommand('italic', false, null);
+        } else if (format === 'underline') {
+            document.execCommand('underline', false, null);
+        } else if (format === 'heading') {
+            const block = (document.queryCommandValue('formatBlock') || '').toLowerCase();
+            const isH2 = block.includes('h2');
+            try {
+                document.execCommand('formatBlock', false, isH2 ? '<p>' : '<h2>');
+            } catch (e) {
+                document.execCommand('formatBlock', false, isH2 ? 'p' : 'h2');
+            }
+        } else if (format === 'list') {
+            document.execCommand('insertUnorderedList', false, null);
+        } else if (format === 'numlist') {
+            document.execCommand('insertOrderedList', false, null);
+        } else if (format === 'quote') {
+            const block = (document.queryCommandValue('formatBlock') || '').toLowerCase();
+            const isQuote = block.includes('blockquote');
+            if (isQuote) {
+                try {
+                    document.execCommand('formatBlock', false, '<p>');
+                } catch (e) {
+                    document.execCommand('formatBlock', false, 'p');
+                }
+            } else {
+                try {
+                    document.execCommand('formatBlock', false, '<blockquote>');
+                } catch (e) {
+                    document.execCommand('formatBlock', false, 'blockquote');
+                }
+            }
+        } else if (format === 'link') {
+            const selection = window.getSelection();
+            const selectedText = selection ? selection.toString() : '';
+            const url = window.prompt('Enter website or reference URL (e.g. https://example.com):', 'https://');
+            if (url && url.trim() && url.trim() !== 'https://') {
+                if (selectedText) {
+                    document.execCommand('createLink', false, url.trim());
+                } else {
+                    const linkText = window.prompt('Enter link text to display:', url.trim()) || url.trim();
+                    const linkHtml = `<a href="${url.trim()}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 underline font-semibold hover:text-blue-700">${linkText}</a>&nbsp;`;
+                    document.execCommand('insertHTML', false, linkHtml);
+                }
+            }
+        } else if (format === 'image') {
+            const imgUrl = window.prompt('Enter Image URL (or leave blank to select an image from your computer):');
+            if (imgUrl && imgUrl.trim()) {
+                const imgHtml = `<figure class="my-4"><img src="${imgUrl.trim()}" alt="Article illustration" class="rounded-2xl max-w-full h-auto shadow-md border border-slate-200 dark:border-slate-800" /><figcaption class="text-xs text-slate-400 mt-1.5 text-center italic">Image caption</figcaption></figure><p><br></p>`;
+                document.execCommand('insertHTML', false, imgHtml);
+            } else if (imgUrl === '') {
+                editorImageInputRef.current?.click();
+            }
+        } else if (format === 'table') {
+            const rowsInput = window.prompt('Enter number of table rows:', '3');
+            if (rowsInput === null) return;
+            const colsInput = window.prompt('Enter number of table columns:', '3');
+            if (colsInput === null) return;
+            const rows = Math.min(Math.max(parseInt(rowsInput) || 3, 1), 12);
+            const cols = Math.min(Math.max(parseInt(colsInput) || 3, 1), 8);
+
+            let tableHtml = '<div class="overflow-x-auto my-6"><table class="w-full border-collapse border border-slate-300 dark:border-slate-700 rounded-xl text-sm overflow-hidden shadow-sm"><thead><tr class="bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold">';
+            for (let c = 1; c <= cols; c++) {
+                tableHtml += `<th class="border border-slate-300 dark:border-slate-700 p-2.5 text-left">Header ${c}</th>`;
+            }
+            tableHtml += '</tr></thead><tbody>';
+            for (let r = 1; r <= rows; r++) {
+                tableHtml += '<tr class="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">';
+                for (let c = 1; c <= cols; c++) {
+                    tableHtml += `<td class="border border-slate-300 dark:border-slate-700 p-2.5 text-slate-700 dark:text-slate-300">Data ${r}.${c}</td>`;
+                }
+                tableHtml += '</tr>';
+            }
+            tableHtml += '</tbody></table></div><p><br></p>';
+            document.execCommand('insertHTML', false, tableHtml);
+        } else if (format === 'code') {
+            const selection = window.getSelection();
+            const selectedText = selection ? selection.toString() : '';
+            if (selectedText && !selectedText.includes('\n')) {
+                const isCode = selection.anchorNode?.parentElement?.tagName === 'CODE';
+                if (isCode) {
+                    document.execCommand('removeFormat', false, null);
+                } else {
+                    document.execCommand('insertHTML', false, `<code class="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-rose-500 font-mono text-xs rounded border border-slate-200 dark:border-slate-700 font-medium">${selectedText}</code>`);
+                }
+            } else {
+                const codeSnippet = selectedText || '// Enter your code snippet here\nfunction calculateMetrics() {\n  return { uptime: "99.99%", latencyMs: 14 };\n}';
+                const escapedCode = codeSnippet.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const blockHtml = `<pre class="my-4 p-4 rounded-xl bg-slate-900 text-emerald-400 font-mono text-xs overflow-x-auto border border-slate-800 shadow-inner"><code>${escapedCode}</code></pre><p><br></p>`;
+                document.execCommand('insertHTML', false, blockHtml);
+            }
+        }
+        
+        updateActiveFormats();
+    };
+
+    const handleEditorImageUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        editorRef.current?.focus();
+        try {
+            const result = await apiClient.uploadFile('/Media/upload', file, 'image');
+            const resolvedUrl = resolveMediaUrl(result.url || result.data?.url);
+            const imgHtml = `<figure class="my-4"><img src="${resolvedUrl}" alt="${file.name}" class="rounded-2xl max-w-full h-auto shadow-md border border-slate-200 dark:border-slate-800" /><figcaption class="text-xs text-slate-400 mt-1.5 text-center italic">${file.name}</figcaption></figure><p><br></p>`;
+            document.execCommand('insertHTML', false, imgHtml);
+        } catch (err) {
+            console.error('Editor image upload failed', err);
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const imgHtml = `<figure class="my-4"><img src="${ev.target.result}" alt="${file.name}" class="rounded-2xl max-w-full h-auto shadow-md border border-slate-200 dark:border-slate-800" /><figcaption class="text-xs text-slate-400 mt-1.5 text-center italic">${file.name}</figcaption></figure><p><br></p>`;
+                document.execCommand('insertHTML', false, imgHtml);
+            };
+            reader.readAsDataURL(file);
+        } finally {
+            if (editorImageInputRef.current) editorImageInputRef.current.value = '';
+        }
     };
 
     const handlePublish = async () => {
         if (isUploadingMedia) {
-            alert('Please wait for media to finish uploading.');
+            addToast('Please wait for media to finish uploading.', 'warning');
             return;
         }
 
-        const editorText = editorRef.current ? editorRef.current.innerText : '';
-        const editorHtml = editorRef.current ? editorRef.current.innerHTML : '';
+        if (!title.trim()) {
+            addToast('Please enter an article title before publishing.', 'warning');
+            const titleInput = document.getElementById('article-title-input');
+            if (titleInput) titleInput.focus();
+            return;
+        }
+
+        const editorText = editorRef.current ? (editorRef.current.innerText || '').trim() : '';
+        const editorHtml = editorRef.current ? (editorRef.current.innerHTML || '').trim() : '';
+
+        let cleanHtml = (editorHtml || '')
+            .replace(/<p class="opacity-50">Start writing your long-form article here\.{0,3}<\/p>/gi, '')
+            .replace(/Start writing your long-form article here\.{0,3}/gi, '')
+            .replace(/class="[^"]*opacity-50[^"]*"/gi, '');
+
+        // Check if there is actual content
+        const hasContent = editorText.length > 0 || cleanHtml.includes('<img') || cleanHtml.includes('<table');
+        if (!hasContent) {
+            addToast('Please write some content for your article before publishing.', 'warning');
+            editorRef.current?.focus();
+            return;
+        }
+
         const fullContent = `${title} ${description} ${editorText}`;
-        
         const foundKeyword = checkRestrictedContent(fullContent);
         if (foundKeyword) {
-            alert(`Security Alert: Please don't use this word - "${foundKeyword}". It is restricted and your article cannot be published.`);
+            addToast(`Security Alert: Please don't use this word - "${foundKeyword}". It is restricted and your article cannot be published.`, 'warning');
             return;
         }
         
@@ -188,11 +436,13 @@ export default function Articles() {
         }
 
         const resolvedAttachments = attachments.map(a => a.backendUrl || a.url).filter(url => !url.startsWith('blob:'));
-        
+
+        const finalContentHtml = cleanHtml.trim() || `<p>${editorText}</p>`;
+
         const dto = {
             title: title.trim(),
             description: description.trim() || null,
-            contentHtml: editorHtml,
+            contentHtml: finalContentHtml,
             categoryId: parseInt(category) || 7,
             status: "Published",
             tags: finalTags,
@@ -201,7 +451,13 @@ export default function Articles() {
         
         try {
             await saveArticle(dto);
-            await loadData();
+
+            // Invalidate cached articles so fresh list is displayed
+            try {
+                sessionStorage.removeItem('knome_cached_articles');
+            } catch {}
+
+            await loadData(true);
             
             setShowToast(true);
             
@@ -213,13 +469,17 @@ export default function Articles() {
             setTagInput('');
             setAttachments([]);
             if (editorRef.current) {
-                editorRef.current.innerHTML = '<p class="opacity-50">Start writing your long-form article here...</p>';
+                editorRef.current.innerHTML = '';
             }
             
             setTimeout(() => setShowToast(false), 5000); // hide toast after 5s
             setViewMode('list'); // Switch back to listing
         } catch (e) {
-            alert('Failed to publish article: ' + (e.message || 'Please try again.'));
+            console.error('Failed to publish article:', e);
+            const errorMsg = e.data?.errors 
+                ? Object.values(e.data.errors).flat().join(' ') 
+                : (e.data?.message || e.message || 'Failed to publish article. Please try again.');
+            addToast('Failed to publish article: ' + errorMsg, 'error');
         } finally {
             setIsPublishing(false);
         }
@@ -244,7 +504,11 @@ export default function Articles() {
         ? getPersonalizedRecommendations(rawFiltered, currentUser)
         : rawFiltered;
 
-    const categories = ['All', '✨ Recommended', 'Design', 'Product Management', 'Engineering', 'Company Culture'];
+    const categories = [
+        'All', 
+        '✨ Recommended', 
+        ...availableCategories.map(c => c.name).filter(n => n && !['All', '✨ Recommended'].includes(n))
+    ];
 
     return (
         <>
@@ -264,8 +528,7 @@ export default function Articles() {
                                 onClick={() => setViewMode('create')}
                                 className="px-6 py-2.5 text-xs font-black text-white rounded-xl transition-all hover:-translate-y-0.5 flex items-center gap-2"
                                 style={{
-                                    background: 'linear-gradient(135deg, var(--theme-10), #1D4ED8)',
-                                    boxShadow: '0 4px 14px rgba(79,70,229,0.35)'
+                                    background: 'linear-gradient(135deg, #4f46e5 0%, #2563eb 100%)',
                                 }}
                             >
                                 <span className="material-symbols-outlined text-[16px]">edit_document</span>
@@ -273,22 +536,27 @@ export default function Articles() {
                             </button>
                         </div>
 
-                        {/* Title: Connect (Light) + the World (Heavy) -> Share Knowledge */}
-                        <h1 className="text-[52px] sm:text-[64px] leading-tight tracking-tight text-slate-800 dark:text-slate-100 flex flex-col sm:flex-row items-center gap-2 sm:gap-4 mb-2">
-                            <span className="font-light">Share</span>
-                            <span className="font-black">Knowledge</span>
-                        </h1>
-
-                        {/* Gradient Divider Line */}
-                        <div className="w-full max-w-3xl h-1.5 rounded-full mb-6" style={{ background: 'linear-gradient(90deg, #1e293b 0%, rgba(30,41,59,0.8) 40%, rgba(30,41,59,0.1) 100%)' }}></div>
-
-                        {/* Subtitle with Inline Pills */}
-                        <div className="text-[17px] font-medium text-theme-30-text mb-4 max-w-2xl leading-relaxed">
-                            Experience collaborative learning with our <span className="inline-flex items-center px-3 py-1 bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg mx-1 text-[15px] font-bold shadow-sm">expert community</span> <span className="inline-flex items-center px-3 py-1 bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg mx-1 text-[15px] font-bold shadow-sm">platform</span>
+                        {/* Refined Category Badge */}
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200/80 dark:border-indigo-800/80 text-indigo-600 dark:text-indigo-400 text-xs font-extrabold uppercase tracking-wider mb-3 shadow-xs">
+                            <span className="material-symbols-outlined text-[14px]">auto_stories</span>
+                            Knowledge Hub & Publications
                         </div>
 
+                        {/* Title: Formal & Catchy (No Underline) */}
+                        <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight text-slate-900 dark:text-white flex flex-wrap items-center justify-center gap-2 sm:gap-3.5 mb-3 leading-tight">
+                            <span className="text-slate-800 dark:text-slate-200 font-extrabold">Share</span>
+                            <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 bg-clip-text text-transparent drop-shadow-xs">
+                                Knowledge
+                            </span>
+                        </h1>
+
+                        {/* Subtitle with Integrated Text Flow */}
+                        <p className="text-base sm:text-lg text-slate-600 dark:text-slate-300 font-medium max-w-2xl leading-relaxed mb-1">
+                            Experience collaborative learning with our <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 dark:from-indigo-400 dark:via-blue-400 dark:to-cyan-400">expert community platform</span>
+                        </p>
+
                         {/* Small Description */}
-                        <p className="text-[14px] text-theme-30-text font-normal max-w-xl opacity-80">
+                        <p className="text-xs sm:text-sm text-slate-400 dark:text-slate-500 font-normal max-w-xl">
                             Discover deep insights, track trending topics, and scale your expertise across the organization with unprecedented reliability.
                         </p>
 
@@ -380,30 +648,39 @@ export default function Articles() {
                                             <div className="absolute top-4 left-4 bg-slate-900/80 backdrop-blur-sm text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
                                                 {art.category}
                                             </div>
-                                            {/* Save Bookmark Button */}
-                                            <button
-                                                onClick={async (e) => {
-                                                    e.stopPropagation();
-                                                    const articleId = art.id;
-                                                    const currentlySaved = !!savedMap[articleId];
-                                                    setSavedMap(prev => ({ ...prev, [articleId]: !currentlySaved }));
-                                                    try {
-                                                        await savedContentApi.toggleBookmark('Article', articleId);
-                                                    } catch (err) {
-                                                        setSavedMap(prev => ({ ...prev, [articleId]: currentlySaved }));
-                                                    }
-                                                }}
-                                                className={`absolute top-4 right-4 p-2 rounded-xl backdrop-blur-md transition-all active:scale-95 shadow-md ${
-                                                    savedMap[art.id]
-                                                        ? 'bg-amber-500 text-slate-950 font-bold'
-                                                        : 'bg-slate-900/60 text-white hover:bg-amber-500 hover:text-slate-950'
-                                                }`}
-                                                title={savedMap[art.id] ? "Saved in Personal Library" : "Save Article"}
-                                            >
-                                                <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: savedMap[art.id] ? "'FILL' 1" : "'FILL' 0" }}>
-                                                    bookmark
-                                                </span>
-                                            </button>
+                                            {/* Save & Share Action Buttons */}
+                                            <div className="absolute top-4 right-4 flex items-center gap-1.5">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setSharingArticleModal(art);
+                                                    }}
+                                                    className="p-2 rounded-xl bg-slate-900/60 text-white hover:bg-blue-600 transition-all active:scale-95 shadow-md"
+                                                    title="Share Article"
+                                                >
+                                                    <span className="material-symbols-outlined text-[18px]">share</span>
+                                                </button>
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setSavingArticleModal({
+                                                            ...art,
+                                                            contentType: 'Article',
+                                                            text: art.subtitle || art.description || art.title,
+                                                        });
+                                                    }}
+                                                    className={`p-2 rounded-xl backdrop-blur-md transition-all active:scale-95 shadow-md ${
+                                                        savedMap[art.id]
+                                                            ? 'bg-amber-500 text-slate-950 font-bold'
+                                                            : 'bg-slate-900/60 text-white hover:bg-amber-500 hover:text-slate-950'
+                                                    }`}
+                                                    title={savedMap[art.id] ? "Saved in Personal Library" : "Save Article to Category"}
+                                                >
+                                                    <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: savedMap[art.id] ? "'FILL' 1" : "'FILL' 0" }}>
+                                                        bookmark
+                                                    </span>
+                                                </button>
+                                            </div>
                                         </div>
                                     ) : (
                                         <div className="px-5 pt-5 flex items-center justify-between">
@@ -411,23 +688,20 @@ export default function Articles() {
                                                 {art.category}
                                             </div>
                                             <button
-                                                onClick={async (e) => {
+                                                onClick={(e) => {
                                                     e.stopPropagation();
-                                                    const articleId = art.id;
-                                                    const currentlySaved = !!savedMap[articleId];
-                                                    setSavedMap(prev => ({ ...prev, [articleId]: !currentlySaved }));
-                                                    try {
-                                                        await savedContentApi.toggleBookmark('Article', articleId);
-                                                    } catch (err) {
-                                                        setSavedMap(prev => ({ ...prev, [articleId]: currentlySaved }));
-                                                    }
+                                                    setSavingArticleModal({
+                                                        ...art,
+                                                        contentType: 'Article',
+                                                        text: art.subtitle || art.description || art.title,
+                                                    });
                                                 }}
                                                 className={`p-2 rounded-xl transition-all active:scale-95 border border-slate-200 dark:border-slate-800 ${
                                                     savedMap[art.id]
                                                         ? 'bg-amber-500 text-slate-950 font-bold'
                                                         : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800'
                                                 }`}
-                                                title={savedMap[art.id] ? "Saved in Personal Library" : "Save Article"}
+                                                title={savedMap[art.id] ? "Saved in Personal Library" : "Save Article to Category"}
                                             >
                                                 <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: savedMap[art.id] ? "'FILL' 1" : "'FILL' 0" }}>
                                                     bookmark
@@ -475,12 +749,12 @@ export default function Articles() {
                                                     <button
                                                         onClick={async (e) => {
                                                             e.stopPropagation();
-                                                            if (!window.confirm('Are you sure you want to delete this article?')) return;
+                                                            if (!await confirm({ title: 'Delete Article', message: 'Are you sure you want to delete this article? This action cannot be undone.', confirmText: 'Delete', variant: 'danger' })) return;
                                                             try {
                                                                 await deleteArticle(art.id);
                                                                 setAllArticles(prev => prev.filter(a => a.id !== art.id));
                                                             } catch (err) {
-                                                                alert('Failed to delete article.');
+                                                                addToast('Failed to delete article.', 'error');
                                                             }
                                                         }}
                                                         className="p-1 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
@@ -541,18 +815,43 @@ export default function Articles() {
                                 <button className="px-5 py-2 text-[13px] font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors border border-slate-200 dark:border-slate-700">
                                     Schedule
                                 </button>
-                                <button 
-                                    onClick={handlePublish}
-                                    disabled={isPublishing || !title.trim()}
-                                    className="px-8 py-2 text-[13px] font-bold text-white bg-indigo-500 hover:bg-indigo-600 rounded-xl transition-all shadow-lg shadow-indigo-500/30 disabled:opacity-50">
-                                    {isPublishing ? 'Publishing...' : 'Publish'}
-                                </button>
+                                {(() => {
+                                    const restrictedInArticle = checkRestrictedContent(`${title} ${description} ${editorBodyText}`);
+                                    if (restrictedInArticle) {
+                                        return (
+                                            <div className="flex items-center gap-1.5 text-rose-500 text-xs font-semibold px-4 py-2 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-xl shadow-sm">
+                                                <span className="material-symbols-outlined text-[16px]">warning</span>
+                                                <span>Restricted word ("{restrictedInArticle}") detected! Remove it to publish.</span>
+                                            </div>
+                                        );
+                                    }
+                                    return (
+                                        <button 
+                                            type="button"
+                                            onClick={handlePublish}
+                                            disabled={isPublishing}
+                                            className="px-8 py-2 text-[13px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-xl transition-all shadow-lg shadow-indigo-500/30 disabled:opacity-50 cursor-pointer flex items-center gap-2">
+                                            {isPublishing ? (
+                                                <>
+                                                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                                                    <span>Publishing...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="material-symbols-outlined text-[16px]">publish</span>
+                                                    <span>Publish</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    );
+                                })()}
                             </div>
                         </div>
 
                         {/* Meta Data Inputs */}
                         <div className="flex flex-col gap-4">
                             <input 
+                                id="article-title-input"
                                 type="text" 
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
@@ -571,14 +870,30 @@ export default function Articles() {
                         {/* Rich Text Editor Container (FR-AB-02) */}
                         <div className="rounded-2xl border border-theme-30 bg-theme-60-surface shadow-sm overflow-hidden flex flex-col min-h-[500px]">
                             
+                            {/* Hidden file input for inline editor image upload */}
+                            <input 
+                                type="file" 
+                                ref={editorImageInputRef} 
+                                accept="image/jpeg,image/png,image/gif,image/webp" 
+                                className="hidden" 
+                                onChange={handleEditorImageUpload} 
+                            />
+
                             {/* Toolbar */}
-                            <div className="bg-theme-subtle p-2 border-b border-theme-30 flex flex-wrap gap-1 items-center sticky top-0 z-10">
+                            <div className="bg-theme-subtle p-2 border-b border-theme-30 flex flex-wrap gap-1 items-center sticky top-0 z-10 select-none">
                                 {[
-                                    { id: 'bold', icon: 'format_bold' },
-                                    { id: 'italic', icon: 'format_italic' },
-                                    { id: 'underline', icon: 'format_underlined' }
+                                    { id: 'bold', icon: 'format_bold', label: 'Bold (Ctrl+B)' },
+                                    { id: 'italic', icon: 'format_italic', label: 'Italic (Ctrl+I)' },
+                                    { id: 'underline', icon: 'format_underlined', label: 'Underline (Ctrl+U)' }
                                 ].map(btn => (
-                                    <button key={btn.id} onClick={() => toggleFormat(btn.id)} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${activeFormats[btn.id] ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+                                    <button 
+                                        key={btn.id} 
+                                        type="button"
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={() => toggleFormat(btn.id)} 
+                                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${activeFormats[btn.id] ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                                        title={btn.label}
+                                    >
                                         <span className="material-symbols-outlined text-[20px]">{btn.icon}</span>
                                     </button>
                                 ))}
@@ -586,39 +901,58 @@ export default function Articles() {
                                 <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-2"></div>
                                 
                                 {[
-                                    { id: 'heading', icon: 'title' },
-                                    { id: 'list', icon: 'format_list_bulleted' },
-                                    { id: 'numlist', icon: 'format_list_numbered' },
-                                    { id: 'quote', icon: 'format_quote' }
+                                    { id: 'heading', icon: 'title', label: 'Heading (H2)' },
+                                    { id: 'list', icon: 'format_list_bulleted', label: 'Bulleted List' },
+                                    { id: 'numlist', icon: 'format_list_numbered', label: 'Numbered List' },
+                                    { id: 'quote', icon: 'format_quote', label: 'Quote / Blockquote' }
                                 ].map(btn => (
-                                    <button key={btn.id} onClick={() => toggleFormat(btn.id)} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${activeFormats[btn.id] ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
+                                    <button 
+                                        key={btn.id} 
+                                        type="button"
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={() => toggleFormat(btn.id)} 
+                                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${activeFormats[btn.id] ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+                                        title={btn.label}
+                                    >
                                         <span className="material-symbols-outlined text-[20px]">{btn.icon}</span>
                                     </button>
                                 ))}
                                 
-                                <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-2"></div>
-                                
-                                {[
-                                    { id: 'link', icon: 'link' },
-                                    { id: 'image', icon: 'image' },
-                                    { id: 'table', icon: 'table_chart' },
-                                    { id: 'code', icon: 'code' }
-                                ].map(btn => (
-                                    <button key={btn.id} type="button" className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
-                                        <span className="material-symbols-outlined text-[20px]">{btn.icon}</span>
-                                    </button>
-                                ))}
+
                             </div>
 
                             {/* Editable Area */}
                             <div 
                                 ref={editorRef}
                                 contentEditable="true"
-                                className="flex-1 p-8 focus:outline-none prose dark:prose-invert max-w-none text-slate-800 dark:text-slate-200 min-h-[400px]"
+                                className="rich-editor-content flex-1 p-8 focus:outline-none max-w-none text-slate-800 dark:text-slate-200 min-h-[400px] empty:before:content-[attr(data-placeholder)] empty:before:text-slate-400 empty:before:pointer-events-none"
                                 suppressContentEditableWarning={true}
-                                data-placeholder="Start writing your article here..."
+                                data-placeholder="Start writing your long-form article here..."
+                                onFocus={(e) => {
+                                    if (e.currentTarget.innerHTML.includes('Start writing your long-form article here')) {
+                                        e.currentTarget.innerHTML = '<p><br></p>';
+                                    }
+                                    updateActiveFormats();
+                                }}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Tab') {
+                                        e.preventDefault();
+                                        if (e.shiftKey) {
+                                            document.execCommand('outdent', false, null);
+                                        } else {
+                                            document.execCommand('indent', false, null);
+                                        }
+                                        updateActiveFormats();
+                                    }
+                                }}
+                                onKeyUp={updateActiveFormats}
+                                onMouseUp={updateActiveFormats}
+                                onSelect={updateActiveFormats}
+                                onInput={(e) => {
+                                    setEditorBodyText(e.currentTarget.innerText || '');
+                                    updateActiveFormats();
+                                }}
                             >
-                                <p className="opacity-50">Start writing your long-form article here...</p>
                             </div>
                         </div>
                     </div>
@@ -634,16 +968,75 @@ export default function Articles() {
                             </h3>
                             <div className="flex flex-col gap-4">
                                 <div>
-                                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Category</label>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Category</label>
+                                        {isSysAdmin && !isAddingCategory && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsAddingCategory(true)}
+                                                className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 flex items-center gap-1 transition-colors cursor-pointer"
+                                                title="Add a new category (System Admin only)"
+                                            >
+                                                <span className="material-symbols-outlined text-[14px]">add_circle</span>
+                                                <span>Add Category</span>
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Inline Add Category Form for System Admin */}
+                                    {isSysAdmin && isAddingCategory && (
+                                        <div className="mb-3 p-3 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-xl animate-in fade-in duration-200">
+                                            <label className="block text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 mb-1.5">
+                                                New Category Name
+                                            </label>
+                                            <div className="flex flex-col gap-2">
+                                                <input
+                                                    type="text"
+                                                    autoFocus
+                                                    value={newCategoryName}
+                                                    onChange={(e) => setNewCategoryName(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            handleCreateCategory();
+                                                        } else if (e.key === 'Escape') {
+                                                            setIsAddingCategory(false);
+                                                        }
+                                                    }}
+                                                    placeholder="e.g. Artificial Intelligence"
+                                                    className="w-full bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-700 rounded-lg px-3 py-1.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                />
+                                                <div className="flex items-center justify-end gap-1.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setIsAddingCategory(false); setNewCategoryName(''); }}
+                                                        className="px-2.5 py-1 text-xs font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 rounded-md transition-colors cursor-pointer"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        disabled={isSavingCategory || !newCategoryName.trim()}
+                                                        onClick={handleCreateCategory}
+                                                        className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-xs transition-all flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                                    >
+                                                        {isSavingCategory && <span className="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>}
+                                                        <span>Save Category</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <select 
                                         value={category}
                                         onChange={(e) => setCategory(e.target.value)}
                                         className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium">
-                                        <option value="1">Technology</option>
-                                        <option value="7">Engineering</option>
-                                        <option value="8">Design</option>
-                                        <option value="9">Product Management</option>
-                                        <option value="10">Company Culture</option>
+                                        {availableCategories.map(cat => (
+                                            <option key={cat.categoryId} value={String(cat.categoryId)}>
+                                                {cat.name}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
                                 <div>
@@ -681,7 +1074,7 @@ export default function Articles() {
                                         <div key={att.id} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 group">
                                             <div className="flex items-center gap-2 overflow-hidden">
                                                 {att.type === 'image' && (att.backendUrl || att.url) ? (
-                                                    <img src={att.backendUrl ? `http://localhost:5095${att.backendUrl}` : att.url} alt="preview" className="w-8 h-8 rounded object-cover shrink-0" />
+                                                    <img src={resolveMediaUrl(att.backendUrl) || att.url} alt="preview" className="w-8 h-8 rounded object-cover shrink-0" />
                                                 ) : (
                                                     <span className="material-symbols-outlined text-[18px] text-purple-500 shrink-0">
                                                         {att.type === 'doc' ? 'description' : att.type === 'image' ? 'image' : att.type === 'video' ? 'videocam' : 'mic'}
@@ -724,28 +1117,44 @@ export default function Articles() {
                             </div>
                         </div>
 
-                        {/* Article Settings & Post-Publication Mock (FR-AB-06, FR-AB-07) */}
+                        {/* Article Publication Actions */}
                         <div className="rounded-2xl border shadow-sm p-5 glass card-lift bg-slate-50/50 dark:bg-slate-800/30 border-slate-200 dark:border-slate-800">
-                            <h3 className="text-[14px] font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                                <span className="material-symbols-outlined text-teal-500">settings</span>
-                                Post-Publication Settings
+                            <h3 className="text-[14px] font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                                <span className="material-symbols-outlined text-indigo-500">send</span>
+                                Ready to Publish?
                             </h3>
                             <p className="text-[11px] font-medium text-slate-500 mb-4 leading-relaxed">
-                                Once published, you will be able to track analytics and manage version history here.
+                                Your article will be immediately published to the Knowledge Hub, visible to all colleagues, and indexed for global search.
                             </p>
-                            <div className="grid grid-cols-2 gap-3 mb-4">
-                                <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl">
-                                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Views</p>
-                                    <p className="text-lg font-black text-slate-900 dark:text-white">--</p>
-                                </div>
-                                <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl">
-                                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Read Time</p>
-                                    <p className="text-lg font-black text-slate-900 dark:text-white">--</p>
-                                </div>
-                            </div>
-                            <div className="flex gap-2">
-                                <button className="flex-1 py-2 text-[11px] font-bold text-slate-500 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg opacity-50 cursor-not-allowed">Edit Post</button>
-                                <button className="flex-1 py-2 text-[11px] font-bold text-red-500 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/50 rounded-lg opacity-50 cursor-not-allowed">Delete Post</button>
+                            <div className="flex flex-col gap-2.5">
+                                <button 
+                                    type="button"
+                                    onClick={handlePublish}
+                                    disabled={isPublishing}
+                                    className="w-full py-2.5 text-[13px] font-bold text-white rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer hover:brightness-110 active:scale-95 disabled:opacity-50"
+                                    style={{
+                                        background: 'linear-gradient(135deg, #4f46e5 0%, #2563eb 100%)'
+                                    }}
+                                >
+                                    {isPublishing ? (
+                                        <>
+                                            <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                                            <span>Publishing Article...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="material-symbols-outlined text-[18px]">publish</span>
+                                            <span>Publish Article Now</span>
+                                        </>
+                                    )}
+                                </button>
+                                <button 
+                                    type="button"
+                                    onClick={() => setViewMode('list')}
+                                    className="w-full py-2 text-[12px] font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                >
+                                    Cancel & Return
+                                </button>
                             </div>
                         </div>
 
@@ -780,6 +1189,23 @@ export default function Articles() {
                 targetType="Article"
                 targetId={reportingArticle?.id || 1}
                 targetName={reportingArticle?.author?.name || 'Author'}
+            />
+
+            {/* Save to Category Modal */}
+            <SaveToCategoryModal
+                isOpen={!!savingArticleModal}
+                onClose={() => setSavingArticleModal(null)}
+                item={savingArticleModal}
+                onSaved={(savedItem) => {
+                    setSavedMap(prev => ({ ...prev, [savedItem.contentId || savedItem.id]: true }));
+                }}
+            />
+
+            {/* Share Article Modal */}
+            <ArticleShareModal
+                isOpen={!!sharingArticleModal}
+                onClose={() => setSharingArticleModal(null)}
+                article={sharingArticleModal}
             />
         </>
     );

@@ -6,6 +6,7 @@ using AutoMapper;
 using Knome.API.Constants;
 using Knome.API.Data;
 using Knome.API.DTOs.Articles;
+using Knome.API.DTOs.Categories;
 using Knome.API.Exceptions;
 using Knome.API.Interfaces;
 using Knome.API.Models;
@@ -70,12 +71,16 @@ public class ArticleService : IArticleService
     public async Task<List<ArticleDto>> GetArticlesAsync(int? categoryId, string? tag, string? status, string? search, int pageNumber, int pageSize, int currentUserId)
     {
         var articles = await _repo.GetArticlesAsync(categoryId, tag, status, search, pageNumber, pageSize);
-        var dtos = new List<ArticleDto>();
+        var ids = articles.Select(a => a.ArticleId).ToList();
+        var summaries = ids.Count > 0 
+            ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Article, ids, currentUserId)
+            : new Dictionary<long, Knome.API.DTOs.Interactions.ContentSummaryDto>();
 
+        var dtos = new List<ArticleDto>();
         foreach (var a in articles)
         {
             var dto = _mapper.Map<ArticleDto>(a);
-            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Article, a.ArticleId, currentUserId);
+            dto.EngagementSummary = summaries.TryGetValue(a.ArticleId, out var s) ? s : new Knome.API.DTOs.Interactions.ContentSummaryDto { ContentType = ContentTypes.Article, ContentId = a.ArticleId };
             dtos.Add(dto);
         }
 
@@ -84,13 +89,22 @@ public class ArticleService : IArticleService
 
     public async Task<List<ArticleDto>> GetMyArticlesAsync(int currentUserId, int pageNumber = 1, int pageSize = 20)
     {
-        var articles = await _repo.GetMyArticlesAsync(currentUserId, pageNumber, pageSize);
-        var dtos = new List<ArticleDto>();
+        return await GetUserArticlesAsync(currentUserId, currentUserId, pageNumber, pageSize);
+    }
 
+    public async Task<List<ArticleDto>> GetUserArticlesAsync(int authorUserId, int currentUserId, int pageNumber = 1, int pageSize = 20)
+    {
+        var articles = await _repo.GetMyArticlesAsync(authorUserId, pageNumber, pageSize);
+        var ids = articles.Select(a => a.ArticleId).ToList();
+        var summaries = ids.Count > 0 
+            ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Article, ids, currentUserId)
+            : new Dictionary<long, Knome.API.DTOs.Interactions.ContentSummaryDto>();
+
+        var dtos = new List<ArticleDto>();
         foreach (var a in articles)
         {
             var dto = _mapper.Map<ArticleDto>(a);
-            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Article, a.ArticleId, currentUserId);
+            dto.EngagementSummary = summaries.TryGetValue(a.ArticleId, out var s) ? s : new Knome.API.DTOs.Interactions.ContentSummaryDto { ContentType = ContentTypes.Article, ContentId = a.ArticleId };
             dtos.Add(dto);
         }
 
@@ -195,4 +209,59 @@ public class ArticleService : IArticleService
         await CheckIsAuthorOrAdminAsync(article, currentUserId);
         await _repo.DeleteArticleAsync(article);
     }
+
+    public async Task<List<CategoryDto>> GetArticleCategoriesAsync()
+    {
+        return await _db.Categories
+            .AsNoTracking()
+            .Where(c => c.AppliesTo == "Article" || c.AppliesTo == "All")
+            .OrderBy(c => c.Name)
+            .Select(c => new CategoryDto
+            {
+                CategoryId = c.CategoryId,
+                Name = c.Name,
+                AppliesTo = c.AppliesTo
+            })
+            .ToListAsync();
+    }
+
+    public async Task<CategoryDto> CreateArticleCategoryAsync(CreateCategoryDto dto, int currentUserId)
+    {
+        var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
+        if (user == null || !user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleCode == "SYSADM"))
+        {
+            throw new UnauthorizedException("Only System Administrators are permitted to create article categories.");
+        }
+
+        if (string.IsNullOrWhiteSpace(dto.Name))
+            throw new BadRequestException("Category name is required.");
+
+        var trimmedName = dto.Name.Trim();
+        if (trimmedName.Length > 100)
+            throw new BadRequestException("Category name cannot exceed 100 characters.");
+
+        var exists = await _db.Categories.AnyAsync(c => 
+            (c.AppliesTo == "Article" || c.AppliesTo == "All") && 
+            c.Name.ToLower() == trimmedName.ToLower());
+
+        if (exists)
+            throw new ConflictException($"Category '{trimmedName}' already exists for articles.");
+
+        var category = new Category
+        {
+            Name = trimmedName,
+            AppliesTo = "Article"
+        };
+
+        _db.Categories.Add(category);
+        await _db.SaveChangesAsync();
+
+        return new CategoryDto
+        {
+            CategoryId = category.CategoryId,
+            Name = category.Name,
+            AppliesTo = category.AppliesTo
+        };
+    }
 }
+

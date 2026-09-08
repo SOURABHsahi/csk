@@ -1,14 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useUser } from '../contexts/UserContext';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import NotificationSettingsModal from '../modals/NotificationSettingsModal';
 import NotificationToast from '../ui/NotificationToast';
 import knomeLogo from '../../assets/knome_logo.png';
 import { notificationsApi, profileApi, searchApi, karmaApi, resolveMediaUrl, saveRecentSearch, getLocalRecentSearches, clearLocalRecentSearches } from '../../utils/apiService';
+import { useConfirm } from '../contexts/ConfirmDialogContext';
 import * as signalR from '@microsoft/signalr';
 
 export default function Navbar() {
-    const { currentUser, setCurrentUser, users } = useUser();
+    const { currentUser, setCurrentUser, users, logout } = useUser();
+    const confirm = useConfirm();
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
     const { pathname } = useLocation();
     const navigate = useNavigate();
@@ -224,6 +226,44 @@ export default function Navbar() {
     const [activeNotifFilter, setActiveNotifFilter] = useState('All'); // All | Reactions | Comments | Connections | Mentions | System
     const [notifSearchQuery, setNotifSearchQuery] = useState('');
 
+    // Refs for outside click detection
+    const notifDropdownRef = useRef(null);
+    const userMenuDropdownRef = useRef(null);
+    const searchDropdownRef = useRef(null);
+
+    // Auto-close notification dropdown, search suggestions & user menu when clicking anywhere outside or pressing Escape
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (notifDropdownRef.current && !notifDropdownRef.current.contains(event.target)) {
+                setIsNotifOpen(false);
+            }
+            if (userMenuDropdownRef.current && !userMenuDropdownRef.current.contains(event.target)) {
+                setIsUserMenuOpen(false);
+            }
+            if (searchDropdownRef.current && !searchDropdownRef.current.contains(event.target)) {
+                setShowSuggestions(false);
+            }
+        };
+
+        const handleEscape = (event) => {
+            if (event.key === 'Escape') {
+                setIsNotifOpen(false);
+                setIsUserMenuOpen(false);
+                setShowSuggestions(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside, true);
+        document.addEventListener('touchstart', handleClickOutside, true);
+        document.addEventListener('keydown', handleEscape);
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside, true);
+            document.removeEventListener('touchstart', handleClickOutside, true);
+            document.removeEventListener('keydown', handleEscape);
+        };
+    }, []);
+
     const playChimeSound = () => {
         try {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -254,9 +294,12 @@ export default function Navbar() {
         const type = (n.notificationType || n.eventType || '').toLowerCase();
         const isFollow = type.includes('follow');
         const isConnectionReq = type.includes('connection');
-        const isReaction = type.includes('reaction') || type.includes('like');
-        const isComment = type.includes('comment');
+        const msg = (n.message || n.text || n.title || '').toLowerCase();
+        const relType = (n.relatedContentType || '').toLowerCase();
+        const isReaction = type.includes('reaction') || type.includes('like') || msg.includes('liked') || msg.includes('reacted');
+        const isComment = (type.includes('comment') || msg.includes('commented') || msg.includes('replied')) && !isReaction;
         const isMention = type.includes('mention');
+        const isShare = type.includes('share') || msg.includes('shared');
 
         let icon = 'notifications';
         let color = 'text-slate-400';
@@ -283,33 +326,39 @@ export default function Navbar() {
             color = 'text-purple-500';
             bg = 'bg-purple-500/10';
             category = 'Mentions';
+        } else if (isShare) {
+            icon = 'share';
+            color = 'text-emerald-500';
+            bg = 'bg-emerald-500/10';
+            category = 'Shares';
         }
 
         let senderName = n.senderName || n.actorName;
         if (!senderName || senderName === 'System') {
-            const match = (n.message || '').match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+(shared|invited|sent|commented|liked|reacted|posted|mentioned)/);
-            if (match) {
-                senderName = match[1];
+            const match = (n.message || '').match(/^(.+?)\s+(shared|invited|sent|commented|liked|reacted|posted|mentioned)\b/i);
+            if (match && match[1].trim()) {
+                senderName = match[1].trim();
             } else {
-                senderName = 'System';
+                senderName = 'Colleague';
             }
         }
         const senderAvatar = resolveMediaUrl(n.senderAvatar) || (senderName && senderName !== 'System' ? `https://ui-avatars.com/api/?name=${encodeURIComponent(senderName)}&background=6366f1&color=fff` : null);
         const dateVal = n.createdAt || n.createdDate;
-        const msg = (n.message || '').toLowerCase();
         const refId = n.relatedContentId || n.referenceId;
 
         let targetUrl = n.targetUrl;
-        if (!targetUrl) {
-            if (msg.includes('post') || type.includes('post') || type.includes('share')) {
+        if (isConnectionReq || type.includes('connection') || msg.includes('connection request')) {
+            targetUrl = msg.includes('accepted') ? '/network?tab=Connections' : '/network?tab=Requests';
+        } else if (!targetUrl) {
+            if (msg.includes('post') || type.includes('post') || type.includes('share') || relType === 'post') {
                 targetUrl = refId ? `/posts?id=${refId}` : '/posts';
-            } else if (msg.includes('article') || type.includes('article')) {
+            } else if (msg.includes('article') || type.includes('article') || relType === 'article') {
                 targetUrl = refId ? `/article-view?id=${refId}` : '/articles';
-            } else if (msg.includes('community') || type.includes('community')) {
+            } else if (msg.includes('community') || type.includes('community') || relType === 'community') {
                 targetUrl = refId ? `/community/view?id=${refId}` : '/community';
-            } else if (msg.includes('video') || type.includes('video')) {
+            } else if (msg.includes('video') || type.includes('video') || relType === 'video') {
                 targetUrl = refId ? `/videos?id=${refId}` : '/videos';
-            } else if (msg.includes('podcast') || type.includes('podcast')) {
+            } else if (msg.includes('podcast') || type.includes('podcast') || relType === 'podcast') {
                 targetUrl = refId ? `/podcasts?id=${refId}` : '/podcasts';
             }
         }
@@ -347,10 +396,9 @@ export default function Navbar() {
 
             return all
                 .filter(n => {
-                    // Direct notification for this user (e.g. targetUserId or targetCreatorId matches currentUser.id)
+                    if (!['community_invite', 'join_request', 'community_approved', 'community_rejected', 'community', 'invite'].includes(n.type) && !(n.category === 'Community')) return false;
                     if (currentUser?.id && String(n.targetUserId) === String(currentUser.id)) return true;
                     if (currentUser?.id && n.targetCreatorId && String(n.targetCreatorId) === String(currentUser.id)) return true;
-                    // Admin join_request notifs: show to users with admin role or creator
                     if (n.type === 'join_request' && (n.targetUserId === 'admin' || isCurrentUserAdmin)) return true;
                     return false;
                 })
@@ -378,6 +426,88 @@ export default function Navbar() {
         }
     };
 
+    // Read ALL localStorage notifications including video shares, media approvals, etc.
+    const getLocalGenericNotifs = () => {
+        try {
+            const all = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+            return all
+                .filter(n => {
+                    if (!currentUser?.id) return false;
+                    if (String(n.targetUserId) !== String(currentUser.id)) return false;
+                    // Skip community-type notifications (handled by getLocalCommunityNotifs)
+                    if (['community_invite', 'join_request', 'community_approved', 'community_rejected'].includes(n.type)) return false;
+                    if (n.category === 'Community') return false;
+                    return true;
+                })
+                .map(n => {
+                    const isVideo = n.type === 'video_shared' || n.relatedContentType === 'Video' || (n.text || '').toLowerCase().includes('video');
+                    const isPodcast = n.type === 'podcast_shared' || n.relatedContentType === 'Podcast' || (n.text || '').toLowerCase().includes('podcast');
+                    const vTitle = n.videoTitle || n.mediaTitle;
+                    const vId = n.videoId || n.relatedContentId;
+                    const vUrl = n.videoUrl || n.sourceUrl;
+                    
+                    let targetUrl = n.targetUrl || n.actionLink || n.linkUrl;
+                    if (!targetUrl) {
+                        if (isVideo) {
+                            const params = new URLSearchParams();
+                            if (vId) params.set('id', vId);
+                            if (vTitle) params.set('title', vTitle);
+                            if (vUrl) params.set('url', vUrl);
+                            targetUrl = `/videos${params.toString() ? `?${params.toString()}` : ''}`;
+                        } else if (isPodcast) {
+                            targetUrl = n.relatedContentId ? `/podcasts?id=${n.relatedContentId}` : '/podcasts';
+                        } else {
+                            targetUrl = '/posts';
+                        }
+                    }
+
+                    return {
+                        id: n.id,
+                        type: n.type || 'notification',
+                        category: n.category || (isVideo ? 'Social' : 'System'),
+                        icon: isVideo ? 'videocam' : (isPodcast ? 'podcasts' : 'notifications'),
+                        color: isVideo ? 'text-cyan-500' : (isPodcast ? 'text-pink-500' : 'text-slate-400'),
+                        bg: isVideo ? 'bg-cyan-500/10' : (isPodcast ? 'bg-pink-500/10' : 'bg-slate-500/10'),
+                        text: n.text,
+                        message: n.text,
+                        senderName: n.senderName || 'Teammate',
+                        senderAvatar: n.senderAvatar || null,
+                        time: n.time || 'Just now',
+                        unread: n.unread !== false,
+                        isLocalNotif: true,
+                        targetUrl,
+                        relatedContentType: isVideo ? 'Video' : (isPodcast ? 'Podcast' : n.relatedContentType),
+                        relatedContentId: n.relatedContentId || n.videoId,
+                        videoId: n.videoId,
+                        videoTitle: vTitle,
+                        videoUrl: vUrl,
+                    };
+                });
+        } catch (e) {
+            return [];
+        }
+    };
+
+    const sortNotifsDescending = (notifs) => {
+        return [...notifs].sort((a, b) => {
+            const dateA = new Date(a.createdDate || a.createdAt || a.timestamp || 0).getTime();
+            const dateB = new Date(b.createdDate || b.createdAt || b.timestamp || 0).getTime();
+            
+            if (dateA && dateB && dateA !== dateB) {
+                return dateB - dateA; // Newest first
+            }
+            if (a.time === 'Just now' && b.time !== 'Just now') return -1;
+            if (b.time === 'Just now' && a.time !== 'Just now') return 1;
+
+            if (a.unread && !b.unread) return -1;
+            if (!a.unread && b.unread) return 1;
+
+            const idA = Number(a.id) || 0;
+            const idB = Number(b.id) || 0;
+            return idB - idA;
+        });
+    };
+
     const fetchNotifications = async () => {
         try {
             const res = await notificationsApi.getAll(false);
@@ -387,15 +517,18 @@ export default function Navbar() {
             } else if (res?.items) {
                 apiNotifs = res.items.map(mapNotificationItem);
             }
-            // Merge local community invite notifications
-            const localNotifs = getLocalCommunityNotifs();
+            // Merge local community invite notifications + local video/generic notifications
+            const localCommunityNotifs = getLocalCommunityNotifs();
+            const localGenericNotifs = getLocalGenericNotifs();
             const apiIds = new Set(apiNotifs.map(n => String(n.id)));
-            const freshLocal = localNotifs.filter(n => !apiIds.has(String(n.id)));
-            setAllNotifs([...freshLocal, ...apiNotifs]);
+            const freshCommunity = localCommunityNotifs.filter(n => !apiIds.has(String(n.id)));
+            const freshGeneric = localGenericNotifs.filter(n => !apiIds.has(String(n.id)) && !freshCommunity.some(c => String(c.id) === String(n.id)));
+            const combined = [...freshCommunity, ...freshGeneric, ...apiNotifs];
+            setAllNotifs(sortNotifsDescending(combined));
         } catch (error) {
             console.error('Failed to fetch notifications', error);
-            // Fallback: at least show local notifs
-            setAllNotifs(getLocalCommunityNotifs());
+            // Fallback: show all local notifs sorted newest first
+            setAllNotifs(sortNotifsDescending([...getLocalCommunityNotifs(), ...getLocalGenericNotifs()]));
         }
     };
 
@@ -411,6 +544,10 @@ export default function Navbar() {
             const localNotifs = getLocalCommunityNotifs();
             const newNotif = localNotifs.find(n => n.communityName === communityName && n.unread);
             if (newNotif) {
+                newNotif.createdDate = newNotif.createdDate || new Date().toISOString();
+                newNotif.createdAt = newNotif.createdAt || new Date().toISOString();
+                newNotif.unread = true;
+                newNotif.time = 'Just now';
                 setAllNotifs(prev => {
                     const filtered = prev.filter(n => String(n.id) !== String(newNotif.id));
                     return [newNotif, ...filtered];
@@ -420,32 +557,52 @@ export default function Navbar() {
             }
         };
 
-        // Also listen for storage changes (multi-tab invite)
+        // Also listen for storage changes (multi-tab invite or video share)
         const handleStorageChange = () => {
-            const localNotifs = getLocalCommunityNotifs();
-            if (localNotifs.length > 0) {
+            const localCommunityNotifs = getLocalCommunityNotifs();
+            const localGenericNotifs = getLocalGenericNotifs();
+            const allLocal = [...localCommunityNotifs, ...localGenericNotifs];
+            if (allLocal.length > 0) {
                 setAllNotifs(prev => {
                     const prevLocalIds = new Set(prev.filter(n => n.isLocalNotif).map(n => String(n.id)));
-                    const newOnes = localNotifs.filter(n => !prevLocalIds.has(String(n.id)));
+                    const newOnes = allLocal.filter(n => !prevLocalIds.has(String(n.id)));
                     if (newOnes.length === 0) return prev;
-                    // Show toast for brand-new invite
+                    // Show toast for brand-new notification
                     if (newOnes[0].unread) {
                         setToastNotification(newOnes[0]);
                         playChimeSound();
                     }
-                    return [...newOnes, ...prev.filter(n => !n.isLocalNotif)];
+                    return sortNotifsDescending([...newOnes, ...prev.filter(n => !n.isLocalNotif)]);
                 });
             }
         };
 
+        // Listen for real-time generic notifications (e.g. profile shares)
+        const handleGenericNotificationReceived = (e) => {
+            const notif = e.detail;
+            if (!notif) return;
+            if (notif.targetUserId && currentUser?.id && String(notif.targetUserId) !== String(currentUser.id)) {
+                return; // Notification meant for another user
+            }
+            notif.createdDate = notif.createdDate || new Date().toISOString();
+            notif.createdAt = notif.createdAt || new Date().toISOString();
+            notif.unread = true;
+            notif.time = 'Just now';
+            setAllNotifs(prev => [notif, ...prev.filter(n => String(n.id) !== String(notif.id))]);
+            setToastNotification(notif);
+            playChimeSound();
+        };
+
         window.addEventListener('community-invite-sent', handleCommunityInviteSent);
+        window.addEventListener('knome_notification_received', handleGenericNotificationReceived);
         window.addEventListener('storage', handleStorageChange);
 
         const token = localStorage.getItem('knome_jwt');
         if (!token) return;
 
+        const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : 'localhost';
         const connection = new signalR.HubConnectionBuilder()
-            .withUrl("http://localhost:5095/hubs/notifications", {
+            .withUrl(`http://${host}:5095/hubs/notifications`, {
                 accessTokenFactory: () => token
             })
             .configureLogging(signalR.LogLevel.None)
@@ -455,13 +612,28 @@ export default function Navbar() {
         connection.on("ReceiveNotification", (notification) => {
             const mapped = mapNotificationItem(notification);
             mapped.time = 'Just now';
+            mapped.createdDate = new Date().toISOString();
+            mapped.createdAt = new Date().toISOString();
             mapped.unread = true;
             setAllNotifs(prev => {
-                const filtered = prev.filter(item => item.id !== mapped.id);
+                const filtered = prev.filter(item => String(item.id) !== String(mapped.id));
                 return [mapped, ...filtered];
             });
             setToastNotification(mapped);
             playChimeSound();
+            window.dispatchEvent(new CustomEvent('network-updated'));
+        });
+
+        connection.on("ReactionCountUpdated", (data) => {
+            window.dispatchEvent(new CustomEvent('knome:reaction-updated', { detail: data }));
+        });
+
+        connection.on("CommentCountUpdated", (data) => {
+            window.dispatchEvent(new CustomEvent('knome:comment-updated', { detail: data }));
+        });
+
+        connection.on("ShareCountUpdated", (data) => {
+            window.dispatchEvent(new CustomEvent('knome:share-updated', { detail: data }));
         });
 
         connection.start().catch(() => {
@@ -470,6 +642,7 @@ export default function Navbar() {
 
         return () => {
             window.removeEventListener('community-invite-sent', handleCommunityInviteSent);
+            window.removeEventListener('knome_notification_received', handleGenericNotificationReceived);
             window.removeEventListener('storage', handleStorageChange);
             if (connection.state === signalR.HubConnectionState.Connected) {
                 connection.stop().catch(() => {});
@@ -487,10 +660,29 @@ export default function Navbar() {
 
     const markAllRead = async () => {
         try {
-            await notificationsApi.markAllRead();
+            await notificationsApi.markAllRead().catch(() => {});
+            const stored = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+            const updated = stored.map(n => ({ ...n, unread: false }));
+            localStorage.setItem('knome_notifications', JSON.stringify(updated));
             setAllNotifs(prev => prev.map(n => ({ ...n, unread: false, handled: true })));
         } catch (error) {
             console.error("Failed to mark all as read", error);
+        }
+    };
+
+    const clearAllNotifications = async () => {
+        try {
+            await notificationsApi.markAllRead().catch(() => {});
+            const stored = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+            const currentUserIdStr = String(currentUser?.id || currentUser?.userId || '');
+            const remaining = stored.filter(n => {
+                const targetIdStr = String(n.targetUserId || n.userId || '');
+                return currentUserIdStr && targetIdStr !== currentUserIdStr;
+            });
+            localStorage.setItem('knome_notifications', JSON.stringify(remaining));
+            setAllNotifs([]);
+        } catch (error) {
+            setAllNotifs([]);
         }
     };
 
@@ -501,25 +693,42 @@ export default function Navbar() {
         if (notif.actionLink && notif.actionLink.includes('/community/view')) return notif.actionLink;
 
         const txt = notif.text || notif.message || '';
-        const match = txt.match(/"([^"]+)"/);
-        const commName = match ? match[1] : notif.communityName;
+        // Extract community name: look for 'community "Name"' or first quoted text
+        const commMatch = txt.match(/community\s+"([^"]+)"/i) || txt.match(/"([^"]+)"/);
+        const commName = commMatch ? commMatch[1] : notif.communityName;
 
         if (commName) {
+            const normalizedName = commName.trim().toLowerCase();
+
+            // 1. Check custom communities in localStorage
             try {
                 const allCustom = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
-                const found = allCustom.find(c => c.name?.toLowerCase() === commName.toLowerCase() || c.title?.toLowerCase() === commName.toLowerCase());
+                const found = allCustom.find(c => (c.name || c.title || '').trim().toLowerCase() === normalizedName);
                 if (found) return `/community/view?id=${found.id}`;
             } catch (e) { /* ignore */ }
 
+            // 2. Check user joined communities
+            try {
+                const userKey = `knome_joined_communities_${currentUser?.id || 'guest'}`;
+                const joined = JSON.parse(localStorage.getItem(userKey) || '[]');
+                const foundJoined = joined.find(c => (c.name || '').trim().toLowerCase() === normalizedName);
+                if (foundJoined) return `/community/view?id=${foundJoined.id}`;
+            } catch (e) { /* ignore */ }
+
+            // 3. Known enterprise seed map
             const seedMap = {
+                'higher': 101,
                 'devops & ai innovation hub': 101,
                 'react developer hub': 102,
                 'employee engagement hub': 103,
                 'tech innovation hub': 1,
+                'technology innovation hub': 1,
                 'frontend developers guild': 3,
-                'database architects': 4
+                'database architects': 4,
+                'hr & general announcements': 5,
+                'culture & hr hub': 6
             };
-            const mappedId = seedMap[commName.toLowerCase()];
+            const mappedId = seedMap[normalizedName];
             if (mappedId) return `/community/view?id=${mappedId}`;
         }
 
@@ -546,28 +755,69 @@ export default function Navbar() {
         let dest = notif.targetUrl || notif.linkUrl || notif.actionLink;
         const msg = (notif.text || notif.message || '').toLowerCase();
         const relType = (notif.relatedContentType || '').toLowerCase();
-        const refId = notif.relatedContentId || notif.referenceId;
+        const refId = notif.relatedContentId || notif.referenceId || notif.videoId;
+        // isProfileShare must NOT trigger on video notifications
+        const isProfileShare = (relType === 'profile' || notif.type === 'profile_share' || (msg.includes('profile') && !msg.includes('video') && !msg.includes('podcast')))
+            && !msg.includes('video') && !msg.includes('podcast') && notif.type !== 'video_shared' && notif.type !== 'podcast_shared';
+
+        if (isProfileShare) {
+            const targetUser = notif.targetProfileUser || {
+                userId: refId || notif.senderUserId || 1,
+                id: refId || notif.senderUserId || 1,
+                name: notif.senderName || 'Employee',
+                fullName: notif.senderName || 'Employee',
+                avatar: notif.senderAvatar || null
+            };
+            navigate('/profile', { state: { user: targetUser } });
+            return;
+        }
+
         const isCommNotif = notif.category === 'Community' || notif.type?.includes('community') || msg.includes('community') || notif.communityId || notif.communityName;
 
         if (isCommNotif) {
             dest = resolveCommunityTarget(notif);
-        } else if (!dest || dest === '/posts' || dest === '/articles' || dest === '/videos' || dest === '/podcasts') {
-            if (relType === 'post' || msg.includes('post') || notif.type?.includes('post') || notif.type?.includes('share')) {
-                dest = refId ? `/posts?id=${refId}` : '/posts';
-            } else if (relType === 'article' || msg.includes('article') || notif.type?.includes('article')) {
-                dest = refId ? `/article-view?id=${refId}` : '/articles';
-            } else if (relType === 'community' || msg.includes('community') || notif.type?.includes('community')) {
-                dest = resolveCommunityTarget(notif);
-            } else if (relType === 'video' || msg.includes('video') || notif.type?.includes('video')) {
-                dest = refId ? `/videos?id=${refId}` : '/videos';
-            } else if (relType === 'podcast' || msg.includes('podcast') || notif.type?.includes('podcast')) {
-                dest = refId ? `/podcasts?id=${refId}` : '/podcasts';
-            } else if (relType === 'user' || notif.type?.includes('follow') || notif.senderUserId) {
-                const uId = refId || notif.senderUserId;
-                dest = uId ? `/profile?id=${uId}` : '/profile';
-            } else {
-                dest = '/posts';
+        } else if (relType === 'video' || msg.includes('video') || notif.type?.includes('video')) {
+            let vId = refId || notif.videoId;
+            let vTitle = notif.videoTitle || notif.mediaTitle;
+            let videoUrl = notif.videoUrl || notif.sourceUrl;
+            
+            if (!vTitle && !vId) {
+                const titleMatch = (notif.text || notif.message || '').match(/"([^"]+)"|'([^']+)'/);
+                if (titleMatch) {
+                    vTitle = titleMatch[1] || titleMatch[2];
+                }
             }
+
+            const searchParams = new URLSearchParams();
+            if (vId) searchParams.set('id', vId);
+            if (vTitle) searchParams.set('title', vTitle);
+            if (videoUrl) searchParams.set('url', videoUrl);
+
+            const queryString = searchParams.toString();
+            dest = `/videos${queryString ? `?${queryString}` : ''}`;
+            
+            navigate(dest, { 
+                state: { 
+                    videoTitle: vTitle, 
+                    videoId: vId, 
+                    videoUrl: videoUrl,
+                    senderName: notif.senderName 
+                } 
+            });
+            return;
+        } else if (relType === 'podcast' || msg.includes('podcast') || notif.type?.includes('podcast')) {
+            dest = refId ? `/podcasts?id=${refId}` : (dest || '/podcasts');
+        } else if (relType === 'article' || msg.includes('article') || notif.type?.includes('article')) {
+            dest = refId ? `/article-view?id=${refId}` : (dest || '/articles');
+        } else if (relType === 'post' || msg.includes('post') || notif.type?.includes('post')) {
+            dest = refId ? `/posts?id=${refId}` : (dest || '/posts');
+        } else if (notif.type === 'follow_request' || notif.type?.includes('connection') || msg.includes('connection request') || msg.includes('connection')) {
+            dest = msg.includes('accepted') ? '/network?tab=Connections' : '/network?tab=Requests';
+        } else if (relType === 'user' || notif.type?.includes('follow')) {
+            const uId = refId || notif.senderUserId;
+            dest = uId ? `/profile?id=${uId}` : '/profile';
+        } else if (!dest) {
+            dest = '/posts';
         }
 
         const currentPath = window.location.pathname + window.location.search;
@@ -648,81 +898,51 @@ export default function Navbar() {
 
     const toggleTheme = () => setIsDark(prev => !prev);
 
-    const navLinks = [
-        { to: '/', label: 'Dashboard' },
-        { to: '/jobs', label: 'Jobs' },
-    ];
-    if (isSysAdmin) {
-        navLinks.push({ to: '/admin-console', label: 'Admin' });
-    }
-
     return (
         <>
         {/* TopNavBar */}
-        <nav className="fixed w-full z-50 transition-colors duration-300">
+        <nav className="fixed top-0 left-0 right-0 w-full z-50 transition-colors duration-300">
             <div className="max-w-screen-2xl mx-auto px-4 md:px-8 h-[72px] grid grid-cols-2 lg:grid-cols-3 items-center gap-4">
                 
                 {/* ─── LEFT: Logo & Navigation ─── */}
-                <div className="flex items-center gap-8 justify-start">
-                    <Link to="/" className="flex items-center gap-3 transition-transform hover:scale-[1.01] shrink-0">
-                        <img 
-                            src={knomeLogo} 
-                            alt="Knome Logo" 
-                            className="h-14 object-contain bg-white rounded-xl p-1" 
-                            style={{
-                                boxShadow: '0 2px 10px rgba(0,0,0,0.15)'
-                            }}
-                        />
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-black uppercase tracking-widest" style={{
-                                background: 'linear-gradient(135deg, #3b7fff, #00d4ff)',
-                                WebkitBackgroundClip: 'text',
-                                WebkitTextFillColor: 'transparent',
-                                backgroundClip: 'text'
-                            }}>
-                                Knome Portal
+                <div className="flex items-center gap-3 sm:gap-6 justify-start">
+                    {/* Mobile Hamburger Menu Toggle Button */}
+                    <button
+                        onClick={() => window.dispatchEvent(new CustomEvent('knome_toggle_mobile_sidebar'))}
+                        className="md:hidden p-2 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-slate-700/80 transition-all flex items-center justify-center shrink-0 shadow-xs cursor-pointer active:scale-95"
+                        title="Toggle Navigation Menu"
+                        aria-label="Toggle Navigation Menu"
+                    >
+                        <span className="material-symbols-outlined text-[24px]">menu</span>
+                    </button>
+
+                    <Link to="/" className="flex items-center gap-2.5 sm:gap-3.5 transition-all duration-200 hover:scale-[1.02] shrink-0 group">
+                        <div className="relative p-1 bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-md group-hover:shadow-indigo-500/25 transition-all flex items-center justify-center">
+                            <img 
+                                src={knomeLogo} 
+                                alt="Knome Logo" 
+                                className="h-10 sm:h-12 w-auto object-contain rounded-xl" 
+                            />
+                        </div>
+                        <div className="flex flex-col justify-center">
+                            <span className="text-[15px] sm:text-[19px] font-black tracking-tight leading-none bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 bg-clip-text text-transparent group-hover:opacity-95 transition-opacity drop-shadow-xs">
+                                KNOME PORTAL
                             </span>
-                            <span className="text-[9px] font-extrabold text-slate-500 dark:text-slate-400 mt-0.5 leading-none">
+                            <span className="hidden xs:inline-block text-[10px] sm:text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1 leading-tight tracking-tight">
                                 Connecting People & Knowledge
                             </span>
                         </div>
                     </Link>
-
-                    {/* Pill-shaped Nav Links */}
-                    <div className="hidden md:flex items-center p-1 rounded-2xl"
-                        style={{
-                            background: 'var(--bg-surface)',
-                            border: '1px solid var(--border-subtle)',
-                            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.02)'
-                        }}>
-                        {navLinks.map(link => {
-                            const isActive = pathname === link.to;
-                            return (
-                                <Link key={link.to} to={link.to}
-                                    className="relative px-4 py-1.5 rounded-lg text-[13px] font-bold transition-all duration-300"
-                                    style={isActive ? {
-                                        background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-aurora))',
-                                        color: 'white',
-                                        boxShadow: '0 4px 12px rgba(37,99,235,0.25)'
-                                    } : {
-                                        color: 'var(--text-secondary)'
-                                    }}
-                                >
-                                    <span className="relative z-10">{link.label}</span>
-                                </Link>
-                            );
-                        })}
-                    </div>
                 </div>
 
                 {/* ─── CENTER: Smart Search ─── */}
                 <div className="hidden lg:flex items-center justify-center w-full">
-                    <div className="relative w-full max-w-[520px] z-50">
-                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[18px]"
+                    <div className="relative w-full max-w-[540px] z-50" ref={searchDropdownRef}>
+                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[18px] pointer-events-none transition-colors"
                             style={{color: 'var(--text-muted)'}}>search</span>
                         <input
                             type="text"
-                            placeholder="Search Knome, posts, people or tags..."
+                            placeholder="Search posts, people, articles or tags..."
                             value={searchQuery}
                             onChange={(e) => {
                                 setSearchQuery(e.target.value);
@@ -731,7 +951,7 @@ export default function Navbar() {
                             onFocus={() => setShowSuggestions(true)}
                             onBlur={() => setTimeout(() => setShowSuggestions(false), 250)}
                             onKeyDown={handleKeyDown}
-                            className="w-full pl-10 pr-10 py-2 text-[13.5px] font-medium rounded-full outline-none transition-all focus:ring-2 focus:ring-blue-500/20 placeholder:text-slate-500 dark:placeholder:text-slate-400"
+                            className="w-full pl-10 pr-[130px] py-2 text-[13.5px] font-medium rounded-full outline-none transition-all focus:ring-2 focus:ring-blue-500/25 placeholder:text-slate-500 dark:placeholder:text-slate-400"
                             style={{
                                 background: isDark ? 'rgba(14, 26, 56, 0.7)' : 'rgba(239, 246, 255, 0.85)',
                                 border: '1px solid var(--border-mid)',
@@ -739,14 +959,38 @@ export default function Navbar() {
                                 backdropFilter: 'blur(12px)',
                             }}
                         />
-                        {searchQuery && (
+
+                        {/* Right-side controls: Clear (close) button + Theme Search button */}
+                        <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                            {searchQuery && (
+                                <button
+                                    type="button"
+                                    onMouseDown={(e) => { e.preventDefault(); setSearchQuery(''); }}
+                                    className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors flex items-center justify-center cursor-pointer"
+                                    title="Clear search"
+                                >
+                                    <span className="material-symbols-outlined text-[15px] block">close</span>
+                                </button>
+                            )}
                             <button
-                                onMouseDown={() => setSearchQuery('')}
-                                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                type="button"
+                                onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    handleSearch(searchQuery);
+                                }}
+                                onClick={() => handleSearch(searchQuery)}
+                                className="h-[31px] px-3.5 rounded-full text-[12px] font-bold text-white flex items-center gap-1.5 transition-all shadow-xs hover:shadow-md hover:brightness-110 active:scale-95 cursor-pointer select-none shrink-0"
+                                style={{
+                                    background: 'linear-gradient(135deg, var(--accent-primary, #2563eb), var(--accent-deep, #4f46e5))',
+                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    boxShadow: '0 2px 8px rgba(37, 99, 235, 0.25)'
+                                }}
+                                title="Search"
                             >
-                                <span className="material-symbols-outlined text-[16px]">close</span>
+                                <span className="material-symbols-outlined text-[15px] leading-none">search</span>
+                                <span>Search</span>
                             </button>
-                        )}
+                        </div>
 
                         {/* Search Overlay Dropdown (YouTube-style) */}
                         {showSuggestions && (
@@ -795,7 +1039,7 @@ export default function Navbar() {
                                                             } else if (item.contentType === 'Article') {
                                                                 navigate(`/article-view?id=${item.id}`);
                                                             } else if (item.contentType === 'Community') {
-                                                                navigate('/community');
+                                                                navigate(`/community/view?id=${item.id}`);
                                                             } else {
                                                                 handleSearch(item.title);
                                                             }
@@ -865,26 +1109,7 @@ export default function Navbar() {
                                             </div>
                                         )}
 
-                                        {/* Trending Searches */}
-                                        {trendingSearches.length > 0 && (
-                                            <div className="px-4 pt-1 pb-2">
-                                                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1 mb-2">
-                                                    <span className="material-symbols-outlined text-[13px] text-amber-500" style={{fontVariationSettings: "'FILL' 1"}}>trending_up</span>
-                                                    Trending Searches
-                                                </span>
-                                                <div className="flex flex-wrap gap-1.5">
-                                                    {trendingSearches.map((term, idx) => (
-                                                        <button
-                                                            key={`trend-${idx}`}
-                                                            onMouseDown={() => handleSearch(term)}
-                                                            className="px-3 py-1 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-indigo-500 hover:text-white dark:hover:bg-indigo-600 transition-all border border-slate-200 dark:border-slate-700"
-                                                        >
-                                                            🔥 {term}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
+
                                     </div>
                                 )}
                             </div>
@@ -930,9 +1155,13 @@ export default function Navbar() {
                     </button>
 
                     {/* Notifications */}
-                    <div className="relative">
+                    <div className="relative" ref={notifDropdownRef}>
                         <button
-                            onClick={() => setIsNotifOpen(!isNotifOpen)}
+                            onClick={() => {
+                                const nextState = !isNotifOpen;
+                                setIsNotifOpen(nextState);
+                                if (nextState) fetchNotifications();
+                            }}
                             className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:scale-110"
                             style={{
                                 background: isDark ? 'rgba(14, 26, 56, 0.7)' : 'rgba(239, 246, 255, 0.85)',
@@ -963,9 +1192,15 @@ export default function Navbar() {
                                 }}>
                                 <div className="flex items-center justify-between px-4 py-3 border-b" style={{borderColor: 'var(--border-mid)'}}>
                                     <span className="font-bold text-sm text-slate-900 dark:text-slate-100">Notifications</span>
-                                    <div className="flex items-center gap-2">
-                                        <button onClick={markAllRead} className="text-[11px] font-bold text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors">Mark all read</button>
-                                        <button onClick={() => { setIsNotifSettingsOpen(true); setIsNotifOpen(false); }} className="text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-colors">
+                                    <div className="flex items-center gap-2.5">
+                                        {allNotifs.length > 0 && (
+                                            <>
+                                                <button onClick={markAllRead} className="text-[11px] font-bold text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors">Mark read</button>
+                                                <span className="text-slate-300 dark:text-slate-700 text-xs">•</span>
+                                                <button onClick={clearAllNotifications} className="text-[11px] font-bold text-rose-500 hover:text-rose-600 transition-colors">Clear all</button>
+                                            </>
+                                        )}
+                                        <button onClick={() => { setIsNotifSettingsOpen(true); setIsNotifOpen(false); }} className="text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-colors ml-1">
                                             <span className="material-symbols-outlined text-[16px]">settings</span>
                                         </button>
                                     </div>
@@ -973,7 +1208,7 @@ export default function Navbar() {
 
                                 {/* Category Filters */}
                                 <div className="flex items-center gap-1 p-2 border-b border-slate-100 dark:border-slate-800 overflow-x-auto custom-scrollbar">
-                                    {['All', 'Reactions', 'Comments', 'Connections', 'Mentions'].map(cat => (
+                                    {['All', 'Shares', 'Reactions', 'Comments', 'Connections', 'Mentions'].map(cat => (
                                         <button
                                             key={cat}
                                             onClick={() => setActiveNotifFilter(cat)}
@@ -1034,9 +1269,9 @@ export default function Navbar() {
                                                     <button 
                                                         onClick={(e) => handleDeleteNotification(e, n.id)} 
                                                         title="Delete notification"
-                                                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-all rounded"
+                                                        className="p-1 text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all rounded-lg cursor-pointer"
                                                     >
-                                                        <span className="material-symbols-outlined text-[15px]">delete</span>
+                                                        <span className="material-symbols-outlined text-[17px]">delete</span>
                                                     </button>
                                                 </div>
                                             </div>
@@ -1105,7 +1340,13 @@ export default function Navbar() {
                                         </div>
                                     ))}
                                     {notifications.length === 0 && (
-                                        <div className="p-6 text-center text-xs text-slate-400">No notifications</div>
+                                        <div className="py-10 px-4 text-center flex flex-col items-center justify-center">
+                                            <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mb-3">
+                                                <span className="material-symbols-outlined text-[24px]">notifications_paused</span>
+                                            </div>
+                                            <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">No Notifications</p>
+                                            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 font-medium">Only real & current notifications for your account will appear here.</p>
+                                        </div>
                                     )}
                                 </div>
                             </div>
@@ -1113,7 +1354,7 @@ export default function Navbar() {
                     </div>
 
                     {/* User Avatar & Menu */}
-                    <div className="relative">
+                    <div className="relative" ref={userMenuDropdownRef}>
                         <button
                             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
                             className="flex items-center gap-3 px-3 py-1.5 rounded-full transition-all hover:scale-105"
@@ -1122,10 +1363,18 @@ export default function Navbar() {
                                 border: '1px solid var(--border-mid)',
                             }}
                         >
-                            <img className="w-8 h-8 rounded-full object-cover shadow-sm shrink-0 border border-slate-200 dark:border-slate-700" alt="Avatar" src={currentUser.avatar} />
+                            <img 
+                                className="w-8 h-8 rounded-full object-cover shadow-sm shrink-0 border border-slate-200 dark:border-slate-700" 
+                                alt="Avatar" 
+                                src={resolveMediaUrl(currentUser?.profilePhotoUrl) || currentUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || currentUser?.fullName || 'User')}&background=6366f1&color=fff`}
+                                onError={(e) => {
+                                    e.currentTarget.onerror = null;
+                                    e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || currentUser?.fullName || 'User')}&background=6366f1&color=fff`;
+                                }}
+                            />
                             <div className="hidden sm:flex flex-col items-start text-left min-w-0">
-                                <span className="text-[13px] font-bold text-slate-700 dark:text-slate-200 truncate leading-tight">{currentUser.name.split(' ')[0]}</span>
-                                <span className="text-[9px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5 leading-none">{currentUser.roleName}</span>
+                                <span className="text-[13px] font-bold text-slate-700 dark:text-slate-200 truncate leading-tight">{(currentUser?.name || currentUser?.fullName || 'User').split(' ')[0]}</span>
+                                <span className="text-[9px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5 leading-none">{currentUser?.roleName || currentUser?.role || 'Employee'}</span>
                             </div>
                             <span className="material-symbols-outlined text-[16px] text-slate-400 shrink-0">expand_more</span>
                         </button>
@@ -1143,30 +1392,28 @@ export default function Navbar() {
                                     <p className="text-[12px] text-slate-500 dark:text-slate-400 truncate">{currentUser.roleName}</p>
                                 </div>
                                 <div className="py-1.5">
-                                    <div className="px-3 py-1 mb-1">
-                                        <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-1">Switch User (Demo)</p>
-                                        {users.map(u => (
-                                            <button
-                                                key={u.id}
-                                                onClick={() => { 
-                                                    setCurrentUser(u); 
-                                                    setIsUserMenuOpen(false); 
-                                                    navigate('/');
-                                                }}
-                                                className={`w-full text-left px-2 py-1.5 rounded-lg text-[12px] font-semibold transition-colors flex items-center gap-2 ${currentUser.employeeId === u.employeeId ? 'text-blue-600 dark:text-blue-400 bg-blue-500/10' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-800 dark:hover:text-slate-200'}`}
-                                            >
-                                                <div className="w-5 h-5 rounded-md flex items-center justify-center text-white text-[10px] font-black"
-                                                    style={{background: 'linear-gradient(135deg, #3b7fff, #00d4ff)'}}>
-                                                    {u.name.charAt(0)}
-                                                </div>
-                                                {u.name.split(' ')[0]} <span className="text-slate-600">({u.roleName})</span>
-                                            </button>
-                                        ))}
-                                    </div>
                                     <div className="border-t px-3 py-2" style={{borderColor: 'var(--border-mid)'}}>
                                         <Link to="/profile" onClick={() => setIsUserMenuOpen(false)} className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
                                             <span className="material-symbols-outlined text-[16px]">person</span> My Profile
                                         </Link>
+                                        <button
+                                            onClick={async () => {
+                                                setIsUserMenuOpen(false);
+                                                const ok = await confirm({
+                                                    title: 'Confirm Logout',
+                                                    message: "Are you sure you want to log out of Knome? You'll need to sign in again to access your account.",
+                                                    confirmText: 'Yes, Log Out',
+                                                    cancelText: 'Cancel',
+                                                    variant: 'danger'
+                                                });
+                                                if (ok) {
+                                                    logout();
+                                                }
+                                            }}
+                                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] font-semibold text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors mt-0.5 cursor-pointer"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">logout</span> Log Out
+                                        </button>
                                     </div>
                                 </div>
                             </div>

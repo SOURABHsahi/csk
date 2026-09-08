@@ -37,7 +37,8 @@ public class NotificationRepository : INotificationRepository
 
     public async Task<List<Notification>> GetForUserAsync(int userId, bool unreadOnly, int skip, int take)
     {
-        var query = _db.Notifications.Where(n => n.UserId == userId);
+        var cutoff = System.DateTime.UtcNow.AddMonths(-3);
+        var query = _db.Notifications.Where(n => n.UserId == userId && n.CreatedDate >= cutoff);
         if (unreadOnly)
             query = query.Where(n => !n.IsRead);
 
@@ -50,7 +51,8 @@ public class NotificationRepository : INotificationRepository
 
     public async Task<int> CountForUserAsync(int userId, bool unreadOnly)
     {
-        var query = _db.Notifications.Where(n => n.UserId == userId);
+        var cutoff = System.DateTime.UtcNow.AddMonths(-3);
+        var query = _db.Notifications.Where(n => n.UserId == userId && n.CreatedDate >= cutoff);
         if (unreadOnly)
             query = query.Where(n => !n.IsRead);
 
@@ -112,11 +114,20 @@ public class NotificationRepository : INotificationRepository
         if (candidateUserIds.Count == 0)
             return new List<int>();
 
+        // Ensure user IDs actually exist in dbo.Users table to prevent FK constraint violations
+        var existingUserIds = await _db.Users
+            .Where(u => candidateUserIds.Contains(u.UserId))
+            .Select(u => u.UserId)
+            .ToListAsync();
+
+        if (existingUserIds.Count == 0)
+            return new List<int>();
+
         var disabled = await _db.NotificationPreferences
-            .Where(p => p.EventType == eventType && !p.BellEnabled && candidateUserIds.Contains(p.UserId))
+            .Where(p => p.EventType == eventType && !p.BellEnabled && existingUserIds.Contains(p.UserId))
             .Select(p => p.UserId)
             .ToListAsync();
 
-        return candidateUserIds.Where(id => !disabled.Contains(id)).ToList();
+        return existingUserIds.Where(id => !disabled.Contains(id)).ToList();
     }
 }

@@ -22,6 +22,7 @@ public interface IContentInteractionRepository
     Task RemoveReactionAsync(Reaction reaction);
     Task UpdateReactionAsync(Reaction reaction);
     Task<ReactionSummaryDto> GetReactionsSummaryAsync(string contentType, long contentId, int currentUserId);
+    Task<List<Reaction>> GetReactionsAsync(string contentType, long contentId);
 
     // Shares
     Task<Share> AddShareAsync(Share share);
@@ -39,6 +40,7 @@ public interface IContentInteractionRepository
     Task<ModerationReport> AddReportAsync(ModerationReport report);
     Task<ModerationReport?> GetReportByIdAsync(long reportId);
     Task<List<ModerationReport>> GetPendingReportsAsync(int pageNumber, int pageSize);
+    Task<List<ModerationReport>> GetAllReportsAsync(string? status, int pageNumber, int pageSize);
     Task UpdateReportAsync(ModerationReport report);
 
     // Security Screening
@@ -47,4 +49,7 @@ public interface IContentInteractionRepository
 
     // Author resolution (for notification targeting)
     Task<int?> GetContentAuthorUserIdAsync(string contentType, long contentId);
+
+    // View count resolution
+    Task<long> GetContentViewCountAsync(string contentType, long contentId);
 }

@@ -8,15 +8,21 @@ public class ModerationReportDto
     public long ReportId { get; set; }
     public int ReporterUserId { get; set; }
     public string ReporterFullName { get; set; } = null!;
+    public int? ReportedUserId { get; set; }
+    public string? ReportedUserName { get; set; }
     public string ContentType { get; set; } = null!;
     public long ContentId { get; set; }
+    public string? CommunityName { get; set; }
     public string ReasonCode { get; set; } = null!;
+    public string? Severity { get; set; }
+    public string? AiScore { get; set; }
     public string Status { get; set; } = null!;
     public int? ModeratorUserId { get; set; }
     public string? ModeratorFullName { get; set; }
     public string? ActionTaken { get; set; }
     public DateTime ReportedDate { get; set; }
     public DateTime? ActionDate { get; set; }
+    public string? PostContentSnippet { get; set; }
 }
 
 public class CreateReportDto

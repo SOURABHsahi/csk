@@ -21,6 +21,7 @@ public class CommunityDto
     public int PostsCount { get; set; }
     public string? CurrentUserMembershipStatus { get; set; } // Approved, Pending, Rejected, Banned, or null if non-member
     public bool IsCurrentUserAdmin { get; set; }
+    public bool IsActive { get; set; }
 }
 
 public class CreateCommunityDto

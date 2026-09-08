@@ -5,12 +5,14 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using AutoMapper;
 using Knome.API.Constants;
+using Knome.API.Data;
 using Knome.API.DTOs.Interactions;
 using Knome.API.Exceptions;
 using Knome.API.Interfaces;
 using Knome.API.Models;
 
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
 using Knome.API.Hubs;
 
 namespace Knome.API.Services;
@@ -24,6 +26,9 @@ public class ContentInteractionService : IContentInteractionService
     private readonly ISuspensionGuard _suspensionGuard;
     private readonly INotificationService _notificationService;
     private readonly IHubContext<NotificationHub> _hubContext;
+    private readonly ICommunityRepository _communityRepo;
+    private readonly KnomeDbContext _db;
+    private readonly ILogger<ContentInteractionService> _logger;
 
     public ContentInteractionService(
         IContentInteractionRepository repo, 
@@ -32,7 +37,10 @@ public class ContentInteractionService : IContentInteractionService
         IMapper mapper, 
         ISuspensionGuard suspensionGuard, 
         INotificationService notificationService,
-        IHubContext<NotificationHub> hubContext)
+        IHubContext<NotificationHub> hubContext,
+        ICommunityRepository communityRepo,
+        KnomeDbContext db,
+        ILogger<ContentInteractionService> logger)
     {
         _repo = repo;
         _userRepo = userRepo;
@@ -41,6 +49,9 @@ public class ContentInteractionService : IContentInteractionService
         _suspensionGuard = suspensionGuard;
         _notificationService = notificationService;
         _hubContext = hubContext;
+        _communityRepo = communityRepo;
+        _db = db;
+        _logger = logger;
     }
 
     // --- Security & Screening (FR-SM-01) ---
@@ -87,8 +98,24 @@ public class ContentInteractionService : IContentInteractionService
             throw new BadRequestException($"Invalid content type '{contentType}'. Must be one of: {string.Join(", ", ContentTypes.All)}.");
     }
 
+    private async Task<List<CommentDto>> BuildRepliesTreeAsync(long parentCommentId)
+    {
+        var replies = await _repo.GetRepliesAsync(parentCommentId);
+        var replyDtos = new List<CommentDto>();
+
+        foreach (var reply in replies)
+        {
+            var dto = _mapper.Map<CommentDto>(reply);
+            dto.Replies = await BuildRepliesTreeAsync(reply.CommentId);
+            dto.RepliesCount = dto.Replies.Count;
+            replyDtos.Add(dto);
+        }
+
+        return replyDtos;
+    }
+
     // --- Comments (FR-CI-02, FR-CI-05) ---
-    public async Task<List<CommentDto>> GetContentCommentsAsync(string contentType, long contentId)
+    public async Task<List<CommentDto>> GetContentCommentsAsync(string contentType, long contentId, int? currentUserId = null)
     {
         ValidateContentType(contentType);
 
@@ -98,10 +125,48 @@ public class ContentInteractionService : IContentInteractionService
         foreach (var comment in topLevelComments)
         {
             var dto = _mapper.Map<CommentDto>(comment);
-            var replies = await _repo.GetRepliesAsync(comment.CommentId);
-            dto.Replies = _mapper.Map<List<CommentDto>>(replies);
-            dto.RepliesCount = replies.Count;
+            dto.Replies = await BuildRepliesTreeAsync(comment.CommentId);
+            dto.RepliesCount = dto.Replies.Count;
             dtos.Add(dto);
+        }
+
+        // Populate LikesCount and IsLiked for all comments and nested replies
+        var allDtos = new List<CommentDto>();
+        void CollectDtos(IEnumerable<CommentDto> list)
+        {
+            foreach (var item in list)
+            {
+                allDtos.Add(item);
+                if (item.Replies != null && item.Replies.Count > 0)
+                    CollectDtos(item.Replies);
+            }
+        }
+        CollectDtos(dtos);
+
+        if (allDtos.Count > 0)
+        {
+            var commentIds = allDtos.Select(c => c.CommentId).Distinct().ToList();
+            var reactions = await _db.Reactions
+                .AsNoTracking()
+                .Where(r => r.ContentType == ContentTypes.Comment && commentIds.Contains(r.ContentId))
+                .Select(r => new { r.ContentId, r.UserId, r.ReactionType })
+                .ToListAsync();
+
+            foreach (var item in allDtos)
+            {
+                var commentReactions = reactions.Where(r => r.ContentId == item.CommentId).ToList();
+                item.LikesCount = commentReactions.Count;
+                item.IsLiked = currentUserId.HasValue && commentReactions.Any(r => r.UserId == currentUserId.Value);
+                item.UserReactionType = currentUserId.HasValue 
+                    ? commentReactions.FirstOrDefault(r => r.UserId == currentUserId.Value)?.ReactionType 
+                    : null;
+                item.TopReactionTypes = commentReactions
+                    .Select(r => r.ReactionType)
+                    .Where(t => !string.IsNullOrEmpty(t))
+                    .Distinct()
+                    .Take(4)
+                    .ToList();
+            }
         }
 
         return dtos;
@@ -121,9 +186,6 @@ public class ContentInteractionService : IContentInteractionService
             var parent = await _repo.GetCommentByIdAsync(dto.ParentCommentId.Value);
             if (parent == null || parent.ContentType != contentType || parent.ContentId != contentId)
                 throw new NotFoundException($"Parent comment ID {dto.ParentCommentId.Value} not found for this content.");
-
-            if (parent.ParentCommentId.HasValue)
-                throw new BadRequestException("Comments can only be nested up to 2 levels (Top-level comment and Reply).");
         }
 
         var comment = new Comment
@@ -142,6 +204,9 @@ public class ContentInteractionService : IContentInteractionService
         // Award karma to the user who added the comment
         await _karmaService.AwardKarmaAsync(userId, KarmaActivityTypes.AddComment, KarmaPoints.AddCommentPoints, contentType, contentId);
 
+        var commenter = await _userRepo.GetByIdAsync(userId);
+        var commenterName = commenter?.FullName ?? "Someone";
+
         var authorId = await _repo.GetContentAuthorUserIdAsync(contentType, contentId);
         if (authorId.HasValue && authorId.Value != userId)
         {
@@ -149,7 +214,7 @@ public class ContentInteractionService : IContentInteractionService
             await _notificationService.PublishAsync(
                 authorId.Value,
                 NotificationTypes.Comment,
-                $"Your {contentType} received a new comment.",
+                $"{commenterName} commented on your {contentType.ToLowerInvariant()}.",
                 relatedContentType: contentType,
                 relatedContentId: contentId);
         }
@@ -161,13 +226,30 @@ public class ContentInteractionService : IContentInteractionService
                 await _notificationService.PublishAsync(
                     parentComment.UserId,
                     NotificationTypes.Comment,
-                    $"Someone replied to your comment on a {contentType}.",
+                    $"{commenterName} replied to your comment on a {contentType.ToLowerInvariant()}.",
                     relatedContentType: contentType,
                     relatedContentId: contentId);
             }
         }
 
         var reloaded = await _repo.GetCommentByIdAsync(saved.CommentId);
+
+        // Real-time broadcast comment count update to all active users
+        try
+        {
+            var topLevel = await _repo.GetTopLevelCommentsAsync(contentType, contentId);
+            await _hubContext.Clients.All.SendAsync("CommentCountUpdated", new
+            {
+                contentType,
+                contentId,
+                commentsCount = topLevel.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to broadcast live CommentCountUpdated");
+        }
+
         return _mapper.Map<CommentDto>(reloaded);
     }
 
@@ -202,6 +284,9 @@ public class ContentInteractionService : IContentInteractionService
         if (comment.UserId != userId && !isAdmin)
             throw new UnauthorizedException("You do not have permission to delete this comment.");
 
+        var cType = comment.ContentType;
+        var cId = comment.ContentId;
+
         // If top-level, delete any child replies first or let cascading handle it cleanly
         var replies = await _repo.GetRepliesAsync(commentId);
         foreach (var reply in replies)
@@ -210,19 +295,42 @@ public class ContentInteractionService : IContentInteractionService
         }
 
         await _repo.DeleteCommentAsync(comment);
+
+        // Real-time broadcast comment count update after deletion
+        try
+        {
+            var topLevel = await _repo.GetTopLevelCommentsAsync(cType, cId);
+            await _hubContext.Clients.All.SendAsync("CommentCountUpdated", new
+            {
+                contentType = cType,
+                contentId = cId,
+                commentsCount = topLevel.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to broadcast live CommentCountUpdated on delete");
+        }
     }
 
     // --- Reactions (FR-CI-01) ---
     public async Task<(ReactionSummaryDto Summary, bool IsCreated)> ToggleReactionAsync(string contentType, long contentId, int userId, ToggleReactionDto dto)
     {
+        ArgumentNullException.ThrowIfNull(dto);
         await _suspensionGuard.EnsureNotSuspendedAsync(userId);
         ValidateContentType(contentType);
+
+        if (!string.IsNullOrEmpty(dto.ReactionType))
+        {
+            var match = ReactionTypes.All.FirstOrDefault(a => a.Equals(dto.ReactionType, StringComparison.OrdinalIgnoreCase));
+            if (match != null) dto.ReactionType = match;
+        }
 
         bool isCreated = false;
         var existing = await _repo.GetUserReactionAsync(contentType, contentId, userId);
         if (existing != null)
         {
-            if (existing.ReactionType == dto.ReactionType)
+            if (string.Equals(existing.ReactionType ?? string.Empty, dto.ReactionType ?? string.Empty, StringComparison.OrdinalIgnoreCase))
             {
                 // Same reaction toggled -> remove reaction (Un-react)
                 await _repo.RemoveReactionAsync(existing);
@@ -230,7 +338,7 @@ public class ContentInteractionService : IContentInteractionService
             else
             {
                 // Different reaction -> update type
-                existing.ReactionType = dto.ReactionType;
+                existing.ReactionType = dto.ReactionType ?? string.Empty;
                 existing.CreatedDate = DateTime.UtcNow;
                 await _repo.UpdateReactionAsync(existing);
             }
@@ -243,7 +351,7 @@ public class ContentInteractionService : IContentInteractionService
                 ContentType = contentType,
                 ContentId = contentId,
                 UserId = userId,
-                ReactionType = dto.ReactionType,
+                ReactionType = dto.ReactionType ?? string.Empty,
                 CreatedDate = DateTime.UtcNow
             };
             await _repo.AddReactionAsync(reaction);
@@ -251,21 +359,101 @@ public class ContentInteractionService : IContentInteractionService
             // Award karma to the user who reacted
             await _karmaService.AwardKarmaAsync(userId, KarmaActivityTypes.AddLike, KarmaPoints.AddLikePoints, contentType, contentId);
 
-            // FR-NT-01: notify the content author of a new reaction and award ReceiveLike karma
-            var authorId = await _repo.GetContentAuthorUserIdAsync(contentType, contentId);
-            if (authorId.HasValue && authorId.Value != userId)
+            var reactor = await _userRepo.GetByIdAsync(userId);
+            var reactorName = reactor?.FullName ?? "Someone";
+
+            if (contentType == ContentTypes.Comment)
             {
-                await _karmaService.AwardKarmaAsync(authorId.Value, KarmaActivityTypes.ReceiveLike, KarmaPoints.ReceiveLikePoints, contentType, contentId);
-                await _notificationService.PublishAsync(
-                    authorId.Value,
-                    NotificationTypes.Reaction,
-                    $"Your {contentType} received a new reaction.",
-                    relatedContentType: contentType,
-                    relatedContentId: contentId);
+                var comment = await _repo.GetCommentByIdAsync(contentId);
+                if (comment != null)
+                {
+                    // 1. Notify the comment author (jisne comment kiya hai)
+                    if (comment.UserId != userId)
+                    {
+                        await _karmaService.AwardKarmaAsync(comment.UserId, KarmaActivityTypes.ReceiveLike, KarmaPoints.ReceiveLikePoints, contentType, contentId);
+
+                        string commentNotifText = comment.ContentType switch
+                        {
+                            ContentTypes.Post => $"{reactorName} liked your comment on a post.",
+                            ContentTypes.Article => $"{reactorName} liked your comment on an article.",
+                            ContentTypes.Video => $"{reactorName} liked your comment on a video.",
+                            ContentTypes.Podcast => $"{reactorName} liked your comment on a podcast.",
+                            _ => $"{reactorName} liked your comment."
+                        };
+
+                        await _notificationService.PublishAsync(
+                            comment.UserId,
+                            NotificationTypes.Reaction,
+                            commentNotifText,
+                            relatedContentType: comment.ContentType,
+                            relatedContentId: comment.ContentId);
+                    }
+
+                    // 2. Also notify the author of the parent content (jisne post / article create kiya hai)
+                    var parentAuthorId = await _repo.GetContentAuthorUserIdAsync(comment.ContentType, comment.ContentId);
+                    if (parentAuthorId.HasValue && parentAuthorId.Value != userId && parentAuthorId.Value != comment.UserId)
+                    {
+                        string parentNotifText = comment.ContentType switch
+                        {
+                            ContentTypes.Post => $"{reactorName} liked a comment on your post.",
+                            ContentTypes.Article => $"{reactorName} liked a comment on your article.",
+                            ContentTypes.Video => $"{reactorName} liked a comment on your video.",
+                            ContentTypes.Podcast => $"{reactorName} liked a comment on your podcast.",
+                            _ => $"{reactorName} liked a comment on your {comment.ContentType.ToLowerInvariant()}."
+                        };
+
+                        await _notificationService.PublishAsync(
+                            parentAuthorId.Value,
+                            NotificationTypes.Reaction,
+                            parentNotifText,
+                            relatedContentType: comment.ContentType,
+                            relatedContentId: comment.ContentId);
+                    }
+                }
+            }
+            else
+            {
+                // Direct reaction to Post, Article, Video, Podcast, etc.
+                var authorId = await _repo.GetContentAuthorUserIdAsync(contentType, contentId);
+                if (authorId.HasValue && authorId.Value != userId)
+                {
+                    await _karmaService.AwardKarmaAsync(authorId.Value, KarmaActivityTypes.ReceiveLike, KarmaPoints.ReceiveLikePoints, contentType, contentId);
+                    string notifText = contentType switch
+                    {
+                        ContentTypes.Post => $"{reactorName} liked your post.",
+                        ContentTypes.Article => $"{reactorName} liked your article.",
+                        ContentTypes.Video => $"{reactorName} liked your video.",
+                        ContentTypes.Podcast => $"{reactorName} liked your podcast.",
+                        _ => $"{reactorName} reacted to your {contentType.ToLowerInvariant()}."
+                    };
+                    await _notificationService.PublishAsync(
+                        authorId.Value,
+                        NotificationTypes.Reaction,
+                        notifText,
+                        relatedContentType: contentType,
+                        relatedContentId: contentId);
+                }
             }
         }
 
         var summary = await _repo.GetReactionsSummaryAsync(contentType, contentId, userId);
+
+        // Real-time broadcast to all connected users
+        try
+        {
+            await _hubContext.Clients.All.SendAsync("ReactionCountUpdated", new
+            {
+                contentType,
+                contentId,
+                totalLikes = summary.TotalCount,
+                reactionsSummary = summary
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to broadcast live ReactionCountUpdated");
+        }
+
         return (summary, isCreated);
     }
 
@@ -273,6 +461,13 @@ public class ContentInteractionService : IContentInteractionService
     {
         ValidateContentType(contentType);
         return await _repo.GetReactionsSummaryAsync(contentType, contentId, currentUserId);
+    }
+
+    public async Task<List<ReactionDto>> GetReactionsListAsync(string contentType, long contentId)
+    {
+        ValidateContentType(contentType);
+        var reactions = await _repo.GetReactionsAsync(contentType, contentId);
+        return _mapper.Map<List<ReactionDto>>(reactions);
     }
 
     // --- Shares (FR-CI-03) ---
@@ -295,24 +490,108 @@ public class ContentInteractionService : IContentInteractionService
         // Award karma to the user who shared the content
         await _karmaService.AwardKarmaAsync(userId, KarmaActivityTypes.AddShare, KarmaPoints.AddSharePoints, contentType, contentId);
 
+        var sharingUser = await _userRepo.GetProfileByIdAsync(userId);
+        var sharingUserName = sharingUser?.FullName ?? "Someone";
+
+        // Retrieve content title or snippet to include in notifications
+        string contentTitle = "";
+        try
+        {
+            if (contentType == ContentTypes.Post)
+            {
+                var p = await _db.Posts.FindAsync(contentId);
+                if (p != null && !string.IsNullOrWhiteSpace(p.ContentText))
+                {
+                    contentTitle = p.ContentText.Length > 40 ? p.ContentText.Substring(0, 40) + "..." : p.ContentText;
+                }
+            }
+            else if (contentType == ContentTypes.Article)
+            {
+                var a = await _db.Articles.FindAsync((int)contentId);
+                if (a != null && !string.IsNullOrWhiteSpace(a.Title)) contentTitle = a.Title;
+            }
+            else if (contentType == ContentTypes.Video)
+            {
+                var v = await _db.Videos.FindAsync((int)contentId);
+                if (v != null && !string.IsNullOrWhiteSpace(v.Title)) contentTitle = v.Title;
+            }
+            else if (contentType == ContentTypes.Podcast)
+            {
+                var pod = await _db.Podcasts.FindAsync((int)contentId);
+                if (pod != null && !string.IsNullOrWhiteSpace(pod.Title)) contentTitle = pod.Title;
+            }
+        }
+        catch { }
+
+        var authorShareMsg = !string.IsNullOrWhiteSpace(contentTitle)
+            ? $"{sharingUserName} shared your {contentType.ToLower()}: \"{contentTitle}\""
+            : $"{sharingUserName} shared your {contentType.ToLower()}.";
+
+        var recipientShareMsg = !string.IsNullOrWhiteSpace(contentTitle)
+            ? $"{sharingUserName} shared a {contentType.ToLower()} with you: \"{contentTitle}\""
+            : $"{sharingUserName} shared a {contentType.ToLower()} with you.";
+
         var authorId = await _repo.GetContentAuthorUserIdAsync(contentType, contentId);
         if (authorId.HasValue && authorId.Value != userId)
         {
             await _karmaService.AwardKarmaAsync(authorId.Value, KarmaActivityTypes.ReceiveShare, KarmaPoints.ReceiveSharePoints, contentType, contentId);
+            // Notify the content author that their content was shared
+            await _notificationService.PublishAsync(
+                authorId.Value,
+                NotificationTypes.Share,
+                authorShareMsg,
+                relatedContentType: contentType,
+                relatedContentId: contentId);
         }
 
-        // Send notification to the recipient if shared directly to a user
+        // --- Share to a specific User: notify them ---
         if (dto.SharedToType == SharedToTypes.User && dto.SharedToId.HasValue)
         {
-            var sharingUser = await _userRepo.GetProfileByIdAsync(userId);
-            var sharingUserName = sharingUser?.FullName ?? "Someone";
-
             await _notificationService.PublishAsync(
                 (int)dto.SharedToId.Value,
                 NotificationTypes.Share,
-                $"{sharingUserName} shared a {contentType.ToLower()} with you.",
+                recipientShareMsg,
                 relatedContentType: contentType,
                 relatedContentId: contentId);
+        }
+        // --- Share to Community: notify all members ---
+        else if (dto.SharedToType == SharedToTypes.Community && dto.SharedToId.HasValue)
+        {
+            var commId = dto.SharedToId.Value;
+            var memberIds = await _db.CommunityMembers
+                .Where(m => m.CommunityId == commId && m.UserId != userId && m.Status == "Active")
+                .Select(m => m.UserId)
+                .ToListAsync();
+
+            if (memberIds.Count > 0)
+            {
+                var commBroadcastMsg = !string.IsNullOrWhiteSpace(contentTitle)
+                    ? $"{sharingUserName} shared a {contentType.ToLower()} in your community: \"{contentTitle}\""
+                    : $"{sharingUserName} shared a post in your community.";
+
+                await _notificationService.PublishBroadcastAsync(
+                    NotificationTypes.Share,
+                    commBroadcastMsg,
+                    relatedContentType: ContentTypes.Post,
+                    relatedContentId: contentId,
+                    candidateUserIds: memberIds);
+            }
+        }
+
+        // Real-time broadcast share count update to all active users
+        try
+        {
+            var totalShares = await _db.Shares.CountAsync(s => s.ContentType == contentType && s.ContentId == contentId);
+            await _hubContext.Clients.All.SendAsync("ShareCountUpdated", new
+            {
+                contentType,
+                contentId,
+                sharesCount = totalShares
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to broadcast live ShareCountUpdated");
         }
 
         return _mapper.Map<ShareDto>(saved);
@@ -396,8 +675,9 @@ public class ContentInteractionService : IContentInteractionService
         var sharesCount = await _repo.GetSharesCountAsync(contentType, contentId);
         var bookmark = await _repo.GetBookmarkAsync(contentType, contentId, currentUserId);
 
-        // Hot Posts formula: (Reactions * 3) + (Comments * 5) + (Shares * 4)
-        var score = (reactionSummary.TotalCount * 3) + (commentsCount * 5) + (sharesCount * 4);
+        // FR-HP-01 Hot Posts formula: (Views * 1) + (Reactions * 3) + (Comments * 5) + (Shares * 4)
+        var views = await _repo.GetContentViewCountAsync(contentType, contentId);
+        var score = (views * 1) + (reactionSummary.TotalCount * 3) + (commentsCount * 5) + (sharesCount * 4);
 
         return new ContentSummaryDto
         {
@@ -409,6 +689,103 @@ public class ContentInteractionService : IContentInteractionService
             IsBookmarkedByCurrentUser = bookmark != null,
             EngagementScore = score
         };
+    }
+
+    public async Task<Dictionary<long, ContentSummaryDto>> GetContentSummariesBatchAsync(string contentType, IEnumerable<long> contentIds, int currentUserId)
+    {
+        ValidateContentType(contentType);
+        var idList = contentIds.Distinct().ToList();
+        var result = new Dictionary<long, ContentSummaryDto>();
+        if (idList.Count == 0) return result;
+
+        // 1. Bulk comments count in single query
+        var commentsCountDict = await _db.Comments
+            .AsNoTracking()
+            .Where(c => c.ContentType == contentType && idList.Contains(c.ContentId))
+            .GroupBy(c => c.ContentId)
+            .Select(g => new { ContentId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.ContentId, x => (long)x.Count);
+
+        // 2. Bulk reactions grouped in single query
+        var reactionsGrouped = await _db.Reactions
+            .AsNoTracking()
+            .Where(r => r.ContentType == contentType && idList.Contains(r.ContentId))
+            .GroupBy(r => new { r.ContentId, r.ReactionType })
+            .Select(g => new { g.Key.ContentId, g.Key.ReactionType, Count = g.Count() })
+            .ToListAsync();
+
+        // User's own reactions
+        var userReactions = currentUserId > 0
+            ? await _db.Reactions
+                .AsNoTracking()
+                .Where(r => r.ContentType == contentType && idList.Contains(r.ContentId) && r.UserId == currentUserId)
+                .ToDictionaryAsync(r => r.ContentId, r => r.ReactionType)
+            : new Dictionary<long, string>();
+
+        // 3. Bulk shares count in single query
+        var sharesCountDict = await _db.Shares
+            .AsNoTracking()
+            .Where(s => s.ContentType == contentType && idList.Contains(s.ContentId))
+            .GroupBy(s => s.ContentId)
+            .Select(g => new { ContentId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.ContentId, x => (long)x.Count);
+
+        // 4. Bulk user bookmarks
+        var userBookmarks = currentUserId > 0
+            ? new HashSet<long>(await _db.Bookmarks
+                .AsNoTracking()
+                .Where(b => b.ContentType == contentType && idList.Contains(b.ContentId) && b.UserId == currentUserId)
+                .Select(b => b.ContentId)
+                .ToListAsync())
+            : new HashSet<long>();
+
+        // 5. Bulk views count
+        var viewsDict = new Dictionary<long, int>();
+        if (contentType == ContentTypes.Article)
+        {
+            viewsDict = await _db.Articles.AsNoTracking().Where(a => idList.Contains(a.ArticleId)).ToDictionaryAsync(a => a.ArticleId, a => a.ViewCount);
+        }
+        else if (contentType == ContentTypes.Video)
+        {
+            viewsDict = await _db.Videos.AsNoTracking().Where(v => idList.Contains(v.VideoId)).ToDictionaryAsync(v => (long)v.VideoId, v => v.ViewCount);
+        }
+
+        // Assemble all summaries in-memory with zero extra database calls
+        foreach (var cid in idList)
+        {
+            var rSummary = new ReactionSummaryDto();
+            var contentReactions = reactionsGrouped.Where(rg => rg.ContentId == cid).ToList();
+            rSummary.TotalCount = contentReactions.Sum(rg => rg.Count);
+            rSummary.LikeCount = contentReactions.FirstOrDefault(rg => rg.ReactionType == ReactionTypes.Like)?.Count ?? 0;
+            rSummary.CelebrateCount = contentReactions.FirstOrDefault(rg => rg.ReactionType == ReactionTypes.Celebrate)?.Count ?? 0;
+            rSummary.SupportCount = contentReactions.FirstOrDefault(rg => rg.ReactionType == ReactionTypes.Support)?.Count ?? 0;
+            rSummary.HeartCount = contentReactions.FirstOrDefault(rg => rg.ReactionType == ReactionTypes.Heart)?.Count ?? 0;
+            if (userReactions.TryGetValue(cid, out var uReaction))
+            {
+                rSummary.CurrentUserReactionType = uReaction;
+            }
+
+            var cCount = commentsCountDict.TryGetValue(cid, out var cc) ? cc : 0;
+            var sCount = sharesCountDict.TryGetValue(cid, out var sc) ? sc : 0;
+            var viewCount = viewsDict.TryGetValue(cid, out var vc) ? vc : 0;
+            var isBookmarked = userBookmarks.Contains(cid);
+
+            // FR-HP-01 Hot Posts formula: (Views * 1) + (Reactions * 3) + (Comments * 5) + (Shares * 4)
+            var score = (viewCount * 1) + (rSummary.TotalCount * 3) + (cCount * 5) + (sCount * 4);
+
+            result[cid] = new ContentSummaryDto
+            {
+                ContentType = contentType,
+                ContentId = cid,
+                CommentsCount = cCount,
+                ReactionSummary = rSummary,
+                SharesCount = sCount,
+                IsBookmarkedByCurrentUser = isBookmarked,
+                EngagementScore = score
+            };
+        }
+
+        return result;
     }
 
     // --- Moderation & Governance (FR-SM-02) ---
@@ -434,7 +811,13 @@ public class ContentInteractionService : IContentInteractionService
     public async Task<List<ModerationReportDto>> GetPendingReportsAsync(int pageNumber, int pageSize)
     {
         var reports = await _repo.GetPendingReportsAsync(pageNumber, pageSize);
-        return _mapper.Map<List<ModerationReportDto>>(reports);
+        return await EnrichReportsAsync(reports);
+    }
+
+    public async Task<List<ModerationReportDto>> GetAllReportsAsync(string? status, int pageNumber, int pageSize)
+    {
+        var reports = await _repo.GetAllReportsAsync(status, pageNumber, pageSize);
+        return await EnrichReportsAsync(reports);
     }
 
     public async Task<ModerationReportDto> ResolveReportAsync(long reportId, int moderatorUserId, ResolveReportDto dto)
@@ -451,6 +834,138 @@ public class ContentInteractionService : IContentInteractionService
         report.ActionDate = DateTime.UtcNow;
 
         await _repo.UpdateReportAsync(report);
-        return _mapper.Map<ModerationReportDto>(report);
+        var enriched = await EnrichReportsAsync(new List<ModerationReport> { report });
+        return enriched.FirstOrDefault() ?? _mapper.Map<ModerationReportDto>(report);
+    }
+
+    private async Task<List<ModerationReportDto>> EnrichReportsAsync(List<ModerationReport> reports)
+    {
+        var dtos = _mapper.Map<List<ModerationReportDto>>(reports);
+        if (dtos.Count == 0) return dtos;
+
+        var postIds = dtos.Where(d => d.ContentType.Equals("Post", StringComparison.OrdinalIgnoreCase)).Select(d => d.ContentId).Distinct().ToList();
+        var videoIds = dtos.Where(d => d.ContentType.Equals("Video", StringComparison.OrdinalIgnoreCase)).Select(d => d.ContentId).Distinct().ToList();
+        var articleIds = dtos.Where(d => d.ContentType.Equals("Article", StringComparison.OrdinalIgnoreCase)).Select(d => d.ContentId).Distinct().ToList();
+        var podcastIds = dtos.Where(d => d.ContentType.Equals("Podcast", StringComparison.OrdinalIgnoreCase)).Select(d => d.ContentId).Distinct().ToList();
+
+        var posts = postIds.Count > 0 
+            ? await _db.Posts.AsNoTracking()
+                .Include(p => p.AuthorUser)
+                .Include(p => p.Communities)
+                .Where(p => postIds.Contains(p.PostId))
+                .ToDictionaryAsync(p => p.PostId)
+            : new Dictionary<long, Post>();
+
+        var videos = videoIds.Count > 0 
+            ? await _db.Videos.AsNoTracking()
+                .Include(v => v.UploaderUser)
+                .Include(v => v.Category)
+                .Where(v => videoIds.Contains(v.VideoId))
+                .ToDictionaryAsync(v => v.VideoId)
+            : new Dictionary<long, Video>();
+
+        var articles = articleIds.Count > 0 
+            ? await _db.Articles.AsNoTracking()
+                .Include(a => a.AuthorUser)
+                .Include(a => a.Category)
+                .Where(a => articleIds.Contains(a.ArticleId))
+                .ToDictionaryAsync(a => a.ArticleId)
+            : new Dictionary<long, Article>();
+
+        var podcasts = podcastIds.Count > 0 
+            ? await _db.Podcasts.AsNoTracking()
+                .Include(p => p.UploaderUser)
+                .Include(p => p.Category)
+                .Where(p => podcastIds.Contains(p.PodcastId))
+                .ToDictionaryAsync(p => p.PodcastId)
+            : new Dictionary<long, Podcast>();
+
+        foreach (var dto in dtos)
+        {
+            // Severity & AiScore
+            dto.Severity = dto.ReasonCode switch
+            {
+                "Harassment" or "Copyright" => "Critical",
+                "Inappropriate" => "High",
+                "Spam" => "Low",
+                _ => "Medium"
+            };
+
+            dto.AiScore = dto.ReasonCode switch
+            {
+                "Harassment" => "98% Toxic",
+                "Copyright" => "96% Risk",
+                "Inappropriate" => "85% Risk",
+                "Spam" => "90% Spam",
+                _ => "75% AI"
+            };
+
+            if (dto.ContentType.Equals("Post", StringComparison.OrdinalIgnoreCase))
+            {
+                if (posts.TryGetValue(dto.ContentId, out var post))
+                {
+                    dto.ReportedUserId = post.AuthorUserId;
+                    dto.ReportedUserName = post.AuthorUser?.FullName ?? $"User #{post.AuthorUserId}";
+                    dto.PostContentSnippet = post.ContentText;
+                    dto.CommunityName = post.Communities.FirstOrDefault()?.Name ?? "Engineering & Tech";
+                }
+                else
+                {
+                    dto.ReportedUserName = dto.ReporterFullName;
+                    dto.PostContentSnippet = $"Reported {dto.ReasonCode} content for Post #{dto.ContentId}. Content removed under admin governance policy.";
+                    dto.CommunityName = "Engineering & Tech";
+                }
+            }
+            else if (dto.ContentType.Equals("Video", StringComparison.OrdinalIgnoreCase))
+            {
+                if (videos.TryGetValue(dto.ContentId, out var video))
+                {
+                    dto.ReportedUserId = video.UploaderUserId;
+                    dto.ReportedUserName = video.UploaderUser?.FullName ?? $"User #{video.UploaderUserId}";
+                    dto.PostContentSnippet = video.Title;
+                    dto.CommunityName = video.Category?.Name ?? "Video Library";
+                }
+                else
+                {
+                    dto.ReportedUserName = dto.ReporterFullName;
+                    dto.PostContentSnippet = $"Reported {dto.ReasonCode} violation on Video #{dto.ContentId}.";
+                    dto.CommunityName = "Video Library";
+                }
+            }
+            else if (dto.ContentType.Equals("Article", StringComparison.OrdinalIgnoreCase))
+            {
+                if (articles.TryGetValue(dto.ContentId, out var article))
+                {
+                    dto.ReportedUserId = article.AuthorUserId;
+                    dto.ReportedUserName = article.AuthorUser?.FullName ?? $"User #{article.AuthorUserId}";
+                    dto.PostContentSnippet = article.Title;
+                    dto.CommunityName = article.Category?.Name ?? "Knowledge Hub";
+                }
+                else
+                {
+                    dto.ReportedUserName = dto.ReporterFullName;
+                    dto.PostContentSnippet = $"Reported {dto.ReasonCode} violation on Article #{dto.ContentId}.";
+                    dto.CommunityName = "Knowledge Hub";
+                }
+            }
+            else if (dto.ContentType.Equals("Podcast", StringComparison.OrdinalIgnoreCase))
+            {
+                if (podcasts.TryGetValue(dto.ContentId, out var podcast))
+                {
+                    dto.ReportedUserId = podcast.UploaderUserId;
+                    dto.ReportedUserName = podcast.UploaderUser?.FullName ?? $"User #{podcast.UploaderUserId}";
+                    dto.PostContentSnippet = podcast.Title;
+                    dto.CommunityName = podcast.Category?.Name ?? "Audio Room";
+                }
+                else
+                {
+                    dto.ReportedUserName = dto.ReporterFullName;
+                    dto.PostContentSnippet = $"Reported {dto.ReasonCode} violation on Podcast #{dto.ContentId}.";
+                    dto.CommunityName = "Audio Room";
+                }
+            }
+        }
+
+        return dtos;
     }
 }

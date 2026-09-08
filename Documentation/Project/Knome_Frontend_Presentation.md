@@ -206,5 +206,5 @@ graph TD
 
 ---
 > [!NOTE]
-> **Summary for Team:** The frontend is production-ready, fully responsive, and seamlessly connected with the ASP.NET Core 9 backend!
+> **Summary for Team:** The frontend is production-ready, fully responsive, and seamlessly connected with the ASP.NET Core 10 backend!
 ````

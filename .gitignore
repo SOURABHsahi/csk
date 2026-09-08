@@ -46,3 +46,6 @@ appsettings.local.json
 /scratch/
 .next/
 dist/
+DB_Backup/
+Backend/Knome.API/wwwroot/uploads/
+

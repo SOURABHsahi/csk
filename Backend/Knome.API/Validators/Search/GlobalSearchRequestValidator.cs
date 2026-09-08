@@ -5,7 +5,12 @@ namespace Knome.API.Validators.Search;
 
 public class GlobalSearchRequestValidator : AbstractValidator<GlobalSearchRequestDto>
 {
-    private static readonly string[] ValidTypes = { "User", "Community", "Post", "Article", "Video", "Podcast", "Job" };
+    private static readonly HashSet<string> ValidTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "User", "Users", "People", "Community", "Communities", "Post", "Posts",
+        "Article", "Articles", "Video", "Videos", "Podcast", "Podcasts", "Job", "Jobs",
+        "Hashtags", "Documents", "Content", "All"
+    };
     private static readonly string[] ValidSortBy = { "relevance", "date", "popularity" };
     private static readonly string[] ValidSortOrder = { "asc", "desc" };
 
@@ -23,7 +28,7 @@ public class GlobalSearchRequestValidator : AbstractValidator<GlobalSearchReques
 
         RuleFor(x => x.ContentType)
             .Must(t => t == null || ValidTypes.Contains(t))
-            .WithMessage("Content type must be one of: User, Community, Post, Article, Video, Podcast, Job.")
+            .WithMessage("Content type must be one of: User, People, Community, Post, Article, Video, Podcast, Job, Hashtags, Documents, Content.")
             .When(x => !string.IsNullOrEmpty(x.ContentType));
 
         RuleFor(x => x.SortBy)

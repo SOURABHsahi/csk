@@ -1,9 +1,25 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
 import { resolveMediaUrl } from '../../utils/apiService';
 
-const AudioContext = createContext();
+const defaultAudioContext = {
+    currentPodcast: null,
+    isPlaying: false,
+    volume: 1,
+    speed: 1,
+    progress: 0,
+    currentTime: 0,
+    duration: 0,
+    playPodcast: () => {},
+    togglePlay: () => {},
+    closePlayer: () => {},
+    setVolume: () => {},
+    setSpeed: () => {},
+    handleSeek: () => {}
+};
 
-export const useAudio = () => useContext(AudioContext);
+const AudioContext = createContext(defaultAudioContext);
+
+export const useAudio = () => useContext(AudioContext) || defaultAudioContext;
 
 export function AudioProvider({ children }) {
     const [currentPodcast, setCurrentPodcast] = useState(null);
@@ -107,6 +123,24 @@ export function AudioProvider({ children }) {
         }
     };
 
+    const skipTime = (seconds) => {
+        if (audioRef.current && audioRef.current.duration) {
+            let newTime = audioRef.current.currentTime + seconds;
+            newTime = Math.max(0, Math.min(newTime, audioRef.current.duration));
+            audioRef.current.currentTime = newTime;
+            setCurrentTime(newTime);
+            setProgress((newTime / audioRef.current.duration) * 100);
+        }
+    };
+
+    const toggleMute = () => {
+        if (volume > 0) {
+            setVolume(0);
+        } else {
+            setVolume(1);
+        }
+    };
+
     return (
         <AudioContext.Provider value={{
             currentPodcast,
@@ -121,7 +155,9 @@ export function AudioProvider({ children }) {
             closePlayer,
             setVolume,
             setSpeed,
-            handleSeek
+            handleSeek,
+            skipTime,
+            toggleMute
         }}>
             {children}
         </AudioContext.Provider>

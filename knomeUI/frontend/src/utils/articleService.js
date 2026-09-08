@@ -9,45 +9,69 @@ const DEFAULT_COVER_IMAGES = [
     'https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&q=80&w=1200'
 ];
 
-export async function getArticles(categoryId = null, tag = null, search = null, pageNumber = 1, pageSize = 20) {
+export async function getArticles(categoryId = null, tag = null, search = null, pageNumber = 1, pageSize = 20, forceFresh = false) {
     try {
         let endpoint = `/Articles?pageNumber=${pageNumber}&pageSize=${pageSize}`;
         if (categoryId) endpoint += `&categoryId=${categoryId}`;
         if (tag) endpoint += `&tag=${encodeURIComponent(tag)}`;
         if (search) endpoint += `&search=${encodeURIComponent(search)}`;
 
-        const data = await apiClient.get(endpoint);
+        const data = await apiClient.get(endpoint, forceFresh ? { noCache: true } : {});
 
         return data.map((art, idx) => {
             // Find cover image if it exists in coverImageUrl or attachments
-            const coverAttachment = art.coverImageUrl 
-                || art.attachmentUrls?.find(url => url.match(/\.(jpeg|jpg|gif|png|webp)$/i))
-                || art.attachments?.find(a => a.fileType === 'Image' || (a.fileUrl && a.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i)))?.fileUrl;
+            const coverAttachmentRaw = art.coverImageUrl 
+                || art.attachmentUrls?.find(url => url && url.match(/\.(jpeg|jpg|gif|png|webp)$/i))
+                || art.attachments?.find(a => a && (a.fileType === 'Image' || (a.fileUrl && a.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i))))?.fileUrl;
 
-            const coverImage = coverAttachment 
-                ? resolveMediaUrl(coverAttachment) 
-                : DEFAULT_COVER_IMAGES[idx % DEFAULT_COVER_IMAGES.length];
+            const coverImage = coverAttachmentRaw 
+                ? resolveMediaUrl(coverAttachmentRaw) 
+                : (art.coverImageUrl ? resolveMediaUrl(art.coverImageUrl) : null);
 
-            const attachmentsList = (art.attachments && art.attachments.length > 0)
-                ? art.attachments.map(att => ({
-                    url: resolveMediaUrl(att.fileUrl),
-                    rawUrl: att.fileUrl,
-                    name: att.fileName || att.fileUrl.split('/').pop() || 'Attached Document',
-                    fileType: att.fileType,
-                    publishedDate: att.publishedDate || art.publishedDate,
-                    isDoc: Boolean(att.fileUrl.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)$/i) || att.fileType === 'Document'),
-                    isImage: Boolean(att.fileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) || att.fileType === 'Image'),
-                    isVideo: Boolean(att.fileUrl.match(/\.(mp4|webm|ogg|mov|m4v|mkv)$/i) || att.fileType === 'Video' || att.fileUrl.includes('media_') || att.fileUrl.includes('/videos/')),
-                  }))
-                : (art.attachmentUrls || []).map(url => ({
-                    url: resolveMediaUrl(url),
-                    rawUrl: url,
-                    name: url.split('/').pop() || 'Attached Document',
-                    publishedDate: art.publishedDate || art.createdDate,
-                    isDoc: Boolean(url.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)$/i)),
-                    isImage: Boolean(url.match(/\.(jpeg|jpg|gif|png|webp)$/i)),
-                    isVideo: Boolean(url.match(/\.(mp4|webm|ogg|mov|m4v|mkv)$/i) || url.includes('media_') || url.includes('/videos/')),
-                  }));
+            const rawAttachments = (art.attachments && art.attachments.length > 0)
+                ? art.attachments.map(att => {
+                    const fileUrl = (att.fileUrl || '').toLowerCase();
+                    const isDoc = Boolean(fileUrl.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)$/i) || att.fileType === 'Document');
+                    const isImage = Boolean(fileUrl.match(/\.(jpeg|jpg|gif|png|webp|svg|bmp)$/i) || att.fileType === 'Image');
+                    const isVideo = !isDoc && !isImage && Boolean(fileUrl.match(/\.(mp4|webm|ogg|mov|m4v|mkv)$/i) || att.fileType === 'Video' || fileUrl.includes('/uploads/videos/'));
+
+                    return {
+                        url: resolveMediaUrl(att.fileUrl),
+                        rawUrl: att.fileUrl,
+                        name: att.fileName || att.fileUrl.split('/').pop() || 'Attached File',
+                        fileType: att.fileType,
+                        publishedDate: att.publishedDate || art.publishedDate,
+                        isDoc,
+                        isImage,
+                        isVideo,
+                    };
+                  })
+                : (art.attachmentUrls || []).map(url => {
+                    const rawUrl = (url || '').toLowerCase();
+                    const isDoc = Boolean(rawUrl.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)$/i));
+                    const isImage = Boolean(rawUrl.match(/\.(jpeg|jpg|gif|png|webp|svg|bmp)$/i));
+                    const isVideo = !isDoc && !isImage && Boolean(rawUrl.match(/\.(mp4|webm|ogg|mov|m4v|mkv)$/i) || rawUrl.includes('/uploads/videos/'));
+
+                    return {
+                        url: resolveMediaUrl(url),
+                        rawUrl: url,
+                        name: url.split('/').pop() || 'Attached File',
+                        publishedDate: art.publishedDate || art.createdDate,
+                        isDoc,
+                        isImage,
+                        isVideo,
+                    };
+                  });
+
+            // Filter out cover photo from attachments so image is shown only ONCE
+            const attachmentsList = rawAttachments.filter(att => {
+                if (att.isImage && coverAttachmentRaw) {
+                    if (att.rawUrl === coverAttachmentRaw || (att.url && coverImage && att.url === coverImage)) {
+                        return false;
+                    }
+                }
+                return true;
+            });
 
             const authorName = art.authorFullName || 'Enterprise Author';
             const authorAvatar = art.authorProfilePhotoUrl 
@@ -69,10 +93,12 @@ export async function getArticles(categoryId = null, tag = null, search = null, 
                 tags: art.tags || [],
                 image: coverImage,
                 attachments: attachmentsList,
-                likes: art.engagementSummary?.likesCount || 0,
-                reactions: art.engagementSummary?.likesCount || 0,
+                likes: art.engagementSummary?.reactionSummary?.totalCount ?? art.engagementSummary?.reactionSummary?.likeCount ?? art.engagementSummary?.likesCount ?? 0,
+                reactions: art.engagementSummary?.reactionSummary?.totalCount ?? art.engagementSummary?.reactionSummary?.likeCount ?? 0,
                 views: art.viewCount || 0,
-                shares: 0,
+                shares: art.engagementSummary?.sharesCount || 0,
+                isBookmarked: art.engagementSummary?.isBookmarkedByCurrentUser || false,
+                commentsCount: art.engagementSummary?.commentsCount || 0,
                 community: 'General',
                 members: '0 members',
                 communityDesc: '',
@@ -109,3 +135,24 @@ export async function deleteArticle(articleId) {
         throw error;
     }
 }
+
+export async function getArticleCategories() {
+    try {
+        const response = await apiClient.get('/Articles/categories');
+        return Array.isArray(response) ? response : (response?.data || []);
+    } catch (error) {
+        console.error('Failed to fetch article categories', error);
+        return [];
+    }
+}
+
+export async function createArticleCategory(name) {
+    try {
+        const response = await apiClient.post('/Articles/categories', { name });
+        return response;
+    } catch (error) {
+        console.error('Failed to create article category', error);
+        throw error;
+    }
+}
+

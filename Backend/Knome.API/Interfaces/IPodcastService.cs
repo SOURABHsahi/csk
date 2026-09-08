@@ -17,6 +17,7 @@ public interface IPodcastService
     Task<PodcastDto> GetPodcastAsync(long podcastId, int currentUserId);
     Task<List<PodcastDto>> GetPodcastsAsync(int? seriesId, int? categoryId, string? search, int pageNumber, int pageSize, int currentUserId);
     Task<List<PodcastDto>> GetMyPodcastsAsync(int currentUserId, int pageNumber = 1, int pageSize = 20);
+    Task<List<PodcastDto>> GetUserPodcastsAsync(int hostUserId, int currentUserId, int pageNumber = 1, int pageSize = 20);
     Task<PodcastDto> CreatePodcastAsync(int currentUserId, CreatePodcastDto dto);
     Task<PodcastDto> UpdatePodcastAsync(long podcastId, int currentUserId, UpdatePodcastDto dto);
     Task DeletePodcastAsync(long podcastId, int currentUserId);

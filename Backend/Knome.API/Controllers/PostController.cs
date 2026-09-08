@@ -38,7 +38,15 @@ public class PostController : KnomeControllerBase
         return Ok(ApiResponse<List<PostDto>>.SuccessResponse(200, "User posts retrieved successfully.", posts));
     }
 
-    [HttpGet("{postId}")]
+    [HttpGet("user/{userId:int}")]
+    [ProducesResponseType(typeof(ApiResponse<List<PostDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetUserPosts(int userId, [FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 20)
+    {
+        var posts = await _postService.GetUserPostsAsync(userId, GetCurrentUserId(), pageNumber, pageSize);
+        return Ok(ApiResponse<List<PostDto>>.SuccessResponse(200, "User posts retrieved successfully.", posts));
+    }
+
+    [HttpGet("{postId:long}")]
     [ProducesResponseType(typeof(ApiResponse<PostDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetPost(long postId)
     {

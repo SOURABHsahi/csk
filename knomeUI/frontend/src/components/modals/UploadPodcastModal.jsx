@@ -1,10 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { mediaApi, podcastsApi } from '../../utils/apiService';
+import { useUser } from '../contexts/UserContext';
+import { useToast } from '../contexts/ToastContext';
+import { checkRestrictedContent } from '../../utils/restrictedWords';
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB (FR-PD-05)
 const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.aac', '.ogg', '.m4a', '.webm'];
 
 export default function UploadPodcastModal({ isOpen, onClose }) {
+    const { currentUser } = useUser();
+    const { addToast } = useToast();
+    const isCurrentUserAdmin = ['SYSADM', 'CADM', 'HRADM'].includes(currentUser?.role) ||
+        ['System Administrator', 'HR Administrator', 'Community Administrator', 'System Admin'].includes(currentUser?.roleName);
+
     const [tab, setTab] = useState('upload');
     const [isRecording, setIsRecording] = useState(false);
     const [recordingTime, setRecordingTime] = useState(0);
@@ -128,7 +136,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                 setIsRecording(true);
             } catch (err) {
                 console.error("Microphone access error:", err);
-                alert("Microphone permission denied or unavailable in this browser.");
+                addToast("Microphone permission denied or unavailable in this browser.", 'error');
             }
         }
     };
@@ -139,7 +147,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
             const file = e.target.files[0];
 
             if (file.size > MAX_FILE_SIZE) {
-                alert(`File size exceeds the 100MB limit. Current size: ${(file.size / (1024 * 1024)).toFixed(1)}MB.`);
+                addToast(`File size exceeds the 100MB limit. Current size: ${(file.size / (1024 * 1024)).toFixed(1)}MB.`, 'warning');
                 e.target.value = '';
                 return;
             }
@@ -147,7 +155,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
             const fileName = file.name.toLowerCase();
             const isValid = ALLOWED_EXTENSIONS.some(ext => fileName.endsWith(ext));
             if (!isValid) {
-                alert(`Unsupported audio format. Supported formats: ${ALLOWED_EXTENSIONS.join(', ')}.`);
+                addToast(`Unsupported audio format. Supported formats: ${ALLOWED_EXTENSIONS.join(', ')}.`, 'warning');
                 e.target.value = '';
                 return;
             }
@@ -155,11 +163,30 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
             setAudioFile(file);
             
             // Auto detect duration if possible
-            const audioObj = new Audio(URL.createObjectURL(file));
+            const audioUrl = URL.createObjectURL(file);
+            const audioObj = new Audio(audioUrl);
             audioObj.onloadedmetadata = () => {
                 if (audioObj.duration && !isNaN(audioObj.duration)) {
                     setDuration(formatTime(Math.floor(audioObj.duration)));
                 }
+                try {
+                    audioObj.pause();
+                    audioObj.removeAttribute('src');
+                    audioObj.load();
+                } catch (e) {}
+                setTimeout(() => {
+                    try { URL.revokeObjectURL(audioUrl); } catch (e) {}
+                }, 2000);
+            };
+            audioObj.onerror = () => {
+                try {
+                    audioObj.pause();
+                    audioObj.removeAttribute('src');
+                    audioObj.load();
+                } catch (e) {}
+                setTimeout(() => {
+                    try { URL.revokeObjectURL(audioUrl); } catch (e) {}
+                }, 2000);
             };
         }
     };
@@ -173,7 +200,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
     // Series Creation Workflow (FR-PD-03)
     const handleCreateSeries = async () => {
         if (!newSeriesTitle.trim()) {
-            alert('Series title is required.');
+            addToast('Series title is required.', 'warning');
             return;
         }
         try {
@@ -182,7 +209,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                 description: newSeriesDesc.trim()
             });
             const created = res?.data || res;
-            alert(`Series "${newSeriesTitle}" created successfully!`);
+            addToast(`Series "${newSeriesTitle}" created successfully!`, 'success');
             await fetchSeries();
             if (created && created.seriesId) {
                 setSeriesId(created.seriesId.toString());
@@ -192,18 +219,30 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
             setNewSeriesDesc('');
         } catch (err) {
             console.error('Failed to create series:', err);
-            alert('Failed to create series.');
+            addToast('Failed to create series.', 'error');
         }
     };
 
     const handleUpload = async () => {
+        if (currentUser?.isActive === false) {
+            addToast("Your account is currently suspended by System Administrator. You cannot upload podcasts for approval.", 'error');
+            return;
+        }
+
         if (!title.trim()) {
-            alert('Episode title is required.');
+            addToast('Episode title is required.', 'warning');
+            return;
+        }
+
+        const textToScan = `${title} ${description} ${categoryName}`;
+        const foundKeyword = checkRestrictedContent(textToScan);
+        if (foundKeyword) {
+            addToast(`Podcast episode cannot be uploaded. It contains the restricted term: "${foundKeyword}".`, 'warning');
             return;
         }
 
         if (!audioFile) {
-            alert('Please upload an audio file or record audio in-browser before publishing.');
+            addToast('Please upload an audio file or record audio in-browser before publishing.', 'warning');
             return;
         }
 
@@ -227,27 +266,81 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                 }
             }
 
+            if (!coverImageUrl) {
+                const defaultCovers = {
+                    Tech: 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&q=90&w=800',
+                    Leadership: 'https://images.unsplash.com/photo-1519389950473-47ba0277781c?auto=format&fit=crop&q=90&w=800',
+                    Engineering: 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&q=90&w=800',
+                    General: 'https://images.unsplash.com/photo-1478737270239-2f02b77fc618?auto=format&fit=crop&q=90&w=800'
+                };
+                coverImageUrl = defaultCovers[categoryName] || defaultCovers.General;
+            }
+
+            const currentAuthorId = currentUser?.id || currentUser?.userId;
+            const currentAuthorName = currentUser?.fullName || currentUser?.name || 'Employee';
+
             const podcastData = {
                 title: title.trim(),
                 description: description.trim(),
                 audioUrl: audioUrl || null,
-                coverImageUrl: coverImageUrl || null,
+                coverImageUrl: coverImageUrl,
                 durationSeconds: parseDuration(duration),
                 seriesId: seriesId ? parseInt(seriesId) : null,
                 categoryName: categoryName || 'General',
-                categoryId: null
+                categoryId: null,
+                uploaderUserId: currentAuthorId
             };
 
-            await podcastsApi.create(podcastData);
-            
-            // Refresh list
-            window.dispatchEvent(new CustomEvent('podcast-published'));
+            if (isCurrentUserAdmin) {
+                await podcastsApi.create(podcastData);
+                addToast("Podcast episode published successfully!", 'success');
+                window.dispatchEvent(new CustomEvent('podcast-published'));
+            } else {
+                const pendingItem = {
+                    id: `pending_podcast_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                    mediaType: 'Podcast',
+                    title: title.trim(),
+                    description: description.trim(),
+                    thumbnail: coverImageUrl || 'https://images.unsplash.com/photo-1590602847861-f357a9332bbc?auto=format&fit=crop&q=90&w=1600&h=900',
+                    audioUrl: audioUrl,
+                    duration: duration || 'Podcast',
+                    category: categoryName || 'General',
+                    authorName: currentAuthorName,
+                    authorId: currentAuthorId,
+                    authorAvatar: currentUser?.profilePhotoUrl || currentUser?.avatar,
+                    submittedDate: new Date().toISOString(),
+                    status: 'PendingApproval',
+                    podcastData: podcastData
+                };
+
+                const existingPending = JSON.parse(localStorage.getItem('knome_pending_media_approvals') || '[]');
+                localStorage.setItem('knome_pending_media_approvals', JSON.stringify([pendingItem, ...existingPending]));
+
+                const adminNotif = {
+                    id: `notif_approval_${Date.now()}`,
+                    type: 'media_approval',
+                    category: 'System',
+                    text: `${currentUser?.name || 'Employee'} uploaded podcast "${title.trim()}" awaiting your admin approval.`,
+                    senderName: currentUser?.name || 'Employee',
+                    senderAvatar: currentUser?.avatar,
+                    targetUserId: 'admin',
+                    targetUrl: '/admin-console',
+                    time: 'Just now',
+                    unread: true,
+                    mediaType: 'Podcast',
+                    pendingId: pendingItem.id
+                };
+                const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+                localStorage.setItem('knome_notifications', JSON.stringify([adminNotif, ...existingNotifs]));
+
+                addToast(`Podcast episode "${title.trim()}" submitted successfully! It has been sent to the Admin for approval before going live.`, 'success');
+            }
             
             setIsUploading(false);
             onClose();
         } catch (error) {
             console.error('Failed to publish podcast:', error);
-            alert('Failed to publish podcast. Please try again.');
+            addToast('Failed to publish podcast. Please try again.', 'error');
             setIsUploading(false);
         }
     };
@@ -374,7 +467,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                                 <select 
                                     value={seriesId}
                                     onChange={(e) => setSeriesId(e.target.value)}
-                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-pink-500 outline-none text-slate-900 dark:text-white font-medium"
+                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-pink-500 outline-none text-slate-900 dark:text-white font-medium cursor-pointer"
                                 >
                                     <option value="">Standalone Episode</option>
                                     {seriesList.map(s => (

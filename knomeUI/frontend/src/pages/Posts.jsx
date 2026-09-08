@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import PostCard from '../components/widgets/PostCard';
@@ -54,10 +54,34 @@ export default function Posts() {
 
     useEffect(() => {
         loadPosts();
+        const handlePostDeleted = (e) => {
+            const deletedId = e?.detail?.id || e;
+            if (deletedId) {
+                setPosts(prev => prev.filter(p => p.id !== deletedId && p.postId !== deletedId));
+            }
+        };
+        window.addEventListener('post-deleted', handlePostDeleted);
+        return () => window.removeEventListener('post-deleted', handlePostDeleted);
     }, [targetPostId]);
 
-    // Get all unique tags for filter pills
-    const allTags = ['All', '✨ Recommended', ...new Set(posts.flatMap(post => post.tags || []))];
+    const [isFilterOpen, setIsFilterOpen] = useState(false);
+    const [tagSearch, setTagSearch] = useState('');
+    const filterRef = useRef(null);
+
+    // Close filter dropdown on outside click
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (filterRef.current && !filterRef.current.contains(e.target)) {
+                setIsFilterOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // Get all unique tags for filter dropdown
+    const rawUniqueTags = [...new Set(posts.flatMap(post => post.tags || []))].filter(Boolean);
+    const filteredAvailableTags = rawUniqueTags.filter(t => t.toLowerCase().includes(tagSearch.toLowerCase()));
 
     // Filter and sort logic — highlighted target post always at top
     const rawPosts = posts.filter(post => {
@@ -102,23 +126,22 @@ export default function Posts() {
     };
 
     return (
-        <div className="flex-1 min-w-0 flex flex-col gap-6 pb-32">
+        <div className="flex-1 min-w-0 flex flex-col gap-6 pb-6">
             
-            {/* Header - Custom Hero Typography Design */}
-            <div className="relative flex flex-col items-center text-center pb-8 pt-6">
+            {/* Header - Formal & Catchy Hero Typography Design */}
+            <div className="relative flex flex-col items-center text-center pb-4 pt-4">
                 
-                {/* Background Glow */}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-slate-300/30 dark:bg-slate-700/20 rounded-full blur-[80px] pointer-events-none -z-10"></div>
+                {/* Background Ambient Glow */}
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-40 bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-cyan-500/10 rounded-full blur-[70px] pointer-events-none -z-10"></div>
 
                 {/* Top Right Action Button */}
                 {currentUser.role !== 'SYSADM' && (
-                    <div className="absolute right-0 top-0 hidden sm:block">
+                    <div className="absolute right-0 top-2 hidden sm:block">
                         <button 
                             onClick={() => setIsCreatePostOpen(true)}
-                            className="px-6 py-2.5 text-xs font-black text-white rounded-xl transition-all hover:-translate-y-0.5 flex items-center gap-2"
+                            className="px-6 py-2.5 text-xs font-black text-white rounded-xl transition-all hover:scale-[1.02] active:scale-95 flex items-center gap-2 shadow-lg shadow-indigo-500/20 cursor-pointer"
                             style={{
-                                background: 'linear-gradient(135deg, var(--theme-10), #1D4ED8)',
-                                boxShadow: '0 4px 14px rgba(79,70,229,0.35)'
+                                background: 'linear-gradient(135deg, #4f46e5 0%, #2563eb 100%)',
                             }}
                         >
                             <span className="material-symbols-outlined text-[16px]">edit_square</span>
@@ -127,22 +150,27 @@ export default function Posts() {
                     </div>
                 )}
 
-                {/* Title: Connect (Light) + the World (Heavy) -> Network Conversations */}
-                <h1 className="text-[52px] sm:text-[64px] leading-tight tracking-tight text-slate-800 dark:text-slate-100 flex flex-col sm:flex-row items-center gap-2 sm:gap-4 mb-2">
-                    <span className="font-light">Network</span>
-                    <span className="font-black">Conversations</span>
-                </h1>
-
-                {/* Gradient Divider Line */}
-                <div className="w-full max-w-3xl h-1.5 rounded-full mb-6" style={{ background: 'linear-gradient(90deg, #1e293b 0%, rgba(30,41,59,0.8) 40%, rgba(30,41,59,0.1) 100%)' }}></div>
-
-                {/* Subtitle with Inline Pills */}
-                <div className="text-[17px] font-medium text-theme-30-text mb-4 max-w-2xl leading-relaxed">
-                    Browse and participate in discussions with our <span className="inline-flex items-center px-3 py-1 bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg mx-1 text-[15px] font-bold shadow-sm">vibrant community</span> <span className="inline-flex items-center px-3 py-1 bg-slate-200 dark:bg-slate-800 text-slate-900 dark:text-white rounded-lg mx-1 text-[15px] font-bold shadow-sm">feed</span>
+                {/* Refined Category Badge */}
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200/80 dark:border-indigo-800/80 text-indigo-600 dark:text-indigo-400 text-xs font-extrabold uppercase tracking-wider mb-3 shadow-xs">
+                    <span className="material-symbols-outlined text-[14px]">forum</span>
+                    Enterprise Feed & Discussions
                 </div>
 
+                {/* Title: Formal & Catchy (No Underline) */}
+                <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight text-slate-900 dark:text-white flex flex-wrap items-center justify-center gap-2 sm:gap-3.5 mb-3 leading-tight">
+                    <span className="text-slate-800 dark:text-slate-200 font-extrabold">Network</span>
+                    <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 bg-clip-text text-transparent drop-shadow-xs">
+                        Conversations
+                    </span>
+                </h1>
+
+                {/* Subtitle with Integrated Text Flow */}
+                <p className="text-base sm:text-lg text-slate-600 dark:text-slate-300 font-medium max-w-2xl leading-relaxed mb-1">
+                    Browse and participate in discussions with our <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 dark:from-indigo-400 dark:via-blue-400 dark:to-cyan-400">vibrant community feed</span>
+                </p>
+
                 {/* Small Description */}
-                <p className="text-[14px] text-theme-30-text font-normal max-w-xl opacity-80">
+                <p className="text-xs sm:text-sm text-slate-400 dark:text-slate-500 font-normal max-w-xl">
                     Stay updated with real-time posts, share knowledge snippets, and collaborate across the network seamlessly.
                 </p>
 
@@ -150,9 +178,9 @@ export default function Posts() {
                 {currentUser.role !== 'SYSADM' && (
                     <button 
                         onClick={() => setIsCreatePostOpen(true)}
-                        className="mt-6 sm:hidden px-6 py-2.5 text-xs font-black text-white rounded-xl transition-all flex items-center gap-2 w-full justify-center"
+                        className="mt-5 sm:hidden px-6 py-2.5 text-xs font-black text-white rounded-xl transition-all flex items-center gap-2 w-full justify-center shadow-md cursor-pointer"
                         style={{
-                            background: 'linear-gradient(135deg, var(--theme-10), #1D4ED8)',
+                            background: 'linear-gradient(135deg, #4f46e5 0%, #2563eb 100%)',
                         }}
                     >
                         <span className="material-symbols-outlined text-[16px]">edit_square</span>
@@ -161,38 +189,163 @@ export default function Posts() {
                 )}
             </div>
 
-            {/* Search & Filter Bar */}
-            <div className="glass bg-white dark:bg-slate-950 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col gap-4 shadow-sm">
-                <div className="relative">
-                    <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">search</span>
-                    <input
-                        type="text"
-                        placeholder="Search posts by content or author..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-11 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:ring-2 focus:ring-[#6366f1]/20 outline-none text-slate-900 dark:text-white"
-                    />
-                </div>
-                
-                {/* Tag Pills */}
-                {allTags.length > 1 && (
-                    <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 mr-1">Filter Tags:</span>
-                        {allTags.map(tag => (
-                            <button
-                                key={tag}
-                                onClick={() => setSelectedTag(tag)}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${selectedTag === tag ? 'bg-[#6366f1]/10 border-[#6366f1] text-[#6366f1]' : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+            {/* Search & Modern Filter Bar (Clean & Professional) */}
+            <div className={`glass bg-white dark:bg-slate-950 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col gap-3.5 shadow-sm relative ${isFilterOpen ? 'z-40' : 'z-10'}`}>
+                <div className="flex items-center gap-3">
+                    <div className="relative flex-1">
+                        <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">search</span>
+                        <input
+                            type="text"
+                            placeholder="Search discussions by keyword, topic, or author..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full pl-11 pr-10 py-2.5 sm:py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500/30 outline-none text-slate-900 dark:text-white transition-all"
+                        />
+                        {searchQuery && (
+                            <button 
+                                onClick={() => setSearchQuery('')}
+                                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
                             >
-                                {tag === 'All' ? 'All Tags' : `#${tag}`}
+                                <span className="material-symbols-outlined text-[16px]">close</span>
                             </button>
-                        ))}
+                        )}
                     </div>
-                )}
+
+                    {/* Filter Icon Button with Dropdown Popover */}
+                    <div className="relative z-50" ref={filterRef}>
+                        <button
+                            onClick={() => setIsFilterOpen(!isFilterOpen)}
+                            className={`flex items-center gap-2 px-4 py-2.5 sm:py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-xs ${
+                                isFilterOpen || (selectedTag !== 'All' && selectedTag !== '✨ Recommended')
+                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-indigo-500/20'
+                                    : 'bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300'
+                            }`}
+                            title="Filter by Topic / Hashtag"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">tune</span>
+                            <span className="hidden sm:inline">Filter</span>
+                            {selectedTag !== 'All' && selectedTag !== '✨ Recommended' && (
+                                <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
+                            )}
+                        </button>
+
+                        {/* Filter Popover Dropdown */}
+                        {isFilterOpen && (
+                            <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-150">
+                                <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 mb-3">
+                                    <div className="flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-[18px] text-indigo-500">tune</span>
+                                        <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">Filter Topics</h4>
+                                    </div>
+                                    {selectedTag !== 'All' && (
+                                        <button 
+                                            onClick={() => { setSelectedTag('All'); setIsFilterOpen(false); }}
+                                            className="text-[11px] font-bold text-indigo-500 hover:underline cursor-pointer"
+                                        >
+                                            Reset Filter
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Tag Search inside filter dropdown */}
+                                <div className="relative mb-3">
+                                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[16px] text-slate-400">search</span>
+                                    <input 
+                                        type="text"
+                                        placeholder="Search topic tags..."
+                                        value={tagSearch}
+                                        onChange={(e) => setTagSearch(e.target.value)}
+                                        className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs outline-none text-slate-900 dark:text-white"
+                                    />
+                                </div>
+
+                                <div className="max-h-52 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                                    <button
+                                        onClick={() => { setSelectedTag('All'); setIsFilterOpen(false); }}
+                                        className={`w-full text-left px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                                            selectedTag === 'All'
+                                                ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-extrabold'
+                                                : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                        }`}
+                                    >
+                                        <span>All Topics</span>
+                                        {selectedTag === 'All' && <span className="material-symbols-outlined text-[16px]">check</span>}
+                                    </button>
+
+                                    {filteredAvailableTags.length > 0 ? (
+                                        filteredAvailableTags.map(tag => {
+                                            const isSelected = selectedTag === tag;
+                                            const count = posts.filter(p => p.tags && p.tags.includes(tag)).length;
+                                            return (
+                                                <button
+                                                    key={tag}
+                                                    onClick={() => { setSelectedTag(tag); setIsFilterOpen(false); }}
+                                                    className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all flex items-center justify-between cursor-pointer ${
+                                                        isSelected
+                                                            ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold'
+                                                            : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                                    }`}
+                                                >
+                                                    <span className="truncate">#{tag}</span>
+                                                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                                                        {count}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })
+                                    ) : (
+                                        <p className="text-center py-4 text-xs text-slate-400">No topic tags found</p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Primary Quick Filter Pills & Active Tag Indicator */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+                        <button
+                            onClick={() => setSelectedTag('All')}
+                            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                selectedTag === 'All'
+                                    ? 'bg-indigo-600 text-white shadow-xs'
+                                    : 'bg-slate-100 dark:bg-slate-800/70 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                            }`}
+                        >
+                            All Posts
+                        </button>
+                        <button
+                            onClick={() => setSelectedTag('✨ Recommended')}
+                            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                selectedTag === '✨ Recommended'
+                                    ? 'bg-gradient-to-r from-amber-500 to-indigo-600 text-white shadow-xs'
+                                    : 'bg-slate-100 dark:bg-slate-800/70 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                            }`}
+                        >
+                            <span>✨</span>
+                            <span>Recommended</span>
+                        </button>
+                    </div>
+
+                    {/* Active Selected Filter Badge */}
+                    {selectedTag !== 'All' && selectedTag !== '✨ Recommended' && (
+                        <div className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 text-xs font-bold rounded-lg animate-in fade-in duration-150">
+                            <span>Topic: #{selectedTag}</span>
+                            <button 
+                                onClick={() => setSelectedTag('All')}
+                                className="hover:bg-indigo-100 dark:hover:bg-indigo-900 rounded p-0.5 ml-0.5 cursor-pointer flex items-center"
+                                title="Clear topic filter"
+                            >
+                                <span className="material-symbols-outlined text-[14px]">close</span>
+                            </button>
+                        </div>
+                    )}
+                </div>
             </div>
 
-            {/* Feed display */}
-            <div className="flex flex-col gap-6 max-w-4xl">
+            {/* Feed display — Full screen width */}
+            <div className="flex flex-col gap-6 w-full min-w-0">
                 {isLoading ? (
                     <div className="glass bg-white dark:bg-slate-950 p-12 rounded-2xl border border-slate-200 dark:border-slate-800 text-center flex flex-col items-center justify-center gap-3">
                         <span className="material-symbols-outlined text-4xl text-slate-300 dark:text-slate-700 animate-spin">progress_activity</span>
@@ -201,7 +354,10 @@ export default function Posts() {
                 ) : filteredPosts.length > 0 ? (
                     <>
                         {filteredPosts.slice(0, visibleCount).map(post => (
-                            <PostCard key={post.id} post={post} onPostDeleted={() => loadPosts()} />
+                            <PostCard key={post.id} post={post} onPostDeleted={(deletedId) => {
+                                if (deletedId) setPosts(prev => prev.filter(p => p.id !== deletedId && p.postId !== deletedId));
+                                loadPosts();
+                            }} />
                         ))}
 
                         {/* Infinite Scroll Progress Indicator */}

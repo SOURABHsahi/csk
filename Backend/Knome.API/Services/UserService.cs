@@ -22,8 +22,18 @@ public class UserService : IUserService
     private readonly IAuditLogService _auditLogService;
     private readonly KnomeDbContext _db;
     private readonly INotificationService _notificationService;
+    private readonly IEmailService _emailService;
+    private readonly ILogger<UserService> _logger;
 
-    public UserService(IUserRepository userRepo, IFileStorageService fileStorage, IMapper mapper, IAuditLogService auditLogService, KnomeDbContext db, INotificationService notificationService)
+    public UserService(
+        IUserRepository userRepo,
+        IFileStorageService fileStorage,
+        IMapper mapper,
+        IAuditLogService auditLogService,
+        KnomeDbContext db,
+        INotificationService notificationService,
+        IEmailService emailService,
+        ILogger<UserService> logger)
     {
         _userRepo = userRepo;
         _fileStorage = fileStorage;
@@ -31,6 +41,8 @@ public class UserService : IUserService
         _auditLogService = auditLogService;
         _db = db;
         _notificationService = notificationService;
+        _emailService = emailService;
+        _logger = logger;
     }
 
     public async Task<UserProfileDto> GetUserProfileAsync(int targetUserId, int requestingUserId)
@@ -59,6 +71,8 @@ public class UserService : IUserService
             {
                 dto.ConnectionStatus = "Connected";
             }
+
+            dto.IsFollowing = await _userRepo.IsFollowingAsync(requestingUserId, targetUserId);
         }
 
         // Apply DPDP Act 2023 visibility enforcement per FR-UP-04
@@ -224,6 +238,73 @@ public class UserService : IUserService
         _userRepo.Update(user);
         await _userRepo.SaveChangesAsync();
 
+        // Also update any pending RoleRequests for this employee and send notification email
+        try
+        {
+            var rolesList = dto.RoleNames ?? new List<string>();
+            var rolesDisplay = rolesList.Count > 0 ? string.Join(", ", rolesList) : "Employee";
+            var primaryRole = rolesList.FirstOrDefault() ?? "Employee";
+            var empId = user.EmployeeId;
+            var userEmail = user.Email;
+            var userName = user.FullName;
+            var userDept = user.Department?.Name ?? "General";
+
+            var conn = _db.Database.GetDbConnection();
+            if (conn.State != System.Data.ConnectionState.Open)
+                await conn.OpenAsync();
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                UPDATE [RoleRequests]
+                SET [Status] = 'Approved',
+                    [AssignedRoleName] = @roleName,
+                    [AssignedBy] = 'System Admin',
+                    [AdminComment] = 'Assigned by System Administrator from Knome Admin Console',
+                    [ProcessedAt] = GETUTCDATE()
+                WHERE [EmployeeId] = @empId AND [Status] = 'Pending';
+
+                IF EXISTS (SELECT 1 FROM sys.databases WHERE name = 'EmployeeHubDb')
+                BEGIN
+                    UPDATE [EmployeeHubDb].[dbo].[RoleRequests]
+                    SET [Status] = 'Approved',
+                        [AssignedRoleName] = @roleName,
+                        [AssignedBy] = 'System Admin',
+                        [AdminComment] = 'Assigned by System Administrator from Knome Admin Console',
+                        [ProcessedAt] = GETUTCDATE()
+                    WHERE [EmployeeId] = @empId AND [Status] = 'Pending';
+                END
+            ";
+            var p1 = cmd.CreateParameter(); p1.ParameterName = "@roleName"; p1.Value = primaryRole; cmd.Parameters.Add(p1);
+            var p2 = cmd.CreateParameter(); p2.ParameterName = "@empId"; p2.Value = empId; cmd.Parameters.Add(p2);
+            await cmd.ExecuteNonQueryAsync();
+
+            if (!string.IsNullOrWhiteSpace(userEmail))
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _emailService.SendRoleAssignedEmailAsync(
+                            userEmail,
+                            userName,
+                            empId,
+                            rolesDisplay,
+                            userDept,
+                            "Role updated by System Administrator from Knome Admin Console");
+                        _logger.LogInformation("Successfully sent role update notification email to {Email} for roles: {Roles}", userEmail, rolesDisplay);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to send role assigned email to {Email}", userEmail);
+                    }
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to sync role assignment email in ChangeRolesAsync for {UserId}", userId);
+        }
+
         return await GetUserProfileAsync(userId, userId);
     }
 
@@ -312,16 +393,18 @@ public class UserService : IUserService
         return await MapToNetworkUsersAsync(userId, suggestions, true);
     }
 
-    public async Task<System.Collections.Generic.List<NetworkUserDto>> GetFollowersAsync(int userId)
+    public async Task<System.Collections.Generic.List<NetworkUserDto>> GetFollowersAsync(int userId, int requestingUserId = 0)
     {
         var followers = await _userRepo.GetFollowersAsync(userId);
-        return await MapToNetworkUsersAsync(userId, followers, false);
+        var effectiveRequestingUserId = requestingUserId > 0 ? requestingUserId : userId;
+        return await MapToNetworkUsersAsync(effectiveRequestingUserId, followers, false);
     }
 
-    public async Task<System.Collections.Generic.List<NetworkUserDto>> GetFollowingAsync(int userId)
+    public async Task<System.Collections.Generic.List<NetworkUserDto>> GetFollowingAsync(int userId, int requestingUserId = 0)
     {
         var following = await _userRepo.GetFollowingAsync(userId);
-        return await MapToNetworkUsersAsync(userId, following, false);
+        var effectiveRequestingUserId = requestingUserId > 0 ? requestingUserId : userId;
+        return await MapToNetworkUsersAsync(effectiveRequestingUserId, following, false);
     }
 
     public async Task<System.Collections.Generic.List<NetworkUserDto>> GetPendingReceivedRequestsAsync(int currentUserId)
@@ -645,5 +728,381 @@ public class UserService : IUserService
         if (reverse != null) await _userRepo.RemoveConnectionRequestAsync(reverse);
 
         await _userRepo.RemoveBidirectionalFollowAsync(currentUserId, targetUserId);
+    }
+
+    public async Task<List<KnomeRoleRequestDto>> GetRoleRequestsAsync(string? status = null)
+    {
+        var result = new List<KnomeRoleRequestDto>();
+        using var conn = _db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            WITH RankedRequests AS (
+                SELECT 
+                    r.[RequestId], r.[EmployeeId], r.[FullName], r.[Email], 
+                    r.[DepartmentId], r.[DepartmentName], r.[Designation], 
+                    r.[RequestedRoleCode], 
+                    CASE 
+                        WHEN EXISTS (
+                            SELECT 1 FROM [Users] u 
+                            JOIN [UserRoles] ur ON u.[UserId] = ur.[UserId] 
+                            WHERE u.[EmployeeId] = r.[EmployeeId]
+                        ) THEN 'Approved'
+                        ELSE r.[Status] 
+                    END AS [Status],
+                    r.[AssignedRoleId], 
+                    r.[AssignedRoleName], r.[AssignedBy], r.[AdminComment], 
+                    r.[CreatedAt], r.[ProcessedAt],
+                    ROW_NUMBER() OVER (PARTITION BY r.[EmployeeId] ORDER BY r.[RequestId] DESC) as rn
+                FROM [RoleRequests] r
+            )
+            SELECT * FROM RankedRequests WHERE rn = 1
+            ORDER BY [CreatedAt] DESC";
+
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var reqStatus = reader["Status"]?.ToString() ?? "Pending";
+            if (!string.IsNullOrWhiteSpace(status) && !reqStatus.Equals(status.Trim(), StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            result.Add(new KnomeRoleRequestDto
+            {
+                RequestId = Convert.ToInt32(reader["RequestId"]),
+                EmployeeId = reader["EmployeeId"]?.ToString() ?? string.Empty,
+                FullName = reader["FullName"]?.ToString() ?? string.Empty,
+                Email = reader["Email"]?.ToString() ?? string.Empty,
+                DepartmentId = Convert.ToInt32(reader["DepartmentId"]),
+                DepartmentName = reader["DepartmentName"]?.ToString() ?? "Development",
+                Designation = reader["Designation"]?.ToString() ?? "TL",
+                RequestedRoleCode = reader["RequestedRoleCode"]?.ToString() ?? "EMP",
+                Status = reqStatus,
+                AssignedRoleName = reader["AssignedRoleName"] != DBNull.Value ? reader["AssignedRoleName"].ToString() : null,
+                AssignedBy = reader["AssignedBy"] != DBNull.Value ? reader["AssignedBy"].ToString() : null,
+                AdminComment = reader["AdminComment"] != DBNull.Value ? reader["AdminComment"].ToString() : null,
+                CreatedAt = Convert.ToDateTime(reader["CreatedAt"]),
+                ProcessedAt = reader["ProcessedAt"] != DBNull.Value ? Convert.ToDateTime(reader["ProcessedAt"]) : null
+            });
+        }
+
+        return result;
+    }
+
+    public async Task<bool> ApproveRoleRequestAsync(int actorUserId, int requestId, ApproveKnomeRoleRequestDto dto)
+    {
+        var roleName = string.IsNullOrWhiteSpace(dto.RoleName) ? "Employee" : dto.RoleName.Trim();
+        var roleCode = roleName switch
+        {
+            "System Administrator" => "SYSADM",
+            "System Admin" => "SYSADM",
+            "HR Administrator" => "HRADM",
+            "HR Admin" => "HRADM",
+            "Community Admin" or "Community Administrator" => "CADM",
+            _ => "EMP"
+        };
+
+        var conn = _db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync();
+
+        // 1. Fetch EmployeeId from RequestId
+        string empId = string.Empty;
+        using (var fetchCmd = conn.CreateCommand())
+        {
+            fetchCmd.CommandText = "SELECT EmployeeId FROM [RoleRequests] WHERE RequestId = @reqId";
+            var p = fetchCmd.CreateParameter();
+            p.ParameterName = "@reqId";
+            p.Value = requestId;
+            fetchCmd.Parameters.Add(p);
+            var val = await fetchCmd.ExecuteScalarAsync();
+            if (val != null) empId = val.ToString()!;
+        }
+
+        if (string.IsNullOrEmpty(empId))
+            throw new NotFoundException($"Role request #{requestId} not found.");
+
+        // 2. Update RoleRequests table in Knome & EmployeeHubDb
+        using (var updateCmd = conn.CreateCommand())
+        {
+            updateCmd.CommandText = @"
+                UPDATE [RoleRequests]
+                SET [Status] = 'Approved',
+                    [AssignedRoleName] = @roleName,
+                    [AssignedBy] = 'System Admin',
+                    [AdminComment] = @comment,
+                    [ProcessedAt] = GETUTCDATE()
+                WHERE [EmployeeId] = @empId;
+
+                DECLARE @knomeUserId INT = (SELECT TOP 1 [UserId] FROM [Users] WHERE [EmployeeId] = @empId);
+                DECLARE @knomeRoleId INT = (SELECT TOP 1 [RoleId] FROM [Roles] WHERE [RoleName] = @roleName OR [RoleCode] = @roleCode);
+                DECLARE @knomeEmpRoleId INT = (SELECT TOP 1 [RoleId] FROM [Roles] WHERE [RoleName] = 'Employee' OR [RoleCode] = 'EMP');
+
+                IF @knomeUserId IS NOT NULL AND @knomeRoleId IS NOT NULL
+                BEGIN
+                    IF NOT EXISTS (SELECT 1 FROM [UserRoles] WHERE [UserId] = @knomeUserId AND [RoleId] = @knomeRoleId)
+                        INSERT INTO [UserRoles] ([UserId], [RoleId]) VALUES (@knomeUserId, @knomeRoleId);
+                    IF NOT EXISTS (SELECT 1 FROM [UserRoles] WHERE [UserId] = @knomeUserId AND [RoleId] = @knomeEmpRoleId)
+                        INSERT INTO [UserRoles] ([UserId], [RoleId]) VALUES (@knomeUserId, @knomeEmpRoleId);
+                END
+
+                IF EXISTS (SELECT 1 FROM sys.databases WHERE name = 'EmployeeHubDb')
+                BEGIN
+                    UPDATE [EmployeeHubDb].[dbo].[RoleRequests]
+                    SET [Status] = 'Approved',
+                        [AssignedRoleName] = @roleName,
+                        [AssignedBy] = 'System Admin',
+                        [AdminComment] = @comment,
+                        [ProcessedAt] = GETUTCDATE()
+                    WHERE [EmployeeId] = @empId;
+
+                    DECLARE @ehRoleId INT = (SELECT TOP 1 [RoleId] FROM [EmployeeHubDb].[dbo].[Roles] WHERE [RoleCode] = @roleCode OR [RoleName] = @roleName);
+                    IF @ehRoleId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM [EmployeeHubDb].[dbo].[EmployeeRoles] WHERE [EmployeeId] = @empId AND [RoleId] = @ehRoleId)
+                    BEGIN
+                        INSERT INTO [EmployeeHubDb].[dbo].[EmployeeRoles] ([EmployeeId], [RoleId], [AssignedBy])
+                        VALUES (@empId, @ehRoleId, 'SYSADM');
+                    END
+                END
+            ";
+
+            var p1 = updateCmd.CreateParameter(); p1.ParameterName = "@reqId"; p1.Value = requestId; updateCmd.Parameters.Add(p1);
+            var p2 = updateCmd.CreateParameter(); p2.ParameterName = "@roleName"; p2.Value = roleName; updateCmd.Parameters.Add(p2);
+            var p3 = updateCmd.CreateParameter(); p3.ParameterName = "@roleCode"; p3.Value = roleCode; updateCmd.Parameters.Add(p3);
+            var p4 = updateCmd.CreateParameter(); p4.ParameterName = "@empId"; p4.Value = empId; updateCmd.Parameters.Add(p4);
+            var p5 = updateCmd.CreateParameter(); p5.ParameterName = "@comment"; p5.Value = (object?)dto.Comment ?? "Approved by System Administrator from Knome Admin Console"; updateCmd.Parameters.Add(p5);
+
+            await updateCmd.ExecuteNonQueryAsync();
+        }
+
+        // 3. Assign role to Knome User
+        var knomeUser = await _db.Users.Include(u => u.Department).Include(u => u.Roles).FirstOrDefaultAsync(u => u.EmployeeId == empId);
+        if (knomeUser != null)
+        {
+            var role = await _db.Roles.FirstOrDefaultAsync(r => r.RoleName == roleName || r.RoleCode == roleCode);
+            if (role != null && !knomeUser.Roles.Any(r => r.RoleId == role.RoleId))
+            {
+                knomeUser.Roles.Add(role);
+                await _db.SaveChangesAsync();
+            }
+            await _auditLogService.RecordAsync(actorUserId, "ApproveRoleRequest", "User", knomeUser.UserId, reason: $"Assigned role '{roleName}' to {empId}");
+        }
+
+        // 4. Send Professional Confirmation Email
+        string? userEmail = knomeUser?.Email;
+        string? userName = knomeUser?.FullName;
+        string? userDept = knomeUser?.Department?.Name;
+
+        if (string.IsNullOrWhiteSpace(userEmail))
+        {
+            using var fetchEmailCmd = conn.CreateCommand();
+            fetchEmailCmd.CommandText = "SELECT TOP 1 Email, FullName, DepartmentName FROM [RoleRequests] WHERE EmployeeId = @empId";
+            var pEmpFetch = fetchEmailCmd.CreateParameter();
+            pEmpFetch.ParameterName = "@empId";
+            pEmpFetch.Value = empId;
+            fetchEmailCmd.Parameters.Add(pEmpFetch);
+            using var rdr = await fetchEmailCmd.ExecuteReaderAsync();
+            if (await rdr.ReadAsync())
+            {
+                userEmail = rdr["Email"]?.ToString();
+                userName = rdr["FullName"]?.ToString();
+                userDept = rdr["DepartmentName"]?.ToString();
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(userEmail))
+        {
+            var finalEmail = userEmail;
+            var finalName = userName ?? empId;
+            var finalDept = userDept ?? "General";
+            var finalComment = dto.Comment;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await _emailService.SendRoleAssignedEmailAsync(
+                        finalEmail,
+                        finalName,
+                        empId,
+                        roleName,
+                        finalDept,
+                        finalComment);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to send role assigned email to {Email}", finalEmail);
+                }
+            });
+        }
+
+        return true;
+    }
+
+    public async Task<bool> RejectRoleRequestAsync(int actorUserId, int requestId, RejectKnomeRoleRequestDto dto)
+    {
+        var conn = _db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE [RoleRequests]
+            SET [Status] = 'Rejected',
+                [AssignedBy] = 'System Admin',
+                [AdminComment] = @reason,
+                [ProcessedAt] = GETUTCDATE()
+            WHERE [RequestId] = @reqId;
+
+            IF EXISTS (SELECT 1 FROM sys.databases WHERE name = 'EmployeeHubDb')
+            BEGIN
+                UPDATE [EmployeeHubDb].[dbo].[RoleRequests]
+                SET [Status] = 'Rejected',
+                    [AssignedBy] = 'System Admin',
+                    [AdminComment] = @reason,
+                    [ProcessedAt] = GETUTCDATE()
+                WHERE [RequestId] = @reqId;
+            END
+        ";
+        var p1 = cmd.CreateParameter(); p1.ParameterName = "@reqId"; p1.Value = requestId; cmd.Parameters.Add(p1);
+        var p2 = cmd.CreateParameter(); p2.ParameterName = "@reason"; p2.Value = (object?)dto.Reason ?? "Rejected by System Administrator"; cmd.Parameters.Add(p2);
+
+        await cmd.ExecuteNonQueryAsync();
+        await _auditLogService.RecordAsync(actorUserId, "RejectRoleRequest", "RoleRequest", requestId, reason: dto.Reason ?? "Role request rejected.");
+
+        return true;
+    }
+
+    public async Task<bool> RegisterPendingRoleRequestAsync(string employeeId)
+    {
+        if (string.IsNullOrWhiteSpace(employeeId)) return false;
+        var cleanId = employeeId.Trim().ToUpper();
+
+        var user = await _db.Users.Include(u => u.Department).Include(u => u.Roles).FirstOrDefaultAsync(u => u.EmployeeId == cleanId);
+        if (user == null || user.Roles.Any())
+        {
+            return false;
+        }
+
+        var conn = _db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync();
+
+        using var checkCmd = conn.CreateCommand();
+        checkCmd.CommandText = "SELECT COUNT(1) FROM [RoleRequests] WHERE EmployeeId = @empId";
+        var p = checkCmd.CreateParameter();
+        p.ParameterName = "@empId";
+        p.Value = cleanId;
+        checkCmd.Parameters.Add(p);
+
+        var count = Convert.ToInt32(await checkCmd.ExecuteScalarAsync());
+        if (count == 0)
+        {
+            using var insCmd = conn.CreateCommand();
+            insCmd.CommandText = @"
+                INSERT INTO [RoleRequests] ([EmployeeId], [FullName], [Email], [DepartmentId], [DepartmentName], [Designation], [RequestedRoleCode], [Status], [CreatedAt])
+                VALUES (@empId, @fullName, @email, @deptId, @deptName, @desig, 'EMP', 'Pending', GETUTCDATE());
+            ";
+            var p1 = insCmd.CreateParameter(); p1.ParameterName = "@empId"; p1.Value = user.EmployeeId; insCmd.Parameters.Add(p1);
+            var p2 = insCmd.CreateParameter(); p2.ParameterName = "@fullName"; p2.Value = user.FullName; insCmd.Parameters.Add(p2);
+            var p3 = insCmd.CreateParameter(); p3.ParameterName = "@email"; p3.Value = user.Email; insCmd.Parameters.Add(p3);
+            var p4 = insCmd.CreateParameter(); p4.ParameterName = "@deptId"; p4.Value = (object?)user.DepartmentId ?? 1; insCmd.Parameters.Add(p4);
+            var p5 = insCmd.CreateParameter(); p5.ParameterName = "@deptName"; p5.Value = (object?)user.Department?.Name ?? "Development"; insCmd.Parameters.Add(p5);
+            var p6 = insCmd.CreateParameter(); p6.ParameterName = "@desig"; p6.Value = (object?)user.Designation ?? "Staff"; insCmd.Parameters.Add(p6);
+
+            await insCmd.ExecuteNonQueryAsync();
+
+            // Send Role Pending Email
+            if (!string.IsNullOrWhiteSpace(user.Email))
+            {
+                var userEmail = user.Email;
+                var userName = user.FullName;
+                var userEmpId = user.EmployeeId;
+                var userDept = user.Department?.Name ?? "General";
+                var userDesig = user.Designation ?? "Staff";
+
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _emailService.SendRolePendingEmailAsync(
+                            userEmail,
+                            userName,
+                            userEmpId,
+                            userDept,
+                            userDesig);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to send role pending email to {Email}", userEmail);
+                    }
+                });
+            }
+        }
+
+        return true;
+    }
+
+    public async Task<RoleRequestStatusDto> GetRoleRequestStatusAsync(string employeeId)
+    {
+        var cleanId = (employeeId ?? "").Trim().ToUpper();
+        var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.EmployeeId == cleanId);
+        if (user == null)
+        {
+            return new RoleRequestStatusDto
+            {
+                EmployeeId = cleanId,
+                FullName = cleanId,
+                RoleStatus = "Pending",
+                HasApprovedRole = false,
+                Roles = new List<string>()
+            };
+        }
+
+        var roles = user.Roles.Select(r => r.RoleName).ToList();
+        var hasApprovedRole = roles.Count > 0;
+
+        using var conn = _db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT TOP 1 [Status], [AssignedRoleName] FROM [RoleRequests] WHERE [EmployeeId] = @empId ORDER BY [RequestId] DESC";
+        var p = cmd.CreateParameter();
+        p.ParameterName = "@empId";
+        p.Value = cleanId;
+        cmd.Parameters.Add(p);
+
+        string status = hasApprovedRole ? "Approved" : "Pending";
+        string? assignedRole = null;
+
+        using (var reader = await cmd.ExecuteReaderAsync())
+        {
+            if (await reader.ReadAsync())
+            {
+                status = reader["Status"]?.ToString() ?? status;
+                assignedRole = reader["AssignedRoleName"]?.ToString();
+            }
+        }
+
+        if (hasApprovedRole && string.IsNullOrEmpty(assignedRole))
+        {
+            assignedRole = roles[0];
+            status = "Approved";
+        }
+
+        var resultRoles = roles.Count > 0 
+            ? roles 
+            : (status == "Approved" && !string.IsNullOrEmpty(assignedRole) ? new List<string> { assignedRole, "Employee" } : new List<string>());
+
+        return new RoleRequestStatusDto
+        {
+            EmployeeId = cleanId,
+            FullName = user.FullName,
+            RoleStatus = status,
+            HasApprovedRole = status == "Approved" || hasApprovedRole,
+            AssignedRoleName = assignedRole,
+            Roles = resultRoles
+        };
     }
 }

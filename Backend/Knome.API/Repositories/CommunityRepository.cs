@@ -25,12 +25,13 @@ public class CommunityRepository : ICommunityRepository
             .Include(c => c.CreatedByUser)
             .Include(c => c.Users) // Admins
             .Include(c => c.CommunityMembers)
-            .FirstOrDefaultAsync(c => c.CommunityId == communityId);
+            .FirstOrDefaultAsync(c => c.CommunityId == communityId && c.IsActive);
     }
 
     public async Task<List<Community>> GetCommunitiesAsync(int? categoryId, string? type, string? search, int pageNumber, int pageSize)
     {
         var query = _db.Communities
+            .Where(c => c.IsActive)
             .Include(c => c.Category)
             .Include(c => c.CreatedByUser)
             .Include(c => c.CommunityMembers)
@@ -55,6 +56,7 @@ public class CommunityRepository : ICommunityRepository
     public async Task<List<Community>> GetUserCommunitiesAsync(int userId)
     {
         return await _db.Communities
+            .Where(c => c.IsActive)
             .Include(c => c.Category)
             .Include(c => c.CreatedByUser)
             .Include(c => c.CommunityMembers)
@@ -79,8 +81,19 @@ public class CommunityRepository : ICommunityRepository
 
     public async Task DeleteCommunityAsync(Community community)
     {
-        _db.Communities.Remove(community);
+        community.IsActive = false;
+        _db.Communities.Update(community);
         await _db.SaveChangesAsync();
+    }
+
+    public async Task<bool> CommunityNameExistsAsync(string name, int? excludeCommunityId = null)
+    {
+        var query = _db.Communities.Where(c => c.IsActive);
+        if (excludeCommunityId.HasValue)
+            query = query.Where(c => c.CommunityId != excludeCommunityId.Value);
+
+        var trimmed = name.Trim().ToLower();
+        return await query.AnyAsync(c => c.Name.ToLower() == trimmed);
     }
 
     // --- Community Admins ---

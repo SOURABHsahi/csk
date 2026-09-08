@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react'
+import React, { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/layout/Layout'
 import AuthGuard from './components/layout/AuthGuard'
@@ -6,10 +6,13 @@ import { ModalProvider } from './components/contexts/ModalContext'
 import { UserProvider } from './components/contexts/UserContext'
 import { AudioProvider } from './components/contexts/AudioContext'
 import { ToastProvider } from './components/contexts/ToastContext'
+import { ConfirmDialogProvider } from './components/contexts/ConfirmDialogContext'
 import GlobalAudioPlayer from './components/widgets/GlobalAudioPlayer'
 
 // Lazy Load Pages for Faster Initial Load Time
 const Login = lazy(() => import('./pages/Login'))
+const SsoPage = lazy(() => import('./pages/auth/SsoPage'))
+const SsoLogoutPage = lazy(() => import('./pages/auth/SsoLogoutPage'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Communities = lazy(() => import('./pages/Communities'))
 const CommunityView = lazy(() => import('./pages/CommunityView'))
@@ -45,20 +48,77 @@ function ProtectedPage({ children }) {
 }
 
 function App() {
+  useEffect(() => {
+    const handleGlobalKeyGuard = (e) => {
+      // Intercept and prevent browser Save As (Ctrl+S, Cmd+S, Ctrl+Shift+S)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+      // Intercept and prevent browser Print / Save As PDF (Ctrl+P, Cmd+P)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+      // Intercept View Source (Ctrl+U)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'u' || e.key === 'U')) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    };
+
+    const handleGlobalContextMenu = (e) => {
+      // Prevent browser default context menu on documents, articles, images, and embeds
+      const target = e.target;
+      if (target && (
+        target.closest?.('.article-body') ||
+        target.closest?.('[id^="doc-viewer"]') ||
+        target.closest?.('object') ||
+        target.closest?.('iframe') ||
+        target.tagName === 'OBJECT' ||
+        target.tagName === 'IFRAME' ||
+        target.tagName === 'EMBED' ||
+        target.tagName === 'IMG' ||
+        target.tagName === 'VIDEO'
+      )) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyGuard, true);
+    window.addEventListener('contextmenu', handleGlobalContextMenu, true);
+    document.addEventListener('contextmenu', handleGlobalContextMenu, true);
+
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyGuard, true);
+      window.removeEventListener('contextmenu', handleGlobalContextMenu, true);
+      document.removeEventListener('contextmenu', handleGlobalContextMenu, true);
+    };
+  }, []);
+
   return (
     <UserProvider>
       <AudioProvider>
         <ToastProvider>
-          <ModalProvider>
+          <ConfirmDialogProvider>
+            <ModalProvider>
             <Router>
               <Suspense fallback={<PageLoader />}>
                 <Routes>
-                  {/* Public Route */}
+                  {/* Public & SSO Routes */}
                   <Route path="/login" element={<Login />} />
+                  <Route path="/sso" element={<SsoPage />} />
+                  <Route path="/sso-logout" element={<SsoLogoutPage />} />
 
                   {/* Protected Routes */}
                   <Route path="/"                element={<ProtectedPage><Dashboard /></ProtectedPage>} />
                   <Route path="/community"       element={<ProtectedPage><Communities /></ProtectedPage>} />
+                  <Route path="/communities"     element={<ProtectedPage><Communities /></ProtectedPage>} />
                   <Route path="/community/view"  element={<ProtectedPage><CommunityView /></ProtectedPage>} />
                   <Route path="/jobs"            element={<ProtectedPage><Jobs /></ProtectedPage>} />
                   <Route path="/videos"          element={<ProtectedPage><Videos /></ProtectedPage>} />
@@ -68,9 +128,11 @@ function App() {
                   <Route path="/hr-analytics"    element={<ProtectedPage><HRAnalytics /></ProtectedPage>} />
                   <Route path="/admin-console"   element={<ProtectedPage><AdminConsole /></ProtectedPage>} />
                   <Route path="/profile"         element={<ProtectedPage><Profile /></ProtectedPage>} />
+                  <Route path="/profile/:id"     element={<ProtectedPage><Profile /></ProtectedPage>} />
                   <Route path="/search"          element={<ProtectedPage><Search /></ProtectedPage>} />
                   <Route path="/karma-history"   element={<ProtectedPage><KarmaHistory /></ProtectedPage>} />
                   <Route path="/suggested-people" element={<ProtectedPage><Network /></ProtectedPage>} />
+                  <Route path="/network"         element={<ProtectedPage><Network /></ProtectedPage>} />
                   <Route path="/saved-content"   element={<ProtectedPage><SavedContent /></ProtectedPage>} />
                   <Route path="/posts"           element={<ProtectedPage><Posts /></ProtectedPage>} />
                   <Route path="*"               element={<Navigate to="/" replace />} />
@@ -78,7 +140,8 @@ function App() {
               </Suspense>
               <GlobalAudioPlayer />
             </Router>
-          </ModalProvider>
+            </ModalProvider>
+          </ConfirmDialogProvider>
         </ToastProvider>
       </AudioProvider>
     </UserProvider>

@@ -13,6 +13,7 @@ public interface ICommunityRepository
     Task<Community> AddCommunityAsync(Community community);
     Task UpdateCommunityAsync(Community community);
     Task DeleteCommunityAsync(Community community);
+    Task<bool> CommunityNameExistsAsync(string name, int? excludeCommunityId = null);
 
     // Community Admins (Users join table)
     Task<bool> IsCommunityAdminAsync(int communityId, int userId);

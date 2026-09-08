@@ -131,12 +131,16 @@ public class PodcastService : IPodcastService
     public async Task<List<PodcastDto>> GetPodcastsAsync(int? seriesId, int? categoryId, string? search, int pageNumber, int pageSize, int currentUserId)
     {
         var podcasts = await _repo.GetPodcastsAsync(seriesId, categoryId, search, pageNumber, pageSize);
-        var dtos = new List<PodcastDto>();
+        var ids = podcasts.Select(p => (long)p.PodcastId).ToList();
+        var summaries = ids.Count > 0
+            ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Podcast, ids, currentUserId)
+            : new Dictionary<long, Knome.API.DTOs.Interactions.ContentSummaryDto>();
 
+        var dtos = new List<PodcastDto>();
         foreach (var p in podcasts)
         {
             var dto = _mapper.Map<PodcastDto>(p);
-            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Podcast, p.PodcastId, currentUserId);
+            dto.EngagementSummary = summaries.TryGetValue(p.PodcastId, out var s) ? s : new Knome.API.DTOs.Interactions.ContentSummaryDto { ContentType = ContentTypes.Podcast, ContentId = p.PodcastId };
             dtos.Add(dto);
         }
 
@@ -145,13 +149,22 @@ public class PodcastService : IPodcastService
 
     public async Task<List<PodcastDto>> GetMyPodcastsAsync(int currentUserId, int pageNumber = 1, int pageSize = 20)
     {
-        var podcasts = await _repo.GetMyPodcastsAsync(currentUserId, pageNumber, pageSize);
-        var dtos = new List<PodcastDto>();
+        return await GetUserPodcastsAsync(currentUserId, currentUserId, pageNumber, pageSize);
+    }
 
+    public async Task<List<PodcastDto>> GetUserPodcastsAsync(int hostUserId, int currentUserId, int pageNumber = 1, int pageSize = 20)
+    {
+        var podcasts = await _repo.GetMyPodcastsAsync(hostUserId, pageNumber, pageSize);
+        var ids = podcasts.Select(p => (long)p.PodcastId).ToList();
+        var summaries = ids.Count > 0
+            ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Podcast, ids, currentUserId)
+            : new Dictionary<long, Knome.API.DTOs.Interactions.ContentSummaryDto>();
+
+        var dtos = new List<PodcastDto>();
         foreach (var p in podcasts)
         {
             var dto = _mapper.Map<PodcastDto>(p);
-            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Podcast, p.PodcastId, currentUserId);
+            dto.EngagementSummary = summaries.TryGetValue(p.PodcastId, out var s) ? s : new Knome.API.DTOs.Interactions.ContentSummaryDto { ContentType = ContentTypes.Podcast, ContentId = p.PodcastId };
             dtos.Add(dto);
         }
 
@@ -184,12 +197,28 @@ public class PodcastService : IPodcastService
         if (!secCheck.IsValid)
             throw new BadRequestException("Podcast content or URLs contain blocked domains or restricted keywords per FR-SM-01.");
 
+        int effectiveUploaderUserId = currentUserId;
+        if (dto.UploaderUserId.HasValue && dto.UploaderUserId.Value > 0)
+        {
+            var userExists = await _db.Users.AnyAsync(u => u.UserId == dto.UploaderUserId.Value);
+            if (userExists)
+            {
+                effectiveUploaderUserId = dto.UploaderUserId.Value;
+            }
+        }
+
+        string coverUrl = dto.CoverImageUrl ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(coverUrl))
+        {
+            coverUrl = "https://images.unsplash.com/photo-1478737270239-2f02b77fc618?auto=format&fit=crop&q=90&w=800";
+        }
+
         var podcast = new Podcast
         {
-            UploaderUserId = currentUserId,
+            UploaderUserId = effectiveUploaderUserId,
             Title = dto.Title,
             Description = dto.Description,
-            CoverImageUrl = dto.CoverImageUrl,
+            CoverImageUrl = coverUrl,
             AudioUrl = dto.AudioUrl,
             DurationSeconds = dto.DurationSeconds,
             CategoryId = dto.CategoryId,
@@ -199,7 +228,7 @@ public class PodcastService : IPodcastService
         };
 
         var saved = await _repo.AddPodcastAsync(podcast);
-        await _karmaService.AwardKarmaAsync(currentUserId, KarmaActivityTypes.CreatePodcast, KarmaPoints.CreatePodcastPoints, ContentTypes.Podcast, saved.PodcastId, KarmaCaps.CreatePodcastDailyCap);
+        await _karmaService.AwardKarmaAsync(effectiveUploaderUserId, KarmaActivityTypes.CreatePodcast, KarmaPoints.CreatePodcastPoints, ContentTypes.Podcast, saved.PodcastId, KarmaCaps.CreatePodcastDailyCap);
 
         var resDto = _mapper.Map<PodcastDto>(saved);
         resDto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Podcast, saved.PodcastId, currentUserId);

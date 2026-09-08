@@ -10,11 +10,13 @@ public interface ICommunityService
     Task<CommunityDto> GetCommunityAsync(int communityId, int currentUserId);
     Task<List<CommunityDto>> GetCommunitiesAsync(int? categoryId, string? type, string? search, int pageNumber, int pageSize, int currentUserId);
     Task<List<CommunityDto>> GetMyCommunitiesAsync(int currentUserId);
+    Task<List<CommunityDto>> GetUserCommunitiesAsync(int targetUserId);
 
     // Create, Update & Delete
     Task<CommunityDto> CreateCommunityAsync(int currentUserId, CreateCommunityDto dto);
     Task<CommunityDto> UpdateCommunityAsync(int communityId, int currentUserId, UpdateCommunityDto dto);
     Task DeleteCommunityAsync(int communityId, int currentUserId);
+    Task<bool> CheckCommunityNameExistsAsync(string? name, int? excludeCommunityId = null);
 
     // Membership & Joining
     Task<CommunityMemberDto> JoinCommunityAsync(int communityId, int currentUserId);

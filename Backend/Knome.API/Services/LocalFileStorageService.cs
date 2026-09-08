@@ -6,6 +6,7 @@ using Knome.API.Exceptions;
 using Knome.API.Interfaces;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Knome.API.Services;
@@ -13,14 +14,32 @@ namespace Knome.API.Services;
 public class LocalFileStorageService : IFileStorageService
 {
     private readonly IWebHostEnvironment _env;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<LocalFileStorageService> _logger;
     private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png", ".gif", ".webp" };
     private const long MaxFileSize = 10 * 1024 * 1024; // 10 MB limit per FR-UP-06
 
-    public LocalFileStorageService(IWebHostEnvironment env, ILogger<LocalFileStorageService> logger)
+    public LocalFileStorageService(
+        IWebHostEnvironment env,
+        IConfiguration configuration,
+        ILogger<LocalFileStorageService> logger)
     {
         _env = env;
+        _configuration = configuration;
         _logger = logger;
+    }
+
+    private string GetStorageBasePath()
+    {
+        var configuredPath = _configuration["StorageSettings:BasePath"];
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            if (!Directory.Exists(configuredPath))
+                Directory.CreateDirectory(configuredPath);
+            return configuredPath;
+        }
+
+        return _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
     }
 
     public async Task<string> SaveProfileImageAsync(int userId, IFormFile file)
@@ -37,8 +56,7 @@ public class LocalFileStorageService : IFileStorageService
 
         await ValidateMagicBytesAsync(file, extension);
 
-        var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-        var uploadFolder = Path.Combine(webRoot, "uploads", "profiles");
+        var uploadFolder = Path.Combine(GetStorageBasePath(), "uploads", "profiles");
 
         if (!Directory.Exists(uploadFolder))
             Directory.CreateDirectory(uploadFolder);
@@ -105,8 +123,7 @@ public class LocalFileStorageService : IFileStorageService
         if (!allowedMediaExtensions.Contains(extension))
             throw new BadRequestException($"Invalid file extension for media type '{mediaType}'. Allowed: {string.Join(", ", allowedMediaExtensions)}");
 
-        var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
-        var uploadFolder = Path.Combine(webRoot, "uploads", "media");
+        var uploadFolder = Path.Combine(GetStorageBasePath(), "uploads", "media");
 
         if (!Directory.Exists(uploadFolder))
             Directory.CreateDirectory(uploadFolder);
@@ -129,13 +146,23 @@ public class LocalFileStorageService : IFileStorageService
 
         try
         {
-            var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
             var relativePath = fileUrl.TrimStart('/');
-            var filePath = Path.Combine(webRoot, relativePath);
+            var customBase = GetStorageBasePath();
+            var filePath = Path.Combine(customBase, relativePath);
 
             if (File.Exists(filePath))
             {
                 File.Delete(filePath);
+            }
+            else
+            {
+                // Fallback to wwwroot
+                var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+                var fallbackPath = Path.Combine(webRoot, relativePath);
+                if (File.Exists(fallbackPath))
+                {
+                    File.Delete(fallbackPath);
+                }
             }
         }
         catch (Exception ex)

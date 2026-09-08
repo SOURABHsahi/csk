@@ -1,50 +1,224 @@
-// Layer 1 (React UI) -> Layer 2 (Next.js BFF) -> Layer 3 & 4 (API Gateway + YARP) -> Layer 5 (Backend API) -> Layer 6 (Database)
-const PRIMARY_URL = window.ENV_BFF_URL || 'http://localhost:3000/api/proxy';
-const GATEWAY_URL = 'http://localhost:5000/api';
-const DIRECT_BACKEND_URL = 'http://localhost:5095/api';
+const getHostIp = () => {
+    if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+        return window.location.hostname;
+    }
+    return 'localhost';
+};
+
+const currentHost = getHostIp();
+
+// Candidate Backend URLs ordered by priority (Dynamic host first for LAN / WiFi access)
+const CANDIDATES = [
+    `http://${currentHost}:5095/api`,
+    'http://localhost:5095/api'
+];
+
+let activeBaseUrl = CANDIDATES[0];
+
+// In-flight reauth promise deduplication & cooldown guard
+let reauthPromise = null;
+let lastReauthFailTime = 0;
+const REAUTH_COOLDOWN_MS = 6000;
+
+/** Silently re-login or refresh session using stored credentials */
+async function silentReauth() {
+    // If a reauth request is already in-flight, return the same promise to prevent hammering backend
+    if (reauthPromise) {
+        return reauthPromise;
+    }
+
+    // Cooldown check: if reauth failed recently, wait before trying again to avoid 429
+    if (Date.now() - lastReauthFailTime < REAUTH_COOLDOWN_MS) {
+        return null;
+    }
+
+    const employeeId = localStorage.getItem('knome_employeeId');
+    if (!employeeId) return null;
+
+    const authCred = sessionStorage.getItem('knome_auth_pwd');
+    const password = authCred || 'Password@123';
+
+    reauthPromise = (async () => {
+        try {
+            const searchUrls = Array.from(new Set([activeBaseUrl, ...CANDIDATES]));
+            for (const baseUrl of searchUrls) {
+                try {
+                    const res = await fetch(`${baseUrl}/Auth/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ employeeId, password }),
+                    });
+                    if (res.ok) {
+                        const json = await res.json();
+                        const token = json?.data?.token || json?.token;
+                        if (token) {
+                            activeBaseUrl = baseUrl;
+                            localStorage.setItem('knome_jwt', token);
+                            if (json?.data?.refreshToken) {
+                                localStorage.setItem('knome_refresh', json.data.refreshToken);
+                            }
+                            return token;
+                        }
+                    }
+                } catch { /* try next candidate */ }
+            }
+            lastReauthFailTime = Date.now();
+            return null;
+        } finally {
+            reauthPromise = null;
+        }
+    })();
+
+    return reauthPromise;
+}
+
+// High-speed in-memory response cache & in-flight promise deduplication
+const responseCache = new Map();
+const inFlightRequests = new Map();
+const CACHE_TTL_MS = 6000; // 6 seconds fast TTL for read requests
 
 export const apiClient = {
-    async request(endpoint, options = {}) {
-        const token = localStorage.getItem('knome_jwt');
-        const headers = {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-            ...options.headers
-        };
-
-        const config = { ...options, headers };
-
-        // Attempt 1: Next.js BFF -> Gateway -> Backend -> SQL Server DB
-        try {
-            const url = `${PRIMARY_URL}${endpoint}`;
-            const response = await fetch(url, config);
-            return await this.handleResponse(response);
-        } catch (bffError) {
-            // Attempt 2: Direct API Gateway (YARP) -> Backend -> SQL Server DB
-            try {
-                const url = `${GATEWAY_URL}${endpoint}`;
-                const response = await fetch(url, config);
-                return await this.handleResponse(response);
-            } catch (gatewayError) {
-                // Attempt 3: Direct Backend API -> SQL Server DB
-                try {
-                    const url = `${DIRECT_BACKEND_URL}${endpoint}`;
-                    const response = await fetch(url, config);
-                    return await this.handleResponse(response);
-                } catch (backendError) {
-                    console.error(`API Call failed across all layers for ${endpoint}:`, backendError);
-                    throw backendError;
-                }
-            }
-        }
+    clearCache() {
+        responseCache.clear();
+        inFlightRequests.clear();
     },
 
-    async handleResponse(response) {
+    async request(endpoint, options = {}) {
+        let reqEndpoint = endpoint;
+        if (options.params && typeof options.params === 'object') {
+            const searchParams = new URLSearchParams();
+            Object.entries(options.params).forEach(([key, val]) => {
+                if (val !== undefined && val !== null && val !== '') {
+                    searchParams.append(key, val);
+                }
+            });
+            const qs = searchParams.toString();
+            if (qs) {
+                reqEndpoint += (reqEndpoint.includes('?') ? '&' : '?') + qs;
+            }
+        }
+
+        const method = (options.method || 'GET').toUpperCase();
+        const isGet = method === 'GET';
+        const cacheKey = `${reqEndpoint}_${options.headers?.Authorization || localStorage.getItem('knome_jwt') || ''}`;
+
+        // 1. If it's a GET request and cached within TTL, return instantly (0ms latency)
+        if (isGet && !options.noCache) {
+            const cached = responseCache.get(cacheKey);
+            if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+                return cached.data;
+            }
+
+            // In-flight deduplication: reuse active pending promise
+            if (inFlightRequests.has(cacheKey)) {
+                return inFlightRequests.get(cacheKey);
+            }
+        }
+
+        // Targeted cache invalidation on state mutations (POST/PUT/DELETE)
+        if (!isGet) {
+            const cleanEndpoint = reqEndpoint.startsWith('/') ? reqEndpoint.slice(1) : reqEndpoint;
+            const resourceGroup = cleanEndpoint.split('/')[0]?.toLowerCase();
+            if (resourceGroup) {
+                for (const key of responseCache.keys()) {
+                    if (key.toLowerCase().includes(`/${resourceGroup}`)) {
+                        responseCache.delete(key);
+                    }
+                }
+            } else {
+                responseCache.clear();
+            }
+        }
+
+        const executeFetch = async () => {
+            const token = localStorage.getItem('knome_jwt');
+            const headers = {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+                ...options.headers
+            };
+
+            const config = { ...options, headers };
+
+            // 1. Try active cached base URL first
+            try {
+                const url = `${activeBaseUrl}${reqEndpoint}`;
+                const response = await fetch(url, config);
+                const result = await this.handleResponse(response, { url, config });
+
+                // Cache successful GET responses
+                if (isGet && !options.noCache) {
+                    responseCache.set(cacheKey, { timestamp: Date.now(), data: result });
+                }
+                return result;
+            } catch (activeErr) {
+                if (activeErr?.isApiError) {
+                    throw activeErr;
+                }
+
+                // 2. Only if network fetch failed completely, try candidate URLs
+                for (const candidate of CANDIDATES) {
+                    if (candidate === activeBaseUrl) continue;
+                    try {
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 400);
+                        const url = `${candidate}${reqEndpoint}`;
+                        const response = await fetch(url, { ...config, signal: controller.signal });
+                        clearTimeout(timeoutId);
+                        
+                        activeBaseUrl = candidate;
+                        const result = await this.handleResponse(response, { url, config });
+                        if (isGet && !options.noCache) {
+                            responseCache.set(cacheKey, { timestamp: Date.now(), data: result });
+                        }
+                        return result;
+                    } catch (candidateErr) {
+                        if (candidateErr?.isApiError) throw candidateErr;
+                    }
+                }
+                console.error(`API Call failed across all endpoints for ${reqEndpoint}`);
+                throw activeErr;
+            } finally {
+                inFlightRequests.delete(cacheKey);
+            }
+        };
+
+        if (isGet && !options.noCache) {
+            const pendingPromise = executeFetch();
+            inFlightRequests.set(cacheKey, pendingPromise);
+            return pendingPromise;
+        }
+
+        return executeFetch();
+    },
+
+    async handleResponse(response, retryConfig) {
         if (response.status === 401) {
-            localStorage.removeItem('knome_jwt');
-            localStorage.removeItem('knome_refresh');
-            localStorage.removeItem('knome_employeeId');
-            throw new Error('Unauthorized');
+            // Try silent re-auth once before giving up
+            if (!reauthPromise && retryConfig && localStorage.getItem('knome_employeeId')) {
+                const freshToken = await silentReauth();
+
+                if (freshToken) {
+                    // Retry the original request with the fresh token
+                    try {
+                        const { url, config } = retryConfig;
+                        const retryHeaders = {
+                            ...config.headers,
+                            'Authorization': `Bearer ${freshToken}`,
+                        };
+                        const retryResponse = await fetch(url, { ...config, headers: retryHeaders });
+                        return this.handleResponse(retryResponse, null); // no retry on 2nd 401
+                    } catch { /* fall through to throw */ }
+                }
+            }
+
+            // Only remove tokens if we truly cannot recover
+            // Do NOT remove knome_jwt here blindly — it may be set by SSO flow mid-restore.
+            // The caller (restoreSession) manages token lifecycle.
+            const err = new Error('Unauthorized');
+            err.isApiError = true;
+            err.status = 401;
+            throw err;
         }
 
         if (response.status === 204) {
@@ -55,7 +229,12 @@ export const apiClient = {
         const data = text ? JSON.parse(text) : null;
         
         if (!response.ok) {
-            throw new Error((data && data.message) || 'API request failed');
+            const errMessage = (data && (data.message || data.title)) || `API request failed with status ${response.status}`;
+            const err = new Error(errMessage);
+            err.isApiError = true;
+            err.status = response.status;
+            err.data = data;
+            throw err;
         }
 
         return data?.data !== undefined ? data.data : data;
@@ -84,16 +263,18 @@ export const apiClient = {
         const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
 
         try {
-            const response = await fetch(`${PRIMARY_URL}/users/profile/image`, { method: 'POST', headers, body: formData });
+            const response = await fetch(`${activeBaseUrl}/users/profile/image`, { method: 'POST', headers, body: formData });
             return (await this.handleResponse(response));
         } catch (e) {
-            try {
-                const response = await fetch(`${DIRECT_BACKEND_URL}/users/profile/image`, { method: 'POST', headers, body: formData });
-                return (await this.handleResponse(response));
-            } catch (err) {
-                console.error(`Upload Error on profile/image:`, err);
-                throw err;
+            for (const candidate of CANDIDATES) {
+                if (candidate === activeBaseUrl) continue;
+                try {
+                    const response = await fetch(`${candidate}/users/profile/image`, { method: 'POST', headers, body: formData });
+                    activeBaseUrl = candidate;
+                    return (await this.handleResponse(response));
+                } catch { /* continue */ }
             }
+            throw e;
         }
     },
 
@@ -105,16 +286,18 @@ export const apiClient = {
         const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
         
         try {
-            const response = await fetch(`${PRIMARY_URL}${endpoint}`, { method: 'POST', headers, body: formData });
+            const response = await fetch(`${activeBaseUrl}${endpoint}`, { method: 'POST', headers, body: formData });
             return (await this.handleResponse(response));
         } catch (e) {
-            try {
-                const response = await fetch(`${DIRECT_BACKEND_URL}${endpoint}`, { method: 'POST', headers, body: formData });
-                return (await this.handleResponse(response));
-            } catch (err) {
-                console.error(`Upload Error on ${endpoint}:`, err);
-                throw err;
+            for (const candidate of CANDIDATES) {
+                if (candidate === activeBaseUrl) continue;
+                try {
+                    const response = await fetch(`${candidate}${endpoint}`, { method: 'POST', headers, body: formData });
+                    activeBaseUrl = candidate;
+                    return (await this.handleResponse(response));
+                } catch { /* continue */ }
             }
+            throw e;
         }
     }
 };

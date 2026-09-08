@@ -38,6 +38,7 @@ public class UserRepository : Repository<Models.User>, IUserRepository
         var query = _db.Users
             .Include(u => u.Department)
             .Include(u => u.Roles)
+            .Include(u => u.KarmaBalance)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(filter.SearchTerm))

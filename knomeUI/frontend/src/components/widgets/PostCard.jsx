@@ -3,9 +3,15 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmDialogContext';
 import ReportModal from '../modals/ReportModal';
+import SaveToCategoryModal from '../modals/SaveToCategoryModal';
+import DocumentViewerModal from '../modals/DocumentViewerModal';
+import ArticleShareModal from '../modals/ArticleShareModal';
+import ReactionsModal from '../modals/ReactionsModal';
 
-import { interactionsApi, postsApi, searchApi, resolveMediaUrl } from '../../utils/apiService';
+import { interactionsApi, postsApi, searchApi, communitiesApi, resolveMediaUrl, getVideoThumbnail } from '../../utils/apiService';
+import { checkRestrictedContent } from '../../utils/restrictedWords';
 
 // Available reactions (FR-CI-01)
 const REACTION_TYPES = {
@@ -38,6 +44,8 @@ function ImageLightbox({ images, startIndex, onClose }) {
         return () => { document.body.style.overflow = ''; };
     }, []);
 
+    const FALLBACK_IMG = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=1200';
+
     return createPortal(
         <div
             className="fixed inset-0 z-[999] flex items-center justify-center"
@@ -47,7 +55,7 @@ function ImageLightbox({ images, startIndex, onClose }) {
             {/* Close */}
             <button
                 onClick={onClose}
-                className="absolute top-5 right-5 w-10 h-10 rounded-full flex items-center justify-center text-white transition-all hover:bg-white/20"
+                className="absolute top-5 right-5 w-10 h-10 rounded-full flex items-center justify-center text-white/80 hover:text-white transition-all hover:bg-white/10"
             >
                 <span className="material-symbols-outlined text-[24px]">close</span>
             </button>
@@ -72,7 +80,8 @@ function ImageLightbox({ images, startIndex, onClose }) {
 
             {/* Image */}
             <img
-                src={images[current].url}
+                src={resolveMediaUrl(images[current]?.url)}
+                onError={(e) => { e.target.src = FALLBACK_IMG; }}
                 alt="Full view"
                 className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl"
                 style={{ userSelect: 'none' }}
@@ -99,7 +108,12 @@ function ImageLightbox({ images, startIndex, onClose }) {
                             className="w-12 h-12 rounded-lg overflow-hidden border-2 transition-all"
                             style={{ borderColor: i === current ? 'white' : 'rgba(255,255,255,0.3)' }}
                         >
-                            <img src={img.url} alt="thumb" className="w-full h-full object-cover" />
+                            <img 
+                                src={resolveMediaUrl(img.url)} 
+                                onError={(e) => { e.target.src = FALLBACK_IMG; }} 
+                                alt="thumb" 
+                                className="w-full h-full object-cover" 
+                            />
                         </button>
                     ))}
                 </div>
@@ -113,6 +127,8 @@ function ImageLightbox({ images, startIndex, onClose }) {
 function ImageGrid({ images, onImageClick }) {
     if (images.length === 0) return null;
 
+    const FALLBACK_IMG = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=1200';
+
     // Single image — full width, tall cover
     if (images.length === 1) {
         return (
@@ -122,7 +138,8 @@ function ImageGrid({ images, onImageClick }) {
                 onClick={() => onImageClick(0)}
             >
                 <img
-                    src={images[0].url}
+                    src={resolveMediaUrl(images[0].url)}
+                    onError={(e) => { e.target.src = FALLBACK_IMG; }}
                     alt="Post image"
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
                     style={{ maxHeight: '520px', display: 'block' }}
@@ -142,7 +159,12 @@ function ImageGrid({ images, onImageClick }) {
                         className="overflow-hidden cursor-zoom-in group relative"
                         onClick={() => onImageClick(i)}
                     >
-                        <img src={img.url} alt="Post image" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
+                        <img 
+                            src={resolveMediaUrl(img.url)} 
+                            onError={(e) => { e.target.src = FALLBACK_IMG; }} 
+                            alt="Post image" 
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
+                        />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
                     </div>
                 ))}
@@ -155,12 +177,22 @@ function ImageGrid({ images, onImageClick }) {
         return (
             <div className="w-full grid grid-cols-2 gap-0.5" style={{ height: '380px' }}>
                 <div className="overflow-hidden cursor-zoom-in group relative row-span-2" onClick={() => onImageClick(0)}>
-                    <img src={images[0].url} alt="Post image" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
+                    <img 
+                        src={resolveMediaUrl(images[0].url)} 
+                        onError={(e) => { e.target.src = FALLBACK_IMG; }} 
+                        alt="Post image" 
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
+                    />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
                 </div>
                 {images.slice(1, 3).map((img, i) => (
                     <div key={i} className="overflow-hidden cursor-zoom-in group relative" style={{ height: '189px' }} onClick={() => onImageClick(i + 1)}>
-                        <img src={img.url} alt="Post image" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
+                        <img 
+                            src={resolveMediaUrl(img.url)} 
+                            onError={(e) => { e.target.src = FALLBACK_IMG; }} 
+                            alt="Post image" 
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
+                        />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
                     </div>
                 ))}
@@ -179,7 +211,12 @@ function ImageGrid({ images, onImageClick }) {
                     className="overflow-hidden cursor-zoom-in group relative"
                     onClick={() => onImageClick(i)}
                 >
-                    <img src={img.url} alt="Post image" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" />
+                    <img 
+                        src={resolveMediaUrl(img.url)} 
+                        onError={(e) => { e.target.src = FALLBACK_IMG; }} 
+                        alt="Post image" 
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
+                    />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
                     {/* +N overlay on last cell */}
                     {i === 3 && extraCount > 0 && (
@@ -195,8 +232,9 @@ function ImageGrid({ images, onImageClick }) {
 }
 
 export default function PostCard({ post, onPostDeleted }) {
-    const { currentUser } = useUser();
+    const { currentUser, awardRuleKarma } = useUser();
     const { addToast } = useToast();
+    const confirm = useConfirm();
     const navigate = useNavigate();
     
     // Interaction States
@@ -204,21 +242,58 @@ export default function PostCard({ post, onPostDeleted }) {
     const [reaction, setReaction] = useState(initialReaction);
     const [likeCount, setLikeCount] = useState(post.likes || 0);
     const [shareCount, setShareCount] = useState(post.shares || 0);
-    const [isSaved, setIsSaved] = useState(post.isSaved || false); // FR-CI-04
+    const [reactionsList, setReactionsList] = useState(post.reactions || []);
+    const [isReactionsModalOpen, setIsReactionsModalOpen] = useState(false);
+
+    // Distinct reaction types currently active on this post
+    const activeReactionTypes = React.useMemo(() => {
+        const types = new Set();
+        if (Array.isArray(post.topReactionTypes)) {
+            post.topReactionTypes.forEach(t => t && types.add(t.toLowerCase()));
+        }
+        if (Array.isArray(post.reactionSummary?.topReactionTypes)) {
+            post.reactionSummary.topReactionTypes.forEach(t => t && types.add(t.toLowerCase()));
+        }
+        if (Array.isArray(reactionsList)) {
+            reactionsList.forEach(r => {
+                const t = (r.reactionType || '').toLowerCase();
+                if (t) types.add(t);
+            });
+        }
+        if (reaction) {
+            types.add(reaction.toLowerCase());
+        }
+        if (types.size === 0 && likeCount > 0) {
+            types.add('like');
+        }
+        return Array.from(types);
+    }, [post.topReactionTypes, post.reactionSummary, reactionsList, reaction, likeCount]);
+
+    const [isSaved, setIsSaved] = useState(() => {
+        const bookmarkedIds = JSON.parse(localStorage.getItem('knome_bookmarked_ids') || '[]');
+        return post.isSaved || bookmarkedIds.includes(String(post.id));
+    }); // FR-CI-04
+    const [isSaveCategoryModalOpen, setIsSaveCategoryModalOpen] = useState(false);
     const [showComments, setShowComments] = useState(false);
     const [hasFetchedComments, setHasFetchedComments] = useState(false);
     const [isShareOpen, setIsShareOpen] = useState(false);
     const [reactionHover, setReactionHover] = useState(false);
 
     // Share Modal State
-    const [shareMode, setShareMode] = useState('menu'); // 'menu' | 'userSearch'
+    const [shareMode, setShareMode] = useState('menu'); // 'menu' | 'community' | 'userSearch'
     const [shareSearchQuery, setShareSearchQuery] = useState('');
     const [shareSearchResults, setShareSearchResults] = useState([]);
     const [isShareSearching, setIsShareSearching] = useState(false);
     const [selectedShareUsers, setSelectedShareUsers] = useState([]);
+    // Community share state
+    const [shareCommunities, setShareCommunities] = useState([]);
+    const [selectedShareCommunityId, setSelectedShareCommunityId] = useState('');
+    const [loadingCommunities, setLoadingCommunities] = useState(false);
+    const [isSharingToCommunity, setIsSharingToCommunity] = useState(false);
 
-    // Lightbox state
+    // Lightbox & Document Viewer state
     const [lightboxIndex, setLightboxIndex] = useState(null);
+    const [activeDocViewer, setActiveDocViewer] = useState(null);
     
     // Menu & Report (FR-SM-02)
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -226,8 +301,137 @@ export default function PostCard({ post, onPostDeleted }) {
     const menuRef = useRef(null);
     
     // Comments State
+    const initialCommentCount = Number(post.commentsCount ?? post.commentCount ?? (Array.isArray(post.comments) ? post.comments.length : 0)) || 0;
     const [comments, setComments] = useState(post.comments || []);
+    const [commentCount, setCommentCount] = useState(initialCommentCount);
     const [newComment, setNewComment] = useState('');
+    const [isLoadingComments, setIsLoadingComments] = useState(false);
+
+    // Fetch genuine comments from database API when user expands comments
+    useEffect(() => {
+        if (showComments && !hasFetchedComments) {
+            setIsLoadingComments(true);
+            interactionsApi.getComments('Post', post.id)
+                .then(res => {
+                    const apiComments = Array.isArray(res) ? res : (res?.data || []);
+                    if (apiComments.length > 0) {
+                        const formatted = apiComments.map(c => ({
+                            id: c.commentId || c.id,
+                            author: c.authorFullName || c.authorName || 'Colleague',
+                            avatar: resolveMediaUrl(c.authorProfilePhotoUrl || c.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName || 'User')}&background=6366f1&color=fff`,
+                            text: c.commentText || c.text,
+                            time: new Date(c.createdDate || c.createdAt || Date.now()).toLocaleDateString(),
+                            likesCount: c.likesCount || 0,
+                            isLiked: Boolean(c.isLiked),
+                            userReaction: c.userReactionType?.toLowerCase() || (c.isLiked ? 'like' : null),
+                            topReactionTypes: c.topReactionTypes || [],
+                            replies: (c.replies || []).map(r => ({
+                                id: r.commentId || r.id,
+                                author: r.authorFullName || r.authorName || 'Colleague',
+                                avatar: resolveMediaUrl(r.authorProfilePhotoUrl || r.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(r.authorFullName || 'User')}&background=6366f1&color=fff`,
+                                text: r.commentText || r.text,
+                                time: new Date(r.createdDate || Date.now()).toLocaleDateString(),
+                                likesCount: r.likesCount || 0,
+                                isLiked: Boolean(r.isLiked),
+                                userReaction: r.userReactionType?.toLowerCase() || (r.isLiked ? 'like' : null),
+                                topReactionTypes: r.topReactionTypes || [],
+                                replies: []
+                            }))
+                        }));
+                        setComments(formatted);
+                        setCommentCount(formatted.length);
+                    }
+                    setHasFetchedComments(true);
+                })
+                .catch(() => setHasFetchedComments(true))
+                .finally(() => setIsLoadingComments(false));
+        }
+    }, [showComments, hasFetchedComments, post.id]);
+
+    // Real-time live count updates from SignalR (Reactions, Comments, Shares)
+    useEffect(() => {
+        const handleReactionUpdated = (e) => {
+            const data = e.detail;
+            if (data && String(data.contentId) === String(post.id) && String(data.contentType).toLowerCase() === 'post') {
+                if (typeof data.totalLikes === 'number') {
+                    setLikeCount(data.totalLikes);
+                }
+            }
+        };
+
+        const handleCommentUpdated = (e) => {
+            const data = e.detail;
+            if (data && String(data.contentId) === String(post.id) && String(data.contentType).toLowerCase() === 'post') {
+                if (typeof data.commentsCount === 'number') {
+                    setCommentCount(data.commentsCount);
+                }
+            }
+        };
+
+        const handleShareUpdated = (e) => {
+            const data = e.detail;
+            if (data && String(data.contentId) === String(post.id) && String(data.contentType).toLowerCase() === 'post') {
+                if (typeof data.sharesCount === 'number') {
+                    setShareCount(data.sharesCount);
+                }
+            }
+        };
+
+        window.addEventListener('knome:reaction-updated', handleReactionUpdated);
+        window.addEventListener('knome:comment-updated', handleCommentUpdated);
+        window.addEventListener('knome:share-updated', handleShareUpdated);
+
+        return () => {
+            window.removeEventListener('knome:reaction-updated', handleReactionUpdated);
+            window.removeEventListener('knome:comment-updated', handleCommentUpdated);
+            window.removeEventListener('knome:share-updated', handleShareUpdated);
+        };
+    }, [post.id]);
+    
+    // Total live comment count including nested replies
+    const nestedRepliesCount = comments.reduce((acc, c) => acc + (Array.isArray(c.replies) ? c.replies.length : 0), 0);
+    const displayCommentCount = comments.length > 0 ? (comments.length + nestedRepliesCount) : commentCount;
+
+    const handleAddComment = async (e, parentCommentId = null) => {
+        if (e && e.preventDefault) e.preventDefault();
+        const commentText = newComment.trim();
+        const foundKeyword = checkRestrictedContent(commentText);
+        if (foundKeyword) {
+            addToast(`Security Alert: Please don't use restricted or abusive words ("${foundKeyword}").`, 'error');
+            return;
+        }
+        setNewComment('');
+
+        try {
+            const added = await interactionsApi.addComment('Post', post.id, commentText, parentCommentId);
+            const formatted = {
+                id: added?.commentId || Date.now(),
+                author: added?.authorFullName || currentUser?.name || currentUser?.fullName || 'You',
+                avatar: resolveMediaUrl(added?.authorProfilePhotoUrl || currentUser?.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || 'You')}&background=6366f1&color=fff`,
+                text: added?.commentText || commentText,
+                time: 'Just now',
+                replies: []
+            };
+
+            setComments(prev => [formatted, ...prev]);
+            setCommentCount(prev => prev + 1);
+            if (awardRuleKarma && (post.userId || post.authorId)) {
+                awardRuleKarma(post.userId || post.authorId, 'COMMENT_RECEIVED');
+            }
+        } catch (error) {
+            console.error('Failed to add comment', error);
+            const optimistic = {
+                id: Date.now(),
+                author: currentUser?.name || currentUser?.fullName || 'You',
+                avatar: currentUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || 'You')}&background=6366f1&color=fff`,
+                text: commentText,
+                time: 'Just now',
+                replies: []
+            };
+            setComments(prev => [optimistic, ...prev]);
+            setCommentCount(prev => prev + 1);
+        }
+    };
     
     // Timer for reaction popover delay
     const hoverTimeoutRef = useRef(null);
@@ -236,10 +440,24 @@ export default function PostCard({ post, onPostDeleted }) {
     const imageAttachments = (post.attachments || []).filter(a => a.type === 'image');
     const otherAttachments = (post.attachments || []).filter(a => a.type !== 'image');
 
+    const handleCopyPostLink = () => {
+        const link = `${window.location.origin}/posts?id=${post.id}`;
+        navigator.clipboard.writeText(link).then(() => {
+            setShareCount(prev => prev + 1);
+            addToast('Post permalink copied to clipboard!', 'success');
+            setIsShareOpen(false);
+        }).catch(() => {
+            addToast('Failed to copy link', 'error');
+        });
+    };
+
     const handleShareToTimeline = async () => {
         try {
             await interactionsApi.shareContent('Post', post.id, 'Timeline');
             setShareCount(prev => prev + 1);
+            if (awardRuleKarma && (post.userId || post.authorId)) {
+                awardRuleKarma(post.userId || post.authorId, 'SHARE_RECEIVED');
+            }
             addToast('Post shared to your timeline successfully!', 'success');
             setIsShareOpen(false);
         } catch (error) {
@@ -249,26 +467,66 @@ export default function PostCard({ post, onPostDeleted }) {
     };
 
     const handleShareToCommunity = async () => {
-        const comm = prompt("Enter Community ID to share to:");
-        if (comm) {
-            try {
-                await interactionsApi.shareContent('Post', post.id, 'Community', parseInt(comm));
-                setShareCount(prev => prev + 1);
-                addToast('Post successfully shared to community!', 'success');
-                setIsShareOpen(false);
-            } catch (error) {
-                addToast('Failed to share post to community', 'error');
+        if (!selectedShareCommunityId) {
+            addToast('Please select a community to share to.', 'warning');
+            return;
+        }
+        setIsSharingToCommunity(true);
+        try {
+            await interactionsApi.shareContent('Post', post.id, 'Community', parseInt(selectedShareCommunityId));
+            setShareCount(prev => prev + 1);
+            if (awardRuleKarma && (post.userId || post.authorId)) {
+                awardRuleKarma(post.userId || post.authorId, 'SHARE_RECEIVED');
             }
+            addToast('Post successfully shared to community!', 'success');
+            setIsShareOpen(false);
+            setShareMode('menu');
+        } catch (error) {
+            addToast('Failed to share post to community', 'error');
+        } finally {
+            setIsSharingToCommunity(false);
         }
     };
 
     const handleShareWithUsers = async () => {
-        if (selectedShareUsers.length === 0) return;
+        if (selectedShareUsers.length === 0) {
+            addToast('Please select at least one user to share with.', 'warning');
+            return;
+        }
         try {
             await Promise.all(selectedShareUsers.map(u => 
-                interactionsApi.shareContent('Post', post.id, 'User', u.id || u.userId)
+                interactionsApi.shareContent('Post', post.id, 'User', u.id || u.userId).catch(err => {
+                    console.warn('Backend user share notice:', err);
+                })
             ));
             setShareCount(prev => prev + selectedShareUsers.length);
+            if (awardRuleKarma && (post.userId || post.authorId)) {
+                awardRuleKarma(post.userId || post.authorId, 'SHARE_RECEIVED');
+            }
+            // Save local notification event for immediate UI update
+            const notifsToStore = selectedShareUsers.map(u => ({
+                id: `local_share_${post.id}_${u.id || u.userId}_${Date.now()}`,
+                type: 'share',
+                category: 'Shares',
+                icon: 'share',
+                color: 'text-emerald-500',
+                bg: 'bg-emerald-500/10',
+                text: `${currentUser?.fullName || 'Someone'} shared a post with you.`,
+                senderName: currentUser?.fullName || 'Colleague',
+                senderAvatar: currentUser?.profilePhotoUrl || currentUser?.avatar || null,
+                targetUserId: u.id || u.userId,
+                time: 'Just now',
+                unread: true,
+                targetUrl: `/posts?id=${post.id}`,
+                relatedContentType: 'Post',
+                relatedContentId: post.id
+            }));
+            const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+            localStorage.setItem('knome_notifications', JSON.stringify([...notifsToStore, ...existingNotifs]));
+            if (notifsToStore.length > 0) {
+                window.dispatchEvent(new CustomEvent('knome_notification_received', { detail: notifsToStore[0] }));
+            }
+
             addToast(`Post successfully shared with ${selectedShareUsers.length} user(s)!`, 'success');
             setIsShareOpen(false);
             setShareMode('menu');
@@ -280,37 +538,127 @@ export default function PostCard({ post, onPostDeleted }) {
         }
     };
 
-    useEffect(() => {
-        if (shareMode !== 'userSearch') return;
-        let isMounted = true;
+    const { users: contextUsers } = useUser();
+    const [allPlatformUsers, setAllPlatformUsers] = useState([]);
 
-        const fetchUsers = async () => {
+    useEffect(() => {
+        if (!isShareOpen || shareMode !== 'userSearch') return;
+
+        const loadUsers = async () => {
             setIsShareSearching(true);
             try {
-                const res = await searchApi.searchUsers(shareSearchQuery.trim());
-                if (res && isMounted) {
-                    const rawList = Array.isArray(res) ? res : (res.items || []);
-                    setShareSearchResults(rawList);
-                }
-            } catch (error) {
-                console.error("Failed to search users", error);
+                let merged = [...(contextUsers || [])];
+                try {
+                    const res = await searchApi.searchUsers(shareSearchQuery.trim()).catch(() => null);
+                    const apiList = Array.isArray(res) ? res : (res?.items || []);
+                    apiList.forEach(u => {
+                        const uId = u.userId || u.id;
+                        if (uId && !merged.some(m => String(m.userId || m.id) === String(uId))) {
+                            merged.push({
+                                id: uId,
+                                userId: uId,
+                                employeeId: u.employeeId,
+                                name: u.fullName || u.name || u.title,
+                                fullName: u.fullName || u.name || u.title,
+                                role: u.roleName || u.role || u.designation || u.summary || 'Employee',
+                                department: u.departmentName || u.department || 'MPOnline',
+                                avatar: u.profilePhotoUrl || u.avatar || null
+                            });
+                        }
+                    });
+                } catch {}
+
+                const currentId = String(currentUser?.userId || currentUser?.id || '');
+                const currentEmpId = String(currentUser?.employeeId || '').toLowerCase();
+                const filtered = merged.filter(u => {
+                    const idMatch = String(u.userId || u.id) === currentId;
+                    const empMatch = currentEmpId && String(u.employeeId || '').toLowerCase() === currentEmpId;
+                    return !idMatch && !empMatch;
+                });
+                setAllPlatformUsers(filtered);
             } finally {
-                if (isMounted) setIsShareSearching(false);
+                setIsShareSearching(false);
             }
         };
 
-        const timer = setTimeout(fetchUsers, shareSearchQuery ? 300 : 0);
-        return () => { isMounted = false; clearTimeout(timer); };
-    }, [shareSearchQuery, shareMode]);
+        loadUsers();
+    }, [isShareOpen, shareMode, contextUsers, currentUser, shareSearchQuery]);
+
+    const displayedShareUsers = React.useMemo(() => {
+        if (!shareSearchQuery.trim()) return allPlatformUsers;
+        const query = shareSearchQuery.trim().toLowerCase();
+        const matches = allPlatformUsers.filter(u => {
+            const name = (u.name || u.fullName || '').toLowerCase();
+            const empId = (u.employeeId || '').toLowerCase();
+            const role = (u.role || u.roleName || u.designation || '').toLowerCase();
+            const dept = (u.department || '').toLowerCase();
+            return name.includes(query) || empId.includes(query) || role.includes(query) || dept.includes(query);
+        });
+
+        return matches.sort((a, b) => {
+            const aName = (a.name || a.fullName || '').toLowerCase();
+            const bName = (b.name || b.fullName || '').toLowerCase();
+            const aStarts = aName.startsWith(query) ? 0 : (aName.includes(query) ? 1 : 2);
+            const bStarts = bName.startsWith(query) ? 0 : (bName.includes(query) ? 1 : 2);
+            if (aStarts !== bStarts) return aStarts - bStarts;
+            return aName.localeCompare(bName);
+        });
+    }, [allPlatformUsers, shareSearchQuery]);
+
+    // Fetch communities when entering community share mode
+    useEffect(() => {
+        if (shareMode !== 'community' || shareCommunities.length > 0) return;
+        let isMounted = true;
+        const fetchCommunities = async () => {
+            setLoadingCommunities(true);
+            try {
+                const res = await communitiesApi.getMyCommunities();
+                if (isMounted) {
+                    const list = Array.isArray(res) ? res : (res?.data || res?.items || []);
+                    setShareCommunities(list);
+                    if (list.length > 0) {
+                        setSelectedShareCommunityId(String(list[0].communityId || list[0].id || ''));
+                    }
+                }
+            } catch (err) {
+                console.error('Failed to load communities for share', err);
+            } finally {
+                if (isMounted) setLoadingCommunities(false);
+            }
+        };
+        fetchCommunities();
+        return () => { isMounted = false; };
+    }, [shareMode, shareCommunities.length]);
+
+    const currentUserId = currentUser?.userId || currentUser?.id;
+    const postAuthorId = post.author?.id || post.author?.userId || post.authorUserId || post.authorId || post.userId;
+    const isAuthor = Boolean(currentUserId && postAuthorId && String(currentUserId) === String(postAuthorId));
+
+    const isUserAdmin = Boolean(
+        currentUser?.isAdmin === true ||
+        ['SYSADM', 'HRADM', 'CADM'].includes(currentUser?.role) ||
+        ['System Administrator', 'HR Administrator', 'Community Admin', 'Community Administrator'].includes(currentUser?.roleName) ||
+        (currentUser?.role && currentUser.role.toLowerCase().includes('admin')) ||
+        (currentUser?.roleName && currentUser.roleName.toLowerCase().includes('admin')) ||
+        (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => typeof r === 'string' && (r.toLowerCase().includes('admin') || ['SYSADM', 'HRADM', 'CADM'].includes(r))))
+    );
+
+    const canDeletePost = isAuthor || isUserAdmin;
 
     const handleDeletePost = async () => {
-        if (!window.confirm("Are you sure you want to delete this post?")) return;
+        if (!await confirm({ title: 'Delete Post', message: 'Are you sure you want to delete this post? This action cannot be undone.', confirmText: 'Delete', variant: 'danger' })) return;
+        const targetPostId = post.id || post.postId;
+        if (!targetPostId) return;
         try {
-            await postsApi.delete(post.id);
+            await postsApi.delete(targetPostId);
             setIsMenuOpen(false);
-            if (onPostDeleted) onPostDeleted();
+            window.dispatchEvent(new CustomEvent('post-deleted', { detail: { id: targetPostId } }));
+            if (onPostDeleted) onPostDeleted(targetPostId);
+            addToast("Post deleted successfully", "success");
         } catch (error) {
-            alert("Failed to delete post");
+            console.error("Failed to delete post:", error);
+            const errMsg = error?.response?.data?.message || "Failed to delete post";
+            addToast(errMsg, "error");
         }
     };
 
@@ -335,14 +683,48 @@ export default function PostCard({ post, onPostDeleted }) {
 
     const toggleReaction = async (type) => {
         const previousReaction = reaction;
+        const previousList = reactionsList;
         const newReaction = reaction === type ? null : type;
+
+        const currentUserIdNum = Number(currentUser?.userId || currentUser?.id || 0);
+        const currentUserName = currentUser?.fullName || currentUser?.name || 'You';
+        const currentUserPhoto = currentUser?.profilePhotoUrl || currentUser?.avatar || null;
+        const currentUserDesig = currentUser?.roleName || currentUser?.role || currentUser?.designation || 'MPOnline Team Member';
         
         // Optimistically update UI
         setReaction(newReaction);
         if (previousReaction && !newReaction) {
             setLikeCount(prev => Math.max(0, prev - 1)); // Removed reaction
+            setReactionsList(prev => prev.filter(r => Number(r.userId) !== currentUserIdNum));
         } else if (!previousReaction && newReaction) {
             setLikeCount(prev => prev + 1); // Added new reaction
+            setReactionsList(prev => [
+                {
+                    id: `local-${currentUserIdNum}-${Date.now()}`,
+                    userId: currentUserIdNum,
+                    userFullName: currentUserName,
+                    userProfilePhotoUrl: currentUserPhoto,
+                    userDesignation: currentUserDesig,
+                    reactionType: newReaction
+                },
+                ...prev.filter(r => Number(r.userId) !== currentUserIdNum)
+            ]);
+            if (awardRuleKarma && (post.userId || post.authorId)) {
+                awardRuleKarma(post.userId || post.authorId, 'LIKE_RECEIVED');
+            }
+        } else if (previousReaction && newReaction && previousReaction !== newReaction) {
+            // Changed reaction type
+            setReactionsList(prev => [
+                {
+                    id: `local-${currentUserIdNum}-${Date.now()}`,
+                    userId: currentUserIdNum,
+                    userFullName: currentUserName,
+                    userProfilePhotoUrl: currentUserPhoto,
+                    userDesignation: currentUserDesig,
+                    reactionType: newReaction
+                },
+                ...prev.filter(r => Number(r.userId) !== currentUserIdNum)
+            ]);
         }
         setReactionHover(false);
 
@@ -359,6 +741,7 @@ export default function PostCard({ post, onPostDeleted }) {
             console.error('Failed to toggle reaction', error);
             // Revert on failure
             setReaction(previousReaction);
+            setReactionsList(previousList);
             if (previousReaction && !newReaction) {
                 setLikeCount(prev => prev + 1);
             } else if (!previousReaction && newReaction) {
@@ -367,42 +750,10 @@ export default function PostCard({ post, onPostDeleted }) {
         }
     };
 
-    const handleAddComment = async (e, parentId = null) => {
-        e.preventDefault();
-        if (!newComment.trim()) return;
-        
-        try {
-            const c = await interactionsApi.addComment('Post', post.id, newComment);
-            if (c) {
-                const newC = {
-                    id: c.commentId,
-                    author: c.authorFullName,
-                    avatar: resolveMediaUrl(c.authorProfilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName)}&background=6366f1&color=fff`,
-                    text: c.commentText,
-                    time: 'Just now',
-                    replies: []
-                };
-
-                if (parentId) {
-                    setComments(comments.map(comment => {
-                        if (comment.id === parentId) {
-                            return { ...comment, replies: [...(comment.replies || []), newC] };
-                        }
-                        return comment;
-                    }));
-                } else {
-                    setComments([newC, ...comments]);
-                }
-                setNewComment('');
-            }
-        } catch (error) {
-            console.error('Failed to add comment', error);
-            alert('Failed to add comment');
-        }
-    };
-
     return (
-        <article className={`rounded-2xl overflow-hidden flex flex-col transition-all hover:-translate-y-1 ${post.isHighlighted ? 'ring-2 ring-indigo-500 shadow-2xl' : ''}`}
+        <article 
+            id={post.id ? `post-${post.id}` : undefined}
+            className={`w-full min-w-0 rounded-2xl overflow-hidden flex flex-col transition-all hover:-translate-y-1 ${post.isHighlighted ? 'ring-2 ring-indigo-500 shadow-2xl' : ''}`}
             style={{
                 background: 'var(--bg-card)',
                 border: post.isHighlighted ? '1px solid #6366f1' : '1px solid var(--border-subtle)',
@@ -433,19 +784,30 @@ export default function PostCard({ post, onPostDeleted }) {
                             <span className="text-slate-500 dark:text-slate-400 text-[11.5px] font-bold uppercase tracking-wider">{post.author.role}</span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                            {/* Save Button (FR-CI-04) */}
+                            {/* Save & Categorize Button (FR-CI-04) */}
                             <button 
                                 onClick={async () => {
-                                    const nextState = !isSaved;
-                                    setIsSaved(nextState);
-                                    try {
-                                        await interactionsApi.toggleBookmark('Post', post.id);
-                                    } catch (e) {
-                                        setIsSaved(!nextState); // Revert
+                                    if (isSaved) {
+                                        setIsSaved(false);
+                                        try {
+                                            const bookmarkedIds = JSON.parse(localStorage.getItem('knome_bookmarked_ids') || '[]');
+                                            localStorage.setItem('knome_bookmarked_ids', JSON.stringify(bookmarkedIds.filter(id => id !== String(post.id))));
+                                            
+                                            const localCustomSaved = JSON.parse(localStorage.getItem('knome_saved_items_custom') || '[]');
+                                            localStorage.setItem('knome_saved_items_custom', JSON.stringify(localCustomSaved.filter(i => String(i.contentId || i.id) !== String(post.id))));
+
+                                            await interactionsApi.toggleBookmark('Post', post.id);
+                                            window.dispatchEvent(new CustomEvent('knome-bookmark-saved', { detail: { id: post.id, removed: true } }));
+                                            addToast('Item removed from saved bookmarks.', 'info');
+                                        } catch (e) {
+                                            setIsSaved(true);
+                                        }
+                                    } else {
+                                        setIsSaveCategoryModalOpen(true);
                                     }
                                 }}
-                                className={`p-1.5 rounded-lg transition-all active:scale-95 ${isSaved ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20' : 'text-slate-400 hover:text-blue-600 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
-                                title={isSaved ? "Unsave" : "Save Content"}
+                                className={`p-1.5 rounded-lg transition-all active:scale-95 ${isSaved ? 'text-amber-500 bg-amber-50 dark:bg-amber-900/20' : 'text-slate-400 hover:text-amber-500 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                                title={isSaved ? "Unsave" : "Save & Categorize Content"}
                             >
                                 <span className="material-symbols-outlined text-[18px]" style={{fontVariationSettings: isSaved ? "'FILL' 1" : "'FILL' 0"}}>bookmark</span>
                             </button>
@@ -455,6 +817,12 @@ export default function PostCard({ post, onPostDeleted }) {
                                 </button>
                                 {isMenuOpen && (
                                     <div className="absolute right-0 mt-1 w-48 bg-theme-60-surface border border-theme-30 rounded-xl shadow-lg py-1 z-10 animate-in fade-in zoom-in-95 duration-100">
+                                        <button 
+                                            onClick={() => { setIsMenuOpen(false); navigate('/posts?id=' + (post.id || post.postId)); }}
+                                            className="w-full text-left px-4 py-2 text-[13px] font-bold text-blue-600 dark:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">open_in_new</span> Open Post
+                                        </button>
                                         <button 
                                             onClick={() => { setIsMenuOpen(false); navigate('/profile', { state: { user: post.author } }); }}
                                             className="w-full text-left px-4 py-2 text-[13px] font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
@@ -467,7 +835,7 @@ export default function PostCard({ post, onPostDeleted }) {
                                         >
                                             <span className="material-symbols-outlined text-[16px]">report</span> Report Post
                                         </button>
-                                        {(currentUser?.userId === post.author?.userId || currentUser?.role === 'SYSADM' || currentUser?.role === 'HRADM') && (
+                                        {canDeletePost && (
                                             <button 
                                                 onClick={handleDeletePost}
                                                 className="w-full text-left px-4 py-2 text-[13px] font-bold text-red-600 dark:text-red-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 border-t border-slate-100 dark:border-slate-800 mt-1"
@@ -480,10 +848,27 @@ export default function PostCard({ post, onPostDeleted }) {
                             </div>
                         </div>
                     </div>
-                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                        {post.time}
-                        <span className="material-symbols-outlined text-[10px]">public</span>
-                    </p>
+                    <div className="flex items-center flex-wrap gap-2 mt-0.5">
+                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                            {post.time}
+                        </p>
+                        {post.sharedCommunityName || post.sharedCommunity?.name || post.communityName ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-bold border border-blue-500/20">
+                                <span className="material-symbols-outlined text-[12px]">groups</span>
+                                {post.sharedCommunityName || post.sharedCommunity?.name || post.communityName}
+                            </span>
+                        ) : (post.sharedWithName || post.sharedUser?.name || post.recipientName) ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400 text-[10px] font-bold border border-purple-500/20">
+                                <span className="material-symbols-outlined text-[12px]">person</span>
+                                To: {post.sharedWithName || post.sharedUser?.name || post.recipientName}
+                            </span>
+                        ) : (
+                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 flex items-center gap-0.5" title="Public to Everyone">
+                                <span className="material-symbols-outlined text-[11px]">public</span>
+                                Everyone
+                            </span>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -495,20 +880,219 @@ export default function PostCard({ post, onPostDeleted }) {
                         ARTICLE
                     </div>
                 )}
-                {post.title && (
-                    <h3 
-                        onClick={() => post.type === 'article' && navigate('/article-view?id=' + (post.id === 1 ? '2' : post.id))}
-                        className={`text-base font-extrabold text-slate-900 dark:text-white mb-1.5 leading-snug ${post.type === 'article' ? 'hover:text-blue-500 cursor-pointer transition-colors' : ''}`}
-                    >
-                        {post.title}
-                    </h3>
+                {(() => {
+                    const postUrlMatch = (post.content || '').match(/(?:https?:\/\/[^\s]+)?\/posts\?id=(\d+)/i);
+                    const extractedPostId = postUrlMatch ? postUrlMatch[1] : (post.sharedPostId || null);
+                    const sharedPostTitleMatch = (post.content || '').match(/Shared Post:\s*"([^"]+)"/i);
+                    const sharedPostTitle = sharedPostTitleMatch ? sharedPostTitleMatch[1] : (post.title || 'Shared Post');
+                    const isSharedPost = Boolean(extractedPostId || (post.content && post.content.includes('Shared Post:')));
+
+                    const renderFormattedText = (text) => {
+                        if (!text) return null;
+                        const urlRegex = /(https?:\/\/[^\s]+)/g;
+                        const parts = text.split(urlRegex);
+                        return parts.map((part, index) => {
+                            if (part.match(urlRegex)) {
+                                const isInternal = part.includes('/posts') || part.includes('/article-view') || part.includes('/community') || part.includes('/videos') || part.includes('/podcasts');
+                                return (
+                                    <a
+                                        key={index}
+                                        href={part}
+                                        onClick={(e) => {
+                                            if (isInternal) {
+                                                e.preventDefault();
+                                                try {
+                                                    const urlObj = new URL(part, window.location.origin);
+                                                    navigate(urlObj.pathname + urlObj.search);
+                                                } catch {
+                                                    window.open(part, '_blank');
+                                                }
+                                            }
+                                        }}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-blue-600 dark:text-blue-400 hover:underline font-semibold inline-flex items-center gap-0.5 break-all cursor-pointer"
+                                    >
+                                        <span>{part}</span>
+                                        <span className="material-symbols-outlined text-[13px]">open_in_new</span>
+                                    </a>
+                                );
+                            }
+                            return part;
+                        });
+                    };
+
+                    return (
+                        <>
+                            {post.title && (
+                                <h3 
+                                    onClick={() => {
+                                        if (post.type === 'article') {
+                                            navigate('/article-view?id=' + (post.articleId || post.contentId || post.id));
+                                        } else {
+                                            const targetId = extractedPostId || post.id || post.postId;
+                                            if (targetId) navigate(`/posts?id=${targetId}`);
+                                        }
+                                    }}
+                                    className="text-base font-extrabold text-slate-900 dark:text-white mb-1.5 leading-snug hover:text-blue-500 cursor-pointer transition-colors"
+                                >
+                                    {post.title}
+                                </h3>
+                            )}
+                            <p className="text-[13.5px] text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
+                                {renderFormattedText(post.content)}
+                            </p>
+
+                            {/* Shared Post Interactive Preview Card with Open Post Button */}
+                            {(isSharedPost || extractedPostId) && (
+                                <div 
+                                    onClick={() => {
+                                        const targetId = extractedPostId || post.id || post.postId;
+                                        if (targetId) navigate(`/posts?id=${targetId}`);
+                                    }}
+                                    className="mt-3.5 p-4 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-sky-500/10 border border-blue-500/30 hover:border-blue-500 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 cursor-pointer group shadow-sm hover:shadow-md"
+                                >
+                                    <div className="flex items-center gap-3.5 min-w-0">
+                                        <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xl shrink-0 shadow-md shadow-blue-500/30 group-hover:scale-105 transition-transform">
+                                            <span className="material-symbols-outlined text-[24px]">dynamic_feed</span>
+                                        </div>
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px] bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
+                                                    <span className="material-symbols-outlined text-[12px]">share</span>
+                                                    Shared Post
+                                                </span>
+                                                {extractedPostId && (
+                                                    <span className="text-[11px] text-slate-400 font-mono font-bold">#{extractedPostId}</span>
+                                                )}
+                                            </div>
+                                            <h6 className="font-bold text-slate-900 dark:text-white text-sm group-hover:text-blue-500 transition-colors truncate mt-1">
+                                                {sharedPostTitle}
+                                            </h6>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                                Click to open post details, discussions & full comments
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            const targetId = extractedPostId || post.id || post.postId;
+                                            if (targetId) navigate(`/posts?id=${targetId}`);
+                                        }}
+                                        className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-600/20 transition-all flex items-center justify-center gap-1.5 shrink-0 group-hover:translate-x-0.5 cursor-pointer"
+                                    >
+                                        <span>Open Post</span>
+                                        <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                                    </button>
+                                </div>
+                            )}
+                        </>
+                    );
+                })()}
+
+                {/* Shared Profile Card */}
+                {post.sharedProfile && (
+                    <div className="mt-3.5 p-4 rounded-2xl bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 border border-indigo-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+                        <div className="flex items-center gap-3.5 min-w-0">
+                            <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-black text-lg flex items-center justify-center shrink-0 shadow-md overflow-hidden">
+                                {post.sharedProfile.avatar ? (
+                                    <img src={post.sharedProfile.avatar} alt={post.sharedProfile.name} className="w-full h-full object-cover" />
+                                ) : (
+                                    (post.sharedProfile.name || 'U').charAt(0).toUpperCase()
+                                )}
+                            </div>
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                    <span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-extrabold uppercase tracking-wider">
+                                        SHARED PROFILE
+                                    </span>
+                                </div>
+                                <h4 className="font-extrabold text-slate-900 dark:text-white text-sm truncate mt-0.5">
+                                    {post.sharedProfile.name || post.sharedProfile.fullName}
+                                </h4>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                    {post.sharedProfile.designation || 'Contributor'} • {post.sharedProfile.department || 'General'}
+                                </p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => navigate('/profile', { state: { user: post.sharedProfile } })}
+                            className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-indigo-500/20 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                        >
+                            <span className="material-symbols-outlined text-[16px]">visibility</span>
+                            View Profile
+                        </button>
+                    </div>
                 )}
-                <p className="text-[13.5px] text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
-                    {post.content}
-                </p>
+                {/* Shared Video Player / Card inside PostCard */}
+                {(post.sharedVideo || post.type === 'video_share' || post.videoUrl || (post.content && (post.content.includes('Shared Video:') || post.content.includes('📹')))) && (
+                    <div className="mt-3.5 rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-xl">
+                        {(() => {
+                            const vidObj = post.sharedVideo || {
+                                id: post.id || `shared_vid_${Date.now()}`,
+                                title: post.title?.replace('📹 Shared Video: ', '').replace(/ — uploaded by.*/, '') || post.content?.replace(/^.*Shared Video: "/, '').replace(/".*/, '') || 'Shared Video',
+                                sourceUrl: post.videoUrl || post.sourceUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+                                thumbnail: post.thumbnail || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=1200',
+                                author: post.authorName || post.author || 'MPOnline Team'
+                            };
+                            const vUrl = vidObj.sourceUrl || vidObj.videoUrl || post.videoUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+                            const isYT = vUrl && (vUrl.includes('youtube.com') || vUrl.includes('youtu.be'));
+
+                            return (
+                                <div className="flex flex-col">
+                                    <div className="relative aspect-video w-full bg-black overflow-hidden group">
+                                        {isYT ? (
+                                            <iframe
+                                                src={vUrl.includes('embed') ? vUrl : `https://www.youtube.com/embed/${(vUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=))((\w|-){11})/) || [])[1] || ''}`}
+                                                className="w-full h-full border-0"
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                                                title={vidObj.title}
+                                            />
+                                        ) : (
+                                            <video
+                                                src={resolveMediaUrl(vUrl) || vUrl}
+                                                poster={getVideoThumbnail(vidObj) || undefined}
+                                                preload="metadata"
+                                                controls
+                                                controlsList="nodownload"
+                                                className="w-full h-full object-contain"
+                                                onError={(e) => {
+                                                    if (e.target && !e.target.src.includes('BigBuckBunny.mp4')) {
+                                                        e.target.src = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+                                                    }
+                                                }}
+                                            />
+                                        )}
+                                    </div>
+                                    <div className="p-3.5 bg-slate-900 flex items-center justify-between gap-3 border-t border-slate-800">
+                                        <div className="min-w-0">
+                                            <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-md inline-flex items-center gap-1">
+                                                <span className="material-symbols-outlined text-[12px]">play_circle</span>
+                                                SHARED VIDEO
+                                            </span>
+                                            <h5 className="font-extrabold text-white text-xs sm:text-sm truncate mt-1">
+                                                {vidObj.title}
+                                            </h5>
+                                        </div>
+                                        <button
+                                            onClick={() => navigate(`/videos?id=${vidObj.id || ''}&title=${encodeURIComponent(vidObj.title || '')}&url=${encodeURIComponent(vUrl)}`)}
+                                            className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-600 hover:to-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shrink-0 transition-all shadow-md shadow-cyan-500/20 cursor-pointer"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">play_arrow</span>
+                                            <span>Play Full Video</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                    </div>
+                )}
+
                 {post.type === 'article' && (
                     <button 
-                        onClick={() => navigate('/article-view?id=' + (post.id === 1 ? '2' : post.id))}
+                        onClick={() => navigate('/article-view?id=' + (post.articleId || post.contentId || post.id))}
                         className="mt-3 text-xs font-black text-blue-500 hover:text-blue-600 hover:underline flex items-center gap-1"
                     >
                         Read Full Article
@@ -570,27 +1154,68 @@ export default function PostCard({ post, onPostDeleted }) {
                                 </div>
                             );
                         } else if (att.type === 'doc') {
+                            const isPdf = att.name?.toLowerCase().endsWith('.pdf') || att.url?.toLowerCase().includes('.pdf');
+                            const resolvedDocUrl = resolveMediaUrl(att.url);
                             return (
-                                <div key={att.id} className="mx-5 mb-2 p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex items-center justify-between">
-                                    <div className="flex items-center gap-3 overflow-hidden">
-                                        <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-500 rounded-lg flex items-center justify-center shrink-0">
-                                            <span className="material-symbols-outlined text-[20px]">description</span>
+                                <div 
+                                    key={att.id} 
+                                    onClick={() => setActiveDocViewer(att)}
+                                    className="mx-5 mb-3 p-3.5 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl flex items-center justify-between gap-4 shadow-sm hover:shadow-md transition-all group cursor-pointer"
+                                >
+                                    <div className="flex items-center gap-3.5 overflow-hidden">
+                                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-sm transition-transform group-hover:scale-105 ${
+                                            isPdf ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/20'
+                                        }`}>
+                                            <span className="material-symbols-outlined text-[24px]">
+                                                {isPdf ? 'picture_as_pdf' : 'description'}
+                                            </span>
                                         </div>
                                         <div className="min-w-0">
-                                            <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate">{att.name}</p>
-                                            <p className="text-[11px] text-slate-500">Document (View Only)</p>
+                                            <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" title={att.name}>{att.name}</p>
+                                            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                                                <span className={`font-semibold uppercase tracking-wider text-[10px] px-1.5 py-0.5 rounded ${
+                                                    isPdf ? 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300' : 'bg-slate-200/70 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300'
+                                                }`}>
+                                                    {isPdf ? 'PDF' : 'DOC'}
+                                                </span>
+                                                <span>Document</span>
+                                            </div>
                                         </div>
                                     </div>
-                                    <a href={att.url} target="_blank" rel="noreferrer" className="shrink-0 px-3 py-1.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500 hover:text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1">
-                                        <span className="material-symbols-outlined text-[16px]">visibility</span>
-                                        View File
-                                    </a>
+                                    <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                        {resolvedDocUrl && (
+                                            <a
+                                                href={resolvedDocUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-700/60 rounded-xl transition-all"
+                                                title="Open in new tab"
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">open_in_new</span>
+                                            </a>
+                                        )}
+                                        <button 
+                                            onClick={() => setActiveDocViewer(att)}
+                                            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-500/20 active:scale-95 cursor-pointer"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">visibility</span>
+                                            View File
+                                        </button>
+                                    </div>
                                 </div>
                             );
                         }
                         return null;
                     })}
                 </div>
+            )}
+
+            {/* ── Document Viewer Modal ── */}
+            {activeDocViewer && (
+                <DocumentViewerModal 
+                    document={activeDocViewer} 
+                    onClose={() => setActiveDocViewer(null)} 
+                />
             )}
 
             {/* ── Fullscreen Lightbox ── */}
@@ -602,20 +1227,55 @@ export default function PostCard({ post, onPostDeleted }) {
                 />
             )}
 
+            {/* ── Reactions Modal ── */}
+            <ReactionsModal
+                isOpen={isReactionsModalOpen}
+                onClose={() => setIsReactionsModalOpen(false)}
+                contentType="Post"
+                contentId={post.id || post.postId}
+                initialReactions={reactionsList}
+            />
+
             {/* Interaction Counts */}
-            <div className="px-5 py-3 flex items-center justify-between text-[12px] text-slate-500 border-b border-slate-100 dark:border-slate-800">
-                <div className="flex items-center gap-1">
-                    {reaction && (
-                        <div className="flex items-center gap-1 bg-slate-50 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">
-                            <span className="text-[14px]">{REACTION_TYPES[reaction].icon}</span>
-                            <span className="font-bold text-slate-900 dark:text-white">You {likeCount > 1 ? `and ${likeCount - 1} others` : ''}</span>
+            <div className="px-5 py-2.5 flex items-center justify-between text-[12px] text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800">
+                {likeCount > 0 ? (
+                    <button 
+                        type="button"
+                        onClick={() => setIsReactionsModalOpen(true)}
+                        className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer group"
+                        title="View who reacted"
+                    >
+                        <div className="flex items-center -space-x-1.5">
+                            {activeReactionTypes.map(t => {
+                                const meta = REACTION_TYPES[t] || REACTION_TYPES.like;
+                                const bgClass = t === 'heart' ? 'bg-rose-500' : t === 'celebrate' ? 'bg-amber-500' : t === 'support' ? 'bg-purple-500' : 'bg-blue-500';
+                                return (
+                                    <span 
+                                        key={t}
+                                        className={`w-5 h-5 rounded-full ${bgClass} text-white flex items-center justify-center text-[10px] shadow-xs ring-2 ring-white dark:ring-slate-900`}
+                                    >
+                                        {meta.icon}
+                                    </span>
+                                );
+                            })}
                         </div>
-                    )}
-                    {!reaction && likeCount > 0 && <span>{likeCount} reactions</span>}
-                </div>
-                <div className="flex gap-4">
-                    <button className="hover:underline hover:text-indigo-500">{comments.length} comments</button>
-                    <span>{shareCount} shares</span>
+                        <span className="font-bold text-slate-800 dark:text-slate-200 group-hover:underline">
+                            {likeCount} {likeCount === 1 ? 'reaction' : 'reactions'}
+                        </span>
+                    </button>
+                ) : (
+                    <div />
+                )}
+                <div className="flex items-center gap-3 text-xs font-semibold">
+                    <button onClick={() => setShowComments(!showComments)} className="hover:underline hover:text-indigo-600 dark:hover:text-indigo-400 cursor-pointer flex items-center gap-1 text-slate-600 dark:text-slate-300">
+                        <span className="font-bold">{displayCommentCount}</span>
+                        <span>{displayCommentCount === 1 ? 'comment' : 'comments'}</span>
+                    </button>
+                    <span className="text-slate-300 dark:text-slate-700">•</span>
+                    <span className="flex items-center gap-1 text-slate-600 dark:text-slate-300">
+                        <span className="font-bold">{shareCount || post.sharesCount || 0}</span>
+                        <span>shares</span>
+                    </span>
                 </div>
             </div>
 
@@ -668,17 +1328,17 @@ export default function PostCard({ post, onPostDeleted }) {
 
                     <button 
                         onClick={() => toggleReaction(reaction ? null : 'like')}
-                        className={`w-full flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] transition-colors ${reaction ? REACTION_TYPES[reaction].color : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                        className={`w-full flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] transition-colors cursor-pointer ${reaction ? REACTION_TYPES[reaction].color : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                     >
                         {reaction ? (
                             <>
                                 <span className="text-[18px]">{REACTION_TYPES[reaction].icon}</span>
-                                {REACTION_TYPES[reaction].label}
+                                {REACTION_TYPES[reaction].label} ({likeCount})
                             </>
                         ) : (
                             <>
                                 <span className="material-symbols-outlined text-[20px]">thumb_up</span>
-                                Like
+                                Like ({likeCount})
                             </>
                         )}
                     </button>
@@ -698,12 +1358,20 @@ export default function PostCard({ post, onPostDeleted }) {
                                         avatar: resolveMediaUrl(c.authorProfilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName)}&background=6366f1&color=fff`,
                                         text: c.commentText,
                                         time: new Date(c.createdDate).toLocaleDateString(),
+                                        likesCount: c.likesCount || 0,
+                                        isLiked: Boolean(c.isLiked),
+                                        userReaction: c.userReactionType?.toLowerCase() || (c.isLiked ? 'like' : null),
+                                        topReactionTypes: c.topReactionTypes || [],
                                         replies: (c.replies || []).map(r => ({
                                             id: r.commentId,
                                             author: r.authorFullName,
                                             avatar: resolveMediaUrl(r.authorProfilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(r.authorFullName)}&background=6366f1&color=fff`,
                                             text: r.commentText,
                                             time: new Date(r.createdDate).toLocaleDateString(),
+                                            likesCount: r.likesCount || 0,
+                                            isLiked: Boolean(r.isLiked),
+                                            userReaction: r.userReactionType?.toLowerCase() || (r.isLiked ? 'like' : null),
+                                            topReactionTypes: r.topReactionTypes || [],
                                             replies: []
                                         }))
                                     }));
@@ -721,10 +1389,10 @@ export default function PostCard({ post, onPostDeleted }) {
                             }
                         }
                     }}
-                    className="flex-1 flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    className="flex-1 flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                 >
                     <span className="material-symbols-outlined text-[20px]">chat_bubble</span>
-                    Comment
+                    Comment ({displayCommentCount})
                 </button>
 
                 {/* Share Button (FR-CI-03) */}
@@ -735,116 +1403,25 @@ export default function PostCard({ post, onPostDeleted }) {
                             e.stopPropagation();
                             setIsShareOpen(!isShareOpen);
                         }}
-                        className="w-full flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        className="w-full flex justify-center items-center gap-2 py-2.5 rounded-xl font-bold text-[13px] text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                     >
                         <span className="material-symbols-outlined text-[20px]">share</span>
-                        Share
+                        Share ({shareCount || post.sharesCount || 0})
                     </button>
 
-                    {/* Share Popover Modal... */}
-                    {isShareOpen && createPortal(
-                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={(e) => { e.stopPropagation(); setIsShareOpen(false); }}></div>
-                            <div className="relative bg-theme-60-surface rounded-2xl shadow-xl w-full max-w-sm p-6 border border-theme-30 animate-in fade-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
-                                <div className="flex justify-between items-center mb-4">
-                                    <div className="flex items-center gap-2">
-                                        {shareMode === 'userSearch' && (
-                                            <button onClick={() => setShareMode('menu')} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
-                                                <span className="material-symbols-outlined text-[20px]">arrow_back</span>
-                                            </button>
-                                        )}
-                                        <h3 className="font-bold text-slate-900 dark:text-white">Share Post</h3>
-                                    </div>
-                                    <button onClick={() => {
-                                        setIsShareOpen(false);
-                                        setShareMode('menu');
-                                    }} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
-                                        <span className="material-symbols-outlined">close</span>
-                                    </button>
-                                </div>
-
-                                {shareMode === 'menu' ? (
-                                    <div className="flex flex-col gap-2">
-                                        <button onClick={handleShareToTimeline} className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left text-sm font-semibold text-slate-700 dark:text-slate-200">
-                                            <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-500 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">dynamic_feed</span></div> Share to Timeline
-                                        </button>
-                                        <button onClick={handleShareToCommunity} className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left text-sm font-semibold text-slate-700 dark:text-slate-200">
-                                            <div className="w-8 h-8 rounded-full bg-cyan-100 dark:bg-cyan-900/30 text-cyan-500 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">groups</span></div> Share to Community
-                                        </button>
-                                        <button onClick={() => setShareMode('userSearch')} className="flex items-center gap-3 w-full p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-left text-sm font-semibold text-slate-700 dark:text-slate-200">
-                                            <div className="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 text-purple-500 flex items-center justify-center"><span className="material-symbols-outlined text-[16px]">group_add</span></div> Share with Users
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <div className="flex flex-col gap-4">
-                                        <div className="relative">
-                                            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
-                                            <input 
-                                                type="text"
-                                                placeholder="Search users..."
-                                                value={shareSearchQuery}
-                                                onChange={e => setShareSearchQuery(e.target.value)}
-                                                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white"
-                                            />
-                                        </div>
-                                        <div className="max-h-60 overflow-y-auto space-y-1 pr-1">
-                                            {isShareSearching ? (
-                                                <div className="text-center py-4 text-slate-500 text-sm">Searching...</div>
-                                            ) : shareSearchResults.length > 0 ? (
-                                                shareSearchResults.map(user => {
-                                                    const userId = user.id || user.userId;
-                                                    const userName = user.title || user.fullName || user.name || 'User';
-                                                    const userRole = user.summary || user.designation || user.roleName || 'Employee';
-                                                    const rawPhoto = user.authorProfilePhotoUrl || user.profilePhotoUrl || user.thumbnailUrl || user.avatar;
-                                                    const userAvatar = resolveMediaUrl(rawPhoto) || `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=6366f1&color=fff`;
-                                                    const isSelected = selectedShareUsers.some(u => (u.id || u.userId) === userId);
-
-                                                    return (
-                                                        <label key={userId} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/80 cursor-pointer transition-all border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
-                                                            <input 
-                                                                type="checkbox" 
-                                                                className="rounded text-indigo-500 focus:ring-indigo-500 bg-slate-100 border-slate-300 dark:border-slate-600 dark:bg-slate-700 w-4 h-4 cursor-pointer"
-                                                                checked={isSelected}
-                                                                onChange={() => {
-                                                                    if (isSelected) {
-                                                                        setSelectedShareUsers(prev => prev.filter(u => (u.id || u.userId) !== userId));
-                                                                    } else {
-                                                                        setSelectedShareUsers(prev => [...prev, { ...user, id: userId }]);
-                                                                    }
-                                                                }}
-                                                            />
-                                                            <img 
-                                                                src={userAvatar} 
-                                                                alt={userName} 
-                                                                className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700 shadow-sm"
-                                                                onError={(e) => {
-                                                                    e.target.onerror = null; 
-                                                                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=6366f1&color=fff`;
-                                                                }}
-                                                            />
-                                                            <div className="flex-1 min-w-0">
-                                                                <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{userName}</p>
-                                                                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{userRole}</p>
-                                                            </div>
-                                                        </label>
-                                                    );
-                                                })
-                                            ) : shareSearchQuery ? (
-                                                <div className="text-center py-4 text-slate-500 text-sm">No users found.</div>
-                                            ) : (
-                                                <div className="text-center py-4 text-slate-500 text-sm">Type a name to search.</div>
-                                            )}
-                                        </div>
-                                        {selectedShareUsers.length > 0 && (
-                                            <button onClick={handleShareWithUsers} className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2.5 rounded-xl transition-colors">
-                                                Share with {selectedShareUsers.length} user{selectedShareUsers.length > 1 ? 's' : ''}
-                                            </button>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        </div>, document.body
-                    )}
+                    {/* Universal Share Modal (FR-CI-03) */}
+                    <ArticleShareModal 
+                        isOpen={isShareOpen}
+                        onClose={() => setIsShareOpen(false)}
+                        post={post}
+                        contentType="Post"
+                        onShared={(type, count) => {
+                            setShareCount(prev => prev + (count || 1));
+                            if (awardRuleKarma && (post.userId || post.authorId)) {
+                                awardRuleKarma(post.userId || post.authorId, 'SHARE_RECEIVED');
+                            }
+                        }}
+                    />
                 </div>
             </div>
 
@@ -859,7 +1436,7 @@ export default function PostCard({ post, onPostDeleted }) {
             {/* Comments Section (FR-CI-02, FR-CI-05) */}
             {showComments && (
                 <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/30 p-5">
-                    <h3 className="font-bold text-sm text-slate-900 dark:text-white mb-4">Comments ({comments.length})</h3>
+                    <h3 className="font-bold text-sm text-slate-900 dark:text-white mb-4">Comments ({displayCommentCount})</h3>
                     
                     {/* Add Comment */}
                     <form onSubmit={(e) => handleAddComment(e, null)} className="flex gap-3 mb-6">
@@ -874,95 +1451,357 @@ export default function PostCard({ post, onPostDeleted }) {
                                 rows={2}
                                 className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white resize-none"
                             />
-                            <div className="flex items-center justify-between mt-2">
-                                <button type="button" className="text-slate-400 hover:text-indigo-500 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors" title="Attach Image">
-                                    <span className="material-symbols-outlined text-[18px]">image</span>
-                                </button>
-                                <button 
-                                    type="submit"
-                                    className="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-lg text-xs transition-colors shadow-sm"
-                                >
-                                    Post Comment
-                                </button>
-                            </div>
+                            {(() => {
+                                const restrictedInComment = checkRestrictedContent(newComment);
+                                return (
+                                    <div className="flex items-center justify-between mt-2">
+                                        <button type="button" className="text-slate-400 hover:text-indigo-500 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors" title="Attach Image">
+                                            <span className="material-symbols-outlined text-[18px]">image</span>
+                                        </button>
+                                        {restrictedInComment ? (
+                                            <div className="flex items-center gap-1.5 text-rose-500 text-xs font-semibold px-2.5 py-1 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-lg">
+                                                <span className="material-symbols-outlined text-[15px]">warning</span>
+                                                <span>Restricted word ("{restrictedInComment}") detected! Remove it to post.</span>
+                                            </div>
+                                        ) : (
+                                            <button 
+                                                type="submit"
+                                                className="bg-indigo-500 hover:bg-indigo-600 text-white font-bold px-4 py-2 rounded-lg text-xs transition-colors shadow-sm"
+                                            >
+                                                Post Comment
+                                            </button>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                         </div>
                     </form>
 
                     {/* Comments List */}
                     <div className="space-y-5">
                         {comments.map(comment => (
-                            <CommentThread key={comment.id} postId={post.id} comment={comment} />
+                            <CommentThread 
+                                key={comment.id} 
+                                postId={post.id} 
+                                comment={comment} 
+                                onReplyAdded={() => setCommentCount(p => p + 1)}
+                            />
                         ))}
                     </div>
                 </div>
             )}
+
+            {/* Save & Categorize Modal */}
+            <SaveToCategoryModal
+                isOpen={isSaveCategoryModalOpen}
+                onClose={() => setIsSaveCategoryModalOpen(false)}
+                item={{
+                    id: post.id,
+                    contentType: 'Post',
+                    title: post.title || '',
+                    content: post.content || post.text || '',
+                    image: post.image || post.mediaUrl || (Array.isArray(post.mediaUrls) ? post.mediaUrls[0] : null) || (Array.isArray(post.attachmentUrls) ? post.attachmentUrls[0] : null) || post.thumbnailUrl || post.thumbnail || null,
+                    author: post.author?.name || post.author,
+                    time: post.createdDate || post.time || 'Just now',
+                    tags: post.tags || []
+                }}
+                onSaved={(savedItem) => {
+                    setIsSaved(true);
+                    addToast(`✅ Saved to "${savedItem.category}"!`, 'success');
+                }}
+            />
         </article>
     );
 }
 
 // Sub-component for nested replies (FR-CI-05)
-function CommentThread({ postId, comment, depth = 0 }) {
+function CommentThread({ postId, comment, depth = 0, onReplyAdded }) {
     const [isReplying, setIsReplying] = useState(false);
     const [replyText, setReplyText] = useState('');
     const [replies, setReplies] = useState(comment.replies || []);
+    const [likesCount, setLikesCount] = useState(comment.likesCount || 0);
+    const initialReaction = comment.userReaction || (comment.isLiked ? 'like' : null);
+    const [reaction, setReaction] = useState(initialReaction);
+    const [reactionHover, setReactionHover] = useState(false);
+    const hoverTimeoutRef = useRef(null);
+    const [isReactionsModalOpen, setIsReactionsModalOpen] = useState(false);
+
+    useEffect(() => {
+        setReplies(comment.replies || []);
+    }, [comment.replies]);
+
+    useEffect(() => {
+        setLikesCount(comment.likesCount || 0);
+        setReaction(comment.userReaction || (comment.isLiked ? 'like' : null));
+    }, [comment.likesCount, comment.isLiked, comment.userReaction]);
+
+    const activeCommentReactionTypes = React.useMemo(() => {
+        const types = new Set();
+        if (Array.isArray(comment.topReactionTypes)) {
+            comment.topReactionTypes.forEach(t => t && types.add(t.toLowerCase()));
+        }
+        if (reaction) {
+            types.add(reaction.toLowerCase());
+        }
+        if (types.size === 0 && likesCount > 0) {
+            types.add('like');
+        }
+        return Array.from(types);
+    }, [comment.topReactionTypes, reaction, likesCount]);
+
+    const toggleCommentReaction = async (type) => {
+        if (!comment.id) return;
+        const previousReaction = reaction;
+        const newReaction = reaction === type ? null : type;
+
+        setReaction(newReaction);
+        if (previousReaction && !newReaction) {
+            setLikesCount(prev => Math.max(0, prev - 1));
+        } else if (!previousReaction && newReaction) {
+            setLikesCount(prev => prev + 1);
+        }
+        setReactionHover(false);
+
+        const reactionTypeToSend = newReaction || previousReaction;
+        if (!reactionTypeToSend) return;
+        const formattedReaction = reactionTypeToSend.charAt(0).toUpperCase() + reactionTypeToSend.slice(1);
+
+        try {
+            await interactionsApi.toggleReaction('Comment', comment.id, formattedReaction);
+        } catch (error) {
+            console.error('Failed to toggle comment reaction', error);
+            setReaction(previousReaction);
+            if (previousReaction && !newReaction) {
+                setLikesCount(prev => prev + 1);
+            } else if (!previousReaction && newReaction) {
+                setLikesCount(prev => Math.max(0, prev - 1));
+            }
+        }
+    };
 
     const submitReply = async (e) => {
         e.preventDefault();
         if (!replyText.trim()) return;
 
+        const foundKeyword = checkRestrictedContent(replyText.trim());
+        if (foundKeyword) {
+            addToast(`Security Alert: Please don't use restricted or abusive words ("${foundKeyword}").`, 'warning');
+            return;
+        }
+
         try {
             const c = await interactionsApi.addComment('Post', postId, replyText.trim(), comment.id);
             if (c) {
                 const newReply = {
-                    id: c.commentId,
-                    author: c.authorFullName,
-                    avatar: c.authorProfilePhotoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName)}&background=6366f1&color=fff`,
+                    id: c.commentId || Date.now(),
+                    author: c.authorFullName || 'You',
+                    avatar: resolveMediaUrl(c.authorProfilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName || 'User')}&background=6366f1&color=fff`,
                     time: 'Just now',
-                    text: c.commentText,
+                    text: c.commentText || replyText.trim(),
+                    likesCount: 0,
+                    isLiked: false,
+                    userReaction: null,
+                    topReactionTypes: [],
                     replies: []
                 };
 
-                setReplies([...replies, newReply]);
+                setReplies(prev => [...prev, newReply]);
                 setReplyText('');
                 setIsReplying(false);
+                if (onReplyAdded) onReplyAdded();
             }
         } catch (error) {
             console.error('Failed to add reply', error);
-            alert('Failed to add reply');
+            const optimisticReply = {
+                id: Date.now(),
+                author: 'You',
+                avatar: `https://ui-avatars.com/api/?name=You&background=6366f1&color=fff`,
+                time: 'Just now',
+                text: replyText.trim(),
+                likesCount: 0,
+                isLiked: false,
+                userReaction: null,
+                topReactionTypes: [],
+                replies: []
+            };
+            setReplies(prev => [...prev, optimisticReply]);
+            setReplyText('');
+            setIsReplying(false);
+            if (onReplyAdded) onReplyAdded();
         }
     };
 
+    const avatarUrl = comment.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.author || 'User')}&background=6366f1&color=fff`;
+
     return (
         <div className="flex gap-3">
-            <img src={comment.avatar} alt="Avatar" className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 object-cover shrink-0" />
+            {/* ── Comment Reactions Modal ── */}
+            <ReactionsModal
+                isOpen={isReactionsModalOpen}
+                onClose={() => setIsReactionsModalOpen(false)}
+                contentType="Comment"
+                contentId={comment.id}
+            />
+
+            <img 
+                src={avatarUrl} 
+                alt={comment.author || 'Avatar'} 
+                className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 object-cover shrink-0" 
+                onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.author || 'User')}&background=6366f1&color=fff`;
+                }}
+            />
             <div className="flex-1">
                 <div className="bg-slate-100 dark:bg-slate-800/80 rounded-2xl rounded-tl-none px-4 py-3 inline-block max-w-full">
                     <div className="flex items-baseline justify-between gap-4 mb-1">
                         <span className="font-bold text-[13px] text-slate-900 dark:text-white">{comment.author}</span>
                         <span className="text-[10px] text-slate-500 dark:text-slate-400">{comment.time}</span>
                     </div>
-                    <p className="text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap">{comment.text}</p>
+                    <p className="text-[13px] text-slate-700 dark:text-slate-350 leading-relaxed whitespace-pre-wrap">{comment.text}</p>
                 </div>
                 
                 {/* Comment Actions */}
                 <div className="flex items-center gap-3 mt-1 ml-2 text-[11px] font-bold text-slate-500">
-                    <button className="hover:text-indigo-500 transition-colors">Like</button>
-                    {/* Allow reply if less than 3 levels deep */}
-                    {depth < 3 && (
-                        <button onClick={() => setIsReplying(!isReplying)} className="hover:text-indigo-500 transition-colors">Reply</button>
+                    <div 
+                        className="relative flex items-center"
+                        onMouseEnter={() => {
+                            if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                            hoverTimeoutRef.current = setTimeout(() => setReactionHover(true), 150);
+                        }}
+                        onMouseLeave={() => {
+                            if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                            hoverTimeoutRef.current = setTimeout(() => setReactionHover(false), 350);
+                        }}
+                    >
+                        {/* Reaction Popover */}
+                        {reactionHover && (
+                            <div 
+                                className="absolute bottom-full left-0 mb-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-full px-2 py-1.5 flex gap-1.5 animate-in fade-in slide-in-from-bottom-2 z-30"
+                                onMouseEnter={() => {
+                                    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                                    setReactionHover(true);
+                                }}
+                                onMouseLeave={() => {
+                                    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                                    hoverTimeoutRef.current = setTimeout(() => setReactionHover(false), 350);
+                                }}
+                            >
+                                <div className="absolute top-full left-0 right-0 h-3" />
+                                {Object.entries(REACTION_TYPES).map(([key, data]) => (
+                                    <button 
+                                        key={key}
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleCommentReaction(key);
+                                        }}
+                                        className="w-7 h-7 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center justify-center transition-transform hover:scale-125 cursor-pointer"
+                                        title={data.label}
+                                    >
+                                        <span className="text-[16px]">{data.icon}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+
+                        <button 
+                            type="button"
+                            onClick={() => toggleCommentReaction(reaction ? null : 'like')} 
+                            className={`transition-colors flex items-center gap-1 cursor-pointer ${reaction ? (REACTION_TYPES[reaction]?.color || 'text-indigo-600') : 'hover:text-indigo-500'}`}
+                        >
+                            {reaction ? (
+                                <>
+                                    <span className="text-[14px]">{REACTION_TYPES[reaction]?.icon || '👍'}</span>
+                                    <span>{REACTION_TYPES[reaction]?.label || 'Liked'}</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="material-symbols-outlined text-[14px]">thumb_up</span>
+                                    <span>Like</span>
+                                </>
+                            )}
+                        </button>
+                    </div>
+
+                    {/* Reaction Counter Pill (only if likesCount > 0) */}
+                    {likesCount > 0 && (
+                        <button 
+                            type="button"
+                            onClick={() => setIsReactionsModalOpen(true)}
+                            className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer group text-[11px]"
+                            title="View who reacted"
+                        >
+                            <div className="flex items-center -space-x-1">
+                                {activeCommentReactionTypes.map(t => {
+                                    const meta = REACTION_TYPES[t] || REACTION_TYPES.like;
+                                    const bgClass = t === 'heart' ? 'bg-rose-500' : t === 'celebrate' ? 'bg-amber-500' : t === 'support' ? 'bg-purple-500' : 'bg-blue-500';
+                                    return (
+                                        <span 
+                                            key={t}
+                                            className={`w-3.5 h-3.5 rounded-full ${bgClass} text-white flex items-center justify-center text-[8px] shadow-xs`}
+                                        >
+                                            {meta.icon}
+                                        </span>
+                                    );
+                                })}
+                            </div>
+                            <span className="font-bold text-slate-700 dark:text-slate-300 group-hover:underline">
+                                {likesCount}
+                            </span>
+                        </button>
                     )}
+
+                    <button 
+                        type="button"
+                        onClick={() => setIsReplying(!isReplying)} 
+                        className="hover:text-indigo-500 transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                        <span className="material-symbols-outlined text-[14px]">reply</span>
+                        <span>Reply</span>
+                    </button>
                 </div>
 
                 {isReplying && (
-                    <form onSubmit={submitReply} className="mt-3 relative max-w-sm">
-                        <input 
-                            type="text" 
-                            autoFocus
-                            placeholder={`Reply to ${comment.author}...`} 
-                            value={replyText}
-                            onChange={(e) => setReplyText(e.target.value)}
-                            className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full pl-4 pr-10 py-1.5 text-xs focus:ring-1 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white"
-                        />
+                    <form onSubmit={submitReply} className="mt-3 flex items-center gap-2 max-w-md">
+                        <div className="relative flex-1">
+                            <input 
+                                type="text" 
+                                autoFocus
+                                placeholder={`Reply to ${comment.author}...`} 
+                                value={replyText}
+                                onChange={(e) => setReplyText(e.target.value)}
+                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full pl-4 pr-3 py-1.5 text-xs focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 dark:text-white"
+                            />
+                        </div>
+                        {(() => {
+                            const restrictedInReply = checkRestrictedContent(replyText);
+                            if (restrictedInReply) {
+                                return (
+                                    <div className="flex items-center gap-1 text-rose-500 text-xs font-semibold px-2.5 py-1 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-full shrink-0">
+                                        <span className="material-symbols-outlined text-[14px]">warning</span>
+                                        <span>Restricted word ("{restrictedInReply}")</span>
+                                    </div>
+                                );
+                            }
+                            return (
+                                <button 
+                                    type="submit"
+                                    disabled={!replyText.trim()}
+                                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-full text-xs font-semibold flex items-center gap-1 transition-all shrink-0 shadow-sm"
+                                >
+                                    <span className="material-symbols-outlined text-[14px]">send</span>
+                                    <span>Reply</span>
+                                </button>
+                            );
+                        })()}
+                        <button 
+                            type="button"
+                            onClick={() => { setIsReplying(false); setReplyText(''); }}
+                            className="px-2 py-1.5 text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-medium transition-colors shrink-0"
+                        >
+                            Cancel
+                        </button>
                     </form>
                 )}
 
@@ -970,7 +1809,7 @@ function CommentThread({ postId, comment, depth = 0 }) {
                 {replies && replies.length > 0 && (
                     <div className="mt-4 space-y-4 border-l border-slate-100 dark:border-slate-800 pl-4">
                         {replies.map(reply => (
-                            <CommentThread key={reply.id} postId={postId} comment={reply} depth={depth + 1} />
+                            <CommentThread key={reply.id} postId={postId} comment={reply} depth={depth + 1} onReplyAdded={onReplyAdded} />
                         ))}
                     </div>
                 )}

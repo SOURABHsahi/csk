@@ -1,7 +1,7 @@
 # Knome EEP Portal — Project Status & Roadmap
 
 **Current Version**: `v1.2.8` (Phase E Release Activities Completed — Backend Frozen for Frontend Handoff)  
-**Architecture**: ASP.NET Core 9 Web API (`net9.0`) + Entity Framework Core (`Database-First`) + Repository & Service Pattern  
+**Architecture**: ASP.NET Core 10 Web API (`net10.0`) + Entity Framework Core (`Database-First`) + Repository & Service Pattern  
 **Primary Requirements Reference**: Functional Requirements Document (`FRD v1.0`)
 
 ---
@@ -28,7 +28,13 @@
 | **Phase B** | **Architecture Consistency (`F-013`, `F-020`, `F-028..031`)** | ✅ Completed | Created `KnomeControllerBase` with `GetCurrentUserId()` (`F-013`) and refactored all 14 controllers; refactored `UserService` and `CommunityService` to use repositories instead of direct `_db` access (`F-028`); replaced magic strings with `NotificationTypes.*` (`F-029/030`); renamed `_service` fields (`F-031`); added `ILogger` exception logging in `DeleteProfileImageAsync` (`F-020`). | Build (0 warnings, 0 errors) + runtime DI verification (`scratch/VerifyDiResolvers`) 100% PASS. |
 | **Phase C** | **Performance & Hardening (`F-017`, `F-026`, `F-027`)** | ✅ Completed | Replaced N+1 notification broadcast insert loop with `AddRangeAsync` + single `SaveChangesAsync` (`F-017`); restricted `KarmaController.AwardKarma` authorization scope to `Roles.SystemAdmin` (`F-026`); verified `ChangeRoleDto` role names pre-validation (`F-027`). | Build --no-restore (0 warnings, 0 errors) + `VerifyDiResolvers` --no-build 100% PASS. |
 | **Phase D** | **Security Hardening (`F-018`, `F-019`, `F-021..024`)** | ✅ Completed | Implemented environment-specific JWT secret override (`F-018`); added MIME/magic byte header validation to `SaveProfileImageAsync` (`F-019`); restricted `AllowedHosts` to explicit internal host names (`F-021`); registered `SecurityHeadersMiddleware` setting HSTS, CSP, X-Frame-Options, X-Content-Type-Options, etc. (`F-022`); applied `[EnableRateLimiting]` with `LoginRateLimiter` (`F-023`); created and registered `PiiScrubbingEnricher` for Serilog (`F-024`). | Build --no-restore (0 warnings, 0 errors) + `VerifyDiResolvers` --no-build 100% PASS. |
-| **Phase E** | **Release Activities & Documentation Sync (`F-008`, `F-032`)** | ✅ Completed | Synchronized `Backend_Verification_Findings.md` with post-hardening state (`F-008`); corrected AutoMapper profile count in `Production_Readiness_Audit_Part1.md` (`F-032`); verified post-launch deferral of refresh tokens (`F-025`); finalized release notes and declared **Backend Freeze (`v1.2.8`)**. | All documentation synchronized; 0 build errors/warnings; 100% DI PASS (`VerifyDiResolvers`). |
+| **Phase 20** | **SMTP Email Notifications** | ✅ Completed | MailKit SMTP infrastructure (`SmtpSettings`), professional HTML email templates, automatic email dispatch on role pending and role assignment actions. | Build + live SMTP email dispatch verified. |
+| **Phase 21** | **First-Time Login & Role Governance Workflow** | ✅ Completed | Auto-assign default `Employee` role in `[UserRoles]` on first login from EmployeeHub SSO / Knome, create pending role request, notify System Administrators, send "Welcome to Knome" email, and send "Role Updated" email upon admin role approval. | Build (0 warnings, 0 errors) + end-to-end flow verified. |
+| **Phase 22** | **Live Karma Scores & Verified User Directory State** | ✅ Completed | Real SQL Server `KarmaBalances` points & badges integrated into `UserSummaryDto`, AutoMapper, and `AdminConsole.jsx`. Removed all hardcoded fallbacks (350 pts). | Live database queries matched with 0 build errors. |
+| **Phase 23** | **First-Time Login, Default Role Assignment & Email Notifications (Complete)** | ✅ Completed | Complete verified workflow: EmployeeHub SSO first-time login → auto-provision in `[Users]` + `[UserCredentials]` → default `Employee` role in `[UserRoles]` → pending `[RoleRequests]` record → admin in-app notification → dispatch "Welcome to Knome" professional English email. When System Admin approves/assigns role → update `[UserRoles]` + `[RoleRequests]` + `[AuditLog]` → dispatch "Role Updated by System Administrator" professional English email. Both email paths verified with live SMTP dispatch logs. | E2E test (`MPO119 Rishabh Pandey`): Login ✅, Default Role ✅, RoleRequest Created ✅, Admin Approval ✅, Welcome Email ✅ (`15:44:35`), Role Updated Email ✅ (`15:44:39`). 0 build errors. |
+| **Phase 26** | **Admin Post Deletion & Cascade Hardening** | ✅ Completed | Hardened post deletion for administrators (System Admin, HR Admin, Community Admin). Extended `CheckIsAuthorOrAdminAsync` in `PostService` to recognize all admin roles/codes. Fixed SQL foreign key constraint failures in `PostRepository` by atomically cascading deletion across child references (`PostMentions`, `PostAudienceCommunities`, `PostAudienceUsers`, comments, reactions, bookmarks, moderation reports, notifications). Updated `PostCard.jsx` to correctly show delete button to all admins/authors and immediately remove deleted posts via event dispatch. | Live API tests: System Admin ✅, Community Admin ✅, HR Admin ✅ all successfully deleted posts with 0 FK errors. |
+| **Phase 29** | **Comment & Content Reaction Notifications (Post, Article, Comments)** | ✅ Completed | Fully automated notifications for likes and reactions on Posts, Articles, and Comments. When a comment is liked, both the commenter and the parent post/article author receive targeted notifications. When a post or article is liked, the author is notified. All notifications link directly to the target content. | Live E2E API tests against SQL Server: Post like ✅, Article like ✅, Comment like on post (commenter + author notified) ✅, Comment like on article (commenter + author notified) ✅. |
+
 
 ---
 
@@ -58,7 +64,7 @@ The following items from the FRD depend on external enterprise systems under act
 
 ### Prerequisites
 - Operating System: Windows
-- SDK: .NET 9.0 SDK (`net9.0`)
+- SDK: .NET 10.0 SDK (`net10.0`)
 - Database: Microsoft SQL Server (`LAPTOP-462`, database `Knome`)
 
 ### Build & Run API

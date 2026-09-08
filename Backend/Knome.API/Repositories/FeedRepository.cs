@@ -41,13 +41,20 @@ public class FeedRepository : IFeedRepository
             .Select(cp => cp.PostId)
             .ToListAsync();
 
+        var retentionCutoff = System.DateTime.UtcNow.AddMonths(-6);
+
         return await _db.Posts
             .Include(p => p.AuthorUser)
             .Include(p => p.PostAttachments)
-            .Where(p => followedUserIds.Contains(p.AuthorUserId) ||
-                        p.AuthorUserId == currentUserId ||
-                        p.AudienceType == AudienceTypes.Everyone ||
-                        communityPostIds.Contains(p.PostId))
+            .Include(p => p.MentionedUsers)
+            .Where(p => p.CreatedDate >= retentionCutoff && (string.IsNullOrEmpty(p.Status) || p.Status == "Published") &&
+                        (p.AuthorUserId == currentUserId ||
+                         p.AudienceType == AudienceTypes.Everyone ||
+                         p.AudienceType == "Public" ||
+                         string.IsNullOrEmpty(p.AudienceType) ||
+                         ((p.AudienceType == "Connections" || p.AudienceType == "SpecificConnections") && p.MentionedUsers.Any(mu => mu.UserId == currentUserId)) ||
+                         ((p.AudienceType == "Community" || p.AudienceType == "SpecificCommunities") && communityPostIds.Contains(p.PostId)) ||
+                         (followedUserIds.Contains(p.AuthorUserId) && (p.AudienceType == AudienceTypes.Everyone || p.AudienceType == "Public" || string.IsNullOrEmpty(p.AudienceType)))))
             .OrderByDescending(p => p.CreatedDate)
             .Take(limit)
             .ToListAsync();

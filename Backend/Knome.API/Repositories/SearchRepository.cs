@@ -213,7 +213,7 @@ public class SearchRepository : ISearchRepository
             EngagementScore = 0,
             PopularityScore = 0,
             AuthorProfilePhotoUrl = u.ProfilePhotoUrl,
-            DepartmentName = u.Department!.Name
+            DepartmentName = u.Department != null ? u.Department.Name : null
         }).ToListAsync();
     }
 
@@ -224,7 +224,7 @@ public class SearchRepository : ISearchRepository
             return new List<SearchItemDto>();
 
         var ql = NormalisedQuery(req);
-        var query = _context.Communities.AsQueryable();
+        var query = _context.Communities.Where(c => c.IsActive).AsQueryable();
 
         if (!string.IsNullOrEmpty(ql))
         {
@@ -503,7 +503,7 @@ public class SearchRepository : ISearchRepository
         if (string.Equals(contentType, ContentGroup, StringComparison.OrdinalIgnoreCase))
             return new List<string> { "Post", "Article", "Video", "Podcast" };
 
-        if (string.Equals(contentType, "People", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(contentType, "People", StringComparison.OrdinalIgnoreCase) || string.Equals(contentType, "User", StringComparison.OrdinalIgnoreCase) || string.Equals(contentType, "Users", StringComparison.OrdinalIgnoreCase))
             return new List<string> { "User" };
 
         if (string.Equals(contentType, "Documents", StringComparison.OrdinalIgnoreCase))
@@ -511,6 +511,24 @@ public class SearchRepository : ISearchRepository
 
         if (string.Equals(contentType, "Hashtags", StringComparison.OrdinalIgnoreCase))
             return new List<string> { "Post", "Article", "Video" };
+
+        if (string.Equals(contentType, "Posts", StringComparison.OrdinalIgnoreCase))
+            return new List<string> { "Post" };
+
+        if (string.Equals(contentType, "Articles", StringComparison.OrdinalIgnoreCase))
+            return new List<string> { "Article" };
+
+        if (string.Equals(contentType, "Videos", StringComparison.OrdinalIgnoreCase))
+            return new List<string> { "Video" };
+
+        if (string.Equals(contentType, "Podcasts", StringComparison.OrdinalIgnoreCase))
+            return new List<string> { "Podcast" };
+
+        if (string.Equals(contentType, "Communities", StringComparison.OrdinalIgnoreCase))
+            return new List<string> { "Community" };
+
+        if (string.Equals(contentType, "Jobs", StringComparison.OrdinalIgnoreCase))
+            return new List<string> { "Job" };
 
         if (!string.IsNullOrWhiteSpace(contentType) && Array.IndexOf(all, contentType) >= 0)
             return new List<string> { contentType! };

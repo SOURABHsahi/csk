@@ -40,4 +40,5 @@ public class UserProfileDto
     public int KarmaPoints { get; set; }
     public string? KarmaBadgeLevel { get; set; }
     public string ConnectionStatus { get; set; } = "None"; // None, Pending, Connected
+    public bool IsFollowing { get; set; }
 }

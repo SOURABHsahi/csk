@@ -18,6 +18,12 @@ public abstract class KnomeControllerBase : ControllerBase
     /// </summary>
     protected int GetCurrentUserId()
     {
+        var uidClaim = User.FindFirst("uid");
+        if (uidClaim != null && int.TryParse(uidClaim.Value, out var uid))
+        {
+            return uid;
+        }
+
         var claim = User.FindFirst(ClaimTypes.NameIdentifier);
         if (claim != null && int.TryParse(claim.Value, out var userId))
         {

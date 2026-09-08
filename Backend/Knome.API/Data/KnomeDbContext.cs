@@ -74,6 +74,8 @@ public partial class KnomeDbContext : DbContext
 
     public virtual DbSet<Role> Roles { get; set; }
 
+    public virtual DbSet<RoleRequest> RoleRequests { get; set; }
+
     public virtual DbSet<SearchHistory> SearchHistories { get; set; }
 
     public virtual DbSet<Share> Shares { get; set; }
@@ -99,6 +101,8 @@ public partial class KnomeDbContext : DbContext
         modelBuilder.Entity<Article>(entity =>
         {
             entity.HasKey(e => e.ArticleId).HasName("PK__Articles__9C6270E8D30B170F");
+
+            entity.HasIndex(e => new { e.CreatedDate, e.Status }, "IX_Articles_CreatedDate").IsDescending(true, false);
 
             entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysutcdatetime())");
             entity.Property(e => e.Description).HasMaxLength(500);
@@ -127,6 +131,7 @@ public partial class KnomeDbContext : DbContext
                 .HasMaxLength(20)
                 .IsUnicode(false);
             entity.Property(e => e.FileUrl).HasMaxLength(400);
+            entity.Property(e => e.PublishedDate).HasDefaultValueSql("(sysutcdatetime())");
 
             entity.HasOne(d => d.Article).WithMany(p => p.ArticleAttachments)
                 .HasForeignKey(d => d.ArticleId)
@@ -258,6 +263,7 @@ public partial class KnomeDbContext : DbContext
                 .IsUnicode(false);
             entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysutcdatetime())");
             entity.Property(e => e.Description).HasMaxLength(1000);
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.Name).HasMaxLength(150);
             entity.Property(e => e.ThumbnailUrl).HasMaxLength(400);
 
@@ -490,6 +496,8 @@ public partial class KnomeDbContext : DbContext
         {
             entity.HasKey(e => e.NotificationId).HasName("PK__Notifica__20CF2E120C5DCE29");
 
+            entity.HasIndex(e => new { e.UserId, e.IsRead, e.CreatedDate }, "IX_Notifications_UserId_IsRead").IsDescending(false, false, true);
+
             entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysutcdatetime())");
             entity.Property(e => e.EventType)
                 .HasMaxLength(40)
@@ -554,6 +562,8 @@ public partial class KnomeDbContext : DbContext
         modelBuilder.Entity<Post>(entity =>
         {
             entity.HasKey(e => e.PostId).HasName("PK__Posts__AA126018DD2B1FB3");
+
+            entity.HasIndex(e => new { e.CreatedDate, e.Status }, "IX_Posts_CreatedDate_Status").IsDescending(true, false);
 
             entity.Property(e => e.AudienceType)
                 .HasMaxLength(20)
@@ -631,6 +641,7 @@ public partial class KnomeDbContext : DbContext
                 .HasMaxLength(20)
                 .IsUnicode(false);
             entity.Property(e => e.FileUrl).HasMaxLength(400);
+            entity.Property(e => e.PublishedDate).HasDefaultValueSql("(sysutcdatetime())");
 
             entity.HasOne(d => d.Post).WithMany(p => p.PostAttachments)
                 .HasForeignKey(d => d.PostId)
@@ -641,6 +652,8 @@ public partial class KnomeDbContext : DbContext
         modelBuilder.Entity<Reaction>(entity =>
         {
             entity.HasKey(e => e.ReactionId).HasName("PK__Reaction__46DDF9B4828879A4");
+
+            entity.HasIndex(e => new { e.ContentType, e.ContentId, e.ReactionType }, "IX_Reactions_Content");
 
             entity.HasIndex(e => new { e.ContentType, e.ContentId, e.UserId }, "UQ_Reaction").IsUnique();
 
@@ -684,6 +697,35 @@ public partial class KnomeDbContext : DbContext
                 .IsUnicode(false);
         });
 
+        modelBuilder.Entity<RoleRequest>(entity =>
+        {
+            entity.HasKey(e => e.RequestId).HasName("PK__RoleRequ__33A8517AFFF2EAFA");
+
+            entity.Property(e => e.AdminComment).HasMaxLength(500);
+            entity.Property(e => e.AssignedBy)
+                .HasMaxLength(50)
+                .IsUnicode(false);
+            entity.Property(e => e.AssignedRoleName).HasMaxLength(50);
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())");
+            entity.Property(e => e.DepartmentName).HasMaxLength(100);
+            entity.Property(e => e.Designation).HasMaxLength(100);
+            entity.Property(e => e.Email)
+                .HasMaxLength(150)
+                .IsUnicode(false);
+            entity.Property(e => e.EmployeeId)
+                .HasMaxLength(50)
+                .IsUnicode(false);
+            entity.Property(e => e.FullName).HasMaxLength(150);
+            entity.Property(e => e.RequestedRoleCode)
+                .HasMaxLength(30)
+                .IsUnicode(false)
+                .HasDefaultValue("EMP");
+            entity.Property(e => e.Status)
+                .HasMaxLength(30)
+                .IsUnicode(false)
+                .HasDefaultValue("Pending");
+        });
+
         modelBuilder.Entity<SearchHistory>(entity =>
         {
             entity
@@ -724,6 +766,8 @@ public partial class KnomeDbContext : DbContext
             entity.HasIndex(e => e.DepartmentId, "IX_Users_Department");
 
             entity.HasIndex(e => e.Email, "IX_Users_Email");
+
+            entity.HasIndex(e => e.EmployeeId, "IX_Users_EmployeeId");
 
             entity.HasIndex(e => e.EmployeeId, "UQ__Users__7AD04F10650894CC").IsUnique();
 
@@ -845,6 +889,8 @@ public partial class KnomeDbContext : DbContext
         modelBuilder.Entity<Video>(entity =>
         {
             entity.HasKey(e => e.VideoId).HasName("PK__Videos__BAE5126A69CCDA1D");
+
+            entity.HasIndex(e => e.UploadedDate, "IX_Videos_UploadedDate").IsDescending();
 
             entity.Property(e => e.Description).HasMaxLength(1000);
             entity.Property(e => e.SourceType)

@@ -8,8 +8,8 @@ public class LoginRequestValidator : AbstractValidator<LoginRequestDto>
     public LoginRequestValidator()
     {
         RuleFor(x => x.EmployeeId)
-            .NotEmpty().WithMessage("Employee ID is required.")
-            .MaximumLength(20).WithMessage("Employee ID must not exceed 20 characters.");
+            .NotEmpty().WithMessage("Employee ID or Email is required.")
+            .MaximumLength(150).WithMessage("Employee ID or Email must not exceed 150 characters.");
 
         RuleFor(x => x.Password)
             .NotEmpty().WithMessage("Password is required.")

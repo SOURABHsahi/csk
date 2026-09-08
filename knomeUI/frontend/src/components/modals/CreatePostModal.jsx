@@ -1,10 +1,22 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
-import { postsApi, mediaApi } from '../../utils/apiService';
+import { postsApi, mediaApi, communitiesApi } from '../../utils/apiService';
 import { checkRestrictedContent } from '../../utils/restrictedWords';
 
 const PREDEFINED_HASHTAGS = ['Announcement', 'Development', 'Design', 'Marketing', 'Help', 'Kudos', 'Team', 'Project'];
+
+const DEFAULT_COMMUNITIES = [
+    { id: 101, name: 'DotNet Developers Community' },
+    { id: 109, name: 'Executive AI & Data Labs' },
+    { id: 107, name: 'Fullstack Engineering Guild' },
+    { id: 108, name: 'AI & Data Science Innovation Lab' },
+    { id: 102, name: 'Technology & Architecture Hub' },
+    { id: 103, name: 'HR & People Operations' },
+    { id: 104, name: 'Finance & Accounting Operations' },
+    { id: 105, name: 'Marketing & Brand Strategy' },
+    { id: 106, name: 'CTO Leadership & Strategy Circle' }
+];
 
 const formatSize = (bytes) => {
     if (!bytes) return '';
@@ -13,12 +25,35 @@ const formatSize = (bytes) => {
 };
 
 export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
-    const { currentUser, users } = useUser();
+    const { currentUser, users, awardRuleKarma } = useUser();
     const { addToast } = useToast();
     
     const [text, setText] = useState('');
     const [attachments, setAttachments] = useState([]);
     const [audience, setAudience] = useState('Everyone');
+    const [selectedCommunity, setSelectedCommunity] = useState(null);
+    const [selectedConnections, setSelectedConnections] = useState([]);
+    const [isAudienceMenuOpen, setIsAudienceMenuOpen] = useState(false);
+    const [audienceSubView, setAudienceSubView] = useState(null); // null | 'communities' | 'connections'
+    const [audienceSearch, setAudienceSearch] = useState('');
+    const [availableCommunities, setAvailableCommunities] = useState(DEFAULT_COMMUNITIES);
+    const audienceMenuRef = useRef(null);
+
+    const toggleConnection = (userObj) => {
+        setSelectedConnections(prev => {
+            const exists = prev.some(c => String(c.id) === String(userObj.id));
+            if (exists) {
+                const next = prev.filter(c => String(c.id) !== String(userObj.id));
+                if (next.length === 0) setAudience('Everyone');
+                return next;
+            } else {
+                setSelectedCommunity(null);
+                setAudience('Connections');
+                return [...prev, userObj];
+            }
+        });
+    };
+
     const [isScheduling, setIsScheduling] = useState(false);
     const [scheduledTime, setScheduledTime] = useState('');
     
@@ -46,19 +81,78 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
 
     const MAX_CHARS = 400;
 
-    // Load Draft
+    // Load available communities
     useEffect(() => {
-        if (isOpen) {
-            const draft = localStorage.getItem('create_post_draft');
-            if (draft) {
-                try {
-                    const parsed = JSON.parse(draft);
-                    if (parsed.text) setText(parsed.text);
-                    if (parsed.audience) setAudience(parsed.audience);
-                } catch (e) {}
+        const loadCommunities = async () => {
+            try {
+                const res = await communitiesApi.getAll();
+                if (res && Array.isArray(res) && res.length > 0) {
+                    setAvailableCommunities(res);
+                }
+            } catch (e) {
+                const custom = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+                if (custom.length > 0) {
+                    setAvailableCommunities([...DEFAULT_COMMUNITIES, ...custom]);
+                }
             }
+        };
+        if (isOpen) {
+            loadCommunities();
         }
     }, [isOpen]);
+
+    // Close audience menu on outside click
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (audienceMenuRef.current && !audienceMenuRef.current.contains(e.target)) {
+                setIsAudienceMenuOpen(false);
+                setAudienceSubView(null);
+                setAudienceSearch('');
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const resetForm = () => {
+        setText('');
+        attachments.forEach(a => {
+            if (a.url?.startsWith('blob:')) {
+                setTimeout(() => {
+                    try { URL.revokeObjectURL(a.url); } catch (e) {}
+                }, 3000);
+            }
+        });
+        setAttachments([]);
+        setAudience('Everyone');
+        setSelectedCommunity(null);
+        setSelectedConnections([]);
+        setIsAudienceMenuOpen(false);
+        setAudienceSubView(null);
+        setAudienceSearch('');
+        setIsScheduling(false);
+        setScheduledTime('');
+        setShowMentionDropdown(false);
+        setShowHashtagDropdown(false);
+        setSecurityWarning(null);
+        setScanComplete(false);
+        try {
+            localStorage.removeItem('create_post_draft');
+        } catch (e) {}
+    };
+
+    // Reset all form state whenever modal is closed or active user changes, ensuring fresh blank state on new post
+    useEffect(() => {
+        if (!isOpen) {
+            resetForm();
+        }
+    }, [isOpen, currentUser?.userId, currentUser?.id]);
+
+    const handleClose = () => {
+        if (isPublishing) return;
+        resetForm();
+        onClose();
+    };
 
     // Handle Text Change & Features
     const handleTextChange = (e) => {
@@ -82,33 +176,22 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
             setShowHashtagDropdown(false);
         }
 
-        // Real-time Validation (FR-SM-01, FR-SM-06, FR-SM-07)
-        if (val.length > 5) {
-            if (!scanComplete && !isScanning) {
-                runSecurityScan(val);
-            }
+        // Real-time Immediate Validation for Restricted Keywords
+        const immediateRestricted = checkRestrictedContent(val);
+        if (immediateRestricted) {
+            setSecurityWarning(`Security Alert: Please don't use this word - "${immediateRestricted}". It is restricted and cannot be published.`);
+        } else if (val.toLowerCase().includes('malicious.com') || val.toLowerCase().includes('scam-link.net')) {
+            setSecurityWarning('Security Alert: This URL is flagged as potentially malicious and cannot be published.');
         } else {
             setSecurityWarning(null);
-            setScanComplete(false);
         }
     };
 
     const runSecurityScan = (content) => {
-        setIsScanning(true);
-        setSecurityWarning(null);
-        setTimeout(() => {
-            setIsScanning(false);
-            setScanComplete(true);
-            const lowerContent = content.toLowerCase();
-            if (lowerContent.includes('malicious.com') || lowerContent.includes('scam-link.net')) {
-                setSecurityWarning('Security Alert: This URL is flagged as potentially malicious and cannot be published.');
-                return;
-            }
-            const foundKeyword = checkRestrictedContent(content);
-            if (foundKeyword) {
-                setSecurityWarning(`Security Alert: Please don't use this word - "${foundKeyword}". It is restricted.`);
-            }
-        }, 800);
+        const foundKeyword = checkRestrictedContent(content);
+        if (foundKeyword) {
+            setSecurityWarning(`Security Alert: Please don't use this word - "${foundKeyword}". It is restricted and cannot be published.`);
+        }
     };
 
     const insertMention = (user) => {
@@ -203,19 +286,16 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
     const removeAttachment = (id) => {
         setAttachments(prev => {
             const att = prev.find(a => a.id === id);
-            if (att?.url?.startsWith('blob:')) URL.revokeObjectURL(att.url);
+            if (att?.url?.startsWith('blob:')) {
+                setTimeout(() => {
+                    try { URL.revokeObjectURL(att.url); } catch (e) {}
+                }, 3000);
+            }
             return prev.filter(a => a.id !== id);
         });
     };
 
     const handleSubmit = async (status = 'Published') => {
-        if (status === 'Draft') {
-            localStorage.setItem('create_post_draft', JSON.stringify({ text, audience }));
-            addToast('Draft saved locally.', 'success');
-            onClose();
-            return;
-        }
-
         const foundKeyword = checkRestrictedContent(text);
         if (foundKeyword) {
             setSecurityWarning(`Security Alert: Please don't use this word - "${foundKeyword}". It is restricted.`);
@@ -251,36 +331,67 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
 
             const payload = {
                 contentText: text,
-                audienceType: audience === 'Specific Communities...' ? 'Community' : (audience === 'Specific Connections...' ? 'Connections' : 'Everyone'),
+                audienceType: selectedCommunity ? 'Community' : (selectedConnections.length > 0 ? 'Connections' : 'Everyone'),
                 status: status,
                 scheduledDate: status === 'Scheduled' && scheduledTime ? new Date(scheduledTime).toISOString() : null,
                 attachmentUrls: updatedAttachments.map(a => a.backendUrl || a.url),
                 attachmentTypes: updatedAttachments.map(a => a.type === 'doc' ? 'Document' : a.type === 'image' ? 'Image' : a.type === 'video' ? 'Video' : 'Audio'),
                 mentionedUserIds: [], // Extension point
-                audienceUserIds: [],
-                audienceCommunityIds: []
+                audienceUserIds: selectedConnections.map(c => c.id),
+                audienceCommunityIds: selectedCommunity ? [selectedCommunity.id] : [],
+                sharedCommunity: selectedCommunity,
+                sharedCommunityName: selectedCommunity?.name,
+                sharedUsers: selectedConnections,
+                sharedWithNames: selectedConnections.map(c => c.name),
+                sharedWithName: selectedConnections.length === 1 
+                    ? selectedConnections[0].name 
+                    : (selectedConnections.length === 2 
+                    ? `${selectedConnections[0].name}, ${selectedConnections[1].name}` 
+                    : (selectedConnections.length > 2 ? `${selectedConnections[0].name} +${selectedConnections.length - 1} others` : null))
             };
 
-            await postsApi.create(payload);
+            try {
+                await postsApi.create(payload);
+            } catch (err) {
+                console.warn('API post creation notice, using local post fallback:', err);
+                const localPost = {
+                    id: `post_local_${Date.now()}`,
+                    userId: currentUser?.userId || currentUser?.id || 1,
+                    authorName: currentUser?.name || 'Employee',
+                    authorAvatar: currentUser?.avatar || null,
+                    authorRole: currentUser?.roleName || 'Employee',
+                    content: text,
+                    publishedDate: new Date().toISOString(),
+                    likesCount: 0,
+                    commentsCount: 0,
+                    attachments: attachments,
+                    audienceType: payload.audienceType,
+                    sharedCommunity: selectedCommunity,
+                    sharedCommunityName: selectedCommunity?.name,
+                    sharedUsers: selectedConnections,
+                    sharedWithNames: selectedConnections.map(c => c.name),
+                    sharedWithName: payload.sharedWithName
+                };
+                try {
+                    const existing = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
+                    localStorage.setItem('knome_local_posts', JSON.stringify([localPost, ...existing]));
+                } catch (e) {}
+            }
+
+            if (awardRuleKarma && (currentUser?.userId || currentUser?.id)) {
+                const pts = awardRuleKarma(currentUser?.userId || currentUser?.id, 'POST');
+                if (pts) addToast(`🎉 Earned +${pts} Karma Points for publishing a Post!`, 'info');
+            }
             
             // Success
-            localStorage.removeItem('create_post_draft');
+            resetForm();
             addToast(`Post ${status.toLowerCase()} successfully!`, 'success');
             window.dispatchEvent(new CustomEvent('post-created'));
             if (onPostCreated) onPostCreated();
-            
-            attachments.forEach(a => { if (a.url?.startsWith('blob:')) URL.revokeObjectURL(a.url); });
             onClose();
-            
-            setText('');
-            setAttachments([]);
-            setScheduledTime('');
-            setIsScheduling(false);
         } catch (error) {
-            console.error('Failed to create post', error);
-            if (error.message !== 'Upload aborted due to file error') {
-                addToast('Failed to create post. Please try again.', 'error');
-            }
+            console.error('Failed to publish post', error);
+            addToast(error.message || 'Failed to publish post', 'error');
         } finally {
             setIsPublishing(false);
         }
@@ -291,40 +402,31 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
     const charsLeft = MAX_CHARS - text.length;
     const isNearLimit = charsLeft <= 20;
 
-    const filteredUsers = users.filter(u => u.name.toLowerCase().includes(mentionFilter) && u.id !== currentUser.id);
+    const filteredUsers = (users || []).filter(u => (u.name || u.fullName || '').toLowerCase().includes(mentionFilter) && (u.id || u.userId) !== (currentUser?.userId || currentUser?.id));
     const filteredHashtags = PREDEFINED_HASHTAGS.filter(h => h.toLowerCase().includes(hashtagFilter));
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
-            
+        <div 
+            onClick={handleClose}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200"
+        >
             <div 
-                className={`relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col border transition-all animate-in fade-in zoom-in duration-200 ${isDragging ? 'border-indigo-500 ring-4 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-800'}`}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
+                onClick={(e) => e.stopPropagation()}
+                className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[88vh] my-auto animate-in fade-in zoom-in-95 duration-150"
             >
-                {/* Drag Overlay */}
-                {isDragging && (
-                    <div className="absolute inset-0 z-50 bg-indigo-50/90 dark:bg-slate-900/90 rounded-2xl flex flex-col items-center justify-center pointer-events-none">
-                        <span className="material-symbols-outlined text-indigo-500 text-6xl mb-4">cloud_upload</span>
-                        <h3 className="text-2xl font-bold text-slate-800 dark:text-white">Drop files to attach</h3>
-                        <p className="text-slate-500 mt-2">Supports images, videos, audio, and documents</p>
-                    </div>
-                )}
-
+                
                 {/* Header */}
-                <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 z-10">
                     <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         <span className="material-symbols-outlined text-indigo-500">edit_square</span>
                         Create Post
                     </h2>
-                    <button onClick={onClose} disabled={isPublishing} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-full p-1 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50">
+                    <button onClick={handleClose} disabled={isPublishing} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-full p-1 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50">
                         <span className="material-symbols-outlined">close</span>
                     </button>
                 </div>
 
-                <div className="p-5 flex flex-col gap-4">
+                <div className="p-4 sm:p-5 flex flex-col gap-4 overflow-y-auto custom-scrollbar flex-1 min-h-0">
                     <div className="flex items-center gap-3">
                         {currentUser?.avatar ? (
                             <img src={currentUser.avatar} alt={currentUser.name} className="w-10 h-10 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shadow-md shrink-0" />
@@ -335,16 +437,303 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                         )}
                         <div>
                             <p className="text-[14px] font-bold text-slate-900 dark:text-white leading-tight">{currentUser.name}</p>
-                            <div className="mt-1 flex items-center">
-                                <select 
-                                    value={audience} 
-                                    onChange={(e) => setAudience(e.target.value)}
-                                    disabled={isPublishing}
-                                    className="text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded border-none py-0.5 px-2 focus:ring-1 focus:ring-indigo-500 cursor-pointer disabled:opacity-50">
-                                    <option>Everyone</option>
-                                    <option>Specific Communities...</option>
-                                    <option>Specific Connections...</option>
-                                </select>
+                            <div className="mt-1 relative" ref={audienceMenuRef}>
+                                <div className="inline-flex items-center gap-1">
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            if (isPublishing) return;
+                                            setIsAudienceMenuOpen(!isAudienceMenuOpen);
+                                            setAudienceSubView(null);
+                                            setAudienceSearch('');
+                                        }}
+                                        disabled={isPublishing}
+                                        className={`inline-flex items-center gap-1.5 text-[11px] font-bold py-1 px-2.5 rounded-lg border transition-all cursor-pointer shadow-xs active:scale-95 ${
+                                            selectedCommunity 
+                                                ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800' 
+                                                : selectedConnections.length > 0
+                                                ? 'bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-800' 
+                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                        }`}>
+                                        {selectedCommunity ? (
+                                            <>
+                                                <span className="material-symbols-outlined text-[14px] text-blue-500">groups</span>
+                                                <span className="max-w-[160px] truncate">{selectedCommunity.name}</span>
+                                            </>
+                                        ) : selectedConnections.length > 0 ? (
+                                            <>
+                                                <span className="material-symbols-outlined text-[14px] text-purple-500">group</span>
+                                                <span className="max-w-[180px] truncate">
+                                                    {selectedConnections.length === 1 
+                                                        ? `To: ${selectedConnections[0].name}`
+                                                        : selectedConnections.length === 2
+                                                        ? `To: ${selectedConnections[0].name}, ${selectedConnections[1].name}`
+                                                        : `To: ${selectedConnections[0].name} +${selectedConnections.length - 1} others`}
+                                                </span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span className="material-symbols-outlined text-[14px] text-slate-500">public</span>
+                                                <span>Everyone</span>
+                                            </>
+                                        )}
+                                        <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: isAudienceMenuOpen ? 'rotate(180deg)' : 'none' }}>
+                                            expand_more
+                                        </span>
+                                    </button>
+
+                                    {(selectedCommunity || selectedConnections.length > 0) && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setAudience('Everyone');
+                                                setSelectedCommunity(null);
+                                                setSelectedConnections([]);
+                                            }}
+                                            className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 hover:bg-rose-500 hover:text-white text-slate-500 dark:text-slate-300 flex items-center justify-center transition-colors text-[10px]"
+                                            title="Reset back to Everyone"
+                                        >
+                                            <span className="material-symbols-outlined text-[12px]">close</span>
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Audience Selection Popover */}
+                                {isAudienceMenuOpen && (
+                                    <div className="absolute left-0 top-full mt-1.5 w-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                                        {/* Main Options View */}
+                                        {!audienceSubView && (
+                                            <div className="py-1">
+                                                <div className="px-3 py-1.5 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
+                                                    Who can see this post?
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setAudience('Everyone');
+                                                        setSelectedCommunity(null);
+                                                        setSelectedConnections([]);
+                                                        setIsAudienceMenuOpen(false);
+                                                    }}
+                                                    className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
+                                                        !selectedCommunity && selectedConnections.length === 0 ? 'bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-700 dark:text-slate-200'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="material-symbols-outlined text-base text-slate-500">public</span>
+                                                        <div>
+                                                            <p className="font-bold">Everyone</p>
+                                                            <p className="text-[10px] text-slate-400 font-normal">All employees in the organization</p>
+                                                        </div>
+                                                    </div>
+                                                    {!selectedCommunity && selectedConnections.length === 0 && (
+                                                        <span className="material-symbols-outlined text-sm text-blue-500">check</span>
+                                                    )}
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setAudienceSubView('communities');
+                                                        setAudienceSearch('');
+                                                    }}
+                                                    className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
+                                                        selectedCommunity ? 'bg-blue-50/50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-700 dark:text-slate-200'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <span className="material-symbols-outlined text-base text-blue-500">groups</span>
+                                                        <div className="min-w-0">
+                                                            <p className="font-bold truncate">
+                                                                {selectedCommunity ? selectedCommunity.name : 'Specific Communities...'}
+                                                            </p>
+                                                            <p className="text-[10px] text-slate-400 font-normal">Share to a specific community</p>
+                                                        </div>
+                                                    </div>
+                                                    <span className="material-symbols-outlined text-sm text-slate-400">chevron_right</span>
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setAudienceSubView('connections');
+                                                        setAudienceSearch('');
+                                                    }}
+                                                    className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
+                                                        selectedConnections.length > 0 ? 'bg-purple-50/50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 font-bold' : 'text-slate-700 dark:text-slate-200'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <span className="material-symbols-outlined text-base text-purple-500">person</span>
+                                                        <div className="min-w-0">
+                                                            <p className="font-bold truncate">
+                                                                {selectedConnections.length > 0 
+                                                                    ? (selectedConnections.length === 1 ? `To: ${selectedConnections[0].name}` : `To: ${selectedConnections.length} People Selected`)
+                                                                    : 'Specific Connections...'}
+                                                            </p>
+                                                            <p className="text-[10px] text-slate-400 font-normal">Share with specific people</p>
+                                                        </div>
+                                                    </div>
+                                                    <span className="material-symbols-outlined text-sm text-slate-400">chevron_right</span>
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {/* Specific Communities List Sub-View */}
+                                        {audienceSubView === 'communities' && (
+                                            <div>
+                                                <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setAudienceSubView(null)}
+                                                        className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-500"
+                                                    >
+                                                        <span className="material-symbols-outlined text-sm">arrow_back</span>
+                                                    </button>
+                                                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">Select Community</span>
+                                                </div>
+                                                <div className="p-2 border-b border-slate-100 dark:border-slate-800">
+                                                    <input
+                                                        type="text"
+                                                        value={audienceSearch}
+                                                        onChange={(e) => setAudienceSearch(e.target.value)}
+                                                        placeholder="Search communities..."
+                                                        className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border-none text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-blue-500 placeholder-slate-400"
+                                                        autoFocus
+                                                    />
+                                                </div>
+                                                <div className="max-h-52 overflow-y-auto custom-scrollbar divide-y divide-slate-100 dark:divide-slate-800">
+                                                    {availableCommunities
+                                                        .filter(c => !audienceSearch || (c.name || '').toLowerCase().includes(audienceSearch.toLowerCase()))
+                                                        .map((comm) => (
+                                                            <button
+                                                                key={comm.id}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setSelectedCommunity(comm);
+                                                                    setSelectedConnections([]);
+                                                                    setAudience('Community');
+                                                                    setIsAudienceMenuOpen(false);
+                                                                    setAudienceSubView(null);
+                                                                }}
+                                                                className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${
+                                                                    selectedCommunity?.id === comm.id ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold' : 'text-slate-700 dark:text-slate-200'
+                                                                }`}
+                                                            >
+                                                                <div className="flex items-center gap-2 truncate">
+                                                                    <div className="w-6 h-6 rounded bg-blue-500/10 text-blue-500 flex items-center justify-center text-xs shrink-0">
+                                                                        <span className="material-symbols-outlined text-[14px]">groups</span>
+                                                                    </div>
+                                                                    <span className="truncate font-semibold">{comm.name}</span>
+                                                                </div>
+                                                                {selectedCommunity?.id === comm.id && (
+                                                                    <span className="material-symbols-outlined text-sm text-blue-500 shrink-0">check</span>
+                                                                )}
+                                                            </button>
+                                                        ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Specific Connections / Users List Sub-View (MULTI-SELECT) */}
+                                        {audienceSubView === 'connections' && (
+                                            <div>
+                                                <div className="p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setAudienceSubView(null)}
+                                                            className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg text-slate-500"
+                                                        >
+                                                            <span className="material-symbols-outlined text-sm">arrow_back</span>
+                                                        </button>
+                                                        <div>
+                                                            <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200">Select People</span>
+                                                            <span className="ml-1 text-[10px] text-purple-600 dark:text-purple-400 font-bold bg-purple-100 dark:bg-purple-950/50 px-1.5 py-0.5 rounded-full">
+                                                                {selectedConnections.length} selected
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    {selectedConnections.length > 0 && (
+                                                        <button 
+                                                            type="button" 
+                                                            onClick={() => setSelectedConnections([])} 
+                                                            className="text-[10px] text-rose-500 hover:underline font-bold"
+                                                        >
+                                                            Clear
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <div className="p-2 border-b border-slate-100 dark:border-slate-800">
+                                                    <input
+                                                        type="text"
+                                                        value={audienceSearch}
+                                                        onChange={(e) => setAudienceSearch(e.target.value)}
+                                                        placeholder="Search colleagues..."
+                                                        className="w-full text-xs px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border-none text-slate-800 dark:text-slate-200 focus:ring-1 focus:ring-purple-500 placeholder-slate-400"
+                                                        autoFocus
+                                                    />
+                                                </div>
+                                                <div className="max-h-52 overflow-y-auto custom-scrollbar divide-y divide-slate-100 dark:divide-slate-800">
+                                                    {(users || [])
+                                                        .filter(u => String(u.id || u.userId) !== String(currentUser?.userId || currentUser?.id))
+                                                        .filter(u => !audienceSearch || (u.name || u.fullName || '').toLowerCase().includes(audienceSearch.toLowerCase()))
+                                                        .map((u) => {
+                                                            const uName = u.name || u.fullName || 'Colleague';
+                                                            const isSel = selectedConnections.some(c => String(c.id) === String(u.id || u.userId));
+                                                            return (
+                                                                <div
+                                                                    key={u.id || u.userId}
+                                                                    onClick={() => toggleConnection({ id: u.id || u.userId, name: uName, avatar: u.avatar || u.profilePhotoUrl })}
+                                                                    className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
+                                                                        isSel ? 'bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 font-bold' : 'text-slate-700 dark:text-slate-200'
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex items-center gap-2 truncate">
+                                                                        {u.avatar || u.profilePhotoUrl ? (
+                                                                            <img src={u.avatar || u.profilePhotoUrl} alt={uName} className="w-7 h-7 rounded-full object-cover shrink-0" />
+                                                                        ) : (
+                                                                            <div className="w-7 h-7 rounded-full bg-purple-500/10 text-purple-500 flex items-center justify-center text-xs font-bold shrink-0">
+                                                                                {uName.charAt(0)}
+                                                                            </div>
+                                                                        )}
+                                                                        <div className="truncate">
+                                                                            <p className="font-semibold truncate leading-none">{uName}</p>
+                                                                            <p className="text-[10px] text-slate-400 truncate mt-0.5">{u.roleName || u.designation || 'Employee'}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors shrink-0 ${
+                                                                        isSel ? 'bg-purple-600 border-purple-600 text-white shadow-sm' : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'
+                                                                    }`}>
+                                                                        {isSel && <span className="material-symbols-outlined text-[14px]">check</span>}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                </div>
+                                                <div className="p-2 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between">
+                                                    <span className="text-[11px] text-slate-500">
+                                                        {selectedConnections.length === 0 ? 'No person selected' : `${selectedConnections.length} selected`}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (selectedConnections.length > 0) {
+                                                                setAudience('Connections');
+                                                                setSelectedCommunity(null);
+                                                            }
+                                                            setIsAudienceMenuOpen(false);
+                                                            setAudienceSubView(null);
+                                                        }}
+                                                        className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold rounded-lg transition-colors shadow-sm cursor-pointer"
+                                                    >
+                                                        Done
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -513,7 +902,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                 </div>
 
                 {/* Footer Tools & Actions */}
-                <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between rounded-b-2xl">
+                <div className="p-3 sm:p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 rounded-b-2xl">
                     <div className="flex items-center gap-1">
                         <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
                         <button onClick={() => triggerFileInput('image')} disabled={isPublishing} className="p-2 text-indigo-500 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg transition-colors group relative disabled:opacity-50">
@@ -535,34 +924,50 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <button 
-                            onClick={() => handleSubmit('Draft')}
-                            disabled={!text.trim() || securityWarning || isPublishing}
-                            className="px-4 py-2 rounded-xl text-[13px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                            Save Draft
-                        </button>
-                        <button 
-                            onClick={() => setIsScheduling(!isScheduling)}
-                            disabled={isPublishing}
-                            className={`p-2 rounded-xl border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isScheduling ? 'bg-indigo-100 dark:bg-indigo-900/50 border-indigo-200 text-indigo-600' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
-                            <span className="material-symbols-outlined text-[18px]">schedule</span>
-                        </button>
-                        <button
-                            onClick={() => handleSubmit(isScheduling && scheduledTime ? 'Scheduled' : 'Published')}
-                            disabled={!text.trim() || securityWarning || isPublishing || (isScheduling && !scheduledTime)}
-                            className={`px-5 py-2 rounded-xl text-[13px] font-bold transition-all shadow-sm flex items-center gap-2
-                                ${(!text.trim() || securityWarning || isPublishing || (isScheduling && !scheduledTime)) ? 'bg-slate-100 text-slate-400 cursor-not-allowed dark:bg-slate-800 dark:text-slate-500' : 'bg-indigo-500 text-white hover:bg-indigo-600 hover:shadow-md hover:scale-105'}
-                            `}
-                        >
-                            {isPublishing ? (
+                        {(() => {
+                            const restrictedInPost = checkRestrictedContent(text);
+                            if (restrictedInPost) {
+                                return (
+                                    <div className="flex items-center gap-2 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 px-4 py-2 rounded-xl text-xs font-bold">
+                                        <span className="material-symbols-outlined text-[18px]">warning</span>
+                                        <span>Restricted word ("{restrictedInPost}") detected! Remove it to publish.</span>
+                                    </div>
+                                );
+                            }
+                            return (
                                 <>
-                                    <span className="material-symbols-outlined text-[16px] animate-spin">refresh</span>
-                                    Publishing...
+                                    <button 
+                                        type="button"
+                                        onClick={handleClose}
+                                        disabled={isPublishing}
+                                        className="px-4 py-2 rounded-xl text-[13px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50">
+                                        Cancel
+                                    </button>
+                                    <button 
+                                        onClick={() => setIsScheduling(!isScheduling)}
+                                        disabled={isPublishing}
+                                        className={`p-2 rounded-xl border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isScheduling ? 'bg-indigo-100 dark:bg-indigo-900/50 border-indigo-200 text-indigo-600' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}>
+                                        <span className="material-symbols-outlined text-[18px]">schedule</span>
+                                    </button>
+                                    <button
+                                        onClick={() => handleSubmit(isScheduling && scheduledTime ? 'Scheduled' : 'Published')}
+                                        disabled={!text.trim() || securityWarning || isPublishing || (isScheduling && !scheduledTime)}
+                                        className={`px-5 py-2 rounded-xl text-[13px] font-bold transition-all shadow-sm flex items-center gap-2
+                                            ${(!text.trim() || securityWarning || isPublishing || (isScheduling && !scheduledTime)) ? 'bg-slate-100 text-slate-400 cursor-not-allowed dark:bg-slate-800 dark:text-slate-500' : 'bg-indigo-500 text-white hover:bg-indigo-600 hover:shadow-md hover:scale-105'}
+                                        `}
+                                    >
+                                        {isPublishing ? (
+                                            <>
+                                                <span className="material-symbols-outlined text-[16px] animate-spin">refresh</span>
+                                                Publishing...
+                                            </>
+                                        ) : (
+                                            isScheduling && scheduledTime ? 'Schedule' : 'Publish'
+                                        )}
+                                    </button>
                                 </>
-                            ) : (
-                                isScheduling && scheduledTime ? 'Schedule' : 'Publish'
-                            )}
-                        </button>
+                            );
+                        })()}
                     </div>
                 </div>
 

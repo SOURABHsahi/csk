@@ -1,11 +1,23 @@
 using Microsoft.AspNetCore.RateLimiting;
 using System.Threading.RateLimiting;
+using Serilog;
 
-var builder = WebApplication.CreateBuilder(args);
+Log.Logger = new LoggerConfiguration()
+    .WriteTo.Console()
+    .CreateBootstrapLogger();
 
-// Add YARP Reverse Proxy services
-builder.Services.AddReverseProxy()
-    .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
+try
+{
+    var builder = WebApplication.CreateBuilder(args);
+
+    builder.Host.UseSerilog((context, services, configuration) => configuration
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext());
+
+    // Add YARP Reverse Proxy services
+    builder.Services.AddReverseProxy()
+        .LoadFromConfig(builder.Configuration.GetSection("ReverseProxy"));
 
 // Add Swagger / OpenAPI for Gateway diagnostic endpoints
 builder.Services.AddEndpointsApiExplorer();
@@ -52,6 +64,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Knome API Gateway v1"));
 }
 
+app.UseSerilogRequestLogging();
 app.UseCors("AllowFrontendAndBff");
 app.UseRateLimiter();
 
@@ -67,3 +80,12 @@ app.MapGet("/health", () => Results.Ok(new
 app.MapReverseProxy();
 
 app.Run();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "Gateway host terminated unexpectedly");
+}
+finally
+{
+    Log.CloseAndFlush();
+}

@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import CreatePostModal from '../components/modals/CreatePostModal';
+import CreateArticleModal from '../components/modals/CreateArticleModal';
+import UploadVideoModal from '../components/modals/UploadVideoModal';
 import PostCard from '../components/widgets/PostCard';
 import HotPostsWidget from '../components/widgets/HotPostsWidget';
 import MyCommunitiesWidget from '../components/widgets/MyCommunitiesWidget';
@@ -9,17 +12,23 @@ import PeopleYouMayKnowWidget from '../components/widgets/PeopleYouMayKnowWidget
 import TextScramble from '../components/ui/TextScramble';
 import ScrollExpandMedia from '../components/ui/scroll-expansion-hero';
 import { BackgroundPaths } from '../components/ui/background-paths';
-import { dashboardApi, karmaApi, mapFeedItem } from '../utils/apiService';
+import { dashboardApi, karmaApi, mapFeedItem, resolveMediaUrl } from '../utils/apiService';
 
 export default function Dashboard() {
+    const navigate = useNavigate();
     const { currentUser } = useUser();
     const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
+    const [isCreateArticleOpen, setIsCreateArticleOpen] = useState(false);
+    const [isUploadVideoOpen, setIsUploadVideoOpen] = useState(false);
     const [posts, setPosts] = useState([]);
     const [greeting, setGreeting] = useState('');
     const [isLoading, setIsLoading] = useState(true);
 
     const [userKarma, setUserKarma] = useState(currentUser?.karma || 0);
     const [showHero, setShowHero] = useState(false);
+
+    const [activeFilter, setActiveFilter] = useState('All');
+    const [announcements, setAnnouncements] = useState([]);
 
     const isSysAdmin = currentUser?.role === 'SYSADM' || 
                        currentUser?.roleName === 'System Administrator' || 
@@ -40,6 +49,12 @@ export default function Dashboard() {
             }
         };
         loadKarma();
+
+        // Load HR Broadcast Announcements (FR-DB-05)
+        dashboardApi.getAnnouncements().then(res => {
+            if (Array.isArray(res)) setAnnouncements(res);
+            else if (res?.items) setAnnouncements(res.items);
+        }).catch(() => {});
     }, [currentUser?.userId, currentUser?.employeeId, currentUser?.karma]);
 
     useEffect(() => {
@@ -49,18 +64,32 @@ export default function Dashboard() {
         else setGreeting('Good Evening');
     }, []);
 
-    const loadPosts = async () => {
+    const loadPosts = async (filterType = activeFilter) => {
         setIsLoading(true);
         try {
-            const data = await dashboardApi.getFeed('All');
+            const data = await dashboardApi.getFeed(filterType);
             if (data && Array.isArray(data)) {
-                setPosts(data.map(mapFeedItem));
+                const mapped = data.map(mapFeedItem);
+                const postsAndArticlesOnly = mapped.filter(item => {
+                    const type = (item.type || item.contentType || '').toLowerCase();
+                    if (type === 'video' || type === 'podcast') return false;
+                    return true;
+                });
+                setPosts(postsAndArticlesOnly);
+            } else {
+                setPosts([]);
             }
         } catch (err) {
             console.error('Failed to load feed:', err);
+            setPosts([]);
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleFilterChange = (filterId) => {
+        setActiveFilter(filterId);
+        loadPosts(filterId);
     };
 
     const handlePostCreated = (e) => {
@@ -73,9 +102,16 @@ export default function Dashboard() {
                 return [mapped, ...prev];
             });
         }
-        // background sync
-        dashboardApi.getFeed('All').then(data => {
-            if (data && Array.isArray(data)) setPosts(data.map(mapFeedItem));
+        dashboardApi.getFeed(activeFilter).then(data => {
+            if (data && Array.isArray(data)) {
+                const mapped = data.map(mapFeedItem);
+                const postsAndArticlesOnly = mapped.filter(item => {
+                    const type = (item.type || item.contentType || '').toLowerCase();
+                    if (type === 'video' || type === 'podcast') return false;
+                    return true;
+                });
+                setPosts(postsAndArticlesOnly);
+            }
         }).catch(() => {});
     };
 
@@ -87,7 +123,7 @@ export default function Dashboard() {
     };
 
     useEffect(() => {
-        loadPosts();
+        loadPosts('All');
         window.addEventListener('post-created', handlePostCreated);
         window.addEventListener('post-deleted', handlePostDeleted);
         return () => {
@@ -98,7 +134,7 @@ export default function Dashboard() {
 
     return (
         <>
-            <div className="flex-1 min-w-0 flex flex-col xl:flex-row gap-6 pb-32">
+            <div className="flex-1 min-w-0 flex flex-col xl:flex-row gap-6 pb-6">
                 {/* Main Feed Column */}
                 <main className="flex-1 min-w-0 flex flex-col gap-5">
 
@@ -122,21 +158,36 @@ export default function Dashboard() {
                             />
                         </div>
                         <div className="flex items-center gap-2">
-                            <button
-                                onClick={() => setShowHero(!showHero)}
-                                className="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-indigo-600/10 text-indigo-500 hover:bg-indigo-600/20 border border-indigo-500/20">
-                                <span className="material-symbols-outlined text-[16px]">auto_awesome</span>
-                                {showHero ? 'Close Hero' : 'Explore Hero'}
-                            </button>
                             {!isSysAdmin && (
-                                <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold"
-                                    style={{background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)'}}>
+                                <button 
+                                    onClick={() => navigate('/karma-history')}
+                                    className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold cursor-pointer hover:scale-105 transition-all shadow-xs"
+                                    style={{background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)'}}
+                                    title="View Karma Points & History"
+                                >
                                     <span className="material-symbols-outlined text-[16px] text-amber-500" style={{fontVariationSettings:"'FILL' 1"}}>military_tech</span>
                                     {userKarma.toLocaleString()} Karma Points
-                                </div>
+                                </button>
                             )}
                         </div>
                     </div>
+
+                    {/* HR Organization Announcement Banner (FR-DB-05) */}
+                    {announcements && announcements.length > 0 && (
+                        <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 border border-amber-500/30 flex items-start gap-3 shadow-xs">
+                            <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                                <span className="material-symbols-outlined text-[20px]" style={{fontVariationSettings: "'FILL' 1"}}>campaign</span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-0.5">
+                                    <span className="text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white px-2 py-0.5 rounded-md">HR Broadcast</span>
+                                    <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">• Organization Announcement</span>
+                                </div>
+                                <h4 className="text-sm font-black text-slate-900 dark:text-white leading-snug">{announcements[0].title || announcements[0].message}</h4>
+                                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 font-medium">{announcements[0].content || announcements[0].details || announcements[0].message}</p>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Interactive Background Paths Hero Showcase */}
                     {showHero && (
@@ -166,8 +217,6 @@ export default function Dashboard() {
                         </div>
                     )}
 
-
-
                     {/* Create Post Composer */}
                     {currentUser.role !== 'SYSADM' && (
                         <div className="rounded-2xl overflow-hidden"
@@ -181,7 +230,15 @@ export default function Dashboard() {
                                 onClick={() => setIsCreatePostOpen(true)}
                                 className="flex items-center gap-3 p-4 cursor-pointer group">
                                 <div className="relative shrink-0">
-                                    <img className="w-10 h-10 rounded-full object-cover shadow-sm border-2 border-white dark:border-slate-800" alt="Avatar" src={currentUser.avatar} />
+                                    <img 
+                                        className="w-10 h-10 rounded-full object-cover shadow-sm border-2 border-white dark:border-slate-800" 
+                                        alt="Avatar" 
+                                        src={resolveMediaUrl(currentUser?.profilePhotoUrl) || currentUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || currentUser?.fullName || 'User')}&background=6366f1&color=fff`} 
+                                        onError={(e) => {
+                                            e.currentTarget.onerror = null;
+                                            e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || currentUser?.fullName || 'User')}&background=6366f1&color=fff`;
+                                        }}
+                                    />
                                     <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-white dark:border-slate-900"></div>
                                 </div>
                                 <div className="flex-1 px-4 py-2.5 rounded-full text-sm font-medium transition-colors group-hover:ring-1 group-hover:ring-indigo-300"
@@ -194,31 +251,50 @@ export default function Dashboard() {
                                 </div>
                             </div>
                             {/* Action Buttons */}
-                            <div className="flex items-center border-t px-4 py-2 gap-1" style={{borderColor: 'var(--border-subtle)'}}>
+                            <div className="flex items-center border-t px-4 py-2.5 gap-2" style={{borderColor: 'var(--border-subtle)'}}>
                                 {[
-                                    { icon: 'image', label: 'Photo', color: '#10b981' },
-                                    { icon: 'videocam', label: 'Video', color: '#ef4444' },
-                                    { icon: 'article', label: 'Article', color: '#8b5cf6' },
-                                    { icon: 'emoji_emotions', label: 'Feeling', color: '#f59e0b' },
+                                    { icon: 'image', label: 'Post', color: '#10b981', action: () => setIsCreatePostOpen(true) },
+                                    { icon: 'article', label: 'Article', color: '#8b5cf6', action: () => setIsCreateArticleOpen(true) },
+                                    { icon: 'videocam', label: 'Videos', color: '#ef4444', action: () => setIsUploadVideoOpen(true) },
                                 ].map(btn => (
                                     <button
                                         key={btn.label}
-                                        onClick={() => setIsCreatePostOpen(true)}
-                                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-bold transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 flex-1 justify-center"
+                                        type="button"
+                                        onClick={btn.action}
+                                        className="flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] font-bold transition-all hover:bg-slate-100 dark:hover:bg-slate-800 flex-1 justify-center cursor-pointer group"
                                         style={{color: 'var(--text-secondary)'}}>
-                                        <span className="material-symbols-outlined text-[16px]" style={{color: btn.color}}>{btn.icon}</span>
-                                        <span className="hidden sm:inline">{btn.label}</span>
+                                        <span className="material-symbols-outlined text-[18px] transition-transform group-hover:scale-110" style={{color: btn.color}}>{btn.icon}</span>
+                                        <span className="font-bold">{btn.label}</span>
                                     </button>
                                 ))}
                             </div>
                         </div>
                     )}
 
+
+
+
                     {/* Post Feed */}
                     <div className="flex flex-col gap-5">
-                        {posts.map((post, idx) => (
-                            <PostCard key={post.id ? `${post.id}-${idx}` : idx} post={post} onPostDeleted={() => loadPosts(500)} />
-                        ))}
+                        {isLoading ? (
+                            <div className="p-8 text-center text-slate-400 text-xs font-bold flex items-center justify-center gap-2">
+                                <span className="material-symbols-outlined animate-spin">progress_activity</span>
+                                Loading feed...
+                            </div>
+                        ) : posts.length > 0 ? (
+                            posts.map((post, idx) => (
+                                <PostCard key={post.id ? `${post.id}-${idx}` : idx} post={post} onPostDeleted={(deletedId) => {
+                                    if (deletedId) setPosts(prev => prev.filter(p => p.id !== deletedId && p.postId !== deletedId));
+                                    loadPosts(activeFilter);
+                                }} />
+                            ))
+                        ) : (
+                            <div className="p-12 text-center flex flex-col items-center justify-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
+                                <span className="material-symbols-outlined text-4xl text-slate-300 dark:text-slate-600 mb-2">find_in_page</span>
+                                <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">No content found for '{activeFilter}'</h4>
+                                <p className="text-xs text-slate-400 mt-1">Try switching to 'All Posts' to view the full enterprise timeline.</p>
+                            </div>
+                        )}
                     </div>
                 </main>
 
@@ -236,6 +312,8 @@ export default function Dashboard() {
             </div>
 
             <CreatePostModal isOpen={isCreatePostOpen} onClose={() => setIsCreatePostOpen(false)} onPostCreated={() => loadPosts(500)} />
+            <CreateArticleModal isOpen={isCreateArticleOpen} onClose={() => setIsCreateArticleOpen(false)} onArticleCreated={() => loadPosts(activeFilter)} />
+            <UploadVideoModal isOpen={isUploadVideoOpen} onClose={() => setIsUploadVideoOpen(false)} onVideoUploaded={() => loadPosts(activeFilter)} />
         </>
     );
 }

@@ -22,6 +22,19 @@ public class CommunityController : KnomeControllerBase
         _communityService = communityService;
     }
 
+    [HttpGet("check-name")]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> CheckName([FromQuery] string? name = null, [FromQuery] int? excludeId = null)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return Ok(ApiResponse<bool>.SuccessResponse(200, "Community name check complete.", false));
+        }
+
+        var exists = await _communityService.CheckCommunityNameExistsAsync(name.Trim(), excludeId);
+        return Ok(ApiResponse<bool>.SuccessResponse(200, "Community name check complete.", exists));
+    }
+
     [HttpGet]
     [ProducesResponseType(typeof(ApiResponse<List<CommunityDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCommunities([FromQuery] int? categoryId, [FromQuery] string? type, [FromQuery] string? search, [FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 20)
@@ -38,7 +51,15 @@ public class CommunityController : KnomeControllerBase
         return Ok(ApiResponse<List<CommunityDto>>.SuccessResponse(200, "User communities retrieved successfully.", dtos));
     }
 
-    [HttpGet("{communityId}")]
+    [HttpGet("user/{userId:int}")]
+    [ProducesResponseType(typeof(ApiResponse<List<CommunityDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetUserCommunities(int userId)
+    {
+        var dtos = await _communityService.GetUserCommunitiesAsync(userId);
+        return Ok(ApiResponse<List<CommunityDto>>.SuccessResponse(200, "User communities retrieved successfully.", dtos));
+    }
+
+    [HttpGet("{communityId:int}")]
     [ProducesResponseType(typeof(ApiResponse<CommunityDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCommunity(int communityId)
     {

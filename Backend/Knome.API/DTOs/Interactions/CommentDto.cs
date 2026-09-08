@@ -18,6 +18,10 @@ public class CommentDto
     public string? ImageUrl { get; set; }
     public DateTime CreatedDate { get; set; }
     public int RepliesCount { get; set; }
+    public int LikesCount { get; set; }
+    public bool IsLiked { get; set; }
+    public string? UserReactionType { get; set; }
+    public List<string> TopReactionTypes { get; set; } = new List<string>();
     public List<CommentDto> Replies { get; set; } = new List<CommentDto>();
 }
 

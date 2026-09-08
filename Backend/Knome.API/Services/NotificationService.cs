@@ -37,29 +37,36 @@ public class NotificationService : INotificationService
         string? relatedContentType = null,
         long? relatedContentId = null)
     {
-        var eligible = await _repository.GetEligibleRecipientIdsAsync(eventType, new List<int> { recipientUserId });
-        if (eligible.Count == 0)
-            return null;
-
-        var notification = new Notification
+        try
         {
-            UserId = recipientUserId,
-            EventType = eventType,
-            Message = message,
-            RelatedContentType = relatedContentType,
-            RelatedContentId = relatedContentId,
-            IsRead = false,
-            CreatedDate = DateTime.UtcNow
-        };
+            var eligible = await _repository.GetEligibleRecipientIdsAsync(eventType, new List<int> { recipientUserId });
+            if (eligible.Count == 0)
+                return null;
 
-        var saved = await _repository.AddAsync(notification);
-        var dto = _mapper.Map<NotificationDto>(saved);
-        await EnrichNotificationDtoAsync(dto);
+            var notification = new Notification
+            {
+                UserId = recipientUserId,
+                EventType = eventType,
+                Message = message,
+                RelatedContentType = relatedContentType,
+                RelatedContentId = relatedContentId,
+                IsRead = false,
+                CreatedDate = DateTime.UtcNow
+            };
 
-        // Real-time broadcast to user group
-        await _hubContext.Clients.Group($"User_{recipientUserId}").SendAsync("ReceiveNotification", dto);
+            var saved = await _repository.AddAsync(notification);
+            var dto = _mapper.Map<NotificationDto>(saved);
+            await EnrichNotificationDtoAsync(dto);
 
-        return dto;
+            // Real-time broadcast to user group
+            await _hubContext.Clients.Group($"User_{recipientUserId}").SendAsync("ReceiveNotification", dto);
+
+            return dto;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public async Task PublishBroadcastAsync(
@@ -176,7 +183,7 @@ public class NotificationService : INotificationService
         dto.Title = dto.EventType switch
         {
             Constants.NotificationTypes.Follower => "New Follower",
-            Constants.NotificationTypes.ConnectionRequest => "Follow Request",
+            Constants.NotificationTypes.ConnectionRequest => "Connection Request",
             Constants.NotificationTypes.Comment => "New Comment",
             Constants.NotificationTypes.CommunityJoin => "Community Access Approved",
             Constants.NotificationTypes.CommunityInvite => "Community Invitation",
@@ -185,6 +192,7 @@ public class NotificationService : INotificationService
             Constants.NotificationTypes.Badge => "Karma Badge Earned",
             Constants.NotificationTypes.Mention => "Mentioned You",
             Constants.NotificationTypes.Reaction => "New Reaction",
+            Constants.NotificationTypes.Share => "Content Shared",
             _ => dto.EventType ?? "Notification"
         };
 
@@ -200,7 +208,29 @@ public class NotificationService : INotificationService
             }
         }
 
-        if (!string.IsNullOrEmpty(dto.RelatedContentType) && dto.RelatedContentId.HasValue)
+        if (string.IsNullOrEmpty(dto.SenderName) && !string.IsNullOrEmpty(dto.Message))
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(dto.Message, @"^(.+?)\s+(shared|invited|sent|commented|liked|reacted|posted|mentioned)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (match.Success && !string.IsNullOrWhiteSpace(match.Groups[1].Value))
+            {
+                dto.SenderName = match.Groups[1].Value.Trim();
+            }
+        }
+
+        if (dto.EventType == Constants.NotificationTypes.ConnectionRequest)
+        {
+            if (dto.Message?.Contains("accepted", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                dto.Title = "Connection Accepted";
+                dto.TargetUrl = "/network?tab=Connections";
+            }
+            else
+            {
+                dto.Title = "Connection Request";
+                dto.TargetUrl = "/network?tab=Requests";
+            }
+        }
+        else if (!string.IsNullOrEmpty(dto.RelatedContentType) && dto.RelatedContentId.HasValue)
         {
             var type = dto.RelatedContentType.ToLower();
             var id = dto.RelatedContentId.Value;

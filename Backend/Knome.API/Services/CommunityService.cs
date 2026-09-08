@@ -46,18 +46,18 @@ public class CommunityService : ICommunityService
 
     private async Task CheckIsAdminOrSysAdminAsync(int communityId, int currentUserId)
     {
-        var exists = await _db.Communities.AnyAsync(c => c.CommunityId == communityId);
+        var exists = await _db.Communities.AnyAsync(c => c.CommunityId == communityId && c.IsActive);
         if (!exists)
             throw new NotFoundException($"Community ID {communityId} not found.");
 
         var isAdmin = await _repo.IsCommunityAdminAsync(communityId, currentUserId);
         if (!isAdmin)
         {
-            // Also check if user is a System Administrator
+            // Also check if user is a System Administrator or HR Administrator
             var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
-            if (user == null || !user.Roles.Any(r => r.RoleName == Roles.SystemAdmin))
+            if (user == null || !user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.HRAdmin))
             {
-                throw new UnauthorizedException("You must be a Community Admin or System Administrator to perform this action.");
+                throw new UnauthorizedException("You must be a Community Admin, HR Administrator, or System Administrator to perform this action.");
             }
         }
     }
@@ -131,14 +131,19 @@ public class CommunityService : ICommunityService
 
     public async Task<List<CommunityDto>> GetMyCommunitiesAsync(int currentUserId)
     {
-        var communities = await _repo.GetUserCommunitiesAsync(currentUserId);
+        return await GetUserCommunitiesAsync(currentUserId);
+    }
+
+    public async Task<List<CommunityDto>> GetUserCommunitiesAsync(int targetUserId)
+    {
+        var communities = await _repo.GetUserCommunitiesAsync(targetUserId);
         var dtos = new List<CommunityDto>();
 
         foreach (var c in communities)
         {
             var dto = _mapper.Map<CommunityDto>(c);
-            dto.IsCurrentUserAdmin = await _repo.IsCommunityAdminAsync(c.CommunityId, currentUserId);
-            var member = await _repo.GetMemberAsync(c.CommunityId, currentUserId);
+            dto.IsCurrentUserAdmin = await _repo.IsCommunityAdminAsync(c.CommunityId, targetUserId);
+            var member = await _repo.GetMemberAsync(c.CommunityId, targetUserId);
             dto.CurrentUserMembershipStatus = member?.Status ?? (dto.IsCurrentUserAdmin ? CommunityMemberStatuses.Approved : null);
             dtos.Add(dto);
         }
@@ -150,6 +155,14 @@ public class CommunityService : ICommunityService
     public async Task<CommunityDto> CreateCommunityAsync(int currentUserId, CreateCommunityDto dto)
     {
         await _suspensionGuard.EnsureNotSuspendedAsync(currentUserId);
+
+        var trimmedName = dto.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmedName))
+            throw new BadRequestException("Community name cannot be empty.");
+
+        // Duplicate name check across active communities
+        if (await _repo.CommunityNameExistsAsync(trimmedName))
+            throw new BadRequestException("Community name already existing.");
 
         // Security Screening (FR-SM-01)
         var secCheck = await _interactionService.ValidateContentSecurityAsync($"{dto.Name} {dto.Description} {dto.Rules} {dto.Faq}", dto.BannerUrl ?? dto.ThumbnailUrl);
@@ -166,7 +179,7 @@ public class CommunityService : ICommunityService
 
         var community = new Community
         {
-            Name = dto.Name,
+            Name = trimmedName,
             Description = dto.Description,
             BannerUrl = dto.BannerUrl,
             ThumbnailUrl = dto.ThumbnailUrl,
@@ -175,7 +188,8 @@ public class CommunityService : ICommunityService
             Faq = dto.Faq,
             CommunityType = dto.CommunityType,
             CreatedByUserId = currentUserId,
-            CreatedDate = DateTime.UtcNow
+            CreatedDate = DateTime.UtcNow,
+            IsActive = true
         };
 
         await _repo.AddCommunityAsync(community);
@@ -205,6 +219,13 @@ public class CommunityService : ICommunityService
 
         await CheckIsAdminOrSysAdminAsync(communityId, currentUserId);
 
+        var trimmedName = dto.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmedName))
+            throw new BadRequestException("Community name cannot be empty.");
+
+        if (await _repo.CommunityNameExistsAsync(trimmedName, communityId))
+            throw new BadRequestException("Community name already existing.");
+
         var secCheck = await _interactionService.ValidateContentSecurityAsync($"{dto.Name} {dto.Description} {dto.Rules} {dto.Faq}", dto.BannerUrl ?? dto.ThumbnailUrl);
         if (!secCheck.IsValid)
             throw new BadRequestException("Updated community details contain blocked URLs or restricted keywords.");
@@ -217,7 +238,7 @@ public class CommunityService : ICommunityService
                 throw new BadRequestException($"Category ID {dto.CategoryId.Value} does not exist.");
         }
 
-        community.Name = dto.Name;
+        community.Name = trimmedName;
         community.Description = dto.Description;
         community.BannerUrl = dto.BannerUrl;
         community.ThumbnailUrl = dto.ThumbnailUrl;
@@ -238,6 +259,14 @@ public class CommunityService : ICommunityService
         await CheckIsAdminOrSysAdminAsync(communityId, currentUserId);
 
         await _repo.DeleteCommunityAsync(community);
+    }
+
+    public async Task<bool> CheckCommunityNameExistsAsync(string? name, int? excludeCommunityId = null)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return false;
+
+        return await _repo.CommunityNameExistsAsync(name.Trim(), excludeCommunityId);
     }
 
     // --- Membership & Joining ---

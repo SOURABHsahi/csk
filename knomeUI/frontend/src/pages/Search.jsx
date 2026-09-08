@@ -12,7 +12,6 @@ const CATEGORIES = [
     { id: 'Post', label: 'Posts', icon: 'edit_square' },
     { id: 'Article', label: 'Articles', icon: 'article' },
     { id: 'Video', label: 'Videos', icon: 'videocam' },
-    { id: 'Documents', label: 'Documents', icon: 'description' },
     { id: 'Community', label: 'Communities', icon: 'group' },
     { id: 'Hashtags', label: 'Hashtags', icon: 'tag' },
     { id: 'Podcast', label: 'Podcasts', icon: 'podcasts' },
@@ -128,7 +127,7 @@ export default function Search() {
     // Fetch search results from API (Minimum 3 characters required)
     const performSearch = useCallback(async (isLoadMore = false) => {
         const queryTerm = searchQuery.trim();
-        if (queryTerm.length > 0 && queryTerm.length < 3) {
+        if (!queryTerm || queryTerm.length < 3) {
             setResults([]);
             setTotalCount(0);
             setIsSearching(false);
@@ -156,29 +155,33 @@ export default function Search() {
             const total = res?.totalCount || items.length;
 
             if (isLoadMore) {
-                setResults(prev => [...prev, ...items]);
+                setResults(prev => {
+                    const updated = [...prev, ...items];
+                    setHasMore(items.length === 20 && updated.length < total);
+                    return updated;
+                });
                 setPageNumber(pageToFetch);
             } else {
                 setResults(items);
                 setPageNumber(1);
+                setHasMore(items.length === 20 && items.length < total);
             }
 
             setTotalCount(total);
-            setHasMore(items.length === 20 && (isLoadMore ? results.length + items.length : items.length) < total);
         } catch (err) {
             console.error('Error fetching global search results', err);
             setResults([]);
         } finally {
             setIsSearching(false);
         }
-    }, [searchQuery, activeCategory, activeSort, activeDepartment, activeDateRange, pageNumber, results.length]);
+    }, [searchQuery, activeCategory, activeSort, activeDepartment, activeDateRange]);
 
     useEffect(() => {
         const timer = setTimeout(() => {
             performSearch(false);
-        }, 300);
+        }, 200);
         return () => clearTimeout(timer);
-    }, [searchQuery, activeCategory, activeSort, activeDepartment, activeDateRange, performSearch]);
+    }, [performSearch]);
 
     const handleSearchSubmit = (e) => {
         e.preventDefault();
@@ -221,12 +224,12 @@ export default function Search() {
         const type = item.contentType;
         const id = item.id;
 
-        if (type === 'User') {
-            navigate('/profile', { state: { user: { userId: id, name: item.title, avatar: item.authorProfilePhotoUrl } } });
+        if (type === 'User' || type === 'People') {
+            navigate(`/profile/${id}`, { state: { user: { id, userId: id, name: item.title, avatar: item.authorProfilePhotoUrl, roleName: item.summary, department: item.departmentName } } });
         } else if (type === 'Article') {
             navigate(`/article-view?id=${id}`);
         } else if (type === 'Community') {
-            navigate('/community');
+            navigate(`/community/view?id=${id}`);
         } else if (type === 'Video') {
             navigate('/videos');
         } else if (type === 'Podcast') {
@@ -239,7 +242,7 @@ export default function Search() {
     };
 
     return (
-        <main className="flex-1 min-w-0 flex flex-col gap-6 pb-32">
+        <main className="flex-1 min-w-0 flex flex-col gap-6 pb-6">
             
             {/* Hero Header */}
             <div className="relative rounded-2xl overflow-hidden mb-2 shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col md:flex-row items-start md:items-center justify-between text-left px-6 py-8 md:px-10 md:py-8 gap-6">
@@ -255,7 +258,7 @@ export default function Search() {
                         </span>
                     </h1>
                     <p className="text-slate-600 dark:text-slate-400 text-sm md:text-[15px] font-medium leading-relaxed max-w-2xl">
-                        Instantly find people, articles, posts, videos, podcasts, communities, and documents across Knome.
+                        Instantly find people, articles, posts, videos, podcasts, and communities across Knome.
                     </p>
                 </div>
             </div>
@@ -386,6 +389,7 @@ export default function Search() {
                             {!isSearching && searchQuery && results.length > 0 && (
                                 <div className="flex flex-col gap-3">
                                     {results.map((res, idx) => {
+                                        const isUser = res.contentType === 'User' || res.contentType === 'People';
                                         const thumb = resolveMediaUrl(res.thumbnailUrl || res.authorProfilePhotoUrl);
                                         return (
                                             <div 
@@ -395,17 +399,17 @@ export default function Search() {
                                             >
                                                 <div className="flex items-center gap-4 min-w-0 flex-1">
                                                     {thumb ? (
-                                                        <img src={thumb} alt={res.title} className="w-14 h-14 rounded-xl object-cover shrink-0 border border-slate-200 dark:border-slate-800 shadow-sm" />
+                                                        <img src={thumb} alt={res.title} className={`w-14 h-14 ${isUser ? 'rounded-full' : 'rounded-xl'} object-cover shrink-0 border border-slate-200 dark:border-slate-800 shadow-sm`} />
                                                     ) : (
-                                                        <div className="w-14 h-14 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0 text-xl font-bold">
-                                                            {res.contentType === 'User' ? '👤' : res.contentType === 'Community' ? '👥' : res.contentType === 'Video' ? '🎥' : '📄'}
+                                                        <div className={`w-14 h-14 ${isUser ? 'rounded-full' : 'rounded-xl'} bg-indigo-500/10 text-indigo-500 flex items-center justify-center shrink-0 text-xl font-bold`}>
+                                                            {isUser ? '👤' : res.contentType === 'Community' ? '👥' : res.contentType === 'Video' ? '🎥' : res.contentType === 'Podcast' ? '🎙️' : '📄'}
                                                         </div>
                                                     )}
                                                     
                                                     <div className="min-w-0 flex-1">
                                                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                                                             <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800/50">
-                                                                {res.contentType}
+                                                                {isUser ? 'People' : res.contentType}
                                                             </span>
                                                             <h4 className="text-[15px] font-bold text-slate-900 dark:text-white group-hover:text-indigo-500 transition-colors truncate">
                                                                 <HighlightText text={res.title} query={searchQuery} />
@@ -416,10 +420,18 @@ export default function Search() {
                                                             <HighlightText text={res.summary} query={searchQuery} />
                                                         </p>
 
-                                                        {res.authorFullName && (
-                                                            <p className="text-[11px] font-semibold text-slate-400 mt-1">
-                                                                By {res.authorFullName} • {new Date(res.createdDate).toLocaleDateString()}
-                                                            </p>
+                                                        {isUser ? (
+                                                            res.departmentName && (
+                                                                <p className="text-[11px] font-semibold text-slate-400 mt-1">
+                                                                    Department: {res.departmentName}
+                                                                </p>
+                                                            )
+                                                        ) : (
+                                                            res.authorFullName && (
+                                                                <p className="text-[11px] font-semibold text-slate-400 mt-1">
+                                                                    By {res.authorFullName} • {new Date(res.createdDate).toLocaleDateString()}
+                                                                </p>
+                                                            )
                                                         )}
                                                     </div>
                                                 </div>
@@ -496,24 +508,6 @@ export default function Search() {
                         </div>
                     </div>
 
-                    {/* Trending Searches */}
-                    <div className="glass rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm bg-white dark:bg-slate-900">
-                        <h3 className="text-[12px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                            <span className="material-symbols-outlined text-[16px] text-amber-500" style={{fontVariationSettings: "'FILL' 1"}}>trending_up</span>
-                            Trending Searches
-                        </h3>
-                        <div className="flex flex-wrap gap-2">
-                            {trendingSearches.map((term, i) => (
-                                <button
-                                    key={i}
-                                    onClick={() => { setSearchQuery(term); navigate(`/search?q=${encodeURIComponent(term)}`); }}
-                                    className="px-3 py-1.5 rounded-full text-[12px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-indigo-600 hover:text-white transition-all border border-slate-200 dark:border-slate-700"
-                                >
-                                    🔥 {term}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
 
                 </aside>
             </div>

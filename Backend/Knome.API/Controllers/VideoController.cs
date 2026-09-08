@@ -38,7 +38,15 @@ public class VideoController : KnomeControllerBase
         return Ok(ApiResponse<List<VideoDto>>.SuccessResponse(200, "User videos retrieved successfully.", videos));
     }
 
-    [HttpGet("{videoId}")]
+    [HttpGet("user/{userId:int}")]
+    [ProducesResponseType(typeof(ApiResponse<List<VideoDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetUserVideos(int userId, [FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 20)
+    {
+        var videos = await _videoService.GetUserVideosAsync(userId, GetCurrentUserId(), pageNumber, pageSize);
+        return Ok(ApiResponse<List<VideoDto>>.SuccessResponse(200, "User videos retrieved successfully.", videos));
+    }
+
+    [HttpGet("{videoId:long}")]
     [ProducesResponseType(typeof(ApiResponse<VideoDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetVideo(long videoId)
     {

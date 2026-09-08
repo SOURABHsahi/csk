@@ -39,7 +39,12 @@ public class PostService : IPostService
         if (post.AuthorUserId == currentUserId) return;
 
         var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
-        if (user == null || !user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.HRAdmin))
+        if (user == null || !user.Roles.Any(r => 
+            r.RoleName == Roles.SystemAdmin || r.RoleCode == "SYSADM" ||
+            r.RoleName == Roles.HRAdmin || r.RoleCode == "HRADM" ||
+            r.RoleName == Roles.CommunityAdmin || r.RoleCode == "CADM" ||
+            (r.RoleName != null && r.RoleName.Contains("Admin")) ||
+            (r.RoleCode != null && r.RoleCode.Contains("ADM"))))
         {
             throw new UnauthorizedException("You must be the author of this post or an Administrator to modify/delete it.");
         }
@@ -58,13 +63,17 @@ public class PostService : IPostService
 
     public async Task<List<PostDto>> GetPostsAsync(string? audienceType, string? search, int pageNumber, int pageSize, int currentUserId)
     {
-        var posts = await _repo.GetPostsAsync(audienceType, search, pageNumber, pageSize);
-        var dtos = new List<PostDto>();
+        var posts = await _repo.GetPostsAsync(audienceType, search, pageNumber, pageSize, currentUserId);
+        var ids = posts.Select(p => p.PostId).ToList();
+        var summaries = ids.Count > 0 
+            ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Post, ids, currentUserId)
+            : new Dictionary<long, Knome.API.DTOs.Interactions.ContentSummaryDto>();
 
+        var dtos = new List<PostDto>();
         foreach (var p in posts)
         {
             var dto = _mapper.Map<PostDto>(p);
-            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Post, p.PostId, currentUserId);
+            dto.EngagementSummary = summaries.TryGetValue(p.PostId, out var s) ? s : new Knome.API.DTOs.Interactions.ContentSummaryDto { ContentType = ContentTypes.Post, ContentId = p.PostId };
             dtos.Add(dto);
         }
 
@@ -73,13 +82,22 @@ public class PostService : IPostService
 
     public async Task<List<PostDto>> GetMyPostsAsync(int currentUserId, int pageNumber = 1, int pageSize = 20)
     {
-        var posts = await _repo.GetMyPostsAsync(currentUserId, pageNumber, pageSize);
-        var dtos = new List<PostDto>();
+        return await GetUserPostsAsync(currentUserId, currentUserId, pageNumber, pageSize);
+    }
 
+    public async Task<List<PostDto>> GetUserPostsAsync(int authorUserId, int currentUserId, int pageNumber = 1, int pageSize = 20)
+    {
+        var posts = await _repo.GetMyPostsAsync(authorUserId, pageNumber, pageSize);
+        var ids = posts.Select(p => p.PostId).ToList();
+        var summaries = ids.Count > 0 
+            ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Post, ids, currentUserId)
+            : new Dictionary<long, Knome.API.DTOs.Interactions.ContentSummaryDto>();
+
+        var dtos = new List<PostDto>();
         foreach (var p in posts)
         {
             var dto = _mapper.Map<PostDto>(p);
-            dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Post, p.PostId, currentUserId);
+            dto.EngagementSummary = summaries.TryGetValue(p.PostId, out var s) ? s : new Knome.API.DTOs.Interactions.ContentSummaryDto { ContentType = ContentTypes.Post, ContentId = p.PostId };
             dtos.Add(dto);
         }
 
@@ -89,12 +107,6 @@ public class PostService : IPostService
     public async Task<PostDto> CreatePostAsync(int currentUserId, CreatePostDto dto)
     {
         await _suspensionGuard.EnsureNotSuspendedAsync(currentUserId);
-
-        var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
-        if (user != null && user.Roles.Any(r => r.RoleName == Roles.SystemAdmin))
-        {
-            throw new UnauthorizedException("System Administrators are not permitted to create posts.");
-        }
 
         // Security screening (FR-SM-01)
         var secCheck = await _interactionService.ValidateContentSecurityAsync(dto.ContentText, dto.AttachmentUrls.FirstOrDefault());
@@ -111,7 +123,12 @@ public class PostService : IPostService
             CreatedDate = DateTime.UtcNow
         };
 
-        var savedPost = await _repo.AddPostAsync(post, dto.AttachmentUrls, dto.AttachmentTypes, dto.MentionedUserIds);
+        var allTargetedUserIds = (dto.MentionedUserIds ?? new List<int>())
+            .Concat(dto.AudienceUserIds ?? new List<int>())
+            .Distinct()
+            .ToList();
+
+        var savedPost = await _repo.AddPostAsync(post, dto.AttachmentUrls, dto.AttachmentTypes, allTargetedUserIds);
         await _karmaService.AwardKarmaAsync(currentUserId, KarmaActivityTypes.CreatePost, KarmaPoints.CreatePostPoints, ContentTypes.Post, savedPost.PostId, KarmaCaps.CreatePostDailyCap);
         if (dto.AudienceCommunityIds != null && dto.AudienceCommunityIds.Any())
         {
@@ -121,16 +138,18 @@ public class PostService : IPostService
             }
         }
 
-        // FR-NT-01: notify mentioned users (producer -> generic engine)
-        if (dto.MentionedUserIds.Any())
+        // FR-NT-01: notify mentioned & targeted users (producer -> generic engine)
+        if (allTargetedUserIds.Any())
         {
             var authorName = (await _db.Users.FindAsync(currentUserId))?.FullName ?? "Someone";
-            foreach (var mentionedUserId in dto.MentionedUserIds.Where(id => id != currentUserId))
+            foreach (var targetUserId in allTargetedUserIds.Where(id => id != currentUserId))
             {
                 await _notificationService.PublishAsync(
-                    mentionedUserId,
+                    targetUserId,
                     NotificationTypes.Mention,
-                    $"You were mentioned in a post by {authorName}.",
+                    dto.AudienceType == "Connections"
+                        ? $"{authorName} shared a post with you."
+                        : $"You were mentioned in a post by {authorName}.",
                     relatedContentType: ContentTypes.Post,
                     relatedContentId: savedPost.PostId);
             }

@@ -9,8 +9,10 @@ public static class ContentTypes
     public const string Community = "Community";
     public const string Job = "Job";
     public const string Document = "Document";
+    public const string Profile = "Profile";
+    public const string Comment = "Comment";
 
-    public static readonly string[] All = { Post, Article, Video, Podcast, Community, Job, Document };
+    public static readonly string[] All = { Post, Article, Video, Podcast, Community, Job, Document, Profile, Comment };
 
     public static string Normalize(string? contentType)
     {
@@ -23,6 +25,8 @@ public static class ContentTypes
         if (trimmed.Equals(Community, StringComparison.OrdinalIgnoreCase)) return Community;
         if (trimmed.Equals(Job, StringComparison.OrdinalIgnoreCase)) return Job;
         if (trimmed.Equals(Document, StringComparison.OrdinalIgnoreCase)) return Document;
+        if (trimmed.Equals(Profile, StringComparison.OrdinalIgnoreCase)) return Profile;
+        if (trimmed.Equals(Comment, StringComparison.OrdinalIgnoreCase)) return Comment;
         return trimmed;
     }
 
@@ -30,7 +34,7 @@ public static class ContentTypes
     {
         if (string.IsNullOrWhiteSpace(contentType)) return false;
         var norm = Normalize(contentType);
-        return norm == Post || norm == Article || norm == Video || norm == Podcast || norm == Community || norm == Job || norm == Document;
+        return norm == Post || norm == Article || norm == Video || norm == Podcast || norm == Community || norm == Job || norm == Document || norm == Profile || norm == Comment;
     }
 }
 
@@ -46,7 +50,7 @@ public static class ReactionTypes
     public static bool IsValid(string? reactionType)
     {
         if (string.IsNullOrWhiteSpace(reactionType)) return false;
-        return reactionType == Like || reactionType == Celebrate || reactionType == Support || reactionType == Heart;
+        return All.Any(a => a.Equals(reactionType, StringComparison.OrdinalIgnoreCase));
     }
 }
 
