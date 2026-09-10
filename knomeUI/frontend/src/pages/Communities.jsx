@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useUser } from '../components/contexts/UserContext';
+import { useUser, INITIAL_USERS } from '../components/contexts/UserContext';
 import { useToast } from '../components/contexts/ToastContext';
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import CreateCommunityModal from '../components/modals/CreateCommunityModal';
@@ -25,6 +25,7 @@ export default function Communities() {
     const [filterType, setFilterType] = useState('All');
     const [filterCategory, setFilterCategory] = useState('All');
     const [approvalSuccessMsg, setApprovalSuccessMsg] = useState('');
+    const [successPopup, setSuccessPopup] = useState(null);
 
     const isHRorAdmin = ['SYSADM', 'HRADM', 'CADM'].includes(currentUser?.role) || 
         ['System Administrator', 'HR Administrator', 'Community Administrator', 'HR Manager', 'System Admin'].includes(currentUser?.roleName) ||
@@ -89,6 +90,29 @@ export default function Communities() {
                 combinedList.push(...apiMapped);
             }
 
+            // Auto-promote any community created by Loveneesh or HR/Admin that might be in pending approvals
+            try {
+                const pending = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+                if (pending.length > 0) {
+                    const toAutoApprove = pending.filter(p => 
+                        (isHRorAdmin && (String(p.creatorUserId) === String(currentUser?.id) || (p.createdBy || '').toLowerCase().includes('loveneesh'))) ||
+                        p.status === 'Approved'
+                    );
+                    if (toAutoApprove.length > 0) {
+                        const remainingPending = pending.filter(p => !toAutoApprove.some(a => String(a.id) === String(p.id)));
+                        localStorage.setItem('knome_pending_community_approvals', JSON.stringify(remainingPending));
+                        const currentCustom = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+                        const updatedCustom = [
+                            ...toAutoApprove.map(c => ({ ...c, status: 'Approved', isApproved: true })),
+                            ...currentCustom.filter(c => !toAutoApprove.some(a => String(a.id) === String(c.id)))
+                        ];
+                        localStorage.setItem('knome_custom_communities', JSON.stringify(updatedCustom));
+                    }
+                }
+            } catch (e) {
+                console.warn('Pending community migration note:', e);
+            }
+
             // Merge Custom Created Communities
             const custom = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
             custom.forEach(c => {
@@ -99,6 +123,8 @@ export default function Communities() {
                     const imgs = getCommunityImages(c.name, c.category);
                     existingNames.add(cleanName);
                     existingIds.add(String(c.id));
+                    const userBanner = c.banner || c.bannerUrl || c.avatar || c.thumbnail;
+                    const userThumb = c.thumbnail || c.avatar || c.thumbnailUrl || c.banner;
                     combinedList.unshift({
                         id: c.id,
                         name: c.name,
@@ -107,13 +133,15 @@ export default function Communities() {
                         members: `${count} ${count === 1 ? 'member' : 'members'}`,
                         activity: 'New',
                         description: c.description || 'A new community created for MPOnline teams.',
-                        banner: resolveMediaUrl(c.banner) || imgs.banner,
-                        thumbnail: resolveMediaUrl(c.thumbnail) || imgs.thumbnail,
+                        banner: resolveMediaUrl(userBanner) || userBanner || imgs.banner,
+                        thumbnail: resolveMediaUrl(userThumb) || userThumb || imgs.thumbnail,
+                        avatar: resolveMediaUrl(userThumb) || userThumb || imgs.thumbnail,
                         membershipStatus: getStatus(c.id, null, c.type)
                     });
                 }
             });
 
+            // Display all communities without restrictive whitelist
             setCommunities(combinedList);
         } catch (err) {
             console.error('Failed to load communities:', err);
@@ -133,13 +161,23 @@ export default function Communities() {
 
         const handleApprovalRequested = () => {
             loadPendingApprovals();
+            loadCommunities();
         };
 
+        const handleCommunityUpdate = () => {
+            loadCommunities();
+            loadPendingApprovals();
+        };
+
+        window.addEventListener('community-created', handleCommunityUpdate);
+        window.addEventListener('community-joined-change', handleCommunityUpdate);
         window.addEventListener('community-approval-requested', handleApprovalRequested);
-        window.addEventListener('storage', loadPendingApprovals);
+        window.addEventListener('storage', handleApprovalRequested);
         return () => {
+            window.removeEventListener('community-created', handleCommunityUpdate);
+            window.removeEventListener('community-joined-change', handleCommunityUpdate);
             window.removeEventListener('community-approval-requested', handleApprovalRequested);
-            window.removeEventListener('storage', loadPendingApprovals);
+            window.removeEventListener('storage', handleApprovalRequested);
         };
     }, [isHRorAdmin]);
 
@@ -190,16 +228,68 @@ export default function Communities() {
         }
     };
 
+    const compressImage = (file, maxWidth = 1200, maxHeight = 600, quality = 0.85) => {
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    let width = img.width;
+                    let height = img.height;
+                    if (width > maxWidth) {
+                        height = Math.round((height * maxWidth) / width);
+                        width = maxWidth;
+                    }
+                    if (height > maxHeight) {
+                        width = Math.round((width * maxHeight) / height);
+                        height = maxHeight;
+                    }
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    resolve(canvas.toDataURL('image/jpeg', quality));
+                };
+                img.onerror = () => resolve(e.target.result);
+                img.src = e.target.result;
+            };
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(file);
+        });
+    };
+
+    const handleQuickPhotoChange = async (e, communityId) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const compressed = await compressImage(file, 1200, 500, 0.85);
+        if (!compressed) return;
+
+        // 1. Update localStorage
+        const customList = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+        const updated = customList.map(c => {
+            if (String(c.id) === String(communityId)) {
+                return { ...c, banner: compressed, bannerUrl: compressed, thumbnail: compressed, avatar: compressed };
+            }
+            return c;
+        });
+        localStorage.setItem('knome_custom_communities', JSON.stringify(updated));
+
+        // 2. Update local state
+        setCommunities(prev => prev.map(c => {
+            if (String(c.id) === String(communityId)) {
+                return { ...c, banner: compressed, thumbnail: compressed, avatar: compressed };
+            }
+            return c;
+        }));
+
+        window.dispatchEvent(new CustomEvent('community-joined-change'));
+        if (addToast) addToast('Community photo updated successfully!', 'success');
+    };
+
     // ── HR APPROVAL HANDLERS ────────────────────────────────────
     const handleApproveCommunity = (e, comm) => {
         e.stopPropagation();
-        const approvedComm = {
-            ...comm,
-            status: 'Approved',
-            isApproved: true,
-            approvedBy: currentUser?.name || 'HR Administrator',
-            approvedAt: new Date().toISOString()
-        };
 
         // 1. Remove from pending approvals
         const currentPending = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
@@ -207,12 +297,7 @@ export default function Communities() {
         localStorage.setItem('knome_pending_community_approvals', JSON.stringify(updatedPending));
         setPendingApprovals(updatedPending);
 
-        // 2. Add to active custom communities
-        const customList = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
-        const updatedCustom = [approvedComm, ...customList.filter(c => String(c.id) !== String(comm.id))];
-        localStorage.setItem('knome_custom_communities', JSON.stringify(updatedCustom));
-
-        // 3. Auto-join creator as admin
+        // 2. Auto-join creator as admin
         const creatorKey = `knome_joined_communities_${comm.creatorUserId || 'guest'}`;
         const creatorJoined = JSON.parse(localStorage.getItem(creatorKey) || '[]');
         localStorage.setItem(creatorKey, JSON.stringify([
@@ -220,17 +305,66 @@ export default function Communities() {
             ...creatorJoined.filter(c => String(c.id) !== String(comm.id))
         ]));
 
-        // 4. Create community members list with creator as Admin
+        // 3. Create community members list with creator as Admin + selected invited users ONLY
         const creatorMember = {
             userId: comm.creatorUserId || 1,
-            fullName: comm.creatorName || 'Employee',
+            fullName: comm.creatorName || comm.createdBy || 'Employee',
             employeeId: comm.creatorEmployeeId || 'MPO100',
             designation: 'Community Creator / Admin',
             memberType: 'Admin',
             status: 'Approved',
-            profilePhotoUrl: comm.creatorAvatar
+            profilePhotoUrl: comm.creatorAvatar || null
         };
         const memberList = [creatorMember];
+
+        const allUsersPool = [...(users || []), ...(INITIAL_USERS || [])];
+        try {
+            const customUsers = JSON.parse(localStorage.getItem('knome_custom_users') || '[]');
+            if (Array.isArray(customUsers)) allUsersPool.push(...customUsers);
+        } catch (err) {}
+
+        if (Array.isArray(comm.invitedUserIds) && comm.invitedUserIds.length > 0) {
+            comm.invitedUserIds.forEach(tId => {
+                const targetUserObj = allUsersPool.find(u => String(u.id || u.userId) === String(tId));
+                if (targetUserObj) {
+                    memberList.push({
+                        userId: targetUserObj.id || targetUserObj.userId,
+                        fullName: targetUserObj.name || targetUserObj.fullName,
+                        employeeId: targetUserObj.employeeId || `MPO${tId}`,
+                        designation: targetUserObj.designation || 'Member',
+                        memberType: 'Member',
+                        status: 'Approved',
+                        profilePhotoUrl: targetUserObj.avatar || null
+                    });
+
+                    // Auto-join to target user's joined community list
+                    try {
+                        const targetUserKey = `knome_joined_communities_${targetUserObj.id || targetUserObj.userId}`;
+                        const targetUserJoined = JSON.parse(localStorage.getItem(targetUserKey) || '[]');
+                        localStorage.setItem(targetUserKey, JSON.stringify([
+                            { id: comm.id, name: comm.name, status: 'joined', joinedAt: new Date().toISOString() },
+                            ...targetUserJoined.filter(c => String(c.id) !== String(comm.id))
+                        ]));
+                    } catch (err) {}
+                }
+            });
+        }
+
+        localStorage.setItem(`knome_community_members_${comm.id}`, JSON.stringify(memberList));
+
+        const approvedComm = {
+            ...comm,
+            status: 'Approved',
+            isApproved: true,
+            approvedBy: currentUser?.name || 'HR Administrator',
+            approvedAt: new Date().toISOString(),
+            members: `${memberList.length} ${memberList.length === 1 ? 'member' : 'members'}`
+        };
+
+        // 4. Add to active custom communities
+        const customList = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+        const updatedCustom = [approvedComm, ...customList.filter(c => String(c.id) !== String(comm.id))];
+        localStorage.setItem('knome_custom_communities', JSON.stringify(updatedCustom));
 
         // 5. Send approval celebration notification to the employee creator
         const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
@@ -246,7 +380,9 @@ export default function Communities() {
             message: `🎉 Great news! Your community "${comm.name}" has been approved by HR Administrator (${currentUser?.name || 'HR Admin'}) and is now live!`,
             senderName: currentUser?.name || 'HR Administrator',
             senderAvatar: currentUser?.avatar || null,
-            time: 'Just now',
+            senderUserId: currentUser?.userId || currentUser?.id,
+            createdDate: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
             unread: true,
             communityName: comm.name,
             communityId: comm.id,
@@ -262,10 +398,12 @@ export default function Communities() {
             icon: 'group_add',
             color: 'text-indigo-400',
             bg: 'bg-indigo-500/10',
-            text: `${comm.creatorName || 'An employee'} invited you to join the approved community "${comm.name}".`,
-            senderName: comm.creatorName || 'An employee',
+            text: `${comm.creatorName || comm.createdBy || 'An employee'} invited you to join the approved community "${comm.name}".`,
+            senderName: comm.creatorName || comm.createdBy || 'An employee',
             senderAvatar: comm.creatorAvatar || null,
-            time: 'Just now',
+            senderUserId: comm.creatorUserId,
+            createdDate: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
             unread: true,
             communityName: comm.name,
             communityId: comm.id,
@@ -321,7 +459,9 @@ export default function Communities() {
             message: `❌ Your community creation request for "${comm.name}" was not approved by HR Administrator (${currentUser?.name || 'HR Admin'}).`,
             senderName: currentUser?.name || 'HR Administrator',
             senderAvatar: currentUser?.avatar || null,
-            time: 'Just now',
+            senderUserId: currentUser?.userId || currentUser?.id,
+            createdDate: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
             unread: true,
             communityName: comm.name,
             communityId: comm.id
@@ -358,9 +498,17 @@ export default function Communities() {
         } : c));
     };
 
-    const handleCommunityCreated = () => {
+    const handleCommunityCreated = (result) => {
         loadCommunities();
         loadPendingApprovals();
+        if (result && result.type) {
+            setSuccessPopup(result);
+            if (result.type === 'created') {
+                addToast('Community successfully created!', 'success');
+            } else if (result.type === 'approval') {
+                addToast('Community request sent for approval!', 'info');
+            }
+        }
     };
 
     // Filter communities based on activeTab + search + type + category (FR-CM-09)
@@ -714,7 +862,7 @@ export default function Communities() {
                                 <div key={community.id} onClick={() => navigate(`/community/view?id=${community.id}`)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer group flex flex-col h-full">
                                     <div className="h-32 relative overflow-hidden bg-slate-200 dark:bg-slate-800">
                                         <img 
-                                            src={community.banner || getCommunityImages(community.name, community.category).banner} 
+                                            src={community.banner || community.thumbnail || community.avatar || getCommunityImages(community.name, community.category).banner} 
                                             alt={community.name} 
                                             onError={(e) => {
                                                 e.currentTarget.onerror = null;
@@ -722,15 +870,39 @@ export default function Communities() {
                                             }}
                                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
                                         />
-                                        <div className="absolute inset-0 bg-slate-900/10"></div>
+                                        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent"></div>
+                                        {(community.thumbnail || community.avatar) && (
+                                            <div className="absolute bottom-2 left-3 w-9 h-9 rounded-xl overflow-hidden border-2 border-white dark:border-slate-900 shadow-md bg-white shrink-0 z-10">
+                                                <img 
+                                                    src={community.thumbnail || community.avatar} 
+                                                    alt={community.name} 
+                                                    onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                                    className="w-full h-full object-cover" 
+                                                />
+                                            </div>
+                                        )}
                                         {isSysAdmin && (
-                                            <button 
-                                                onClick={(e) => handleDeleteCommunityCard(e, community)}
-                                                className="absolute top-3 left-3 w-8 h-8 rounded-full bg-red-600/90 hover:bg-red-600 text-white flex items-center justify-center shadow-lg backdrop-blur-md transition-all hover:scale-110 z-10 cursor-pointer"
-                                                title="Remove Community (System Admin)"
-                                            >
-                                                <span className="material-symbols-outlined text-[18px]">delete</span>
-                                            </button>
+                                            <div className="absolute top-3 left-3 flex items-center gap-1.5 z-10" onClick={(e) => e.stopPropagation()}>
+                                                <button 
+                                                    onClick={(e) => handleDeleteCommunityCard(e, community)}
+                                                    className="w-8 h-8 rounded-full bg-red-600/90 hover:bg-red-600 text-white flex items-center justify-center shadow-lg backdrop-blur-md transition-all hover:scale-110 cursor-pointer"
+                                                    title="Remove Community"
+                                                >
+                                                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                                                </button>
+                                                <label 
+                                                    className="w-8 h-8 rounded-full bg-slate-900/80 hover:bg-indigo-600 text-white flex items-center justify-center shadow-lg backdrop-blur-md transition-all hover:scale-110 cursor-pointer"
+                                                    title="Change Photo / Banner"
+                                                >
+                                                    <span className="material-symbols-outlined text-[16px]">photo_camera</span>
+                                                    <input 
+                                                        type="file" 
+                                                        accept="image/*" 
+                                                        className="hidden" 
+                                                        onChange={(e) => handleQuickPhotoChange(e, community.id)} 
+                                                    />
+                                                </label>
+                                            </div>
                                         )}
                                         <div className="absolute top-3 right-3">
                                             <span className={`px-2.5 py-1 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-wider border shadow-sm ${
@@ -816,6 +988,146 @@ export default function Communities() {
                 onCommunityCreated={handleCommunityCreated}
                 existingCommunities={communities}
             />
+
+            {/* Pop-up modal after community creation or approval submission */}
+            {successPopup && (
+                <div className="fixed inset-0 z-[120] p-4 sm:p-6 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="fixed inset-0" onClick={() => setSuccessPopup(null)}></div>
+                    
+                    <div className="relative bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-y-auto custom-scrollbar p-6 sm:p-7 border border-slate-200 dark:border-slate-800 text-center z-10 animate-in zoom-in-95 duration-200">
+                        <button 
+                            onClick={() => setSuccessPopup(null)}
+                            className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                        >
+                            <span className="material-symbols-outlined text-[20px]">close</span>
+                        </button>
+
+                        {successPopup.type === 'created' ? (
+                            <div className="flex flex-col items-center">
+                                <div className="w-16 h-16 rounded-3xl bg-emerald-100 dark:bg-emerald-950/50 text-emerald-500 flex items-center justify-center mb-4 shadow-lg shadow-emerald-500/10 ring-8 ring-emerald-50 dark:ring-emerald-950/30">
+                                    <span className="material-symbols-outlined text-[36px]">check_circle</span>
+                                </div>
+
+                                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-black uppercase tracking-wider mb-2">
+                                    ✨ Live & Active
+                                </div>
+
+                                <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-2">
+                                    Community Successfully Created!
+                                </h3>
+
+                                <p className="text-sm text-slate-600 dark:text-slate-300 max-w-sm mb-5 leading-relaxed">
+                                    <strong className="text-indigo-600 dark:text-indigo-400 font-extrabold">"{successPopup.communityName}"</strong> has been created and is now live across MPOnline Knome.
+                                </p>
+
+                                {successPopup.link && (
+                                    <div className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl p-3.5 mb-5 text-left">
+                                        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                                            🔗 Shareable Community Link
+                                        </label>
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="text" 
+                                                readOnly 
+                                                value={successPopup.link} 
+                                                className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 dark:text-slate-200 outline-none select-all"
+                                            />
+                                            <button 
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(successPopup.link);
+                                                    addToast('Invite link copied to clipboard!', 'success');
+                                                }}
+                                                className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl font-bold text-xs flex items-center gap-1 shrink-0 transition-colors shadow-sm cursor-pointer"
+                                            >
+                                                <span className="material-symbols-outlined text-[15px]">content_copy</span>
+                                                <span>Copy</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="flex items-center gap-3 w-full">
+                                    {successPopup.communityId && (
+                                        <button
+                                            onClick={() => {
+                                                const targetId = successPopup.communityId;
+                                                setSuccessPopup(null);
+                                                navigate(`/community/view?id=${targetId}`);
+                                            }}
+                                            className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold rounded-xl text-sm transition-colors cursor-pointer"
+                                        >
+                                            Visit Community
+                                        </button>
+                                    )}
+                                    <button 
+                                        onClick={() => setSuccessPopup(null)}
+                                        className="flex-1 py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl text-sm transition-colors shadow-md shadow-indigo-500/20 cursor-pointer"
+                                    >
+                                        Done
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center">
+                                <div className="w-16 h-16 rounded-3xl bg-amber-100 dark:bg-amber-950/50 text-amber-500 flex items-center justify-center mb-4 shadow-lg shadow-amber-500/10 ring-8 ring-amber-50 dark:ring-amber-950/30">
+                                    <span className="material-symbols-outlined text-[36px] animate-pulse">hourglass_top</span>
+                                </div>
+
+                                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-xs font-black uppercase tracking-wider mb-2">
+                                    ⏳ Awaiting HR Approval
+                                </div>
+
+                                <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-2">
+                                    Community Request Sent for Approval!
+                                </h3>
+
+                                <p className="text-sm text-slate-600 dark:text-slate-300 max-w-sm mb-5 leading-relaxed">
+                                    Your request to create <strong className="text-amber-600 dark:text-amber-400 font-extrabold">"{successPopup.communityName}"</strong> has been successfully sent to the <strong>HR Administrator</strong> for review.
+                                </p>
+
+                                <div className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 mb-5 text-left space-y-2 text-xs">
+                                    <div className="flex justify-between">
+                                        <span className="text-slate-400">Community Name:</span>
+                                        <span className="font-bold text-slate-800 dark:text-slate-200">{successPopup.communityName}</span>
+                                    </div>
+                                    {successPopup.category && (
+                                        <div className="flex justify-between">
+                                            <span className="text-slate-400">Category:</span>
+                                            <span className="font-bold text-indigo-500">{successPopup.category}</span>
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between">
+                                        <span className="text-slate-400">Status:</span>
+                                        <span className="font-bold text-amber-500">Pending HR Approval</span>
+                                    </div>
+                                </div>
+
+                                <p className="text-[11px] text-slate-400 dark:text-slate-500 mb-5">
+                                    🔔 You will receive a notification as soon as the HR Administrator approves your request.
+                                </p>
+
+                                <div className="flex items-center gap-3 w-full">
+                                    <button
+                                        onClick={() => {
+                                            setSuccessPopup(null);
+                                            setActiveTab('My Communities');
+                                        }}
+                                        className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold rounded-xl text-sm transition-colors cursor-pointer"
+                                    >
+                                        View My Communities
+                                    </button>
+                                    <button 
+                                        onClick={() => setSuccessPopup(null)}
+                                        className="flex-1 py-3 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-sm transition-colors shadow-md shadow-amber-600/20 cursor-pointer"
+                                    >
+                                        Done
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </>
     );
 }

@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import { apiClient } from '../utils/apiClient';
-import { communitiesApi, mediaApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages } from '../utils/apiService';
+import { communitiesApi, mediaApi, postsApi, notificationsApi, interactionsApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages } from '../utils/apiService';
 import { checkRestrictedContent } from '../utils/restrictedWords';
 
 const ENTERPRISE_CHANNELS_SEED = {
@@ -253,26 +253,49 @@ export default function CommunityView() {
         setIsSharingProcess(true);
         try {
             const targetCommId = shareTargetCommunity;
+            const targetCommIdNum = parseInt(targetCommId);
             const savedPostsKey = `knome_community_posts_${targetCommId}`;
             const existingTargetPosts = JSON.parse(localStorage.getItem(savedPostsKey) || '[]');
             
             // Find target community name for better UX
             const targetComm = allCommunities.find(c => String(c.id) === String(targetCommId));
             const targetCommName = targetComm?.name || `Community #${targetCommId}`;
+            const originUrl = `${window.location.origin}/community/view?id=${communityId || 101}`;
+
+            // 1. Record backend share interaction
+            try {
+                await interactionsApi.shareContent('Community', communityId || 101, 'Community', targetCommIdNum);
+            } catch (_) {}
+
+            // 2. Persist post to SQL Server database
+            try {
+                await postsApi.create({
+                    contentText: `Shared Community: "${community?.name}"\n${originUrl}`,
+                    audienceType: 'Community',
+                    audienceCommunityIds: [targetCommIdNum]
+                });
+            } catch (err) {
+                console.warn('Backend post creation notice:', err);
+            }
 
             const crosspost = {
-                id: `share_${Date.now()}`,
+                id: `share_comm_${Date.now()}`,
                 type: 'community_share',
-                authorName: currentUser?.name || 'Sourabh Sahu',
+                author: currentUser?.name || currentUser?.fullName || 'Employee',
+                authorName: currentUser?.name || currentUser?.fullName || 'Employee',
                 authorRole: currentUser?.roleName || 'Member',
-                authorAvatar: currentUser?.avatar || null,
+                authorAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
+                avatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
+                time: 'Just now',
                 timeAgo: 'Just now',
                 sharedAt: new Date().toISOString(),
+                publishedDate: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
                 title: `Community Recommendation: ${community?.name}`,
-                content: shareMessageNote || `Check out the "${community?.name}" community!`,
+                content: shareMessageNote ? `${shareMessageNote}\n\nShared Community: "${community?.name}"\n${originUrl}` : `Check out the "${community?.name}" community!\n${originUrl}`,
                 // Shared community metadata for the preview card
                 sharedCommunity: {
-                    id: communityId,
+                    id: communityId || 101,
                     name: community?.name,
                     description: community?.description,
                     banner: community?.banner,
@@ -280,16 +303,31 @@ export default function CommunityView() {
                     membersCount: community?.membersCount || membersList.length,
                     category: community?.category || 'Technology',
                     type: community?.type || 'Public',
-                    url: window.location.href
+                    url: originUrl
                 },
+                communityId: targetCommIdNum,
+                communityName: targetCommName,
                 likes: 0,
                 comments: 0,
+                shares: 0,
                 isPinned: false
             };
 
+            // Save to target community feed
             localStorage.setItem(savedPostsKey, JSON.stringify([crosspost, ...existingTargetPosts]));
-            // Dispatch storage event so if that community page is open it auto-refreshes
+            
+            // Also add to global posts cache
+            try {
+                const globalPosts = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
+                localStorage.setItem('knome_local_posts', JSON.stringify([crosspost, ...globalPosts]));
+            } catch (_) {}
+
+            // Dispatch storage and custom events for instant feed update across views
             window.dispatchEvent(new StorageEvent('storage', { key: savedPostsKey }));
+            window.dispatchEvent(new CustomEvent('community-posts-updated', { detail: { communityId: targetCommId, post: crosspost } }));
+            window.dispatchEvent(new CustomEvent('community-post-created', { detail: { communityId: targetCommId, post: crosspost } }));
+            window.dispatchEvent(new CustomEvent('post-created'));
+
             setIsSharingProcess(false);
             setIsShareModalOpen(false);
             setShareTab('menu');
@@ -314,27 +352,65 @@ export default function CommunityView() {
             const targetCommId = community?.id || communityId || 101;
             const targetCommName = community?.name || 'Community';
             const targetLink = `/community/view?id=${targetCommId}`;
+            const notifMsg = `📢 ${currentUser?.name || currentUser?.fullName || 'A team member'} shared community "${targetCommName}" with you: "${shareMessageNote || 'Check out this community!'}"`;
 
-            const savedNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
-            const newNotifs = shareSelectedUsers.map(uId => ({
-                id: Date.now() + Math.floor(Math.random() * 1000),
-                targetUserId: uId,
-                type: 'community_shared',
-                communityId: targetCommId,
-                communityName: targetCommName,
-                actionLink: targetLink,
-                linkUrl: targetLink,
-                text: `📢 ${currentUser?.name || 'A team member'} shared community "${targetCommName}" with you: "${shareMessageNote || 'Check out this community!'}"`,
-                senderName: currentUser?.name || 'Team Member',
-                senderAvatar: currentUser?.avatar || null,
-                time: 'Just now',
-                unread: true,
-                icon: 'groups',
-                color: 'text-indigo-400',
-                bg: 'bg-indigo-500/10'
+            // 1. Backend interactions and notifications
+            await Promise.all(shareSelectedUsers.map(async (uId) => {
+                try {
+                    await interactionsApi.shareContent('Community', targetCommId, 'User', uId);
+                } catch (_) {}
+                try {
+                    await notificationsApi.create({
+                        recipientUserId: uId,
+                        notificationType: 'Share',
+                        message: notifMsg,
+                        relatedContentType: 'Community',
+                        referenceId: targetCommId
+                    });
+                } catch (_) {}
             }));
 
+            // 2. Build local notifications for immediate bell/dropdown update with recipient isolation
+            const savedNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+            const newNotifs = shareSelectedUsers.map(uId => {
+                const uObj = (contextUsers || []).find(u => String(u.id || u.userId) === String(uId));
+                return {
+                    id: `notif_comm_share_${Date.now()}_${uId}_${Math.random().toString(36).slice(2, 6)}`,
+                    targetUserId: uId,
+                    targetEmployeeId: uObj?.employeeId,
+                    recipientUserId: uId,
+                    employeeId: uObj?.employeeId,
+                    type: 'community_shared',
+                    category: 'Community',
+                    communityId: targetCommId,
+                    communityName: targetCommName,
+                    actionLink: targetLink,
+                    linkUrl: targetLink,
+                    targetUrl: targetLink,
+                    text: notifMsg,
+                    message: notifMsg,
+                    senderName: currentUser?.name || currentUser?.fullName || 'Team Member',
+                    senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
+                    senderUserId: currentUser?.userId || currentUser?.id,
+                    createdDate: new Date().toISOString(),
+                    createdAt: new Date().toISOString(),
+                    unread: true,
+                    icon: 'groups',
+                    color: 'text-indigo-400',
+                    bg: 'bg-indigo-500/10'
+                };
+            });
+
             localStorage.setItem('knome_notifications', JSON.stringify([...newNotifs, ...savedNotifs]));
+            
+            // 3. Dispatch notification events
+            window.dispatchEvent(new StorageEvent('storage', { key: 'knome_notifications' }));
+            window.dispatchEvent(new CustomEvent('notification-updated'));
+            window.dispatchEvent(new CustomEvent('knome_new_notification'));
+            newNotifs.forEach(n => {
+                window.dispatchEvent(new CustomEvent('knome_notification_received', { detail: n }));
+            });
+
             setIsSharingProcess(false);
             setIsShareModalOpen(false);
             setShareTab('menu');
@@ -393,24 +469,30 @@ export default function CommunityView() {
     };
 
     // IndexedDB helper for storing large user uploaded files cleanly without LocalStorage limits
-    const saveFileBlobToIndexedDb = async (fileId, fileDataUrl) => {
-        if (!fileId || !fileDataUrl) return;
-        try {
-            const request = indexedDB.open('KnomeCommunityFilesDB', 1);
-            request.onupgradeneeded = (e) => {
-                const db = e.target.result;
-                if (!db.objectStoreNames.contains('files')) {
-                    db.createObjectStore('files');
-                }
-            };
-            request.onsuccess = (e) => {
-                const db = e.target.result;
-                const tx = db.transaction('files', 'readwrite');
-                tx.objectStore('files').put(fileDataUrl, String(fileId));
-            };
-        } catch (err) {
-            console.warn('IndexedDB file save warning:', err);
-        }
+    const saveFileBlobToIndexedDb = (fileId, fileDataUrl) => {
+        return new Promise((resolve) => {
+            if (!fileId || !fileDataUrl) return resolve(false);
+            try {
+                const request = indexedDB.open('KnomeCommunityFilesDB', 1);
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains('files')) {
+                        db.createObjectStore('files');
+                    }
+                };
+                request.onsuccess = (e) => {
+                    const db = e.target.result;
+                    const tx = db.transaction('files', 'readwrite');
+                    tx.objectStore('files').put(fileDataUrl, String(fileId));
+                    tx.oncomplete = () => resolve(true);
+                    tx.onerror = () => resolve(false);
+                };
+                request.onerror = () => resolve(false);
+            } catch (err) {
+                console.warn('IndexedDB file save warning:', err);
+                resolve(false);
+            }
+        });
     };
 
     const getFileBlobFromIndexedDb = (fileId) => {
@@ -521,13 +603,23 @@ export default function CommunityView() {
                 ? `${(rawSizeBytes / 1048576).toFixed(1)} MB` 
                 : `${Math.round(rawSizeBytes / 1024)} KB`;
 
+            let backendFileUrl = null;
+            if (selectedUploadFile instanceof File) {
+                try {
+                    const uploadResult = await mediaApi.uploadFile(selectedUploadFile, 'doc');
+                    backendFileUrl = uploadResult.fileUrl || uploadResult.url;
+                } catch (upErr) {
+                    console.warn('Backend file upload fallback to local:', upErr);
+                }
+            }
+
             let fileDataUrl = null;
-            if (selectedUploadFile) {
+            if (selectedUploadFile && !backendFileUrl) {
                 fileDataUrl = await readFileAsDataUrl(selectedUploadFile);
             }
 
             const fileId = Date.now();
-            const finalUrl = fileDataUrl || (fileExt === 'pdf' ? SAMPLE_PDF_DATA_URL : '#');
+            const finalUrl = backendFileUrl ? resolveMediaUrl(backendFileUrl) : (fileDataUrl || (fileExt === 'pdf' ? SAMPLE_PDF_DATA_URL : '#'));
 
             // Save full exact user uploaded file URL to IndexedDB!
             await saveFileBlobToIndexedDb(fileId, finalUrl);
@@ -543,7 +635,7 @@ export default function CommunityView() {
                 category: fileCategory,
                 extension: fileExt,
                 size: formattedSize,
-                uploadedBy: currentUser?.name || 'Sourabh Sahu',
+                uploadedBy: currentUser?.name || currentUser?.fullName || 'Member',
                 uploadedAt: new Date().toISOString(),
                 url: finalUrl, // Keep exact URL in memory state
                 hasIndexedDb: true,
@@ -556,7 +648,7 @@ export default function CommunityView() {
             // Save sanitized payload for LocalStorage metadata list
             const localStorageItem = { ...newFileItem, url: storedUrlForLocalStorage };
             const updatedFilesMemory = [newFileItem, ...filesList];
-            const updatedFilesStorage = [localStorageItem, ...filesList.map(f => ({ ...f, url: f.url?.length > 50000 ? SAMPLE_PDF_DATA_URL : f.url }))];
+            const updatedFilesStorage = [localStorageItem, ...filesList.map(f => ({ ...f, url: (f.url && f.url.length > 50000 && f.url.startsWith('data:')) ? (f.extension === 'pdf' ? SAMPLE_PDF_DATA_URL : '#') : f.url }))];
             
             setFilesList(updatedFilesMemory);
             safeSetStorage(savedFilesKey, updatedFilesStorage);
@@ -613,6 +705,9 @@ export default function CommunityView() {
             
             if (commData) {
                 const imgs = getCommunityImages(commData.name, commData.categoryName);
+                const customComms = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+                const localMatch = customComms.find(c => String(c.id) === String(commData.communityId) || (c.name && c.name.toLowerCase() === commData.name?.toLowerCase()));
+
                 setCommunity({
                     id: commData.communityId,
                     name: commData.name,
@@ -620,8 +715,8 @@ export default function CommunityView() {
                     category: commData.categoryName || 'Technology',
                     membersCount: commData.membersCount || 1,
                     adminContact: commData.createdByUserName || 'Admin',
-                    banner: resolveMediaUrl(commData.bannerUrl || commData.bannerImageUrl) || imgs.banner,
-                    thumbnail: resolveMediaUrl(commData.thumbnailUrl) || imgs.thumbnail,
+                    banner: localMatch?.banner || localMatch?.bannerUrl || resolveMediaUrl(commData.bannerUrl || commData.bannerImageUrl) || imgs.banner,
+                    thumbnail: localMatch?.thumbnail || localMatch?.avatar || localMatch?.thumbnailUrl || resolveMediaUrl(commData.thumbnailUrl) || imgs.thumbnail,
                     description: commData.description || 'Community for MPOnline team members.',
                     rules: commData.rules ? (Array.isArray(commData.rules) ? commData.rules : commData.rules.split('\n')) : ['1. Be respectful and constructive.', '2. Keep discussions relevant.', '3. Follow company guidelines.'],
                     faq: (() => {
@@ -669,14 +764,18 @@ export default function CommunityView() {
                 // Resolve Persistent Members for this Community (FR-CM-06)
                 const savedMembersKey = `knome_community_members_${commData.communityId}`;
                 const localMembersApi = JSON.parse(localStorage.getItem(savedMembersKey) || '[]');
-                let resolvedMembers = Array.isArray(rawMembers) && rawMembers.length > 0 ? rawMembers : (localMembersApi.length > 0 ? localMembersApi : [
-                    { userId: 1, fullName: 'Loveneesh Sharma', employeeId: 'MPO101', designation: 'IT Operations Manager', memberType: 'Admin', status: 'Approved' },
-                    { userId: 2, fullName: 'Vishendra Sharma', employeeId: 'MPO102', designation: 'Community Experience Specialist', memberType: 'Admin', status: 'Approved' },
-                    { userId: 3, fullName: 'Sourabh Sahu', employeeId: 'MPO103', designation: 'Talent Acquisition Manager', memberType: 'Moderator', status: 'Approved' },
-                    { userId: 4, fullName: 'Mayur Verma', employeeId: 'MPO104', designation: 'Senior Software Engineer', memberType: 'Member', status: 'Approved' },
-                    { userId: 5, fullName: 'Meghna Tiwari', employeeId: 'MPO105', designation: 'Product Designer', memberType: 'Member', status: 'Approved' },
-                    { userId: 6, fullName: 'Rishikesh Ugle', employeeId: 'MPO106', designation: 'Software Engineer', memberType: 'Member', status: 'Approved' },
-                ]);
+                const defaultCreator = {
+                    userId: commData.creatorUserId || 1,
+                    fullName: commData.createdBy || 'Community Creator',
+                    employeeId: commData.creatorEmployeeId || 'MPO100',
+                    designation: 'Community Admin',
+                    memberType: 'Admin',
+                    status: 'Approved',
+                    profilePhotoUrl: commData.creatorAvatar || null
+                };
+                let resolvedMembers = Array.isArray(rawMembers) && rawMembers.length > 0 
+                    ? rawMembers 
+                    : (localMembersApi.length > 0 ? localMembersApi : [defaultCreator]);
 
                 const userJoinedList = JSON.parse(localStorage.getItem(`knome_joined_communities_${currentUser?.id || 'guest'}`) || '[]');
                 const localEntry = userJoinedList.find(c => String(c.id) === String(commData.communityId));
@@ -735,30 +834,6 @@ export default function CommunityView() {
                 setSubscribersList(savedSubs);
                 const savedSuspended = JSON.parse(localStorage.getItem(`knome_community_suspended_${commData.communityId}`) || '[]');
                 setSuspendedMembers(savedSuspended);
-
-                // Load persistent Files & Media for this community
-                const savedFilesKey2 = `knome_community_files_${commData.communityId}`;
-                const localFiles = JSON.parse(localStorage.getItem(savedFilesKey2) || '[]');
-                const sanitizedFiles = localFiles.map(f => {
-                    if (f.extension === 'pdf' && (!f.url || f.url === '#' || f.url.includes('w3.org') || f.url.includes('localhost') || f.url.startsWith('blob:'))) {
-                        return { ...f, url: SAMPLE_PDF_DATA_URL };
-                    }
-                    return f;
-                });
-
-                if (sanitizedFiles.length > 0) {
-                    setFilesList(sanitizedFiles);
-                    localStorage.setItem(savedFilesKey2, JSON.stringify(sanitizedFiles));
-                } else {
-                    const seedFiles = [
-                        { id: 1, name: 'System_Architecture_Overview.pdf', category: 'Document', extension: 'pdf', size: '3.4 MB', uploadedBy: 'Loveneesh Sharma', uploadedAt: '2026-07-25T10:30:00.000Z', url: SAMPLE_PDF_DATA_URL, downloadCount: 14 },
-                        { id: 2, name: 'API_Integration_Guild_v2.docx', category: 'Document', extension: 'docx', size: '1.2 MB', uploadedBy: 'Vishendra Sharma', uploadedAt: '2026-07-26T14:15:00.000Z', url: 'https://filesamples.com/samples/document/docx/sample3.docx', downloadCount: 9 },
-                        { id: 3, name: 'Database_Schema_Architecture.png', category: 'Image', extension: 'png', size: '850 KB', uploadedBy: 'Sourabh Sahu', uploadedAt: '2026-07-27T09:45:00.000Z', url: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=1200&h=800', downloadCount: 22 },
-                        { id: 4, name: 'Frontend_Boilerplate_Assets.zip', category: 'Archive', extension: 'zip', size: '14.8 MB', uploadedBy: 'Rishikesh Ugle', uploadedAt: '2026-07-28T08:00:00.000Z', url: '#', downloadCount: 7 }
-                    ];
-                    setFilesList(seedFiles);
-                    localStorage.setItem(savedFilesKey2, JSON.stringify(seedFiles));
-                }
             } else {
                 // Fallback check custom created communities or seeds
                 const customList = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
@@ -768,15 +843,17 @@ export default function CommunityView() {
                 const savedMembersKey = `knome_community_members_${targetId}`;
                 const localMembers = JSON.parse(localStorage.getItem(savedMembersKey) || '[]');
 
-                const creatorName = found?.createdBy || 'Rishikesh Ugle (Community Admin)';
-                let resolvedMembers = localMembers.length > 0 ? localMembers : [
-                    { userId: 1, fullName: 'Loveneesh Sharma', employeeId: 'MPO101', designation: 'IT Operations Manager', memberType: 'Admin', status: 'Approved' },
-                    { userId: 2, fullName: 'Vishendra Sharma', employeeId: 'MPO102', designation: 'Community Experience Specialist', memberType: 'Admin', status: 'Approved' },
-                    { userId: 3, fullName: 'Sourabh Sahu', employeeId: 'MPO103', designation: 'Talent Acquisition Manager', memberType: 'Moderator', status: 'Approved' },
-                    { userId: 4, fullName: 'Mayur Verma', employeeId: 'MPO104', designation: 'Senior Software Engineer', memberType: 'Member', status: 'Approved' },
-                    { userId: 5, fullName: 'Meghna Tiwari', employeeId: 'MPO105', designation: 'Product Designer', memberType: 'Member', status: 'Approved' },
-                    { userId: 6, fullName: 'Rishikesh Ugle', employeeId: 'MPO106', designation: 'Software Engineer', memberType: 'Member', status: 'Approved' },
-                ];
+                const creatorName = found?.createdBy || 'Community Creator';
+                const defaultCreator = {
+                    userId: found?.creatorUserId || 1,
+                    fullName: creatorName,
+                    employeeId: found?.creatorEmployeeId || 'MPO100',
+                    designation: 'Community Admin',
+                    memberType: 'Admin',
+                    status: 'Approved',
+                    profilePhotoUrl: found?.creatorAvatar || found?.avatar || null
+                };
+                let resolvedMembers = localMembers.length > 0 ? localMembers : [defaultCreator];
 
                 // Check if current user explicitly joined, created the community, or is in resolved members
                 const userJoinedList = JSON.parse(localStorage.getItem(`knome_joined_communities_${currentUser?.id || 'guest'}`) || '[]');
@@ -817,11 +894,11 @@ export default function CommunityView() {
                         id: found.id,
                         name: found.name,
                         type: found.type || 'Public',
-                        category: 'Technology',
+                        category: found.category || 'Technology',
                         membersCount: resolvedMembers.length,
                         adminContact: creatorName,
-                        banner: found.banner || 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200&h=400',
-                        thumbnail: found.avatar || 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=200&h=200',
+                        banner: found.banner || found.bannerUrl || found.thumbnail || found.avatar || 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200&h=400',
+                        thumbnail: found.thumbnail || found.avatar || found.thumbnailUrl || found.banner || 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=200&h=200',
                         description: found.description || 'A community for collaboration.',
                         rules: ['1. Be respectful.', '2. Share knowledge.', '3. Follow company policy.'],
                         faq: [{ q: 'Purpose?', a: 'Knowledge sharing & teamwork.' }]
@@ -868,23 +945,99 @@ export default function CommunityView() {
                 }
             }
 
-            const resolvedTargetId = communityId || 101;
+            const resolvedTargetId = communityId || community?.id || 101;
+
+            // ─────────────────────────────────────────
+            // Unified Persistent Files & Media Loading (All Communities)
+            // ─────────────────────────────────────────
+            const savedFilesKey = `knome_community_files_${resolvedTargetId}`;
+            const localFiles = JSON.parse(localStorage.getItem(savedFilesKey) || '[]');
+
+            // Rehydrate files: if IndexedDB has the blob, restore it; otherwise ensure valid PDF URL
+            const hydratedFiles = await Promise.all(localFiles.map(async (f) => {
+                let currentUrl = f.url;
+                if (f.hasIndexedDb) {
+                    try {
+                        const idbBlob = await getFileBlobFromIndexedDb(f.id);
+                        if (idbBlob) currentUrl = idbBlob;
+                    } catch (_) {}
+                }
+                if (f.extension === 'pdf' && (!currentUrl || currentUrl === '#' || currentUrl.includes('w3.org') || currentUrl.includes('localhost') || currentUrl.startsWith('blob:'))) {
+                    currentUrl = SAMPLE_PDF_DATA_URL;
+                }
+                return { ...f, url: currentUrl };
+            }));
+
+            if (hydratedFiles.length > 0) {
+                setFilesList(hydratedFiles);
+            } else {
+                const isCustom = (JSON.parse(localStorage.getItem('knome_custom_communities') || '[]')).some(c => String(c.id) === String(resolvedTargetId));
+                if (!isCustom) {
+                    const seedFiles = [
+                        { id: 1, name: 'System_Architecture_Overview.pdf', category: 'Document', extension: 'pdf', size: '3.4 MB', uploadedBy: 'Loveneesh Sharma', uploadedAt: '2026-07-25T10:30:00.000Z', url: SAMPLE_PDF_DATA_URL, downloadCount: 14 },
+                        { id: 2, name: 'API_Integration_Guild_v2.docx', category: 'Document', extension: 'docx', size: '1.2 MB', uploadedBy: 'Vishendra Sharma', uploadedAt: '2026-07-26T14:15:00.000Z', url: 'https://filesamples.com/samples/document/docx/sample3.docx', downloadCount: 9 },
+                        { id: 3, name: 'Database_Schema_Architecture.png', category: 'Image', extension: 'png', size: '850 KB', uploadedBy: 'Sourabh Sahu', uploadedAt: '2026-07-27T09:45:00.000Z', url: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=1200&h=800', downloadCount: 22 },
+                        { id: 4, name: 'Frontend_Boilerplate_Assets.zip', category: 'Archive', extension: 'zip', size: '14.8 MB', uploadedBy: 'Rishikesh Ugle', uploadedAt: '2026-07-28T08:00:00.000Z', url: '#', downloadCount: 7 }
+                    ];
+                    setFilesList(seedFiles);
+                    safeSetStorage(savedFilesKey, seedFiles);
+                } else {
+                    setFilesList([]);
+                }
+            }
+
+            // ─────────────────────────────────────────
+            // Unified Persistent Community Feed Posts Loading
+            // ─────────────────────────────────────────
             const savedPostsKey = `knome_community_posts_${resolvedTargetId}`;
             const localCommunityPosts = JSON.parse(localStorage.getItem(savedPostsKey) || '[]');
 
             let mergedPosts = [];
             if (postsData && Array.isArray(postsData) && postsData.length > 0) {
-                mergedPosts = postsData.map(p => ({
-                    id: p.postId,
-                    author: p.authorFullName || 'Employee',
-                    role: p.authorDesignation || 'Member',
-                    time: new Date(p.createdDate).toLocaleString(),
-                    content: p.contentText,
-                    title: p.title,
-                    likes: p.reactionCount || 0,
-                    comments: 0,
-                    isPinned: p.isPinned
-                }));
+                mergedPosts = postsData.map(p => {
+                    const cached = (() => {
+                        try {
+                            const raw = localStorage.getItem(`knome_post_interaction_${p.postId || p.id}`);
+                            return raw ? JSON.parse(raw) : null;
+                        } catch { return null; }
+                    })();
+
+                    const sLikes = Number(
+                        p.engagementSummary?.reactionSummary?.totalCount ??
+                        p.engagementSummary?.reactionSummary?.likeCount ??
+                        p.reactionCount ??
+                        p.likesCount ??
+                        p.likes ??
+                        0
+                    );
+                    const sComments = Number(
+                        p.engagementSummary?.commentsCount ??
+                        p.engagementSummary?.commentCount ??
+                        p.commentsCount ??
+                        p.comments ??
+                        0
+                    );
+
+                    const finalLikes = cached && typeof cached.likeCount === 'number' ? Math.max(cached.likeCount, sLikes) : sLikes;
+                    const finalComments = cached && typeof cached.commentCount === 'number' ? Math.max(cached.commentCount, sComments) : sComments;
+
+                    return {
+                        id: p.postId,
+                        postId: p.postId,
+                        author: p.authorFullName || 'Employee',
+                        role: p.authorDesignation || 'Member',
+                        avatar: resolveMediaUrl(p.authorProfilePhotoUrl) || null,
+                        time: new Date(p.createdDate || p.publishedDate || Date.now()).toLocaleString(),
+                        content: p.contentText,
+                        title: p.title,
+                        attachments: p.attachments || [],
+                        likes: finalLikes,
+                        likesCount: finalLikes,
+                        comments: finalComments,
+                        commentsCount: finalComments,
+                        isPinned: p.isPinned
+                    };
+                });
             } else {
                 mergedPosts = [
                     {
@@ -910,7 +1063,15 @@ export default function CommunityView() {
                     time: p.timeAgo || p.time || 'Just now',
                     title: p.title,
                     content: p.content,
+                    attachments: p.attachments || [],
+                    images: p.images || (p.attachments || []).filter(a => a.type === 'image' || a.attachmentType === 'image'),
                     sharedCommunity: p.sharedCommunity || null,
+                    sharedContent: p.sharedContent || null,
+                    sharedArticle: p.sharedArticle || null,
+                    sharedPodcast: p.sharedPodcast || null,
+                    sharedVideo: p.sharedVideo || null,
+                    sharedPostId: p.sharedPostId || null,
+                    type: p.type || null,
                     likes: p.likes || 0,
                     comments: p.comments || 0,
                     isPinned: !!p.isPinned
@@ -918,6 +1079,43 @@ export default function CommunityView() {
                 const freshLocal = formattedLocal.filter(p => !existingIds.has(String(p.id)));
                 mergedPosts = [...freshLocal, ...mergedPosts];
             }
+
+            // Also merge any posts from knome_local_posts matching this community
+            try {
+                const globalPosts = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
+                const commSpecificGlobal = globalPosts.filter(p => 
+                    String(p.sharedCommunity?.id) === String(resolvedTargetId) ||
+                    String(p.communityId) === String(resolvedTargetId) ||
+                    (Array.isArray(p.audienceCommunityIds) && p.audienceCommunityIds.map(String).includes(String(resolvedTargetId)))
+                );
+                if (commSpecificGlobal.length > 0) {
+                    const existingIds = new Set(mergedPosts.map(p => String(p.id)));
+                    const mappedGlobal = commSpecificGlobal
+                        .filter(p => !existingIds.has(String(p.id)) && !existingIds.has(String(p.id).replace('comm_post_', '')))
+                        .map(p => ({
+                            id: p.id,
+                            author: p.authorName || p.author || 'Member',
+                            role: p.authorRole || p.role || 'Member',
+                            avatar: p.authorAvatar || p.avatar || null,
+                            time: p.createdDate ? new Date(p.createdDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (p.timeAgo || 'Recently'),
+                            title: p.title,
+                            content: p.content,
+                            attachments: p.attachments || [],
+                            images: (p.attachments || []).filter(a => a.type === 'image' || a.attachmentType === 'image'),
+                            sharedCommunity: p.sharedCommunity || null,
+                            sharedContent: p.sharedContent || null,
+                            sharedArticle: p.sharedArticle || null,
+                            sharedPodcast: p.sharedPodcast || null,
+                            sharedVideo: p.sharedVideo || null,
+                            sharedPostId: p.sharedPostId || null,
+                            type: p.type || null,
+                            likes: p.likesCount || p.likes || 0,
+                            comments: p.commentsCount || p.comments || 0,
+                            isPinned: false
+                        }));
+                    mergedPosts = [...mappedGlobal, ...mergedPosts];
+                }
+            } catch (_) {}
 
             setPosts(mergedPosts);
         } catch (error) {
@@ -948,14 +1146,63 @@ export default function CommunityView() {
             if (savedFiles.length > 0) setFilesList(savedFiles);
         };
 
+        const handleFeedOrPostsUpdated = (e) => {
+            const targetId = communityId || community?.id || 101;
+            if (e?.key && e.key !== `knome_community_posts_${targetId}` && !e.key.includes('community_posts')) {
+                return;
+            }
+            if (e?.detail?.communityId && String(e.detail.communityId) !== String(targetId)) {
+                return;
+            }
+            // Re-read feed posts for targetId
+            const savedPostsKey = `knome_community_posts_${targetId}`;
+            const localCommunityPosts = JSON.parse(localStorage.getItem(savedPostsKey) || '[]');
+            if (localCommunityPosts.length > 0) {
+                setPosts(prev => {
+                    const existingIds = new Set(prev.map(p => String(p.id)));
+                    const formattedLocal = localCommunityPosts.map(p => ({
+                        id: p.id,
+                        author: p.authorName || p.author || 'Member',
+                        role: p.authorRole || p.role || 'Member',
+                        avatar: p.authorAvatar || p.avatar || null,
+                        time: p.timeAgo || p.time || 'Just now',
+                        title: p.title,
+                        content: p.content,
+                        attachments: p.attachments || [],
+                        images: p.images || (p.attachments || []).filter(a => a.type === 'image' || a.attachmentType === 'image'),
+                        sharedCommunity: p.sharedCommunity || null,
+                        sharedContent: p.sharedContent || null,
+                        sharedArticle: p.sharedArticle || null,
+                        sharedPodcast: p.sharedPodcast || null,
+                        sharedVideo: p.sharedVideo || null,
+                        sharedPostId: p.sharedPostId || null,
+                        type: p.type || null,
+                        likes: p.likes || 0,
+                        comments: p.comments || 0,
+                        isPinned: !!p.isPinned
+                    }));
+                    const freshLocal = formattedLocal.filter(p => !existingIds.has(String(p.id)));
+                    return [...freshLocal, ...prev];
+                });
+            }
+        };
+
         window.addEventListener('community-members-updated', handleMembersUpdated);
         window.addEventListener('community-joined-change', handleMembersUpdated);
+        window.addEventListener('community-posts-updated', handleFeedOrPostsUpdated);
+        window.addEventListener('community-post-created', handleFeedOrPostsUpdated);
+        window.addEventListener('post-created', handleFeedOrPostsUpdated);
         window.addEventListener('storage', handleMembersUpdated);
+        window.addEventListener('storage', handleFeedOrPostsUpdated);
 
         return () => {
             window.removeEventListener('community-members-updated', handleMembersUpdated);
             window.removeEventListener('community-joined-change', handleMembersUpdated);
+            window.removeEventListener('community-posts-updated', handleFeedOrPostsUpdated);
+            window.removeEventListener('community-post-created', handleFeedOrPostsUpdated);
+            window.removeEventListener('post-created', handleFeedOrPostsUpdated);
             window.removeEventListener('storage', handleMembersUpdated);
+            window.removeEventListener('storage', handleFeedOrPostsUpdated);
         };
     }, [communityId]);
 
@@ -981,33 +1228,93 @@ export default function CommunityView() {
             return;
         }
 
-        try {
-            const res = await apiClient.post(`/communities/${communityId}/posts`, { contentText: postText.trim(), audienceType: 'Community' });
-            const p = res?.data || res;
+        const targetId = communityId || community?.id || 101;
+        const newPostItem = {
+            id: Date.now(),
+            author: currentUser?.name || currentUser?.fullName || 'Member',
+            role: currentUser?.roleName || 'Member',
+            avatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
+            time: 'Just now',
+            content: postText.trim(),
+            attachments: [],
+            likes: 0,
+            comments: 0,
+            isPinned: false
+        };
 
-            if (p && (p.postId || p.id)) {
-                setPosts([{
-                    id: p.postId || p.id,
-                    author: p.authorFullName,
-                    role: p.authorDesignation || 'Member',
-                    time: new Date(p.createdDate).toLocaleString(),
-                    content: p.contentText,
-                    likes: 0,
-                    comments: 0,
-                    isPinned: false
-                }, ...posts]);
-                setPostText('');
+        const numId = Number(targetId);
+        if (!isNaN(numId) && numId > 0 && numId < 2147483647) {
+            try {
+                const res = await communitiesApi.createPost(targetId, { 
+                    contentText: postText.trim(), 
+                    attachmentUrls: [], 
+                    attachmentTypes: [] 
+                });
+                const p = res?.data || res;
+                if (p && (p.postId || p.id)) {
+                    newPostItem.id = p.postId || p.id;
+                    if (p.authorFullName) newPostItem.author = p.authorFullName;
+                    if (p.authorDesignation) newPostItem.role = p.authorDesignation;
+                }
+            } catch (error) {
+                console.warn('Backend createPost warning, saving to local persistent feed:', error);
             }
-        } catch (error) {
-            console.error('Failed to create community post:', error);
         }
+
+        // Save to persistent storage for this community
+        const savedPostsKey = `knome_community_posts_${targetId}`;
+        const existingPosts = JSON.parse(localStorage.getItem(savedPostsKey) || '[]');
+        safeSetStorage(savedPostsKey, [newPostItem, ...existingPosts]);
+
+        // Also save to global feed knome_local_posts
+        try {
+            const globalLocalPosts = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
+            const feedItem = {
+                id: `comm_post_${newPostItem.id}`,
+                userId: currentUser?.userId || currentUser?.id || 1,
+                authorName: newPostItem.author,
+                authorAvatar: newPostItem.avatar,
+                authorRole: newPostItem.role,
+                content: newPostItem.content,
+                status: 'Published',
+                createdDate: new Date().toISOString(),
+                likesCount: 0,
+                commentsCount: 0,
+                attachments: [],
+                sharedCommunity: { id: targetId, name: community?.name || 'Community' },
+                sharedCommunityName: community?.name || 'Community'
+            };
+            safeSetStorage('knome_local_posts', [feedItem, ...globalLocalPosts]);
+        } catch (_) {}
+
+        setPosts(prev => [newPostItem, ...prev]);
+        setPostText('');
+        showToast('Post shared to community discussions!', 'success');
+        window.dispatchEvent(new CustomEvent('post-created'));
     };
 
 
 
-    const handleToggleRole = (memberId, currentRole) => {
-        const newRole = currentRole === 'Admin' ? 'Moderator' : (currentRole === 'Moderator' ? 'Member' : 'Moderator');
+    const handleToggleRole = async (memberId, currentRole) => {
         const targetId = communityId || community?.id || 101;
+        const targetMember = membersList.find(m => String(m.userId || m.id) === String(memberId));
+        const memberName = targetMember?.fullName || targetMember?.name || 'Member';
+
+        if (currentRole === 'Admin') {
+            try {
+                await communitiesApi.removeAdmin(targetId, memberId);
+            } catch (err) {
+                const msg = err?.response?.data?.message || err?.message || 'Cannot remove sole Community Admin.';
+                showToast(msg, 'warning');
+                return;
+            }
+        } else if (currentRole === 'Moderator') {
+            try {
+                await communitiesApi.addAdmin(targetId, memberId);
+            } catch (err) { /* best effort */ }
+        }
+
+        const newRole = currentRole === 'Admin' ? 'Member' : (currentRole === 'Member' ? 'Moderator' : 'Admin');
         setMembersList(prev => {
             const updated = prev.map(m => {
                 if (String(m.userId || m.id) === String(memberId)) {
@@ -1020,7 +1327,7 @@ export default function CommunityView() {
             window.dispatchEvent(new CustomEvent('community-members-updated', { detail: { communityId: targetId } }));
             return updated;
         });
-        showToast(`Member role updated to ${newRole}. All active users will see the updated role.`, 'success');
+        showToast(`Member role updated to ${newRole} for ${memberName}.`, 'success');
     };
 
     const handleRemoveMemberByAdmin = async (memberId, memberName) => {
@@ -1120,10 +1427,13 @@ export default function CommunityView() {
                     targetCreatorId: creatorId,
                     communityId: targetId,
                     type: 'join_request',
-                    text: `🔔 ${currentUser?.name || 'An employee'} requested to join your private community "${community?.name}". Pending your approval.`,
-                    senderName: currentUser?.name || 'Employee',
-                    senderAvatar: currentUser?.avatar || null,
-                    time: 'Just now',
+                    category: 'Community',
+                    text: `🔔 ${currentUser?.name || currentUser?.fullName || 'An employee'} requested to join your private community "${community?.name}". Pending your approval.`,
+                    senderName: currentUser?.name || currentUser?.fullName || 'Employee',
+                    senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
+                    senderUserId: currentUser?.userId || currentUser?.id,
+                    createdDate: new Date().toISOString(),
+                    createdAt: new Date().toISOString(),
                     unread: true,
                     icon: 'person_add',
                     color: 'text-indigo-400',
@@ -1134,7 +1444,7 @@ export default function CommunityView() {
                 const existing = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
                 localStorage.setItem('knome_notifications', JSON.stringify([adminNotif, ...existing]));
                 window.dispatchEvent(new CustomEvent('community-invite-sent', {
-                    detail: { invitedUserIds: [creatorId], communityName: community?.name, senderName: currentUser?.name }
+                    detail: { invitedUserIds: [creatorId], communityName: community?.name, senderName: currentUser?.name, senderUserId: currentUser?.userId || currentUser?.id }
                 }));
             } catch (e) { /* ignore */ }
 
@@ -1143,6 +1453,12 @@ export default function CommunityView() {
     };
 
     const handleLeaveAction = async () => {
+        const isDefaultOrg = community?.type?.toLowerCase().includes('default') || community?.type?.toLowerCase().includes('org');
+        if (isDefaultOrg) {
+            showToast('Employees cannot leave a Default organization community (FR-CM-04).', 'warning');
+            return;
+        }
+
         try {
             await communitiesApi.leave(community.id).catch(() => null);
         } catch (err) {
@@ -1178,11 +1494,14 @@ export default function CommunityView() {
             return;
         }
         try {
-            await communitiesApi.togglePinPost(communityId || id, postId);
+            const targetCommId = community?.id || communityId;
+            const newPinState = !targetPost.isPinned;
+            await communitiesApi.pinPost(targetCommId, postId, newPinState);
             setPosts(prev => prev.map(p => {
-                if (p.id === postId) return { ...p, isPinned: !p.isPinned };
+                if (p.id === postId) return { ...p, isPinned: newPinState };
                 return p;
             }));
+            showToast(newPinState ? "📌 Post pinned to top of community feed (FR-CM-06)." : "Post unpinned from top.", "success");
         } catch (err) {
             const errMsg = err?.response?.data?.message || err?.message || 'Failed to pin post. Maximum 3 pinned posts allowed.';
             showToast(errMsg, 'error');
@@ -1355,10 +1674,13 @@ export default function CommunityView() {
                 id: Date.now() + Math.floor(Math.random() * 1000),
                 targetUserId: requestId,
                 type: 'community_approved',
+                category: 'Community',
                 text: `✅ Your request to join "${community?.name}" has been approved! You are now a Member.`,
-                senderName: currentUser?.name || 'Community Admin',
-                senderAvatar: currentUser?.avatar || null,
-                time: 'Just now',
+                senderName: currentUser?.name || currentUser?.fullName || 'Community Admin',
+                senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
+                senderUserId: currentUser?.userId || currentUser?.id,
+                createdDate: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
                 unread: true,
                 icon: 'check_circle',
                 color: 'text-emerald-400',
@@ -1399,10 +1721,13 @@ export default function CommunityView() {
                 id: Date.now() + Math.floor(Math.random() * 1000),
                 targetUserId: requestId,
                 type: 'community_rejected',
+                category: 'Community',
                 text: `❌ Your request to join "${community?.name}" was not approved at this time.`,
-                senderName: currentUser?.name || 'Community Admin',
-                senderAvatar: currentUser?.avatar || null,
-                time: 'Just now',
+                senderName: currentUser?.name || currentUser?.fullName || 'Community Admin',
+                senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
+                senderUserId: currentUser?.userId || currentUser?.id,
+                createdDate: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
                 unread: true,
                 icon: 'cancel',
                 color: 'text-red-400',
@@ -1599,32 +1924,14 @@ export default function CommunityView() {
                         return (
                             <div className="flex items-center gap-4 shrink-0">
                                 {isDefaultOrg ? (
-                            membershipStatus === 'joined' ? (
-                                <button 
-                                    onClick={handleLeaveAction} 
-                                    className="w-44 h-10 px-3 bg-slate-900/90 hover:bg-red-600/90 text-white font-bold rounded-xl transition-all backdrop-blur-md border border-slate-700/60 flex items-center justify-center gap-2 text-xs group cursor-pointer shrink-0 shadow-lg"
-                                >
-                                    <span className="material-symbols-outlined text-[18px] group-hover:hidden shrink-0">check_circle</span>
-                                    <span className="material-symbols-outlined text-[18px] hidden group-hover:block shrink-0">logout</span>
-                                    <span className="group-hover:hidden truncate font-bold">Joined Member</span>
-                                    <span className="hidden group-hover:block truncate font-bold">Leave Community</span>
-                                </button>
-                            ) : (
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <div className="h-10 px-3.5 bg-purple-500/80 backdrop-blur-md text-white font-bold rounded-xl flex items-center justify-center gap-1.5 text-xs border border-purple-400/40 shrink-0">
-                                        <span className="material-symbols-outlined text-[16px] shrink-0">corporate_fare</span>
-                                        <span className="truncate">Auto-Subscribed (Org)</span>
-                                    </div>
-                                    <button 
-                                        onClick={handleJoinAction} 
-                                        className="w-40 h-10 px-3 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl transition-colors shadow-lg shadow-indigo-500/30 flex items-center justify-center gap-1.5 text-xs cursor-pointer shrink-0"
+                                    <div 
+                                        className="h-10 px-4 bg-slate-900/90 text-purple-300 font-bold rounded-xl flex items-center justify-center gap-2 text-xs border border-purple-500/40 backdrop-blur-md shadow-lg"
+                                        title="Official mandatory organization community for all MPOnline employees (FR-CM-04)"
                                     >
-                                        <span className="material-symbols-outlined text-[16px] shrink-0">upgrade</span>
-                                        <span className="truncate">Join as Member</span>
-                                    </button>
-                                </div>
-                            )
-                        ) : membershipStatus === 'joined' ? (
+                                        <span className="material-symbols-outlined text-[16px] text-amber-400">lock</span>
+                                        <span className="font-bold">Official Org Space (Mandatory)</span>
+                                    </div>
+                                ) : membershipStatus === 'joined' ? (
                             <button 
                                 onClick={handleLeaveAction} 
                                 className="w-44 h-10 px-3 bg-slate-900/90 hover:bg-red-600/90 text-white font-bold rounded-xl transition-all backdrop-blur-md border border-slate-700/60 flex items-center justify-center gap-2 text-xs group cursor-pointer shrink-0 shadow-lg"
@@ -1942,6 +2249,30 @@ export default function CommunityView() {
                                                     {renderFormattedText(post.content)}
                                                 </p>
                                                 
+                                                {/* Post Media / Image Attachments */}
+                                                {(() => {
+                                                    const rawImages = (post.attachments || []).filter(a => a.type === 'image' || a.attachmentType === 'image' || (typeof a === 'string' && a.match(/\.(jpg|jpeg|png|gif|webp)/i))) || post.images || [];
+                                                    const postImages = rawImages.length > 0 ? rawImages : (post.imageUrl ? [{ url: post.imageUrl }] : (post.image ? [{ url: post.image }] : []));
+                                                    if (postImages.length === 0) return null;
+                                                    return (
+                                                        <div className={`mb-4 grid gap-2 rounded-2xl overflow-hidden ${postImages.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                                                            {postImages.map((img, idx) => {
+                                                                const imgUrl = resolveMediaUrl(img.url || img.fileUrl || img);
+                                                                return (
+                                                                    <div key={idx} className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 max-h-96">
+                                                                        <img 
+                                                                            src={imgUrl} 
+                                                                            alt="post media" 
+                                                                            className="w-full h-full object-cover"
+                                                                            onError={(e) => { e.target.style.display = 'none'; }}
+                                                                        />
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    );
+                                                })()}
+                                                
                                                 {/* Shared Post Interactive Preview Card with Open Post Button */}
                                                 {(isSharedPost || extractedPostId) && (
                                                     <div 
@@ -1984,6 +2315,108 @@ export default function CommunityView() {
                                                         >
                                                             <span>Open Post</span>
                                                             <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                                                        </button>
+                                                    </div>
+                                                )}
+
+                                                {/* Shared Article Interactive Preview Card */}
+                                                {(post.sharedArticle || post.type === 'article_share' || (post.content && (post.content.includes('Shared Article:') || post.content.includes('/article-view')))) && (
+                                                    <div 
+                                                        onClick={() => {
+                                                            const articleUrlMatch = (post.content || '').match(/(?:https?:\/\/[^\s]+)?\/article-view\?id=(\d+)/i);
+                                                            const aId = post.sharedArticle?.id || (articleUrlMatch ? articleUrlMatch[1] : null);
+                                                            if (aId) navigate(`/article-view?id=${aId}`);
+                                                            else navigate('/articles');
+                                                        }}
+                                                        className="mb-4 p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-green-500/10 border border-emerald-500/30 hover:border-emerald-500 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 cursor-pointer group shadow-sm hover:shadow-md"
+                                                    >
+                                                        <div className="flex items-center gap-3.5 min-w-0">
+                                                            {post.sharedArticle?.thumbnail ? (
+                                                                <img src={resolveMediaUrl(post.sharedArticle.thumbnail)} alt="article" className="w-14 h-14 rounded-xl object-cover shrink-0 shadow-md border border-emerald-500/20 group-hover:scale-105 transition-transform" />
+                                                            ) : (
+                                                                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 text-white flex items-center justify-center font-bold text-xl shrink-0 shadow-md shadow-emerald-500/30 group-hover:scale-105 transition-transform">
+                                                                    <span className="material-symbols-outlined text-[24px]">article</span>
+                                                                </div>
+                                                            )}
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
+                                                                        <span className="material-symbols-outlined text-[12px]">menu_book</span>
+                                                                        Shared Article
+                                                                    </span>
+                                                                </div>
+                                                                <h6 className="font-bold text-slate-900 dark:text-white text-sm group-hover:text-emerald-500 transition-colors truncate mt-1">
+                                                                    {post.sharedArticle?.title || post.title || 'Shared Knowledge Article'}
+                                                                </h6>
+                                                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                                                    {post.sharedArticle?.author ? `By ${post.sharedArticle.author} • ` : ''}Click to read full article
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <button 
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                const articleUrlMatch = (post.content || '').match(/(?:https?:\/\/[^\s]+)?\/article-view\?id=(\d+)/i);
+                                                                const aId = post.sharedArticle?.id || (articleUrlMatch ? articleUrlMatch[1] : null);
+                                                                if (aId) navigate(`/article-view?id=${aId}`);
+                                                                else navigate('/articles');
+                                                            }}
+                                                            className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-1.5 shrink-0 group-hover:translate-x-0.5 cursor-pointer"
+                                                        >
+                                                            <span>Read Article</span>
+                                                            <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                                                        </button>
+                                                    </div>
+                                                )}
+
+                                                {/* Shared Podcast Interactive Preview Card */}
+                                                {(post.sharedPodcast || post.type === 'podcast_share' || (post.content && (post.content.includes('Shared Podcast:') || post.content.includes('/podcasts')))) && (
+                                                    <div 
+                                                        onClick={() => {
+                                                            const podUrlMatch = (post.content || '').match(/(?:https?:\/\/[^\s]+)?\/podcasts\?id=(\d+)/i);
+                                                            const podId = post.sharedPodcast?.id || (podUrlMatch ? podUrlMatch[1] : null);
+                                                            if (podId) navigate(`/podcasts?id=${podId}`);
+                                                            else navigate('/podcasts');
+                                                        }}
+                                                        className="mb-4 p-4 rounded-2xl bg-gradient-to-r from-pink-500/10 via-rose-500/10 to-purple-500/10 border border-pink-500/30 hover:border-pink-500 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 cursor-pointer group shadow-sm hover:shadow-md"
+                                                    >
+                                                        <div className="flex items-center gap-3.5 min-w-0">
+                                                            {post.sharedPodcast?.thumbnail ? (
+                                                                <img src={resolveMediaUrl(post.sharedPodcast.thumbnail)} alt="podcast" className="w-14 h-14 rounded-xl object-cover shrink-0 shadow-md border border-pink-500/20 group-hover:scale-105 transition-transform" />
+                                                            ) : (
+                                                                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-pink-600 to-rose-600 text-white flex items-center justify-center font-bold text-xl shrink-0 shadow-md shadow-pink-500/30 group-hover:scale-105 transition-transform">
+                                                                    <span className="material-symbols-outlined text-[24px]">podcasts</span>
+                                                                </div>
+                                                            )}
+                                                            <div className="min-w-0">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-[10px] bg-pink-100 dark:bg-pink-900/60 text-pink-700 dark:text-pink-300 font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
+                                                                        <span className="material-symbols-outlined text-[12px]">graphic_eq</span>
+                                                                        Shared Podcast
+                                                                    </span>
+                                                                </div>
+                                                                <h6 className="font-bold text-slate-900 dark:text-white text-sm group-hover:text-pink-500 transition-colors truncate mt-1">
+                                                                    {post.sharedPodcast?.title || post.title || 'Shared Audio Episode'}
+                                                                </h6>
+                                                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                                                    {post.sharedPodcast?.author ? `Hosted by ${post.sharedPodcast.author} • ` : ''}Click to listen now
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <button 
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                const podUrlMatch = (post.content || '').match(/(?:https?:\/\/[^\s]+)?\/podcasts\?id=(\d+)/i);
+                                                                const podId = post.sharedPodcast?.id || (podUrlMatch ? podUrlMatch[1] : null);
+                                                                if (podId) navigate(`/podcasts?id=${podId}`);
+                                                                else navigate('/podcasts');
+                                                            }}
+                                                            className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-700 hover:to-rose-700 text-white font-bold text-xs rounded-xl shadow-md shadow-pink-600/20 transition-all flex items-center justify-center gap-1.5 shrink-0 group-hover:translate-x-0.5 cursor-pointer"
+                                                        >
+                                                            <span className="material-symbols-outlined text-[16px]">play_arrow</span>
+                                                            <span>Listen Podcast</span>
                                                         </button>
                                                     </div>
                                                 )}

@@ -44,6 +44,7 @@ appsettings.local.json
 *.bak
 *.swp
 /scratch/
+scratch_*.py
 .next/
 dist/
 DB_Backup/

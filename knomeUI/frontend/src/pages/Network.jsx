@@ -5,8 +5,55 @@ import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import { userApi, searchApi, resolveMediaUrl } from '../utils/apiService';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 
+const KNOWN_ROSTER_NAMES = {
+    'EMP001': 'Aarav Sharma',
+    'EMP002': 'Priya Patel',
+    'EMP003': 'Rohan Verma',
+    'EMP004': 'Neha Gupta',
+    'MPO101': 'Loveneesh Sharma',
+    'MPO102': 'Vishendra Sharma',
+    'MPO103': 'Sourabh Sahu',
+    'MPO104': 'Rishikesh Ugle',
+    'MPO105': 'Meghna Tiwari',
+    'MPO106': 'Mayur Verma',
+    'MPO107': 'Vilash Deshmukh',
+    'MPO108': 'Pooja Sharma',
+    'MPO089': 'Vilash Deshmukh',
+    'MPO118': 'Raman Kumar',
+    'MPO119': 'Rishabh Pandey',
+    'MPO120': 'krisha dabhi',
+    'MPO121': 'Mahi Rathore',
+    'MPO122': 'Satendra Singh',
+    'MPO652': 'Deepak Simrodia'
+};
+
+const KNOWN_ROSTER_ROLES = {
+    'EMP001': { role: 'Employee', designation: 'Senior Software Engineer' },
+    'EMP002': { role: 'Community Admin', designation: 'Quality Assurance Lead' },
+    'EMP003': { role: 'HR Administrator', designation: 'HR Specialist' },
+    'EMP004': { role: 'System Administrator', designation: 'DevOps Lead' },
+    'MPO101': { role: 'System Administrator', designation: 'System Administrator' },
+    'MPO102': { role: 'Community Admin', designation: 'Community Experience Specialist' },
+    'MPO103': { role: 'HR Administrator', designation: 'Talent Acquisition Manager' },
+    'MPO104': { role: 'Employee', designation: 'Software Engineer' },
+};
+
+function getRoleBadgeStyle(roleName) {
+    const r = (roleName || '').toLowerCase();
+    if (r.includes('system') || r.includes('sysadm')) {
+        return 'bg-purple-100 text-purple-700 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800/80 font-bold';
+    }
+    if (r.includes('hr') || r.includes('hrad')) {
+        return 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800/80 font-bold';
+    }
+    if (r.includes('community') || r.includes('cadm')) {
+        return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/80 font-bold';
+    }
+    return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 font-semibold';
+}
+
 export default function Network() {
-    const { currentUser } = useUser();
+    const { currentUser, users } = useUser();
     const { addToast } = useToast();
     const confirm = useConfirm();
     const location = useLocation();
@@ -56,14 +103,70 @@ export default function Network() {
     }, []);
 
     const mapUserItem = (item) => {
-        const name = item.name || item.fullName || item.title || 'User';
+        let rawName = item.name || item.fullName || item.title || '';
+        const empCode = String(item.employeeId || item.authorEmployeeId || '').toUpperCase().trim();
+        
+        // 1. Resolve Name: If rawName matches an Employee ID pattern (e.g. EMP004, MPO101) or is empty
+        const isEmpIdPattern = /^(EMP|MPO)\d+$/i.test(rawName.trim()) || rawName.toUpperCase().startsWith('NON_EXISTENT');
+        if (!rawName || isEmpIdPattern) {
+            const codeKey = (rawName.trim() || empCode).toUpperCase();
+            if (KNOWN_ROSTER_NAMES[codeKey]) {
+                rawName = KNOWN_ROSTER_NAMES[codeKey];
+            } else {
+                const matchInContext = users?.find(u => 
+                    (u.employeeId && u.employeeId.toUpperCase() === codeKey) ||
+                    (u.userId && String(u.userId) === String(item.id || item.userId))
+                );
+                if (matchInContext?.name) {
+                    rawName = matchInContext.name;
+                }
+            }
+        }
+        const name = rawName || 'User';
+
         const rawPhotoUrl = item.avatar || item.profilePhotoUrl || item.authorProfilePhotoUrl;
         const avatar = resolveMediaUrl(rawPhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6366f1&color=fff`;
+
+        // 2. Resolve Assigned Role(s)
+        let roleList = [];
+        if (Array.isArray(item.roles) && item.roles.length > 0) {
+            roleList = item.roles.filter(Boolean);
+        } else if (item.role) {
+            roleList = [item.role];
+        }
+
+        // Check fallback known roster roles if only generic Employee or empty
+        const codeKey = (empCode || rawName.trim()).toUpperCase();
+        if (KNOWN_ROSTER_ROLES[codeKey]) {
+            if (roleList.length === 0 || (roleList.length === 1 && (roleList[0] === 'Employee' || roleList[0] === 'EMP'))) {
+                roleList = [KNOWN_ROSTER_ROLES[codeKey].role];
+            }
+        }
+
+        // Normalize role strings
+        const normalizedRoles = roleList.map(r => {
+            const s = String(r).trim();
+            if (s === 'SYSADM' || s === 'SystemAdmin') return 'System Administrator';
+            if (s === 'HRADM' || s === 'HRAdmin') return 'HR Administrator';
+            if (s === 'CADM' || s === 'CommunityAdministrator') return 'Community Admin';
+            if (s === 'EMP') return 'Employee';
+            return s;
+        });
+
+        // Elevated roles priority (System Admin, HR Admin, Community Admin)
+        const nonEmpRoles = normalizedRoles.filter(r => !['Employee', 'EMP'].includes(r));
+        const assignedRoles = nonEmpRoles.length > 0 ? nonEmpRoles : (normalizedRoles.length > 0 ? normalizedRoles : ['Employee']);
+        const primaryRole = assignedRoles[0] || 'Employee';
+
+        // Designation
+        const designation = item.designation || KNOWN_ROSTER_ROLES[codeKey]?.designation || '';
 
         return {
             id: item.id || item.userId,
             name,
-            role: item.role || item.designation || 'Employee',
+            role: primaryRole,
+            assignedRoles,
+            designation,
             department: item.department || item.departmentName || 'General',
             avatar,
             mutualConnections: item.mutualConnections || item.mutualConnectionsCount || 0,
@@ -614,11 +717,13 @@ function PersonCard({ person, onConnect, onCancel, onAccept, onReject, onRemove 
         const userObj = {
             userId: person.id || person.userId,
             id: person.id || person.userId,
-            name: person.name || person.fullName,
-            fullName: person.fullName || person.name,
-            avatar: person.avatar || person.profilePhotoUrl,
-            role: person.role || person.designation,
-            designation: person.role || person.designation,
+            name: person.name,
+            fullName: person.name,
+            avatar: person.avatar,
+            role: person.role,
+            roleName: person.role,
+            roles: person.assignedRoles,
+            designation: person.designation || person.role,
             department: person.department
         };
         navigate(`/profile/${person.id}`, { state: { user: userObj } });
@@ -637,12 +742,35 @@ function PersonCard({ person, onConnect, onCancel, onAccept, onReject, onRemove 
             
             <button 
                 onClick={handleOpenProfile} 
-                className="font-bold text-[16px] text-slate-900 dark:text-white group-hover:text-blue-500 transition-colors leading-tight mb-1 truncate max-w-full cursor-pointer hover:underline"
+                className="font-bold text-[16px] text-slate-900 dark:text-white group-hover:text-blue-500 transition-colors leading-tight mb-2 truncate max-w-full cursor-pointer hover:underline"
             >
                 {person.name}
             </button>
-            <p className="text-[12px] font-bold text-slate-500 mb-0.5 truncate max-w-full">{person.role}</p>
-            <p className="text-[11px] text-slate-400 mb-3 truncate max-w-full">{person.department}</p>
+
+            {/* Assigned Role Badge */}
+            <div className="mb-1.5 flex flex-wrap items-center justify-center gap-1.5 max-w-full">
+                {person.assignedRoles && person.assignedRoles.length > 0 ? (
+                    person.assignedRoles.map((r, idx) => (
+                        <span 
+                            key={idx} 
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wide border shadow-xs ${getRoleBadgeStyle(r)}`}
+                        >
+                            {r}
+                        </span>
+                    ))
+                ) : (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wide border bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700">
+                        {person.role || 'Employee'}
+                    </span>
+                )}
+            </div>
+
+            {/* Designation & Department Subtitle */}
+            <p className="text-[12px] text-slate-500 dark:text-slate-400 mb-3 truncate max-w-full font-medium">
+                {person.designation 
+                    ? (person.department ? `${person.designation} · ${person.department}` : person.designation)
+                    : (person.department || 'General')}
+            </p>
 
             {/* Mutual Connections Stack */}
             {person.mutualConnections > 0 && (

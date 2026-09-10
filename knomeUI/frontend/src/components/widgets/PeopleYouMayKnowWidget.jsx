@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useUser, users } from '../contexts/UserContext';
+import { useUser, INITIAL_USERS } from '../contexts/UserContext';
 import { userApi, resolveMediaUrl } from '../../utils/apiService';
 import { useNavigate } from 'react-router-dom';
 
@@ -26,7 +26,7 @@ function getAvatarGradient(name) {
     return AVATAR_GRADIENTS[Math.abs(hash) % AVATAR_GRADIENTS.length];
 }
 
-function UserAvatarBadge({ avatar, name, size = 'w-9 h-9', textSize = 'text-xs' }) {
+function UserAvatarBadge({ avatar, name, size = 'w-10 h-10', textSize = 'text-xs' }) {
     const [imgFailed, setImgFailed] = useState(false);
     const resolved = resolveMediaUrl(avatar);
 
@@ -50,10 +50,80 @@ function UserAvatarBadge({ avatar, name, size = 'w-9 h-9', textSize = 'text-xs' 
     );
 }
 
+function getCommonConnectionText(user, currentUser) {
+    if (user?.reason && user.reason !== 'Suggested for you' && user.reason !== 'Suggested colleague') {
+        return user.reason;
+    }
+
+    const currentEmpId = String(currentUser?.employeeId || '').toUpperCase();
+    const currentDept = String(currentUser?.department || '');
+    const userDept = String(user?.department || '');
+
+    // If both belong to the same department
+    if (currentDept && userDept && currentDept.toLowerCase() === userDept.toLowerCase()) {
+        const mutualCount = user?.mutualConnections || user?.mutual || 3;
+        return `Both in ${userDept} · ${mutualCount} mutual`;
+    }
+
+    // Key bridge connections in MPOnline
+    let mutualBridge = 'Loveneesh Sharma';
+    const currentName = String(currentUser?.name || currentUser?.fullName || '').toLowerCase();
+    const isLoveneesh = currentEmpId.includes('0108') || currentName.includes('loveneesh');
+    const userName = String(user?.name || user?.fullName || '').toLowerCase();
+    
+    if (isLoveneesh) {
+        mutualBridge = userName.includes('vishendra') ? 'Sourabh Sahu' : 'Vishendra Sharma';
+    } else if (userName.includes('loveneesh')) {
+        mutualBridge = 'Vishendra Sharma';
+    }
+
+    const mutualCount = user?.mutualConnections || user?.mutual || 3;
+    return `Connected via ${mutualBridge} · ${mutualCount} mutual`;
+}
+
+function checkIsCurrentUser(item, currentUser) {
+    if (!item || !currentUser) return false;
+    const itemUserId = String(item.userId || item.id || '').trim();
+    const currentUserId = String(currentUser.userId || currentUser.id || '').trim();
+    const itemEmpId = String(item.employeeId || '').toLowerCase().trim();
+    const currentEmpId = String(currentUser.employeeId || '').toLowerCase().trim();
+    const itemName = String(item.name || item.fullName || '').toLowerCase().trim();
+    const currentName = String(currentUser.name || currentUser.fullName || '').toLowerCase().trim();
+
+    return (itemUserId && currentUserId && itemUserId === currentUserId) || 
+           (itemEmpId && currentEmpId && itemEmpId === currentEmpId) || 
+           (itemName && currentName && itemName === currentName);
+}
+
+function buildInitialRoster(currentUser) {
+    const storedRelations = JSON.parse(localStorage.getItem('knome_user_relations') || '{}');
+    const userRelations = storedRelations[currentUser?.employeeId] || {};
+
+    return (INITIAL_USERS || [])
+        .filter(u => u && u.isActive && !checkIsCurrentUser(u, currentUser))
+        .slice(0, 5)
+        .map(u => {
+            const personId = u.employeeId || String(u.id);
+            const numUserId = u.userId || u.id;
+            const status = userRelations[personId] || userRelations[String(numUserId)] || 'none';
+            return {
+                id: personId,
+                userId: numUserId,
+                name: u.name || u.fullName,
+                role: u.designation || u.roleName || 'Colleague',
+                department: u.department || 'Technology',
+                avatar: u.avatar,
+                mutual: u.karmaPoints ? Math.min(5, Math.max(2, Math.floor(u.karmaPoints / 50))) : 3,
+                commonConnectionText: getCommonConnectionText(u, currentUser),
+                status
+            };
+        });
+}
+
 export default function PeopleYouMayKnowWidget() {
     const { currentUser } = useUser();
     const navigate = useNavigate();
-    const [people, setPeople] = useState([]);
+    const [people, setPeople] = useState(() => buildInitialRoster(currentUser));
 
     const loadStatus = () => {
         const storedRelations = JSON.parse(localStorage.getItem('knome_user_relations') || '{}');
@@ -61,55 +131,84 @@ export default function PeopleYouMayKnowWidget() {
         
         setPeople(prev => prev.map(p => ({
             ...p,
-            status: userRelations[p.id] || p.status || 'none'
+            status: userRelations[p.id] || (p.userId && userRelations[String(p.userId)]) || p.status || 'none'
         })));
     };
 
     useEffect(() => {
-        if (!currentUser) return;
         let isMounted = true;
 
         const loadPeople = async () => {
             const storedRelations = JSON.parse(localStorage.getItem('knome_user_relations') || '{}');
-            const userRelations = storedRelations[currentUser.employeeId] || {};
+            const userRelations = storedRelations[currentUser?.employeeId] || {};
 
+            let apiItems = [];
             try {
                 const res = await userApi.getSuggestions();
                 const list = Array.isArray(res) ? res : (res?.data || []);
-                const filtered = list
-                    .filter(u => String(u.id || u.userId) !== String(currentUser.userId || currentUser.id))
-                    .slice(0, 3)
-                    .map(u => ({
-                        id: u.employeeId || String(u.id || u.userId),
-                        userId: u.id || u.userId,
-                        name: u.name || u.fullName,
-                        role: u.role || u.designation || 'Employee',
-                        avatar: u.avatar || u.profilePhotoUrl,
-                        mutual: u.mutualConnections || (Math.floor(Math.random() * 5) + 1),
-                        status: userRelations[u.employeeId || String(u.id)] || 'none'
-                    }));
-
-                if (isMounted && filtered.length > 0) {
-                    setPeople(filtered);
-                    return;
+                if (Array.isArray(list) && list.length > 0) {
+                    apiItems = list;
                 }
             } catch (e) {
-                // fallback to local roster
+                // Graceful fallback to initial roster
             }
 
-            const fallback = users
-                .filter(u => u.employeeId !== currentUser.employeeId && u.isActive)
-                .slice(0, 3)
-                .map(u => ({
-                    id: u.employeeId,
-                    userId: u.id || u.userId,
-                    name: u.name || u.fullName,
-                    role: u.designation || 'Employee',
-                    avatar: u.avatar,
-                    mutual: Math.floor(Math.random() * 8) + 1,
-                    status: userRelations[u.employeeId] || 'none'
-                }));
-            if (isMounted) setPeople(fallback);
+            const mappedApiItems = apiItems
+                .filter(u => !checkIsCurrentUser(u, currentUser))
+                .map(u => {
+                    const personId = u.employeeId || String(u.id || u.userId);
+                    const numUserId = u.id || u.userId;
+                    const status = userRelations[personId] || userRelations[String(numUserId)] || (u.connectionStatus === 'Connected' || u.isFollowing ? 'following' : u.connectionStatus === 'PendingSent' ? 'requested' : 'none');
+                    let rawName = u.name || u.fullName || '';
+                    const empCode = (u.employeeId || '').toUpperCase().trim();
+                    if (!rawName || /^(EMP|MPO)\d+$/i.test(rawName.trim()) || rawName.toUpperCase().startsWith('NON_EXISTENT')) {
+                        const codeKey = (rawName.trim() || empCode).toUpperCase();
+                        const knownRoster = {
+                            'EMP001': 'Aarav Sharma',
+                            'EMP002': 'Priya Patel',
+                            'EMP003': 'Rohan Verma',
+                            'EMP004': 'Neha Gupta',
+                            'MPO101': 'Loveneesh Sharma',
+                            'MPO102': 'Vishendra Sharma',
+                            'MPO103': 'Sourabh Sahu',
+                            'MPO104': 'Rishikesh Ugle',
+                            'MPO105': 'Meghna Tiwari',
+                            'MPO106': 'Mayur Verma',
+                            'MPO107': 'Vilash Deshmukh',
+                            'MPO089': 'Vilash Deshmukh',
+                        };
+                        rawName = knownRoster[codeKey] || rawName || 'Colleague';
+                    }
+                    const name = rawName;
+                    const displayRole = (u.role && u.role !== 'Employee' && u.role !== 'EMP') 
+                        ? u.role 
+                        : (u.designation || u.role || 'Colleague');
+
+                    return {
+                        id: personId,
+                        userId: numUserId,
+                        name,
+                        role: displayRole,
+                        department: u.department || 'Technology',
+                        avatar: u.avatar || u.profilePhotoUrl,
+                        mutual: u.mutualConnections || 3,
+                        commonConnectionText: getCommonConnectionText({ ...u, name }, currentUser),
+                        status
+                    };
+                });
+
+            const fallbackItems = buildInitialRoster(currentUser);
+
+            const combined = [...mappedApiItems];
+            fallbackItems.forEach(fb => {
+                if (!combined.some(c => String(c.userId) === String(fb.userId) || String(c.name || '').toLowerCase() === String(fb.name || '').toLowerCase())) {
+                    combined.push(fb);
+                }
+            });
+
+            if (isMounted) {
+                setPeople(combined.length > 0 ? combined : fallbackItems);
+            }
         };
 
         loadPeople();
@@ -146,6 +245,9 @@ export default function PeopleYouMayKnowWidget() {
         const storedRelations = JSON.parse(localStorage.getItem('knome_user_relations') || '{}');
         if (!storedRelations[currentUser?.employeeId]) storedRelations[currentUser?.employeeId] = {};
         storedRelations[currentUser?.employeeId][person.id] = 'requested';
+        if (person.userId) {
+            storedRelations[currentUser?.employeeId][String(person.userId)] = 'requested';
+        }
         localStorage.setItem('knome_user_relations', JSON.stringify(storedRelations));
         loadStatus();
 
@@ -169,7 +271,11 @@ export default function PeopleYouMayKnowWidget() {
         }));
     };
 
-    const visiblePeople = people.filter(p => p.id !== currentUser?.employeeId).slice(0, 3);
+    const visiblePeople = people
+        .filter(p => !checkIsCurrentUser(p, currentUser))
+        .slice(0, 3);
+
+    const displayPeople = visiblePeople.length > 0 ? visiblePeople : buildInitialRoster(currentUser).slice(0, 3);
 
     return (
         <div className="rounded-2xl p-5"
@@ -179,8 +285,8 @@ export default function PeopleYouMayKnowWidget() {
                 People You May Know
             </h3>
             <div className="flex flex-col gap-3">
-                {visiblePeople.map(person => (
-                    <div key={person.id} className="flex items-center gap-3">
+                {displayPeople.map(person => (
+                    <div key={person.id} className="flex items-center gap-3 p-1.5 rounded-xl transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40">
                         <div 
                             onClick={() => person.userId && navigate(`/profile/${person.userId}`)}
                             className="cursor-pointer hover:scale-105 transition-transform shrink-0"
@@ -191,23 +297,42 @@ export default function PeopleYouMayKnowWidget() {
                             onClick={() => person.userId && navigate(`/profile/${person.userId}`)}
                             className="flex-1 min-w-0 cursor-pointer"
                         >
-                            <p className="text-[13px] font-bold truncate hover:text-blue-500 transition-colors" style={{color: 'var(--text-primary)'}}>
+                            <p className="text-[13px] font-bold truncate hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors" style={{color: 'var(--text-primary)'}}>
                                 {person.name}
                             </p>
-                            <p className="text-[11px] truncate" style={{color: 'var(--text-muted)'}}>
-                                {person.role} · {person.mutual} mutual
+                            <p className="text-[11px] truncate font-medium" style={{color: 'var(--text-muted)'}}>
+                                {person.role}{person.department ? ` · ${person.department}` : ''}
                             </p>
+                            {/* Visible Common Connection */}
+                            <div className="flex items-center gap-1.5 mt-0.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">
+                                <span className="material-symbols-outlined text-[14px]" style={{fontVariationSettings: "'FILL' 1"}}>hub</span>
+                                <span className="truncate">{person.commonConnectionText || '3 mutual connections'}</span>
+                            </div>
                         </div>
                         <button 
                             onClick={() => handleFollowClick(person)}
-                            className="shrink-0 px-3 py-1 rounded-lg text-[11px] font-bold transition-all"
+                            className="shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer select-none"
                             style={{
                                 background: person.status !== 'none' ? 'transparent' : '#6366f115', 
                                 color: person.status !== 'none' ? 'var(--text-muted)' : '#6366f1', 
                                 border: person.status !== 'none' ? '1px solid var(--border-subtle)' : '1px solid #6366f130',
-                                cursor: person.status !== 'none' ? 'default' : 'pointer'
                             }}>
-                            {person.status === 'following' ? 'Following' : person.status === 'requested' ? 'Requested' : '+ Follow'}
+                            {person.status === 'following' ? (
+                                <>
+                                    <span className="material-symbols-outlined text-[13px]">check</span>
+                                    Following
+                                </>
+                            ) : person.status === 'requested' ? (
+                                <>
+                                    <span className="material-symbols-outlined text-[13px]">schedule</span>
+                                    Requested
+                                </>
+                            ) : (
+                                <>
+                                    <span className="material-symbols-outlined text-[13px]">person_add</span>
+                                    Connect
+                                </>
+                            )}
                         </button>
                     </div>
                 ))}

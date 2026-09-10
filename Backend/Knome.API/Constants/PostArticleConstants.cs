@@ -18,26 +18,32 @@ public static class PostAudiences
 public static class PostStatuses
 {
     public const string Published = "Published";
+    public const string Scheduled = "Scheduled";
     public const string Draft = "Draft";
     public const string Archived = "Archived";
+
+    public static readonly string[] All = { Published, Scheduled, Draft, Archived };
 
     public static bool IsValid(string? status)
     {
         if (string.IsNullOrWhiteSpace(status)) return false;
-        return status == Published || status == Draft || status == Archived;
+        return status == Published || status == Scheduled || status == Draft || status == Archived;
     }
 }
 
 public static class ArticleStatuses
 {
     public const string Published = "Published";
+    public const string Scheduled = "Scheduled";
     public const string Draft = "Draft";
     public const string Archived = "Archived";
+
+    public static readonly string[] All = { Published, Scheduled, Draft, Archived };
 
     public static bool IsValid(string? status)
     {
         if (string.IsNullOrWhiteSpace(status)) return false;
-        return status == Published || status == Draft || status == Archived;
+        return status == Published || status == Scheduled || status == Draft || status == Archived;
     }
 }
 

@@ -164,6 +164,7 @@ export const postsApi = {
     getById: (id) => apiClient.get(`/posts/${id}`),
     getPost: (postId) => apiClient.get(`/posts/${postId}`),
     create: (data) => apiClient.post('/posts', data),
+    update: (id, data) => apiClient.put(`/posts/${id}`, data),
     delete: (id) => apiClient.delete(`/posts/${id}`),
 };
 
@@ -272,8 +273,17 @@ export const communitiesApi = {
     },
     join: (id) => apiClient.post(`/Communities/${id}/join`),
     leave: (id) => apiClient.post(`/Communities/${id}/leave`),
-    getMembers: (id) => apiClient.get(`/Communities/${id}/members`),
-    getPosts: (id) => apiClient.get(`/Communities/${id}/posts`),
+    getMembers: (id, status = null, pageNumber = 1, pageSize = 50) => {
+        let endpoint = `/Communities/${id}/members?pageNumber=${pageNumber}&pageSize=${pageSize}`;
+        if (status) endpoint += `&status=${status}`;
+        return apiClient.get(endpoint);
+    },
+    getPosts: (id, pageNumber = 1, pageSize = 50) => apiClient.get(`/Communities/${id}/posts?pageNumber=${pageNumber}&pageSize=${pageSize}`),
+    createPost: (communityId, data) => apiClient.post(`/Communities/${communityId}/posts`, data),
+    pinPost: (communityId, postId, isPinned) => apiClient.put(`/Communities/${communityId}/posts/${postId}/pin`, { isPinned }),
+    togglePinPost: (communityId, postId, isPinned) => apiClient.put(`/Communities/${communityId}/posts/${postId}/pin`, { isPinned }),
+    addAdmin: (communityId, targetUserId) => apiClient.post(`/Communities/${communityId}/admins/${targetUserId}`),
+    removeAdmin: (communityId, targetUserId) => apiClient.delete(`/Communities/${communityId}/admins/${targetUserId}`),
     decideMembership: (communityId, targetUserId, status) => apiClient.put(`/Communities/${communityId}/members/${targetUserId}/decide`, { status }),
 };
 
@@ -678,11 +688,11 @@ export const analyticsApi = {
     /** GET /analytics/content (alias) */
     getContent: () => apiClient.get('/analytics/content-performance'),
 
-    /** GET /analytics/trending (alias) */
-    getTrending: () => apiClient.get('/analytics/community-health'),
+    /** GET /analytics/trending */
+    getTrending: () => apiClient.get('/analytics/trending'),
 
-    /** GET /analytics/moderation (alias) */
-    getModeration: () => apiClient.get('/interactions/reports/pending'),
+    /** GET /analytics/moderation */
+    getModeration: () => apiClient.get('/analytics/moderation'),
 };
 
 // ─────────────────────────────────────────────
@@ -749,51 +759,120 @@ export const getVideoThumbnail = (video) => {
 };
 
 
+export const formatToDDMMYYYY = (dateInput) => {
+    if (!dateInput) return '';
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return '';
+    const pad = (n) => String(n).padStart(2, '0');
+    const day = pad(d.getDate());
+    const month = pad(d.getMonth() + 1);
+    const year = d.getFullYear();
+    let hours = d.getHours();
+    const minutes = pad(d.getMinutes());
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${day}/${month}/${year}, ${pad(hours)}:${minutes} ${ampm}`;
+};
+
 export const mapPost = (post) => {
+    const rawContent = post.contentText || post.content || post.text || '';
     const extractedTags = (post.tags && post.tags.length > 0)
         ? post.tags
-        : (post.contentText ? (post.contentText.match(/#[a-zA-Z0-9_]+/g) || []).map(t => t.replace('#', '')) : []);
+        : (rawContent ? (rawContent.match(/#[a-zA-Z0-9_]+/g) || []).map(t => t.replace('#', '')) : []);
 
-    const authorName = post.authorFullName || post.authorUser?.fullName || 'User';
+    const authorName = post.authorFullName || post.authorUser?.fullName || post.authorName || post.author?.name || 'User';
+    const authorRole = post.authorDesignation || post.authorUser?.designation || post.authorRole || post.author?.role || 'Contributor';
+    const authorAvatar = resolveMediaUrl(post.authorProfilePhotoUrl || post.authorUser?.profilePhotoUrl || post.authorAvatar || post.author?.avatar) ||
+        `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=6366f1&color=fff&size=256&bold=true`;
+    const authorId = post.authorId || post.authorUserId || post.userId || post.author?.id;
+
     const commentsCount = post.commentsCount ?? post.commentCount ?? post.engagementSummary?.commentsCount ?? post.engagementSummary?.commentCount ?? (Array.isArray(post.comments) ? post.comments.length : 0);
 
+    const isScheduledFuture = post.status === 'Scheduled' && post.scheduledDate && new Date(post.scheduledDate).getTime() > Date.now();
+    const displayTime = isScheduledFuture
+        ? `Scheduled for ${formatToDDMMYYYY(post.scheduledDate)}`
+        : formatToDDMMYYYY(post.publishedDate || post.scheduledDate || post.createdDate || Date.now());
+
+    // Map raw attachments from all possible shapes
+    const rawAttachments = (post.attachments && post.attachments.length > 0)
+        ? post.attachments
+        : (post.postAttachments && post.postAttachments.length > 0)
+        ? post.postAttachments
+        : (post.attachmentUrls || []).map((url, idx) => ({ attachmentId: idx + 1, fileType: 'Image', fileUrl: url }));
+
+    const mappedAttachments = (rawAttachments || [])
+        .map((a, idx) => {
+            const rawUrl = a.fileUrl || a.url || a.backendUrl || (typeof a === 'string' ? a : null);
+            const resolved = resolveMediaUrl(rawUrl);
+            const fileTypeStr = a.fileType || a.type || 'image';
+            const mappedType = ATTACHMENT_TYPE_MAP[fileTypeStr] || fileTypeStr.toLowerCase();
+            return {
+                id: a.attachmentId || a.id || idx + 1,
+                type: mappedType === 'doc' || mappedType === 'document' ? 'doc' : mappedType === 'video' ? 'video' : mappedType === 'audio' ? 'audio' : 'image',
+                url: resolved || rawUrl,
+                name: a.name || rawUrl?.split('/').pop() || 'attachment',
+            };
+        })
+        .filter(att => att.url && typeof att.url === 'string' && att.url.trim().length > 0);
+
     return {
-        id: post.postId,
+        id: post.postId || post.id,
+        postId: post.postId || post.id,
+        status: post.status || 'Published',
+        scheduledDate: post.scheduledDate || null,
+        publishedDate: post.publishedDate || post.createdDate,
+        isScheduledFuture: isScheduledFuture,
         author: {
-            id: post.authorId || post.authorUserId,
+            id: authorId,
             name: authorName,
-            role: post.authorDesignation || post.authorUser?.designation || 'Contributor',
-            avatar: resolveMediaUrl(post.authorProfilePhotoUrl || post.authorUser?.profilePhotoUrl) ||
-                `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=6366f1&color=fff&size=256&bold=true`,
+            role: authorRole,
+            avatar: authorAvatar,
             isVerified: false,
         },
         type: 'post',
-        time: new Date(post.publishedDate || post.createdDate).toLocaleString(),
-        content: post.contentText || '',
+        time: displayTime,
+        content: rawContent,
         tags: extractedTags,
-        attachments: (post.attachments && post.attachments.length > 0)
-            ? post.attachments.map((a) => ({
-                id: a.attachmentId,
-                type: ATTACHMENT_TYPE_MAP[a.fileType] || 'image',
-                url: resolveMediaUrl(a.fileUrl),
-                name: a.fileUrl?.split('/').pop() || 'attachment',
-            }))
-            : (post.postAttachments && post.postAttachments.length > 0)
-            ? post.postAttachments.map((a) => ({
-                id: a.attachmentId,
-                type: ATTACHMENT_TYPE_MAP[a.fileType] || 'image',
-                url: resolveMediaUrl(a.fileUrl),
-                name: a.fileUrl?.split('/').pop() || 'attachment',
-            }))
-            : (post.attachmentUrls || []).map((url, idx) => ({
-                id: idx + 1,
-                type: 'image',
-                url: resolveMediaUrl(url),
-                name: url?.split('/').pop() || 'attachment',
-            })),
-        likes: post.reactionCount || post.engagementSummary?.reactionCount || post.engagementSummary?.reactionSummary?.totalCount || 0,
-        shares: post.shareCount || post.engagementSummary?.shareCount || post.engagementSummary?.sharesCount || 0,
+        attachments: mappedAttachments,
+        likes: Number(
+            post.engagementSummary?.reactionSummary?.totalCount ??
+            post.engagementSummary?.reactionSummary?.likeCount ??
+            post.reactionCount ??
+            post.reactionsCount ??
+            post.engagementSummary?.reactionCount ??
+            post.likesCount ??
+            post.likeCount ??
+            post.likes ??
+            0
+        ),
+        likesCount: Number(
+            post.engagementSummary?.reactionSummary?.totalCount ??
+            post.engagementSummary?.reactionSummary?.likeCount ??
+            post.reactionCount ??
+            post.reactionsCount ??
+            post.engagementSummary?.reactionCount ??
+            post.likesCount ??
+            post.likeCount ??
+            post.likes ??
+            0
+        ),
+        shares: Number(
+            post.shareCount ??
+            post.sharesCount ??
+            post.engagementSummary?.shareCount ??
+            post.engagementSummary?.sharesCount ??
+            0
+        ),
+        sharesCount: Number(
+            post.shareCount ??
+            post.sharesCount ??
+            post.engagementSummary?.shareCount ??
+            post.engagementSummary?.sharesCount ??
+            0
+        ),
         commentsCount: commentsCount,
+        commentCount: commentsCount,
         isSaved: post.isBookmarked || post.engagementSummary?.isBookmarkedByCurrentUser || false,
         userReaction: post.engagementSummary?.reactionSummary?.currentUserReactionType?.toLowerCase() || null,
         reactionSummary: post.engagementSummary?.reactionSummary || null,
@@ -809,71 +888,135 @@ export const mapPost = (post) => {
     };
 };
 
-export const mapArticle = (article) => ({
-    id: article.articleId,
-    title: article.title,
-    subtitle: article.summary || '',
-    content: article.contentBody || '',
-    category: article.category || 'General',
-    tags: article.tags || [],
-    image: resolveMediaUrl(article.thumbnailUrl) || (article.thumbnailUrl || ''),
-    author: {
-        id: article.authorId,
-        name: article.authorFullName,
-        role: article.authorDesignation || 'Writer',
-        avatar: article.authorProfilePhotoUrl ||
-            `https://ui-avatars.com/api/?name=${encodeURIComponent(article.authorFullName)}&background=6366f1&color=fff&size=256&bold=true`,
-    },
-    time: new Date(article.publishedDate || article.createdDate).toLocaleString(),
-    readTime: article.estimatedReadMinutes ? `${article.estimatedReadMinutes} min read` : '5 min read',
-    likes: article.reactionCount || 0,
-    views: article.viewCount || 0,
-    commentsCount: article.commentsCount ?? article.commentCount ?? article.engagementSummary?.commentsCount ?? 0,
-    status: article.status || 'Published',
-});
+export const mapArticle = (article) => {
+    const likesCount = Number(
+        article.engagementSummary?.reactionSummary?.totalCount ??
+        article.engagementSummary?.reactionSummary?.likeCount ??
+        article.reactionCount ??
+        article.reactionsCount ??
+        article.likesCount ??
+        article.likes ??
+        0
+    );
+    const commentsCount = Number(
+        article.engagementSummary?.commentsCount ??
+        article.engagementSummary?.commentCount ??
+        article.commentsCount ??
+        article.commentCount ??
+        0
+    );
 
-export const mapVideo = (v) => ({
-    id: v.videoId,
-    title: v.title,
-    description: v.description || '',
-    category: v.category || 'General',
-    tags: v.tags || [],
-    thumbnail: v.thumbnailUrl || '',
-    videoUrl: v.videoUrl || '',
-    duration: v.durationSeconds ? formatDuration(v.durationSeconds) : '0:00',
-    author: {
-        id: v.authorId,
-        name: v.authorFullName,
-        avatar: v.authorProfilePhotoUrl ||
-            `https://ui-avatars.com/api/?name=${encodeURIComponent(v.authorFullName)}&background=6366f1&color=fff&size=256&bold=true`,
-    },
-    views: v.viewCount || 0,
-    likes: v.reactionCount || 0,
-    commentsCount: v.commentsCount ?? v.commentCount ?? v.engagementSummary?.commentsCount ?? 0,
-    time: new Date(v.uploadedDate || v.createdDate).toLocaleString(),
-});
+    return {
+        id: article.articleId || article.id,
+        title: article.title,
+        subtitle: article.summary || '',
+        content: article.contentBody || '',
+        category: article.category || 'General',
+        tags: article.tags || [],
+        image: resolveMediaUrl(article.thumbnailUrl) || (article.thumbnailUrl || ''),
+        author: {
+            id: article.authorId,
+            name: article.authorFullName,
+            role: article.authorDesignation || 'Writer',
+            avatar: article.authorProfilePhotoUrl ||
+                `https://ui-avatars.com/api/?name=${encodeURIComponent(article.authorFullName || 'User')}&background=6366f1&color=fff&size=256&bold=true`,
+        },
+        time: new Date(article.publishedDate || article.createdDate).toLocaleString(),
+        readTime: article.estimatedReadMinutes ? `${article.estimatedReadMinutes} min read` : '5 min read',
+        likes: likesCount,
+        likesCount: likesCount,
+        views: article.viewCount || 0,
+        commentsCount: commentsCount,
+        commentCount: commentsCount,
+        status: article.status || 'Published',
+    };
+};
 
-export const mapPodcast = (p) => ({
-    id: p.podcastId || p.seriesId,
-    seriesId: p.seriesId,
-    title: p.title,
-    description: p.description || '',
-    category: p.category || 'General',
-    tags: p.tags || [],
-    coverImage: p.coverImageUrl || '',
-    audioUrl: p.audioUrl || '',
-    duration: p.durationSeconds ? formatDuration(p.durationSeconds) : '0:00',
-    author: {
-        id: p.authorId,
-        name: p.authorFullName,
-        avatar: p.authorProfilePhotoUrl ||
-            `https://ui-avatars.com/api/?name=${encodeURIComponent(p.authorFullName)}&background=6366f1&color=fff&size=256&bold=true`,
-    },
-    episodeNumber: p.episodeNumber || 1,
-    commentsCount: p.commentsCount ?? p.commentCount ?? p.engagementSummary?.commentsCount ?? 0,
-    plays: p.playCount || 0,
-    time: new Date(p.uploadedDate || p.createdDate).toLocaleString(),
-});
+export const mapVideo = (v) => {
+    const likesCount = Number(
+        v.engagementSummary?.reactionSummary?.totalCount ??
+        v.engagementSummary?.reactionSummary?.likeCount ??
+        v.reactionCount ??
+        v.reactionsCount ??
+        v.likesCount ??
+        v.likes ??
+        0
+    );
+    const commentsCount = Number(
+        v.engagementSummary?.commentsCount ??
+        v.engagementSummary?.commentCount ??
+        v.commentsCount ??
+        v.commentCount ??
+        0
+    );
+
+    return {
+        id: v.videoId || v.id,
+        title: v.title,
+        description: v.description || '',
+        category: v.category || 'General',
+        tags: v.tags || [],
+        thumbnail: v.thumbnailUrl || '',
+        videoUrl: v.videoUrl || '',
+        duration: v.durationSeconds ? formatDuration(v.durationSeconds) : '0:00',
+        author: {
+            id: v.authorId,
+            name: v.authorFullName,
+            avatar: v.authorProfilePhotoUrl ||
+                `https://ui-avatars.com/api/?name=${encodeURIComponent(v.authorFullName || 'User')}&background=6366f1&color=fff&size=256&bold=true`,
+        },
+        views: v.viewCount || 0,
+        likes: likesCount,
+        likesCount: likesCount,
+        commentsCount: commentsCount,
+        commentCount: commentsCount,
+        time: new Date(v.uploadedDate || v.createdDate).toLocaleString(),
+    };
+};
+
+export const mapPodcast = (p) => {
+    const likesCount = Number(
+        p.engagementSummary?.reactionSummary?.totalCount ??
+        p.engagementSummary?.reactionSummary?.likeCount ??
+        p.reactionCount ??
+        p.reactionsCount ??
+        p.likesCount ??
+        p.likes ??
+        0
+    );
+    const commentsCount = Number(
+        p.engagementSummary?.commentsCount ??
+        p.engagementSummary?.commentCount ??
+        p.commentsCount ??
+        p.commentCount ??
+        0
+    );
+
+    return {
+        id: p.podcastId || p.seriesId || p.id,
+        seriesId: p.seriesId,
+        title: p.title,
+        description: p.description || '',
+        category: p.category || 'General',
+        tags: p.tags || [],
+        coverImage: p.coverImageUrl || '',
+        audioUrl: p.audioUrl || '',
+        duration: p.durationSeconds ? formatDuration(p.durationSeconds) : '0:00',
+        author: {
+            id: p.authorId,
+            name: p.authorFullName,
+            avatar: p.authorProfilePhotoUrl ||
+                `https://ui-avatars.com/api/?name=${encodeURIComponent(p.authorFullName || 'User')}&background=6366f1&color=fff&size=256&bold=true`,
+        },
+        episodeNumber: p.episodeNumber || 1,
+        likes: likesCount,
+        likesCount: likesCount,
+        commentsCount: commentsCount,
+        commentCount: commentsCount,
+        plays: p.playCount || 0,
+        time: new Date(p.uploadedDate || p.createdDate).toLocaleString(),
+    };
+};
 
 export const mapNotification = (n) => {
     const iconMap = {
@@ -921,27 +1064,55 @@ export const mapFeedItem = (item) => {
         isVerified: false,
     };
 
-    const commentsCount = Number(item.engagementSummary?.commentCount ?? item.engagementSummary?.commentsCount ?? 0);
-    const likesCount = Number(item.engagementSummary?.reactionCount ?? item.engagementSummary?.reactionsCount ?? item.engagementSummary?.totalReactions ?? 0);
-    const sharesCount = Number(item.engagementSummary?.shareCount ?? item.engagementSummary?.sharesCount ?? 0);
+    const commentsCount = Number(
+        item.engagementSummary?.commentsCount ??
+        item.engagementSummary?.commentCount ??
+        item.commentsCount ??
+        item.commentCount ??
+        (Array.isArray(item.comments) ? item.comments.length : 0)
+    );
+    const likesCount = Number(
+        item.engagementSummary?.reactionSummary?.totalCount ??
+        item.engagementSummary?.reactionSummary?.likeCount ??
+        item.engagementSummary?.totalReactions ??
+        item.engagementSummary?.reactionCount ??
+        item.engagementSummary?.reactionsCount ??
+        item.likesCount ??
+        item.likeCount ??
+        item.likes ??
+        0
+    );
+    const sharesCount = Number(
+        item.engagementSummary?.sharesCount ??
+        item.engagementSummary?.shareCount ??
+        item.sharesCount ??
+        item.shares ??
+        0
+    );
 
     const base = {
-        id: item.contentId,
-        type: item.contentType.toLowerCase(),
+        id: item.contentId || item.id || item.postId,
+        contentId: item.contentId || item.id || item.postId,
+        postId: item.contentId || item.id || item.postId,
+        type: (item.contentType || 'Post').toLowerCase(),
         author,
-        time: new Date(item.publishedDate).toLocaleString(),
+        time: new Date(item.publishedDate || item.createdDate || Date.now()).toLocaleString(),
         likes: likesCount,
+        likesCount: likesCount,
+        likeCount: likesCount,
         shares: sharesCount,
-        views: item.engagementSummary?.viewCount || 0,
+        sharesCount: sharesCount,
+        views: item.engagementSummary?.viewCount || item.views || 0,
         commentsCount: commentsCount,
+        commentCount: commentsCount,
         isSaved: item.engagementSummary?.isBookmarkedByCurrentUser || false,
-        userReaction: item.engagementSummary?.reactionSummary?.currentUserReactionType?.toLowerCase() || item.engagementSummary?.currentUserReactionType?.toLowerCase() || null,
+        userReaction: item.engagementSummary?.reactionSummary?.currentUserReactionType?.toLowerCase() || item.engagementSummary?.currentUserReactionType?.toLowerCase() || item.userReaction || null,
         reactionSummary: item.engagementSummary?.reactionSummary || null,
         topReactionTypes: item.engagementSummary?.reactionSummary?.topReactionTypes || [],
         reactions: item.engagementSummary?.reactionSummary?.reactions || [],
-        comments: [], // Comments are loaded live from API on expand
+        comments: Array.isArray(item.comments) ? item.comments : [],
         title: item.title,
-        content: item.textSummary,
+        content: item.textSummary || item.contentText || item.content,
         audienceType: item.audienceType || 'Everyone',
     };
 

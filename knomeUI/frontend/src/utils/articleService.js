@@ -1,5 +1,5 @@
 import { apiClient } from './apiClient';
-import { resolveMediaUrl } from './apiService';
+import { resolveMediaUrl, formatToDDMMYYYY } from './apiService';
 
 const DEFAULT_COVER_IMAGES = [
     'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200',
@@ -78,16 +78,28 @@ export async function getArticles(categoryId = null, tag = null, search = null, 
                 ? resolveMediaUrl(art.authorProfilePhotoUrl) 
                 : `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=6366f1&color=fff&size=256&bold=true`;
 
+            const isScheduledFuture = art.status === 'Scheduled' && art.scheduledDate && new Date(art.scheduledDate).getTime() > Date.now();
+            const displayDate = isScheduledFuture
+                ? `Scheduled for ${formatToDDMMYYYY(art.scheduledDate)}`
+                : formatToDDMMYYYY(art.publishedDate || art.scheduledDate || art.createdDate);
+
             return {
                 id: art.articleId.toString(),
+                articleId: art.articleId,
                 title: art.title,
                 subtitle: art.description || 'No summary provided',
+                status: art.status || 'Published',
+                scheduledDate: art.scheduledDate || null,
+                isScheduledFuture: isScheduledFuture,
+                authorUserId: art.authorUserId,
                 author: {
+                    id: art.authorUserId,
                     name: authorName,
                     role: art.authorDesignation || 'Writer',
                     avatar: authorAvatar
                 },
-                date: new Date(art.publishedDate || art.createdDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                date: displayDate,
+                formattedDate: formatToDDMMYYYY(art.publishedDate || art.scheduledDate || art.createdDate),
                 readTime: `${art.avgReadTimeSeconds > 0 ? Math.ceil(art.avgReadTimeSeconds / 60) : 5} min read`,
                 category: art.categoryName || 'General',
                 tags: art.tags || [],
@@ -126,6 +138,30 @@ export async function saveArticle(articleDto) {
     }
 }
 
+export async function updateArticle(articleId, articleDto) {
+    try {
+        const response = await apiClient.put(`/Articles/${articleId}`, articleDto);
+        return response;
+    } catch (error) {
+        console.error('Failed to update article', error);
+        throw error;
+    }
+}
+
+export async function publishScheduledArticleNow(article) {
+    const updateDto = {
+        title: article.title,
+        description: article.subtitle || article.description || null,
+        contentHtml: article.rawHtml || `<p>${article.title}</p>`,
+        categoryId: article.categoryId || 7,
+        status: "Published",
+        scheduledDate: null,
+        tags: article.tags || [],
+        attachmentUrls: (article.attachments || []).map(a => a.rawUrl || a.url).filter(Boolean)
+    };
+    return await updateArticle(article.id || article.articleId, updateDto);
+}
+
 export async function deleteArticle(articleId) {
     try {
         const response = await apiClient.delete(`/Articles/${articleId}`);
@@ -155,4 +191,5 @@ export async function createArticleCategory(name) {
         throw error;
     }
 }
+
 

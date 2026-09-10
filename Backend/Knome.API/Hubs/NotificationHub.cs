@@ -8,12 +8,41 @@ public class NotificationHub : Hub
 {
     public override async Task OnConnectedAsync()
     {
-        var userIdClaim = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+        var userIdClaim = Context.User?.FindFirst("uid")?.Value
+            ?? Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
             ?? Context.User?.FindFirst("sub")?.Value;
 
         if (int.TryParse(userIdClaim, out var userId))
         {
             await Groups.AddToGroupAsync(Context.ConnectionId, $"User_{userId}");
+        }
+        else
+        {
+            var identifier = Context.User?.FindFirst(ClaimTypes.Email)?.Value
+                ?? Context.User?.FindFirst("email")?.Value
+                ?? Context.User?.FindFirst("employeeId")?.Value
+                ?? Context.User?.FindFirst("empId")?.Value;
+
+            if (!string.IsNullOrEmpty(identifier))
+            {
+                var httpContext = Context.GetHttpContext();
+                if (httpContext != null)
+                {
+                    var authService = httpContext.RequestServices.GetService<Knome.API.Interfaces.IAuthService>();
+                    if (authService != null)
+                    {
+                        try
+                        {
+                            var currentUserDto = await authService.GetCurrentUserByIdentifierAsync(identifier);
+                            if (currentUserDto != null && currentUserDto.UserId > 0)
+                            {
+                                await Groups.AddToGroupAsync(Context.ConnectionId, $"User_{currentUserDto.UserId}");
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
         }
 
         await base.OnConnectedAsync();

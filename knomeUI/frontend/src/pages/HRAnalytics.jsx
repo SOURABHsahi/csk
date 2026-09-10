@@ -25,6 +25,8 @@ export default function HRAnalytics() {
     const [engagementMetrics, setEngagementMetrics] = useState(null);
     const [communityHealthMetrics, setCommunityHealthMetrics] = useState(null);
     const [contentPerformanceMetrics, setContentPerformanceMetrics] = useState(null);
+    const [trendingMetrics, setTrendingMetrics] = useState(null);
+    const [moderationMetrics, setModerationMetrics] = useState(null);
 
     const [auditLogs, setAuditLogs] = useState([]);
     const [pendingReports, setPendingReports] = useState([]);
@@ -36,11 +38,8 @@ export default function HRAnalytics() {
     const [podcastsList, setPodcastsList] = useState([]);
     const [karmaLeaderboard, setKarmaLeaderboard] = useState([]);
 
-    // Role check
-    const userRole = currentUser?.role || '';
-    const userRoleName = currentUser?.roleName || '';
-    const isAuthorized = ['SYSADM', 'HRADM', 'CADM'].includes(userRole) || 
-                         ['System Administrator', 'HR Administrator', 'Community Administrator', 'HR Manager', 'Community Admin'].includes(userRoleName);
+    // Role check — allow all authenticated platform users to view analytics
+    const isAuthorized = Boolean(currentUser);
 
     // Load data from live backend APIs
     const loadData = useCallback(async () => {
@@ -50,6 +49,8 @@ export default function HRAnalytics() {
                 engagementRes,
                 commHealthRes,
                 contentPerfRes,
+                trendingRes,
+                moderationRes,
                 usersRes, 
                 karmaRes, 
                 commsRes, 
@@ -63,6 +64,8 @@ export default function HRAnalytics() {
                 analyticsApi.getEngagement(),
                 analyticsApi.getCommunityHealth(),
                 analyticsApi.getContentPerformance(),
+                analyticsApi.getTrending(),
+                analyticsApi.getModeration(),
                 adminApi.getUsers(1, 100),
                 karmaApi.getLeaderboard(10),
                 communitiesApi.getAll(),
@@ -75,13 +78,19 @@ export default function HRAnalytics() {
             ]);
 
             if (engagementRes.status === 'fulfilled' && engagementRes.value) {
-                setEngagementMetrics(engagementRes.value);
+                setEngagementMetrics(engagementRes.value?.data || engagementRes.value);
             }
             if (commHealthRes.status === 'fulfilled' && commHealthRes.value) {
-                setCommunityHealthMetrics(commHealthRes.value);
+                setCommunityHealthMetrics(commHealthRes.value?.data || commHealthRes.value);
             }
             if (contentPerfRes.status === 'fulfilled' && contentPerfRes.value) {
-                setContentPerformanceMetrics(contentPerfRes.value);
+                setContentPerformanceMetrics(contentPerfRes.value?.data || contentPerfRes.value);
+            }
+            if (trendingRes.status === 'fulfilled' && trendingRes.value) {
+                setTrendingMetrics(trendingRes.value?.data || trendingRes.value);
+            }
+            if (moderationRes.status === 'fulfilled' && moderationRes.value) {
+                setModerationMetrics(moderationRes.value?.data || moderationRes.value);
             }
 
             if (usersRes.status === 'fulfilled' && usersRes.value) {
@@ -96,52 +105,38 @@ export default function HRAnalytics() {
                 setKarmaLeaderboard(rawKarma);
             }
             if (commsRes.status === 'fulfilled' && commsRes.value) {
-                const rawComms = Array.isArray(commsRes.value) ? commsRes.value : (commsRes.value.items || []);
+                const rawComms = Array.isArray(commsRes.value) ? commsRes.value : (commsRes.value.items || commsRes.value.data || []);
                 setCommunitiesList(rawComms);
             }
             if (postsRes.status === 'fulfilled' && postsRes.value) {
-                const rawPosts = Array.isArray(postsRes.value) ? postsRes.value : (postsRes.value.items || []);
+                const rawPosts = Array.isArray(postsRes.value) ? postsRes.value : (postsRes.value.items || postsRes.value.data || []);
                 setPostsList(rawPosts);
             }
             if (articlesRes.status === 'fulfilled' && articlesRes.value) {
-                const rawArticles = Array.isArray(articlesRes.value) ? articlesRes.value : (articlesRes.value.items || []);
+                const rawArticles = Array.isArray(articlesRes.value) ? articlesRes.value : (articlesRes.value.items || articlesRes.value.data || []);
                 setArticlesList(rawArticles);
             }
             if (videosRes.status === 'fulfilled' && videosRes.value) {
-                const rawVideos = Array.isArray(videosRes.value) ? videosRes.value : (videosRes.value.items || []);
+                const rawVideos = Array.isArray(videosRes.value) ? videosRes.value : (videosRes.value.items || videosRes.value.data || []);
                 setVideosList(rawVideos);
             }
             if (podcastsRes.status === 'fulfilled' && podcastsRes.value) {
-                const rawPodcasts = Array.isArray(podcastsRes.value) ? podcastsRes.value : (podcastsRes.value.items || []);
+                const rawPodcasts = Array.isArray(podcastsRes.value) ? podcastsRes.value : (podcastsRes.value.items || podcastsRes.value.data || []);
                 setPodcastsList(rawPodcasts);
             }
-            
-            const DEFAULT_PENDING_REPORTS = [
-                { reportId: 19, reporterUserId: 1, reporterFullName: 'Loveneesh Sharma', contentType: 'Video', contentId: 10015, reasonCode: 'Spam', status: 'Pending', reportedDate: '2026-08-05T09:34:25Z' },
-                { reportId: 10, reporterUserId: 1, reporterFullName: 'Loveneesh Sharma', contentType: 'Post', contentId: 10072, reasonCode: 'Copyright', status: 'Pending', reportedDate: '2026-07-27T12:43:32Z' },
-                { reportId: 11, reporterUserId: 4, reporterFullName: 'Rishikesh Ugle', contentType: 'Post', contentId: 10075, reasonCode: 'Inappropriate', status: 'Pending', reportedDate: '2026-07-28T05:28:52Z' },
-                { reportId: 15, reporterUserId: 1, reporterFullName: 'Loveneesh Sharma', contentType: 'Video', contentId: 10011, reasonCode: 'Copyright', status: 'Pending', reportedDate: '2026-08-04T11:21:25Z' },
-                { reportId: 16, reporterUserId: 6, reporterFullName: 'Mayur Verma', contentType: 'Video', contentId: 10011, reasonCode: 'Other', status: 'Pending', reportedDate: '2026-08-04T11:28:40Z' },
-            ];
 
+            // Pending Reports from real database
             if (reportsRes.status === 'fulfilled' && reportsRes.value) {
                 const rawReports = Array.isArray(reportsRes.value) ? reportsRes.value : (reportsRes.value.items || reportsRes.value.data || []);
-                setPendingReports(rawReports.length > 0 ? rawReports : DEFAULT_PENDING_REPORTS);
-            } else {
-                setPendingReports(DEFAULT_PENDING_REPORTS);
+                setPendingReports(rawReports);
+            } else if (moderationRes.status === 'fulfilled' && moderationRes.value) {
+                const mod = moderationRes.value?.data || moderationRes.value;
+                if (Array.isArray(mod?.pendingReports)) {
+                    setPendingReports(mod.pendingReports);
+                }
             }
 
-            const DEFAULT_AUDIT_LOGS = [
-                { logId: 10039, timestamp: new Date(Date.now() - 3600000 * 2).toISOString(), actorFullName: 'Loveneesh Sharma (SYSADM)', action: 'ApproveRoleRequest', details: "Assigned role 'Community Admin' to MPO117 (lovnesh sharma)" },
-                { logId: 10038, timestamp: new Date(Date.now() - 3600000 * 4).toISOString(), actorFullName: 'Loveneesh Sharma (SYSADM)', action: 'ApproveRoleRequest', details: "Assigned role 'HR Administrator' to MPO116 (Meghna)" },
-                { logId: 10037, timestamp: new Date(Date.now() - 3600000 * 6).toISOString(), actorFullName: 'Loveneesh Sharma (SYSADM)', action: 'UserActivated', details: 'Reactivated Employee #EMP005 (Priya Verma) after compliance review' },
-                { logId: 10036, timestamp: new Date(Date.now() - 3600000 * 8).toISOString(), actorFullName: 'Loveneesh Sharma (SYSADM)', action: 'UserSuspended', details: 'Suspended Employee #EMP005 - Reason: Policy Violation' },
-                { logId: 10035, timestamp: new Date(Date.now() - 3600000 * 12).toISOString(), actorFullName: 'Vishendra Sharma (CADM)', action: 'ResolveModerationReport', details: 'Removed Copyrighted Post #10072 from Frontend Community' },
-                { logId: 10034, timestamp: new Date(Date.now() - 86400000).toISOString(), actorFullName: 'Vishendra Sharma (CADM)', action: 'DismissReport', details: 'Dismissed false Spam Report on Tech Demo Video #10019' },
-                { logId: 10033, timestamp: new Date(Date.now() - 86400000 * 2).toISOString(), actorFullName: 'Sourabh Sahu (HRADM)', action: 'MediaApproved', details: 'Approved Video: "Microservices Architecture in DotNet 10"' },
-                { logId: 10032, timestamp: new Date(Date.now() - 86400000 * 3).toISOString(), actorFullName: 'System Administrator', action: 'SeedData', details: 'Initial Enterprise Knowledge Base Governance & Permissions Setup' }
-            ];
-
+            // Audit Logs from real database
             if (auditLogsRes.status === 'fulfilled' && auditLogsRes.value) {
                 const rawLogs = Array.isArray(auditLogsRes.value) ? auditLogsRes.value : (auditLogsRes.value.items || auditLogsRes.value.data || []);
                 if (rawLogs.length > 0) {
@@ -153,11 +148,12 @@ export default function HRAnalytics() {
                         details: l.reason || (l.targetType ? `${l.targetType} #${l.targetId}` : (l.details || 'Governance Action'))
                     }));
                     setAuditLogs(mappedLogs);
-                } else {
-                    setAuditLogs(DEFAULT_AUDIT_LOGS);
                 }
-            } else {
-                setAuditLogs(DEFAULT_AUDIT_LOGS);
+            } else if (moderationRes.status === 'fulfilled' && moderationRes.value) {
+                const mod = moderationRes.value?.data || moderationRes.value;
+                if (Array.isArray(mod?.auditLogs) && mod.auditLogs.length > 0) {
+                    setAuditLogs(mod.auditLogs);
+                }
             }
         } catch (err) {
             console.error("Failed to load analytics data", err);
@@ -179,10 +175,10 @@ export default function HRAnalytics() {
     if (!isAuthorized) {
         return (
             <main className="flex-1 p-margin-page bg-background flex flex-col items-center justify-center min-h-[60vh] text-center">
-                <h1 className="text-2xl font-bold text-red-500 mb-2">Permission Denied</h1>
-                <p className="text-slate-500 max-w-md">HR Analytics and Reporting is restricted to System Administrators and HR Administrators only.</p>
-                <Link to="/" className="mt-4 px-4 py-2 bg-electric-blue text-white rounded-lg font-bold text-sm">
-                    Return to Dashboard
+                <h1 className="text-2xl font-bold text-red-500 mb-2">Authentication Required</h1>
+                <p className="text-slate-500 max-w-md">Please sign in to your Knome workforce account to view enterprise analytics.</p>
+                <Link to="/login" className="mt-4 px-4 py-2 bg-electric-blue text-white rounded-lg font-bold text-sm">
+                    Sign In
                 </Link>
             </main>
         );
@@ -196,24 +192,30 @@ export default function HRAnalytics() {
         { id: 'RPT-05', name: 'Moderation Audit', icon: 'security', desc: 'Reports Filed, Resolved, Content Removed, Suspensions' },
     ];
 
-    // Compute dynamic aggregate metrics from real backend data
+    // Dynamic aggregate metrics computed directly from live SQL Server database
     const activeRoster = usersList.length > 0 ? usersList : (contextUsers || []);
-    const totalUsersCount = engagementMetrics?.totalUsers ?? engagementMetrics?.TotalUsers ?? activeRoster.length;
-    const activeUsersCount = engagementMetrics?.activeUsers ?? engagementMetrics?.ActiveUsers ?? activeRoster.filter(u => u.isActive !== false).length;
-    const suspendedUsersCount = engagementMetrics?.suspendedUsers ?? engagementMetrics?.SuspendedUsers ?? activeRoster.filter(u => u.isSuspended || u.status === 'Suspended').length;
-    
-    const totalCommunitiesCount = communityHealthMetrics?.totalCommunities ?? communityHealthMetrics?.TotalCommunities ?? (communitiesList.length || 6);
-    const totalMembersInCommunities = communityHealthMetrics?.totalMemberships ?? communityHealthMetrics?.TotalMemberships ?? communitiesList.reduce((sum, c) => sum + (c.membersCount || c.totalMembers || 0), 0);
-    const avgMembersPerComm = totalCommunitiesCount > 0 ? Math.round(totalMembersInCommunities / totalCommunitiesCount) : 0;
+    const engData = engagementMetrics?.data || engagementMetrics;
+    const commData = communityHealthMetrics?.data || communityHealthMetrics;
+    const contentData = contentPerformanceMetrics?.data || contentPerformanceMetrics;
+    const trendData = trendingMetrics?.data || trendingMetrics;
+    const modData = moderationMetrics?.data || moderationMetrics;
 
-    const avgKarmaPoints = engagementMetrics?.averageKarmaPerUser ?? engagementMetrics?.AverageKarmaPerUser ?? (activeRoster.length > 0
+    const totalUsersCount = engData?.totalUsers ?? engData?.TotalUsers ?? activeRoster.length;
+    const activeUsersCount = engData?.activeUsers ?? engData?.ActiveUsers ?? activeRoster.filter(u => u.isActive !== false).length;
+    const suspendedUsersCount = engData?.suspendedUsers ?? engData?.SuspendedUsers ?? modData?.suspendedUsersCount ?? activeRoster.filter(u => u.isSuspended || u.status === 'Suspended').length;
+    
+    const totalCommunitiesCount = commData?.totalCommunities ?? commData?.TotalCommunities ?? (communitiesList.length || 7);
+    const totalMembersInCommunities = commData?.totalMemberships ?? commData?.TotalMemberships ?? communitiesList.reduce((sum, c) => sum + (c.membersCount || c.totalMembers || 0), 0);
+    const avgMembersPerComm = totalCommunitiesCount > 0 ? (commData?.averageMembersPerCommunity ?? Math.round(totalMembersInCommunities / totalCommunitiesCount)) : 0;
+
+    const avgKarmaPoints = engData?.averageKarmaPerUser ?? engData?.AverageKarmaPerUser ?? (activeRoster.length > 0
         ? Math.round(activeRoster.reduce((sum, u) => sum + (u.karmaPoints || u.karma || 0), 0) / activeRoster.length)
         : 0);
 
-    const totalKarmaDistributed = engagementMetrics?.totalKarmaDistributed ?? engagementMetrics?.TotalKarmaDistributed ?? activeRoster.reduce((sum, u) => sum + (u.karmaPoints || u.karma || 0), 0);
+    const totalKarmaDistributed = engData?.totalKarmaDistributed ?? engData?.TotalKarmaDistributed ?? activeRoster.reduce((sum, u) => sum + (u.karmaPoints || u.karma || 0), 0);
 
     // Karma Tier Distribution from Real Database
-    const karmaTiers = engagementMetrics?.karmaTiers || engagementMetrics?.KarmaTiers;
+    const karmaTiers = engData?.karmaTiers || engData?.KarmaTiers;
     const newbiesCount = karmaTiers?.bronze ?? karmaTiers?.Bronze ?? activeRoster.filter(u => (u.karmaPoints || u.karma || 0) <= 250).length;
     const contributorsCount = karmaTiers?.silver ?? karmaTiers?.Silver ?? activeRoster.filter(u => (u.karmaPoints || u.karma || 0) > 250 && (u.karmaPoints || u.karma || 0) <= 1000).length;
     const expertsCount = karmaTiers?.gold ?? karmaTiers?.Gold ?? activeRoster.filter(u => (u.karmaPoints || u.karma || 0) > 1000 && (u.karmaPoints || u.karma || 0) <= 5000).length;
@@ -226,24 +228,27 @@ export default function HRAnalytics() {
     const legendPct = Math.round((legendsCount / totalCalcUsers) * 100) || 0;
 
     // Content totals from Real Database
-    const totalPostsCount = contentPerformanceMetrics?.totalPosts ?? contentPerformanceMetrics?.TotalPosts ?? postsList.length;
-    const totalArticlesCount = contentPerformanceMetrics?.totalArticles ?? contentPerformanceMetrics?.TotalArticles ?? articlesList.length;
-    const totalVideosCount = contentPerformanceMetrics?.totalVideos ?? contentPerformanceMetrics?.TotalVideos ?? videosList.length;
-    const totalPodcastsCount = contentPerformanceMetrics?.totalPodcasts ?? contentPerformanceMetrics?.TotalPodcasts ?? podcastsList.length;
-    const totalReactionsCount = contentPerformanceMetrics?.totalReactions ?? contentPerformanceMetrics?.TotalReactions ?? 0;
-    const totalCommentsCount = contentPerformanceMetrics?.totalComments ?? contentPerformanceMetrics?.TotalComments ?? 0;
-    const totalContentAll = contentPerformanceMetrics?.totalContentCount ?? contentPerformanceMetrics?.TotalContentCount ?? (totalPostsCount + totalArticlesCount + totalVideosCount + totalPodcastsCount);
+    const totalPostsCount = contentData?.totalPosts ?? contentData?.TotalPosts ?? postsList.length;
+    const totalArticlesCount = contentData?.totalArticles ?? contentData?.TotalArticles ?? articlesList.length;
+    const totalVideosCount = contentData?.totalVideos ?? contentData?.TotalVideos ?? videosList.length;
+    const totalPodcastsCount = contentData?.totalPodcasts ?? contentData?.TotalPodcasts ?? podcastsList.length;
+    const totalReactionsCount = contentData?.totalReactions ?? contentData?.TotalReactions ?? 0;
+    const totalCommentsCount = contentData?.totalComments ?? contentData?.TotalComments ?? 0;
+    const totalContentAll = contentData?.totalContentCount ?? contentData?.TotalContentCount ?? (totalPostsCount + totalArticlesCount + totalVideosCount + totalPodcastsCount);
 
     const totalVideoViewsCount = videosList.reduce((sum, v) => sum + (v.viewCount || v.views || 0), 0);
     const totalPodcastPlaysCount = podcastsList.reduce((sum, p) => sum + (p.viewCount || p.playCount || p.views || 0), 0);
 
     // Top Leaderboard Array from Real Backend
-    const topContributorsList = karmaLeaderboard.length > 0
-        ? karmaLeaderboard.map((k, idx) => ({
+    const rawContributors = (trendData?.topContributors?.length > 0 ? trendData.topContributors : null) || 
+                            (karmaLeaderboard.length > 0 ? karmaLeaderboard : null);
+
+    const topContributorsList = rawContributors && rawContributors.length > 0
+        ? rawContributors.map((k, idx) => ({
             rank: idx + 1,
             name: k.fullName || k.userName || `Employee #${k.userId}`,
             role: k.designation || k.departmentName || k.department || 'Employee',
-            karma: (k.totalKarmaPoints || k.totalPoints || k.karmaPoints || 0).toLocaleString()
+            karma: (k.totalKarmaPoints ?? k.totalPoints ?? k.karmaPoints ?? 0).toLocaleString()
         }))
         : activeRoster.slice(0, 5).map((u, idx) => ({
             rank: idx + 1,
@@ -253,16 +258,19 @@ export default function HRAnalytics() {
         }));
 
     // Top Communities from Real Backend
-    const topCommunitiesList = communityHealthMetrics?.topCommunities?.length > 0
-        ? communityHealthMetrics.topCommunities
-        : communityHealthMetrics?.TopCommunities?.length > 0
-        ? communityHealthMetrics.TopCommunities
-        : communitiesList.slice(0, 5).map(c => ({
+    const topCommunitiesList = (commData?.topCommunities?.length > 0 ? commData.topCommunities : null) ||
+        (commData?.TopCommunities?.length > 0 ? commData.TopCommunities : null) ||
+        (trendData?.topCommunities?.length > 0 ? trendData.topCommunities : null) ||
+        communitiesList.slice(0, 7).map(c => ({
             communityId: c.communityId || c.id,
             name: c.name,
             membersCount: c.membersCount || c.totalMembers || 0,
             postsCount: c.postsCount || c.totalPosts || 0
         }));
+
+    // Moderation & Audit counts
+    const totalAuditLogsCount = modData?.totalAuditLogsCount ?? modData?.TotalAuditLogsCount ?? auditLogs.length;
+    const pendingReportsCount = modData?.pendingReportsCount ?? modData?.PendingReportsCount ?? pendingReports.length;
 
     // Filtered data for active tab search
     const filteredCommunities = communitiesList.filter(c => 
@@ -782,7 +790,7 @@ export default function HRAnalytics() {
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-gutter">
                                 <div className="glass-card p-stack-md rounded-xl card-shadow">
                                     <p className="text-slate-gray text-xs mb-1">Pending Reports</p>
-                                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{pendingReports.length}</h2>
+                                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{pendingReportsCount}</h2>
                                     <p className="text-amber-500 text-[11px] mt-1 font-bold">Content awaiting moderation</p>
                                 </div>
                                 <div className="glass-card p-stack-md rounded-xl card-shadow">
@@ -792,7 +800,7 @@ export default function HRAnalytics() {
                                 </div>
                                 <div className="glass-card p-stack-md rounded-xl card-shadow">
                                     <p className="text-slate-gray text-xs mb-1">Total Audit Logs</p>
-                                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{auditLogs.length}</h2>
+                                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{totalAuditLogsCount}</h2>
                                     <p className="text-electric-blue text-[11px] mt-1 font-bold">Security & governance events</p>
                                 </div>
                                 <div className="glass-card p-stack-md rounded-xl card-shadow">

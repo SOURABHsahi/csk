@@ -31,9 +31,9 @@ export default function SsoLogoutPage() {
                 localStorage.removeItem('knome_employeeId');
             }
 
-            let returnUrl = searchParams.get('returnUrl') || 'https://counselling-1.mponline.demo.gov.in:3001/login';
+            let returnUrl = searchParams.get('returnUrl') || 'https://counselling-1.mponline.demo.gov.in:3001/applications';
             if (returnUrl === '/login' || returnUrl.includes('localhost:5173/login')) {
-                returnUrl = 'https://counselling-1.mponline.demo.gov.in:3001/login';
+                returnUrl = 'https://counselling-1.mponline.demo.gov.in:3001/applications';
             }
 
             window.location.href = `https://counselling-1.mponline.demo.gov.in:3001/sso-logout?returnUrl=${encodeURIComponent(returnUrl)}&source=knome`;

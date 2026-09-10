@@ -37,16 +37,23 @@ export default function NotificationToast({ notification, onClose }) {
 
             {/* Notification Details */}
             <div className="flex-1 min-w-0 cursor-pointer" onClick={handleToastClick}>
-                <div className="flex items-center justify-between gap-2 mb-0.5">
+                <div className="flex items-center justify-between gap-2 mb-1">
                     <h4 className="text-xs font-black text-slate-900 dark:text-white truncate">
                         {notification.title || 'New Notification'}
                     </h4>
-                    <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full">
-                        Just now
+                    <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full whitespace-nowrap">
+                        {notification.time || (notification.createdDate ? `${String(new Date(notification.createdDate).getDate()).padStart(2, '0')}-${String(new Date(notification.createdDate).getMonth() + 1).padStart(2, '0')}-${new Date(notification.createdDate).getFullYear()}` : `${String(new Date().getDate()).padStart(2, '0')}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${new Date().getFullYear()}`)}
                     </span>
                 </div>
-                <p className="text-xs font-medium text-slate-600 dark:text-slate-300 line-clamp-2 leading-snug">
-                    {notification.message}
+                <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-snug">
+                    {notification.senderName ? (
+                        <>
+                            <span className="font-bold text-slate-900 dark:text-white">{notification.senderName} </span>
+                            <span>{notification.message?.replace(new RegExp(`^${notification.senderName}\\s*`, 'i'), '') || notification.text}</span>
+                        </>
+                    ) : (
+                        notification.message || notification.text
+                    )}
                 </p>
             </div>
 

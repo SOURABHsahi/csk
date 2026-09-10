@@ -68,17 +68,38 @@ export default function Dashboard() {
         setIsLoading(true);
         try {
             const data = await dashboardApi.getFeed(filterType);
-            if (data && Array.isArray(data)) {
-                const mapped = data.map(mapFeedItem);
-                const postsAndArticlesOnly = mapped.filter(item => {
-                    const type = (item.type || item.contentType || '').toLowerCase();
-                    if (type === 'video' || type === 'podcast') return false;
-                    return true;
+            let mapped = (data && Array.isArray(data)) ? data.map(mapFeedItem) : [];
+            const deletedIds = JSON.parse(localStorage.getItem('knome_deleted_post_ids') || '[]').map(String);
+
+            // Merge local posts so locally created or shared posts survive refresh
+            try {
+                const localPosts = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
+                localPosts.forEach(lp => {
+                    const lpIdStr = String(lp.id || lp.postId || '');
+                    if (!deletedIds.includes(lpIdStr) && !mapped.some(m => String(m.id || m.contentId || m.postId) === lpIdStr)) {
+                        mapped.unshift(mapFeedItem(lp));
+                    }
                 });
-                setPosts(postsAndArticlesOnly);
-            } else {
-                setPosts([]);
-            }
+            } catch (_) {}
+
+            const currentUserIdStr = String(currentUser?.userId || currentUser?.id || '');
+            const postsAndArticlesOnly = mapped.filter(item => {
+                const itemIdStr = String(item.id || item.contentId || item.postId || '');
+                if (deletedIds.includes(itemIdStr)) return false;
+                const type = (item.type || item.contentType || '').toLowerCase();
+                if (type === 'video' || type === 'podcast') return false;
+
+                // Scheduled publication privacy: future scheduled posts visible to author only
+                if (item.status === 'Scheduled' && item.scheduledDate) {
+                    const schedTime = new Date(item.scheduledDate).getTime();
+                    if (schedTime > Date.now()) {
+                        const authorIdStr = String(item.author?.id || item.authorId || item.userId || '');
+                        return authorIdStr === currentUserIdStr;
+                    }
+                }
+                return true;
+            });
+            setPosts(postsAndArticlesOnly);
         } catch (err) {
             console.error('Failed to load feed:', err);
             setPosts([]);
@@ -98,14 +119,17 @@ export default function Dashboard() {
             const mapped = mapFeedItem(newPostData);
             setPosts(prev => {
                 const targetId = mapped.id;
-                if (prev.some(p => p.id === targetId)) return prev;
+                if (prev.some(p => String(p.id) === String(targetId))) return prev;
                 return [mapped, ...prev];
             });
         }
         dashboardApi.getFeed(activeFilter).then(data => {
             if (data && Array.isArray(data)) {
                 const mapped = data.map(mapFeedItem);
+                const deletedIds = JSON.parse(localStorage.getItem('knome_deleted_post_ids') || '[]').map(String);
                 const postsAndArticlesOnly = mapped.filter(item => {
+                    const itemIdStr = String(item.id || item.contentId || item.postId || '');
+                    if (deletedIds.includes(itemIdStr)) return false;
                     const type = (item.type || item.contentType || '').toLowerCase();
                     if (type === 'video' || type === 'podcast') return false;
                     return true;
@@ -118,7 +142,8 @@ export default function Dashboard() {
     const handlePostDeleted = (e) => {
         const deletedId = e?.detail?.id || e;
         if (deletedId) {
-            setPosts(prev => prev.filter(p => p.id !== deletedId));
+            const delStr = String(deletedId);
+            setPosts(prev => prev.filter(p => String(p.id) !== delStr && String(p.contentId) !== delStr && String(p.postId) !== delStr));
         }
     };
 

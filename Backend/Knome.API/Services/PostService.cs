@@ -113,13 +113,28 @@ public class PostService : IPostService
         if (!secCheck.IsValid)
             throw new BadRequestException("Post content or attachments contain blocked URLs or restricted keywords.");
 
+        DateTime? scheduledDate = null;
+        if (dto.Status == PostStatuses.Scheduled && dto.ScheduledDate.HasValue)
+        {
+            scheduledDate = dto.ScheduledDate.Value;
+        }
+
+        // Check if scheduled time has already arrived or is past (comparing UTC timestamps)
+        var scheduledUtc = scheduledDate.HasValue 
+            ? (scheduledDate.Value.Kind == DateTimeKind.Utc ? scheduledDate.Value : scheduledDate.Value.ToUniversalTime()) 
+            : (DateTime?)null;
+        var isAlreadyDue = scheduledUtc.HasValue && scheduledUtc.Value <= DateTime.UtcNow;
+        var finalStatus = isAlreadyDue ? PostStatuses.Published : (string.IsNullOrEmpty(dto.Status) ? PostStatuses.Published : dto.Status);
+        var publishedDate = finalStatus == PostStatuses.Published ? (scheduledDate ?? DateTime.UtcNow) : (DateTime?)null;
+
         var post = new Post
         {
             AuthorUserId = currentUserId,
             ContentText = dto.ContentText,
             AudienceType = dto.AudienceType,
-            Status = dto.Status,
-            PublishedDate = dto.Status == PostStatuses.Published ? DateTime.UtcNow : null,
+            Status = finalStatus,
+            ScheduledDate = scheduledDate,
+            PublishedDate = publishedDate,
             CreatedDate = DateTime.UtcNow
         };
 
@@ -132,10 +147,25 @@ public class PostService : IPostService
         await _karmaService.AwardKarmaAsync(currentUserId, KarmaActivityTypes.CreatePost, KarmaPoints.CreatePostPoints, ContentTypes.Post, savedPost.PostId, KarmaCaps.CreatePostDailyCap);
         if (dto.AudienceCommunityIds != null && dto.AudienceCommunityIds.Any())
         {
-            foreach (var commId in dto.AudienceCommunityIds)
+            foreach (var commId in dto.AudienceCommunityIds.Distinct())
             {
+                var commExists = await _db.Communities.AnyAsync(c => c.CommunityId == commId);
+                if (commExists)
+                {
+                    var alreadyLinked = await _db.CommunityPosts.AnyAsync(cp => cp.CommunityId == commId && cp.PostId == savedPost.PostId);
+                    if (!alreadyLinked)
+                    {
+                        _db.CommunityPosts.Add(new CommunityPost
+                        {
+                            CommunityId = commId,
+                            PostId = savedPost.PostId,
+                            IsPinned = false
+                        });
+                    }
+                }
                 await _karmaService.AwardCommunityParticipationAsync(currentUserId, commId);
             }
+            await _db.SaveChangesAsync();
         }
 
         // FR-NT-01: notify mentioned & targeted users (producer -> generic engine)
@@ -174,9 +204,30 @@ public class PostService : IPostService
 
         post.ContentText = dto.ContentText;
         post.AudienceType = dto.AudienceType;
-        post.Status = dto.Status;
-        if (dto.Status == PostStatuses.Published && post.PublishedDate == null)
-            post.PublishedDate = DateTime.UtcNow;
+
+        if (dto.Status == PostStatuses.Scheduled && dto.ScheduledDate.HasValue)
+        {
+            var scheduledUtc = dto.ScheduledDate.Value.Kind == DateTimeKind.Utc ? dto.ScheduledDate.Value : dto.ScheduledDate.Value.ToUniversalTime();
+            var isAlreadyDue = scheduledUtc <= DateTime.UtcNow;
+            if (isAlreadyDue)
+            {
+                post.Status = PostStatuses.Published;
+                post.ScheduledDate = dto.ScheduledDate;
+                post.PublishedDate = dto.ScheduledDate ?? DateTime.UtcNow;
+            }
+            else
+            {
+                post.Status = PostStatuses.Scheduled;
+                post.ScheduledDate = dto.ScheduledDate;
+            }
+        }
+        else
+        {
+            post.Status = dto.Status;
+            post.ScheduledDate = dto.ScheduledDate;
+            if (dto.Status == PostStatuses.Published && post.PublishedDate == null)
+                post.PublishedDate = DateTime.UtcNow;
+        }
         
         await _repo.UpdatePostAsync(post, dto.AttachmentUrls, dto.AttachmentTypes, dto.MentionedUserIds);
 

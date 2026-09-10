@@ -47,23 +47,7 @@ export default function AuthGuard({ children }) {
     }
 
     if (!isAuthenticated) {
-        // Automatic Single Sign-On Redirect to Employee Hub
-        // redirect_uri is built dynamically from current window origin so it works on any host:
-        // localhost:5173 (Vite dev), localhost:8080 (IIS), or any production domain.
-        const ssoRedirectUri = encodeURIComponent(window.location.origin);
-        // Save the current page URL so we can return the user here after SSO login
-        sessionStorage.setItem('knome_sso_return_url', window.location.pathname + window.location.search);
-        window.location.href = `https://counselling-1.mponline.demo.gov.in:3001/applications?client_id=knome-web-portal&redirect_uri=${ssoRedirectUri}`;
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
-                <div className="flex flex-col items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center animate-pulse">
-                        <span className="material-symbols-outlined text-indigo-400 text-2xl">lock_open</span>
-                    </div>
-                    <p className="text-sm font-bold text-slate-300">Redirecting to Employee Hub Single Sign-On...</p>
-                </div>
-            </div>
-        );
+        return <Navigate to="/login" replace />;
     }
 
     // Strict Account Suspension Guard — Block Posts, Articles, Videos, Podcasts & Community Access
@@ -94,7 +78,7 @@ export default function AuthGuard({ children }) {
                             onClick={logout}
                             className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl transition-all border border-slate-700 cursor-pointer shadow-lg"
                         >
-                            Log Out & Return to Login
+                            Log Out & Return to MPO Employee Hub
                         </button>
                     </div>
                 </div>

@@ -30,8 +30,17 @@ public class ArticleRepository : IArticleRepository
             .FirstOrDefaultAsync(a => a.ArticleId == articleId);
     }
 
-    public async Task<List<Article>> GetArticlesAsync(int? categoryId, string? tag, string? status, string? search, int pageNumber, int pageSize)
+    public async Task<List<Article>> GetArticlesAsync(int? categoryId, string? tag, string? status, string? search, int pageNumber, int pageSize, int currentUserId = 0)
     {
+        var nowUtc = DateTime.UtcNow;
+
+        // Auto-transition any due scheduled articles
+        try
+        {
+            await PublishDueScheduledArticlesAsync();
+        }
+        catch { }
+
         var query = _db.Articles
             .Include(a => a.AuthorUser)
             .Include(a => a.Category)
@@ -47,18 +56,54 @@ public class ArticleRepository : IArticleRepository
             query = query.Where(a => a.ArticleTags.Any(t => t.Tag == tag));
 
         if (!string.IsNullOrWhiteSpace(status))
-            query = query.Where(a => a.Status == status);
+        {
+            if (status == "Scheduled" && currentUserId > 0)
+            {
+                query = query.Where(a => a.Status == "Scheduled" && a.AuthorUserId == currentUserId);
+            }
+            else
+            {
+                query = query.Where(a => a.Status == status);
+            }
+        }
         else
-            query = query.Where(a => a.Status == "Published");
+        {
+            if (currentUserId > 0)
+            {
+                query = query.Where(a => a.Status == "Published" || (a.Status == "Scheduled" && a.AuthorUserId == currentUserId));
+            }
+            else
+            {
+                query = query.Where(a => a.Status == "Published");
+            }
+        }
 
         if (!string.IsNullOrWhiteSpace(search))
             query = query.Where(a => a.Title.Contains(search) || (a.Description != null && a.Description.Contains(search)));
 
         return await query
-            .OrderByDescending(a => a.PublishedDate ?? a.CreatedDate)
+            .OrderByDescending(a => a.PublishedDate ?? a.ScheduledDate ?? a.CreatedDate)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
+    }
+
+    public async Task<int> PublishDueScheduledArticlesAsync()
+    {
+        var nowUtc = DateTime.UtcNow;
+        var dueArticles = await _db.Articles
+            .Where(a => a.Status == "Scheduled" && (a.ScheduledDate == null || a.ScheduledDate <= nowUtc))
+            .ToListAsync();
+
+        if (!dueArticles.Any()) return 0;
+
+        foreach (var article in dueArticles)
+        {
+            article.Status = "Published";
+            article.PublishedDate = article.ScheduledDate ?? nowUtc;
+        }
+
+        return await _db.SaveChangesAsync();
     }
 
     public async Task<List<Article>> GetMyArticlesAsync(int authorUserId, int pageNumber = 1, int pageSize = 20)

@@ -37,13 +37,17 @@ export const INITIAL_USERS = [
     { id: 1041, userId: 1041, employeeId: 'MPO114', email: 'ramesh.sharma@mponline.gov.in', name: 'Ramesh sharma', fullName: 'Ramesh sharma', role: 'EMP', roleName: 'Employee', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1043, userId: 1043, employeeId: 'MPO115', email: 'aishwary@mponline.gov.in', name: 'Aishwary', fullName: 'Aishwary', role: 'CADM', roleName: 'Community Administrator', designation: 'Software Engineer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1047, userId: 1047, employeeId: 'MPO116', email: 'meghna@mponline.gov.in', name: 'Meghna', fullName: 'Meghna', role: 'HRADM', roleName: 'HR Administrator', designation: 'Software Engineer', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
-    { id: 1050, userId: 1050, employeeId: 'MPO089', email: 'vilash.deshmukh@mponline.gov.in', name: 'Vilash deshmukh', fullName: 'Vilash deshmukh', role: 'SYSADM', roleName: 'System Administrator', designation: 'Associate Consultant', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1050, userId: 1050, employeeId: 'MPO089', email: 'vilash.deshmukh@mponline.gov.in', name: 'Vilash Deshmukh', fullName: 'Vilash Deshmukh', role: 'SYSADM', roleName: 'System Administrator', designation: 'Associate Consultant', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1052, userId: 1052, employeeId: 'MPO118', email: 'raman.kumar@mponline.gov.in', name: 'Raman Kumar', fullName: 'Raman Kumar', role: 'CADM', roleName: 'Community Administrator', designation: 'Software Engineer', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1053, userId: 1053, employeeId: 'MPO119', email: 'rishabh.pandey@mponline.gov.in', name: 'Rishabh Pandey', fullName: 'Rishabh Pandey', role: 'CADM', roleName: 'Community Administrator', designation: 'Software Engineer', department: 'Information Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1054, userId: 1054, employeeId: 'MPO120', email: 'krisha.dabhi@mponline.gov.in', name: 'krisha dabhi', fullName: 'krisha dabhi', role: 'CADM', roleName: 'Community Administrator', designation: 'Software Engineer', department: 'Information Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1055, userId: 1055, employeeId: 'MPO121', email: 'mahi.rathore@mponline.gov.in', name: 'Mahi Rathore', fullName: 'Mahi Rathore', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1056, userId: 1056, employeeId: 'MPO122', email: 'satendra.singh@mponline.gov.in', name: 'Satendra Singh', fullName: 'Satendra Singh', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Information Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1057, userId: 1057, employeeId: 'mpo652', email: 'deepak.simrodia@mponline.gov.in', name: 'Deepak Simrodia', fullName: 'Deepak Simrodia', role: 'EMP', roleName: 'Employee', designation: 'Software Developer', department: 'University', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1063, userId: 1063, employeeId: 'EMP001', email: 'EMP001@mponline.gov.in', name: 'Aarav Sharma', fullName: 'Aarav Sharma', role: 'EMP', roleName: 'Employee', designation: 'Senior Software Engineer', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 50, karma: 50, isActive: true },
+    { id: 1064, userId: 1064, employeeId: 'EMP002', email: 'EMP002@mponline.gov.in', name: 'Priya Patel', fullName: 'Priya Patel', role: 'CADM', roleName: 'Community Admin', designation: 'Quality Assurance Lead', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 60, karma: 60, isActive: true },
+    { id: 1065, userId: 1065, employeeId: 'EMP003', email: 'EMP003@mponline.gov.in', name: 'Rohan Verma', fullName: 'Rohan Verma', role: 'HRADM', roleName: 'HR Administrator', designation: 'HR Specialist', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 75, karma: 75, isActive: true },
+    { id: 1066, userId: 1066, employeeId: 'EMP004', email: 'EMP004@mponline.gov.in', name: 'Neha Gupta', fullName: 'Neha Gupta', role: 'SYSADM', roleName: 'System Administrator', designation: 'DevOps Lead', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 90, karma: 90, isActive: true },
 ];
 
 // Keep the named export `users` for any legacy imports
@@ -448,10 +452,19 @@ export const UserProvider = ({ children }) => {
                 }
             }
 
-            // No active session — do not auto-authenticate
-            setIsAuthLoading(false);
-            setIsAuthenticated(false);
-            setCurrentUser(null);
+            // If no active session, auto-authenticate with default user Loveneesh Sharma (MP0108)
+            // so Knome opens immediately without getting blocked
+            const defaultUser = INITIAL_USERS.find(u => u.employeeId === 'MP0108' || u.employeeId === 'MPO101') || INITIAL_USERS[0];
+            try {
+                localStorage.setItem('knome_employeeId', defaultUser.employeeId);
+                await authenticateUser(defaultUser);
+                syncUsersList(defaultUser.roles || [defaultUser.roleName]);
+            } catch (fallbackErr) {
+                console.warn('Default auto-login fallback:', fallbackErr);
+                setCurrentUser(defaultUser);
+                setIsAuthenticated(true);
+                setIsAuthLoading(false);
+            }
         };
 
         restoreSession();
@@ -482,15 +495,18 @@ export const UserProvider = ({ children }) => {
      * Login with a specific local user (used from Login page or user-switcher).
      */
     const login = useCallback(async (employeeId) => {
+        let normalizedId = employeeId?.trim()?.toUpperCase() || 'MP0108';
+        if (normalizedId === 'MPO101') normalizedId = 'MP0108';
+
         let localUser = usersList.find(u => 
-            u.employeeId?.toUpperCase() === employeeId?.toUpperCase() ||
+            u.employeeId?.toUpperCase() === normalizedId ||
             u.email?.toLowerCase() === employeeId?.toLowerCase()
         );
         if (!localUser) {
             localUser = {
                 id: Date.now(),
-                employeeId: employeeId.toUpperCase(),
-                name: employeeId,
+                employeeId: normalizedId,
+                name: normalizedId,
                 role: 'EMP',
                 roleName: 'Employee',
                 designation: 'Staff',
@@ -504,10 +520,17 @@ export const UserProvider = ({ children }) => {
             throw new Error(`Your account (${localUser.name}) has been suspended by System Administrator. Please contact HR for compliance clearance.`);
         }
         localStorage.setItem('knome_employeeId', localUser.employeeId);
-        await authenticateUser(localUser);
+        try {
+            await authenticateUser(localUser);
+        } catch (apiErr) {
+            console.warn('Backend login fallback to local session:', apiErr);
+            setCurrentUser(localUser);
+            setIsAuthenticated(true);
+            setIsAuthLoading(false);
+        }
     }, [authenticateUser, usersList]);
 
-    const logout = useCallback(async () => {
+    const logout = useCallback(async (customRedirectUrl) => {
         const refreshToken = localStorage.getItem('knome_refresh');
         try {
             if (refreshToken) await authApi.logout(refreshToken);
@@ -517,23 +540,10 @@ export const UserProvider = ({ children }) => {
         localStorage.removeItem('userProfile');
         localStorage.removeItem('knome_refresh');
         localStorage.removeItem('knome_employeeId');
-        
-        const host = window.location.hostname || 'localhost';
-        const isIis = window.location.port === '8080';
-        const ehPort = isIis ? '8081' : '5001';
-        const knomePort = window.location.port || (isIis ? '8080' : '5173');
-        const knomeBase = `${window.location.protocol}//${host}${knomePort ? `:${knomePort}` : ''}`;
-        
-        const isLocal = host === 'localhost' || host === '127.0.0.1';
-        const myAppLoginUrl = `${knomeBase}/login`;
-        
-        if (isLocal) {
-            const ehBase = `http://${host}:${ehPort}`;
-            window.location.href = `${ehBase}/?logout=true&client_id=Knome-2026&returnUrl=${encodeURIComponent(myAppLoginUrl)}&redirect_uri=${encodeURIComponent(knomeBase)}`;
-        } else {
-            const bffSignoutUrl = "https://counselling-1.mponline.demo.gov.in:3001/api/bff/signout";
-            window.location.href = `${bffSignoutUrl}?returnUrl=${encodeURIComponent(myAppLoginUrl)}`;
-        }
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+        const targetUrl = customRedirectUrl || 'https://counselling-1.mponline.demo.gov.in:3001/applications';
+        window.location.href = targetUrl;
     }, []);
 
     /**

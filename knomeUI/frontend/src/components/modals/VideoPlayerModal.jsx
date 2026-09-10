@@ -207,9 +207,12 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
                 targetUserId: uId,
                 type: 'video_shared',
                 category: 'Social',
-                text: `📹 ${currentUser?.name || 'A teammate'} shared a video with you: "${video.title}"`,
-                senderName: currentUser?.name || 'Teammate',
-                senderAvatar: currentUser?.avatar || null,
+                text: `📹 ${currentUser?.name || currentUser?.fullName || 'A teammate'} shared a video with you: "${video.title}"`,
+                senderName: currentUser?.name || currentUser?.fullName || 'Teammate',
+                senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
+                senderUserId: currentUser?.userId || currentUser?.id,
+                createdDate: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
                 actionLink: `/videos?id=${video.id}&title=${encodeURIComponent(video.title)}`,
                 targetUrl: `/videos?id=${video.id}&title=${encodeURIComponent(video.title)}`,
                 relatedContentType: 'Video',
@@ -217,7 +220,6 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
                 videoId: video.id,
                 videoTitle: video.title,
                 videoUrl: video.sourceUrl,
-                time: 'Just now',
                 unread: true
             }));
 

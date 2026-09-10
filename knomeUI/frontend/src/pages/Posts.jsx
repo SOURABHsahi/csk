@@ -23,6 +23,26 @@ export default function Posts() {
         try {
             const data = await postsApi.getPosts(null, null, 1, 100);
             let mapped = data ? data.map(mapPost) : [];
+
+            // Merge local fallback posts if any
+            try {
+                const deletedIds = JSON.parse(localStorage.getItem('knome_deleted_post_ids') || '[]').map(String);
+                const localPosts = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
+                localPosts.forEach(lp => {
+                    const lpIdStr = String(lp.id || lp.postId || '');
+                    if (!deletedIds.includes(lpIdStr) && !mapped.some(m => String(m.id || m.postId) === lpIdStr)) {
+                        mapped.unshift(mapPost(lp));
+                    }
+                });
+            } catch (e) {}
+
+            // Filter out any posts present in deleted IDs blacklist
+            try {
+                const deletedIds = JSON.parse(localStorage.getItem('knome_deleted_post_ids') || '[]').map(String);
+                if (deletedIds.length > 0) {
+                    mapped = mapped.filter(p => !deletedIds.includes(String(p.id)) && !deletedIds.includes(String(p.postId)));
+                }
+            } catch (e) {}
             
             // If target post ID is specified via notification link, ensure it is fetched and prioritized
             if (targetPostId) {
@@ -44,7 +64,22 @@ export default function Posts() {
                 }
             }
 
-            setPosts(mapped);
+            // Filter posts based on publication schedule for scheduled items
+            const currentUserIdStr = String(currentUser?.userId || currentUser?.id || '');
+            const accessiblePosts = mapped.filter(p => {
+                if (p.status === 'Scheduled' && p.scheduledDate) {
+                    const schedTime = new Date(p.scheduledDate).getTime();
+                    const now = Date.now();
+                    if (schedTime > now) {
+                        // Future: author only
+                        const authorIdStr = String(p.author?.id || p.authorId || p.userId || '');
+                        return authorIdStr === currentUserIdStr;
+                    }
+                }
+                return true;
+            });
+
+            setPosts(accessiblePosts);
         } catch (error) {
             console.error('Failed to load posts', error);
         } finally {
@@ -57,12 +92,27 @@ export default function Posts() {
         const handlePostDeleted = (e) => {
             const deletedId = e?.detail?.id || e;
             if (deletedId) {
-                setPosts(prev => prev.filter(p => p.id !== deletedId && p.postId !== deletedId));
+                const delStr = String(deletedId);
+                setPosts(prev => prev.filter(p => String(p.id) !== delStr && String(p.postId) !== delStr));
             }
         };
+        const handlePostCreated = () => {
+            loadPosts();
+        };
+
+        // Check every 15s to transition scheduled posts live according to scheduled publication time
+        const interval = setInterval(() => {
+            loadPosts();
+        }, 15000);
+
         window.addEventListener('post-deleted', handlePostDeleted);
-        return () => window.removeEventListener('post-deleted', handlePostDeleted);
-    }, [targetPostId]);
+        window.addEventListener('post-created', handlePostCreated);
+        return () => {
+            clearInterval(interval);
+            window.removeEventListener('post-deleted', handlePostDeleted);
+            window.removeEventListener('post-created', handlePostCreated);
+        };
+    }, [targetPostId, currentUser?.id]);
 
     const [isFilterOpen, setIsFilterOpen] = useState(false);
     const [tagSearch, setTagSearch] = useState('');
@@ -83,11 +133,16 @@ export default function Posts() {
     const rawUniqueTags = [...new Set(posts.flatMap(post => post.tags || []))].filter(Boolean);
     const filteredAvailableTags = rawUniqueTags.filter(t => t.toLowerCase().includes(tagSearch.toLowerCase()));
 
+    // Count author's upcoming scheduled posts
+    const authorScheduledCount = posts.filter(p => (p.status === 'Scheduled' || p.isScheduledFuture)).length;
+
     // Filter and sort logic — highlighted target post always at top
     const rawPosts = posts.filter(post => {
         const matchesSearch = !searchQuery || (post.content || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                               (post.author?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesTag = selectedTag === 'All' || selectedTag === '✨ Recommended' || (post.tags && post.tags.includes(selectedTag));
+        const matchesTag = selectedTag === 'All' || 
+                           (selectedTag === '⏰ Scheduled' ? (post.status === 'Scheduled' || post.isScheduledFuture) : 
+                           (selectedTag === '✨ Recommended' ? true : (post.tags && post.tags.includes(selectedTag))));
         return matchesSearch && matchesTag;
     });
 
@@ -326,15 +381,33 @@ export default function Posts() {
                             <span>✨</span>
                             <span>Recommended</span>
                         </button>
+                        {authorScheduledCount > 0 && (
+                            <button
+                                onClick={() => setSelectedTag('⏰ Scheduled')}
+                                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    selectedTag === '⏰ Scheduled'
+                                        ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-xs'
+                                        : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/60 border border-amber-200 dark:border-amber-800/60'
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-[14px]">schedule</span>
+                                <span>Scheduled</span>
+                                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                                    selectedTag === '⏰ Scheduled' ? 'bg-white/20 text-white' : 'bg-amber-200/80 dark:bg-amber-800 text-amber-900 dark:text-amber-100'
+                                }`}>
+                                    {authorScheduledCount}
+                                </span>
+                            </button>
+                        )}
                     </div>
 
                     {/* Active Selected Filter Badge */}
-                    {selectedTag !== 'All' && selectedTag !== '✨ Recommended' && (
+                    {selectedTag !== 'All' && selectedTag !== '✨ Recommended' && selectedTag !== '⏰ Scheduled' && (
                         <div className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 text-xs font-bold rounded-lg animate-in fade-in duration-150">
                             <span>Topic: #{selectedTag}</span>
                             <button 
                                 onClick={() => setSelectedTag('All')}
-                                className="hover:bg-indigo-100 dark:hover:bg-indigo-900 rounded p-0.5 ml-0.5 cursor-pointer flex items-center"
+                                className="text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-200 p-0.5 cursor-pointer"
                                 title="Clear topic filter"
                             >
                                 <span className="material-symbols-outlined text-[14px]">close</span>
@@ -370,16 +443,24 @@ export default function Posts() {
                     </>
                 ) : (
                     <div className="glass bg-white dark:bg-slate-950 p-12 rounded-2xl border border-slate-200 dark:border-slate-800 text-center flex flex-col items-center justify-center gap-3">
-                        <span className="material-symbols-outlined text-4xl text-slate-300 dark:text-slate-700 animate-bounce">feed</span>
-                        <h3 className="font-bold text-slate-700 dark:text-slate-350 text-sm">No Posts Found</h3>
-                        <p className="text-xs text-slate-500">Try adjusting your search criteria or tags filter.</p>
+                        <span className="material-symbols-outlined text-4xl text-slate-300 dark:text-slate-700 animate-bounce">
+                            {selectedTag === '⏰ Scheduled' ? 'schedule' : 'feed'}
+                        </span>
+                        <h3 className="font-bold text-slate-700 dark:text-slate-350 text-sm">
+                            {selectedTag === '⏰ Scheduled' ? 'No Scheduled Posts' : 'No Posts Found'}
+                        </h3>
+                        <p className="text-xs text-slate-500">
+                            {selectedTag === '⏰ Scheduled' 
+                                ? 'You do not have any posts waiting to be published.'
+                                : 'Try adjusting your search criteria or tags filter.'}
+                        </p>
                         {currentUser.role !== 'SYSADM' && (
                             <button
                                 onClick={() => setIsCreatePostOpen(true)}
                                 className="mt-2 px-5 py-2 font-bold text-xs rounded-xl bg-indigo-500 text-white hover:bg-indigo-600 transition-all shadow-sm flex items-center gap-2"
                             >
                                 <span className="material-symbols-outlined text-[16px]">add</span>
-                                Create First Post
+                                {selectedTag === '⏰ Scheduled' ? 'Schedule a Post' : 'Create First Post'}
                             </button>
                         )}
                     </div>

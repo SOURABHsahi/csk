@@ -592,58 +592,10 @@ export default function Podcasts() {
                     </div>
                 ) : (
                     <>
-                        {/* Series Grouping (FR-PD-03) */}
-                        <section>
-                            <div className="flex justify-between items-center mb-6">
-                                <h2 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                                    <span className="material-symbols-outlined text-pink-500">dynamic_feed</span>
-                                    Featured Series
-                                </h2>
-                                {selectedSeries && (
-                                    <button 
-                                        onClick={() => setSelectedSeries(null)}
-                                        className="text-[12px] font-bold text-pink-500 hover:underline"
-                                    >
-                                        Clear Selection
-                                    </button>
-                                )}
-                            </div>
-                            
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                {seriesData.map(series => (
-                                    <div 
-                                        key={series.id}
-                                        onClick={() => setSelectedSeries(series)}
-                                        className={`group relative overflow-hidden rounded-2xl border transition-all duration-300 cursor-pointer card-lift ${selectedSeries?.id === series.id ? 'ring-2 ring-pink-500 border-transparent shadow-lg shadow-pink-500/20' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:shadow-md'}`}
-                                    >
-                                        <div className="h-40 overflow-hidden relative">
-                                            <img className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-90" src={series.thumbnail} alt={series.title} />
-                                            <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 to-transparent"></div>
-                                            <div className="absolute bottom-3 left-4 flex gap-2">
-                                                <span className="px-2 py-0.5 bg-pink-500 text-white rounded text-[10px] font-black uppercase tracking-wider shadow-sm">
-                                                    {series.category}
-                                                </span>
-                                                <span className="px-2 py-0.5 bg-slate-800 text-slate-300 rounded text-[10px] font-black uppercase shadow-sm">
-                                                    {series.episodes} EPS
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <div className="p-5 relative bg-white dark:bg-slate-900">
-                                            <h3 className="font-bold text-[16px] text-slate-900 dark:text-white group-hover:text-pink-500 transition-colors mb-1">{series.title}</h3>
-                                            <p className="text-[13px] text-slate-500 line-clamp-2 leading-relaxed">{series.description}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                                {seriesData.length === 0 && (
-                                    <div className="col-span-3 text-center py-8 text-slate-500">No series available.</div>
-                                )}
-                            </div>
-                        </section>
-
                         {/* Episodes List */}
-                        <section className="mt-8">
+                        <section>
                             <h2 className="text-lg font-black text-slate-900 dark:text-white mb-6">
-                                {selectedSeries ? `Episodes in "${selectedSeries.title}"` : 'All Episodes'}
+                                All Episodes
                             </h2>
                             
                             <div className="flex flex-col gap-3">

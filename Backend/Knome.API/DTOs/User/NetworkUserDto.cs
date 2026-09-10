@@ -8,6 +8,8 @@ public class NetworkUserDto
     public string Name { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public string Department { get; set; } = string.Empty;
+    public string? Designation { get; set; }
+    public List<string> Roles { get; set; } = new();
     public string? Avatar { get; set; }
     public int MutualConnections { get; set; }
     public int CommonCommunities { get; set; }

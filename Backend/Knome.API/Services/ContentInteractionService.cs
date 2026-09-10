@@ -208,25 +208,74 @@ public class ContentInteractionService : IContentInteractionService
         var commenterName = commenter?.FullName ?? "Someone";
 
         var authorId = await _repo.GetContentAuthorUserIdAsync(contentType, contentId);
-        if (authorId.HasValue && authorId.Value != userId)
-        {
-            await _karmaService.AwardKarmaAsync(authorId.Value, KarmaActivityTypes.ReceiveComment, KarmaPoints.ReceiveCommentPoints, contentType, contentId);
-            await _notificationService.PublishAsync(
-                authorId.Value,
-                NotificationTypes.Comment,
-                $"{commenterName} commented on your {contentType.ToLowerInvariant()}.",
-                relatedContentType: contentType,
-                relatedContentId: contentId);
-        }
+
         if (dto.ParentCommentId.HasValue)
         {
+            // --- REPLY TO AN EXISTING COMMENT ---
             var parentComment = await _repo.GetCommentByIdAsync(dto.ParentCommentId.Value);
-            if (parentComment != null && parentComment.UserId != userId && (!authorId.HasValue || parentComment.UserId != authorId.Value))
+            if (parentComment != null)
             {
+                // 1. Notify the author of the comment that was replied to (jiske comments par reply kiya hai)
+                if (parentComment.UserId != userId)
+                {
+                    await _karmaService.AwardKarmaAsync(parentComment.UserId, KarmaActivityTypes.ReceiveComment, KarmaPoints.ReceiveCommentPoints, contentType, contentId);
+
+                    string replyNotifText = string.Equals(contentType, ContentTypes.Post, StringComparison.OrdinalIgnoreCase)
+                        ? $"{commenterName} replied to your comment on a post."
+                        : $"{commenterName} replied to your comment on a {contentType.ToLowerInvariant()}.";
+
+                    await _notificationService.PublishAsync(
+                        parentComment.UserId,
+                        NotificationTypes.Comment,
+                        replyNotifText,
+                        relatedContentType: contentType,
+                        relatedContentId: contentId);
+                }
+
+                // 2. Also notify the content/post author if they are a third party (not the replier, and not the parent comment author who was already notified)
+                if (authorId.HasValue && authorId.Value != userId && authorId.Value != parentComment.UserId)
+                {
+                    await _karmaService.AwardKarmaAsync(authorId.Value, KarmaActivityTypes.ReceiveComment, KarmaPoints.ReceiveCommentPoints, contentType, contentId);
+
+                    string postAuthorNotifText = string.Equals(contentType, ContentTypes.Post, StringComparison.OrdinalIgnoreCase)
+                        ? $"{commenterName} commented on your post."
+                        : $"{commenterName} commented on your {contentType.ToLowerInvariant()}.";
+
+                    await _notificationService.PublishAsync(
+                        authorId.Value,
+                        NotificationTypes.Comment,
+                        postAuthorNotifText,
+                        relatedContentType: contentType,
+                        relatedContentId: contentId);
+                }
+            }
+            else if (authorId.HasValue && authorId.Value != userId)
+            {
+                // Fallback if parent comment entity was not found
+                await _karmaService.AwardKarmaAsync(authorId.Value, KarmaActivityTypes.ReceiveComment, KarmaPoints.ReceiveCommentPoints, contentType, contentId);
                 await _notificationService.PublishAsync(
-                    parentComment.UserId,
+                    authorId.Value,
                     NotificationTypes.Comment,
-                    $"{commenterName} replied to your comment on a {contentType.ToLowerInvariant()}.",
+                    $"{commenterName} commented on your {contentType.ToLowerInvariant()}.",
+                    relatedContentType: contentType,
+                    relatedContentId: contentId);
+            }
+        }
+        else
+        {
+            // --- DIRECT TOP-LEVEL COMMENT ON POST / ARTICLE / CONTENT ---
+            if (authorId.HasValue && authorId.Value != userId)
+            {
+                await _karmaService.AwardKarmaAsync(authorId.Value, KarmaActivityTypes.ReceiveComment, KarmaPoints.ReceiveCommentPoints, contentType, contentId);
+
+                string notifText = string.Equals(contentType, ContentTypes.Post, StringComparison.OrdinalIgnoreCase)
+                    ? $"{commenterName} commented on your post."
+                    : $"{commenterName} commented on your {contentType.ToLowerInvariant()}.";
+
+                await _notificationService.PublishAsync(
+                    authorId.Value,
+                    NotificationTypes.Comment,
+                    notifText,
                     relatedContentType: contentType,
                     relatedContentId: contentId);
             }
@@ -362,51 +411,43 @@ public class ContentInteractionService : IContentInteractionService
             var reactor = await _userRepo.GetByIdAsync(userId);
             var reactorName = reactor?.FullName ?? "Someone";
 
-            if (contentType == ContentTypes.Comment)
+            if (string.Equals(contentType, ContentTypes.Comment, StringComparison.OrdinalIgnoreCase))
             {
                 var comment = await _repo.GetCommentByIdAsync(contentId);
                 if (comment != null)
                 {
+                    var parentContentType = !string.IsNullOrWhiteSpace(comment.ContentType) ? comment.ContentType : ContentTypes.Post;
+
                     // 1. Notify the comment author (jisne comment kiya hai)
                     if (comment.UserId != userId)
                     {
                         await _karmaService.AwardKarmaAsync(comment.UserId, KarmaActivityTypes.ReceiveLike, KarmaPoints.ReceiveLikePoints, contentType, contentId);
 
-                        string commentNotifText = comment.ContentType switch
-                        {
-                            ContentTypes.Post => $"{reactorName} liked your comment on a post.",
-                            ContentTypes.Article => $"{reactorName} liked your comment on an article.",
-                            ContentTypes.Video => $"{reactorName} liked your comment on a video.",
-                            ContentTypes.Podcast => $"{reactorName} liked your comment on a podcast.",
-                            _ => $"{reactorName} liked your comment."
-                        };
+                        string commentNotifText = string.Equals(parentContentType, ContentTypes.Post, StringComparison.OrdinalIgnoreCase)
+                            ? $"{reactorName} liked your comment on a post."
+                            : $"{reactorName} liked your comment on an {parentContentType.ToLowerInvariant()}.";
 
                         await _notificationService.PublishAsync(
                             comment.UserId,
                             NotificationTypes.Reaction,
                             commentNotifText,
-                            relatedContentType: comment.ContentType,
+                            relatedContentType: parentContentType,
                             relatedContentId: comment.ContentId);
                     }
 
                     // 2. Also notify the author of the parent content (jisne post / article create kiya hai)
-                    var parentAuthorId = await _repo.GetContentAuthorUserIdAsync(comment.ContentType, comment.ContentId);
+                    var parentAuthorId = await _repo.GetContentAuthorUserIdAsync(parentContentType, comment.ContentId);
                     if (parentAuthorId.HasValue && parentAuthorId.Value != userId && parentAuthorId.Value != comment.UserId)
                     {
-                        string parentNotifText = comment.ContentType switch
-                        {
-                            ContentTypes.Post => $"{reactorName} liked a comment on your post.",
-                            ContentTypes.Article => $"{reactorName} liked a comment on your article.",
-                            ContentTypes.Video => $"{reactorName} liked a comment on your video.",
-                            ContentTypes.Podcast => $"{reactorName} liked a comment on your podcast.",
-                            _ => $"{reactorName} liked a comment on your {comment.ContentType.ToLowerInvariant()}."
-                        };
+                        string parentNotifText = string.Equals(parentContentType, ContentTypes.Post, StringComparison.OrdinalIgnoreCase)
+                            ? $"{reactorName} liked a comment on your post."
+                            : $"{reactorName} liked a comment on your {parentContentType.ToLowerInvariant()}.";
 
                         await _notificationService.PublishAsync(
                             parentAuthorId.Value,
                             NotificationTypes.Reaction,
                             parentNotifText,
-                            relatedContentType: comment.ContentType,
+                            relatedContentType: parentContentType,
                             relatedContentId: comment.ContentId);
                     }
                 }

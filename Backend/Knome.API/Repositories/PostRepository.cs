@@ -30,12 +30,24 @@ public class PostRepository : IPostRepository
 
     public async Task<List<Post>> GetPostsAsync(string? audienceType, string? search, int pageNumber, int pageSize, int currentUserId = 0)
     {
-        var retentionCutoff = DateTime.UtcNow.AddMonths(-6);
+        var nowUtc = DateTime.UtcNow;
+        var retentionCutoff = nowUtc.AddMonths(-6);
+
+        // Auto-transition any due scheduled posts
+        try
+        {
+            await PublishDueScheduledPostsAsync();
+        }
+        catch { /* best-effort non-blocking */ }
+
         var query = _db.Posts
             .Include(p => p.AuthorUser)
             .Include(p => p.PostAttachments)
             .Include(p => p.MentionedUsers)
-            .Where(p => p.CreatedDate >= retentionCutoff && (string.IsNullOrEmpty(p.Status) || p.Status == "Published"))
+            .Where(p => p.CreatedDate >= retentionCutoff && 
+                        (string.IsNullOrEmpty(p.Status) || 
+                         p.Status == "Published" || 
+                         (p.AuthorUserId == currentUserId)))
             .AsQueryable();
 
         if (currentUserId > 0)
@@ -59,10 +71,28 @@ public class PostRepository : IPostRepository
             query = query.Where(p => p.ContentText.Contains(search));
 
         return await query
-            .OrderByDescending(p => p.PublishedDate ?? p.CreatedDate)
+            .OrderByDescending(p => p.PublishedDate ?? p.ScheduledDate ?? p.CreatedDate)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
+    }
+
+    public async Task<int> PublishDueScheduledPostsAsync()
+    {
+        var nowUtc = DateTime.UtcNow;
+        var duePosts = await _db.Posts
+            .Where(p => p.Status == "Scheduled" && (p.ScheduledDate == null || p.ScheduledDate <= nowUtc))
+            .ToListAsync();
+
+        if (!duePosts.Any()) return 0;
+
+        foreach (var post in duePosts)
+        {
+            post.Status = "Published";
+            post.PublishedDate = post.ScheduledDate ?? nowUtc;
+        }
+
+        return await _db.SaveChangesAsync();
     }
 
     public async Task<List<Post>> GetMyPostsAsync(int authorUserId, int pageNumber = 1, int pageSize = 20)

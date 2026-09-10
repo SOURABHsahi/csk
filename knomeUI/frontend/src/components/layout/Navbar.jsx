@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useUser } from '../contexts/UserContext';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import NotificationSettingsModal from '../modals/NotificationSettingsModal';
@@ -7,6 +7,7 @@ import knomeLogo from '../../assets/knome_logo.png';
 import { notificationsApi, profileApi, searchApi, karmaApi, resolveMediaUrl, saveRecentSearch, getLocalRecentSearches, clearLocalRecentSearches } from '../../utils/apiService';
 import { useConfirm } from '../contexts/ConfirmDialogContext';
 import * as signalR from '@microsoft/signalr';
+import { formatNotificationDate, getTimeGroup, isNotificationForUser, isSelfNotification, parseNotificationContent } from '../../utils/notificationHelpers';
 
 export default function Navbar() {
     const { currentUser, setCurrentUser, users, logout } = useUser();
@@ -282,12 +283,7 @@ export default function Navbar() {
     };
 
     const formatRelativeTime = (dateStr) => {
-        if (!dateStr) return 'Just now';
-        const diff = (Date.now() - new Date(dateStr)) / 1000;
-        if (diff < 60) return 'Just now';
-        if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-        if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-        return `${Math.floor(diff / 86400)}d ago`;
+        return formatNotificationDate(dateStr);
     };
 
     const mapNotificationItem = (n) => {
@@ -300,6 +296,7 @@ export default function Navbar() {
         const isComment = (type.includes('comment') || msg.includes('commented') || msg.includes('replied')) && !isReaction;
         const isMention = type.includes('mention');
         const isShare = type.includes('share') || msg.includes('shared');
+        const isCommunity = type.includes('community') || relType === 'community' || msg.includes('community');
 
         let icon = 'notifications';
         let color = 'text-slate-400';
@@ -331,6 +328,11 @@ export default function Navbar() {
             color = 'text-emerald-500';
             bg = 'bg-emerald-500/10';
             category = 'Shares';
+        } else if (isCommunity) {
+            icon = 'groups';
+            color = 'text-indigo-500';
+            bg = 'bg-indigo-500/10';
+            category = 'Community';
         }
 
         let senderName = n.senderName || n.actorName;
@@ -343,7 +345,7 @@ export default function Navbar() {
             }
         }
         const senderAvatar = resolveMediaUrl(n.senderAvatar) || (senderName && senderName !== 'System' ? `https://ui-avatars.com/api/?name=${encodeURIComponent(senderName)}&background=6366f1&color=fff` : null);
-        const dateVal = n.createdAt || n.createdDate;
+        const dateVal = n.createdAt || n.createdDate || n.created_at;
         const refId = n.relatedContentId || n.referenceId;
 
         let targetUrl = n.targetUrl;
@@ -363,18 +365,24 @@ export default function Navbar() {
             }
         }
 
+        const dateFormatted = formatNotificationDate(dateVal);
+        const parsed = parseNotificationContent({ senderName, message: n.message || n.text || n.title });
+
         return {
             id: n.notificationId || n.id,
             category,
             type: isConnectionReq ? 'follow_request' : (isFollow ? 'follow' : type),
             title: n.title || (isFollow ? 'New Follower' : (isConnectionReq ? 'Connection Request' : 'Notification')),
-            text: n.message,
-            message: n.message,
+            text: n.message || n.text,
+            message: n.message || n.text,
+            parsedSender: parsed.sender,
+            parsedAction: parsed.action,
             targetUrl,
             relatedContentType: n.relatedContentType,
             relatedContentId: n.relatedContentId || n.referenceId,
             createdDate: dateVal,
-            time: formatRelativeTime(dateVal),
+            time: dateFormatted,
+            displayDate: dateFormatted,
             unread: !n.isRead,
             icon,
             color,
@@ -396,31 +404,46 @@ export default function Navbar() {
 
             return all
                 .filter(n => {
+                    // Prevent self-loopback
+                    if (isSelfNotification(n, currentUser)) return false;
+
                     if (!['community_invite', 'join_request', 'community_approved', 'community_rejected', 'community', 'invite'].includes(n.type) && !(n.category === 'Community')) return false;
-                    if (currentUser?.id && String(n.targetUserId) === String(currentUser.id)) return true;
+                    
+                    if (isNotificationForUser(n, currentUser)) return true;
                     if (currentUser?.id && n.targetCreatorId && String(n.targetCreatorId) === String(currentUser.id)) return true;
                     if (n.type === 'join_request' && (n.targetUserId === 'admin' || isCurrentUserAdmin)) return true;
                     return false;
                 })
-                .map(n => ({
-                    id: n.id || `local_${n.communityId}_${n.targetUserId}_${n.type}`,
-                    type: n.type || 'community_invite',
-                    category: 'Community',
-                    icon: n.icon || 'group_add',
-                    color: n.color || 'text-indigo-400',
-                    bg: n.bg || 'bg-indigo-500/10',
-                    text: n.text,
-                    senderName: n.senderName || 'Community Admin',
-                    senderAvatar: n.senderAvatar || null,
-                    time: n.time || 'Just now',
-                    unread: n.unread !== false,
-                    isLocalNotif: true,
-                    targetUrl: n.actionLink || (n.communityId ? `/community/view?id=${n.communityId}` : '/community'),
-                    relatedContentId: n.communityId,
-                    relatedContentType: 'community',
-                    communityName: n.communityName,
-                    communityId: n.communityId,
-                }));
+                .map(n => {
+                    const dateVal = n.createdDate || n.createdAt || n.timestamp || n.date;
+                    const dateFormatted = formatNotificationDate(dateVal);
+                    const parsed = parseNotificationContent({ senderName: n.senderName || 'Community Admin', message: n.text || n.message });
+                    return {
+                        id: n.id || `local_${n.communityId}_${n.targetUserId}_${n.type}`,
+                        type: n.type || 'community_invite',
+                        category: 'Community',
+                        icon: n.icon || 'group_add',
+                        color: n.color || 'text-indigo-400',
+                        bg: n.bg || 'bg-indigo-500/10',
+                        text: n.text || n.message,
+                        message: n.text || n.message,
+                        parsedSender: parsed.sender,
+                        parsedAction: parsed.action,
+                        senderName: n.senderName || 'Community Admin',
+                        senderAvatar: n.senderAvatar || null,
+                        senderUserId: n.senderUserId,
+                        time: dateFormatted,
+                        displayDate: dateFormatted,
+                        createdDate: dateVal,
+                        unread: n.unread !== false,
+                        isLocalNotif: true,
+                        targetUrl: n.actionLink || (n.communityId ? `/community/view?id=${n.communityId}` : '/community'),
+                        relatedContentId: n.communityId,
+                        relatedContentType: 'community',
+                        communityName: n.communityName,
+                        communityId: n.communityId,
+                    };
+                });
         } catch (e) {
             return [];
         }
@@ -432,23 +455,34 @@ export default function Navbar() {
             const all = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
             return all
                 .filter(n => {
-                    if (!currentUser?.id) return false;
-                    if (String(n.targetUserId) !== String(currentUser.id)) return false;
+                    // Prevent self-loopback
+                    if (isSelfNotification(n, currentUser)) return false;
+
                     // Skip community-type notifications (handled by getLocalCommunityNotifs)
                     if (['community_invite', 'join_request', 'community_approved', 'community_rejected'].includes(n.type)) return false;
                     if (n.category === 'Community') return false;
+
+                    // Strict recipient check
+                    if (!isNotificationForUser(n, currentUser)) return false;
+
                     return true;
                 })
                 .map(n => {
                     const isVideo = n.type === 'video_shared' || n.relatedContentType === 'Video' || (n.text || '').toLowerCase().includes('video');
                     const isPodcast = n.type === 'podcast_shared' || n.relatedContentType === 'Podcast' || (n.text || '').toLowerCase().includes('podcast');
+                    const isArticle = n.type === 'article_shared' || n.relatedContentType === 'Article' || (n.text || '').toLowerCase().includes('article');
+                    const isPost = n.type === 'post_shared' || n.relatedContentType === 'Post' || (n.text || '').toLowerCase().includes('post');
+                    const isCommunity = n.type === 'community_shared' || n.relatedContentType === 'Community' || (n.text || '').toLowerCase().includes('community');
+                    const isShare = n.type?.includes('share') || (n.text || '').toLowerCase().includes('shared');
                     const vTitle = n.videoTitle || n.mediaTitle;
                     const vId = n.videoId || n.relatedContentId;
                     const vUrl = n.videoUrl || n.sourceUrl;
                     
                     let targetUrl = n.targetUrl || n.actionLink || n.linkUrl;
                     if (!targetUrl) {
-                        if (isVideo) {
+                        if (isCommunity) {
+                            targetUrl = n.communityId ? `/community/view?id=${n.communityId}` : '/community';
+                        } else if (isVideo) {
                             const params = new URLSearchParams();
                             if (vId) params.set('id', vId);
                             if (vTitle) params.set('title', vTitle);
@@ -456,27 +490,67 @@ export default function Navbar() {
                             targetUrl = `/videos${params.toString() ? `?${params.toString()}` : ''}`;
                         } else if (isPodcast) {
                             targetUrl = n.relatedContentId ? `/podcasts?id=${n.relatedContentId}` : '/podcasts';
+                        } else if (isArticle) {
+                            targetUrl = n.relatedContentId ? `/article-view?id=${n.relatedContentId}` : '/articles';
                         } else {
-                            targetUrl = '/posts';
+                            targetUrl = n.relatedContentId ? `/posts?id=${n.relatedContentId}` : '/posts';
                         }
+                    }
+
+                    const dateVal = n.createdDate || n.createdAt || n.timestamp || n.date;
+                    const dateFormatted = formatNotificationDate(dateVal);
+                    const parsed = parseNotificationContent({ senderName: n.senderName || 'Teammate', message: n.text || n.message });
+
+                    let icon = 'notifications';
+                    let color = 'text-slate-400';
+                    let bg = 'bg-slate-500/10';
+                    if (isVideo) {
+                        icon = 'videocam';
+                        color = 'text-rose-500';
+                        bg = 'bg-rose-500/10';
+                    } else if (isPodcast) {
+                        icon = 'podcasts';
+                        color = 'text-pink-500';
+                        bg = 'bg-pink-500/10';
+                    } else if (isArticle) {
+                        icon = 'article';
+                        color = 'text-emerald-500';
+                        bg = 'bg-emerald-500/10';
+                    } else if (isCommunity) {
+                        icon = 'groups';
+                        color = 'text-indigo-400';
+                        bg = 'bg-indigo-500/10';
+                    } else if (isPost) {
+                        icon = 'chat';
+                        color = 'text-blue-500';
+                        bg = 'bg-blue-500/10';
+                    } else if (isShare) {
+                        icon = 'share';
+                        color = 'text-emerald-500';
+                        bg = 'bg-emerald-500/10';
                     }
 
                     return {
                         id: n.id,
                         type: n.type || 'notification',
-                        category: n.category || (isVideo ? 'Social' : 'System'),
-                        icon: isVideo ? 'videocam' : (isPodcast ? 'podcasts' : 'notifications'),
-                        color: isVideo ? 'text-cyan-500' : (isPodcast ? 'text-pink-500' : 'text-slate-400'),
-                        bg: isVideo ? 'bg-cyan-500/10' : (isPodcast ? 'bg-pink-500/10' : 'bg-slate-500/10'),
-                        text: n.text,
-                        message: n.text,
+                        category: n.category || (isCommunity ? 'Community' : (isShare ? 'Shares' : (isVideo ? 'Social' : 'System'))),
+                        icon,
+                        color,
+                        bg,
+                        text: n.text || n.message,
+                        message: n.text || n.message,
+                        parsedSender: parsed.sender,
+                        parsedAction: parsed.action,
                         senderName: n.senderName || 'Teammate',
                         senderAvatar: n.senderAvatar || null,
-                        time: n.time || 'Just now',
+                        senderUserId: n.senderUserId,
+                        time: dateFormatted,
+                        displayDate: dateFormatted,
+                        createdDate: dateVal,
                         unread: n.unread !== false,
                         isLocalNotif: true,
                         targetUrl,
-                        relatedContentType: isVideo ? 'Video' : (isPodcast ? 'Podcast' : n.relatedContentType),
+                        relatedContentType: isVideo ? 'Video' : (isPodcast ? 'Podcast' : (isArticle ? 'Article' : (isCommunity ? 'Community' : (isPost ? 'Post' : n.relatedContentType)))),
                         relatedContentId: n.relatedContentId || n.videoId,
                         videoId: n.videoId,
                         videoTitle: vTitle,
@@ -496,8 +570,6 @@ export default function Navbar() {
             if (dateA && dateB && dateA !== dateB) {
                 return dateB - dateA; // Newest first
             }
-            if (a.time === 'Just now' && b.time !== 'Just now') return -1;
-            if (b.time === 'Just now' && a.time !== 'Just now') return 1;
 
             if (a.unread && !b.unread) return -1;
             if (!a.unread && b.unread) return 1;
@@ -537,8 +609,9 @@ export default function Navbar() {
 
         // Listen for real-time community invite events (fired by CreateCommunityModal)
         const handleCommunityInviteSent = (e) => {
-            const { invitedUserIds = [], communityName, senderName } = e.detail || {};
-            if (!invitedUserIds.includes(currentUser?.id)) return;
+            const { invitedUserIds = [], communityName, senderName, senderUserId } = e.detail || {};
+            if (isSelfNotification({ senderUserId, senderName }, currentUser)) return;
+            if (!invitedUserIds.includes(currentUser?.id) && !invitedUserIds.includes(currentUser?.userId)) return;
 
             // Re-read localStorage to pick up the new notif
             const localNotifs = getLocalCommunityNotifs();
@@ -547,7 +620,8 @@ export default function Navbar() {
                 newNotif.createdDate = newNotif.createdDate || new Date().toISOString();
                 newNotif.createdAt = newNotif.createdAt || new Date().toISOString();
                 newNotif.unread = true;
-                newNotif.time = 'Just now';
+                newNotif.time = formatNotificationDate(newNotif.createdDate);
+                newNotif.displayDate = newNotif.time;
                 setAllNotifs(prev => {
                     const filtered = prev.filter(n => String(n.id) !== String(newNotif.id));
                     return [newNotif, ...filtered];
@@ -557,15 +631,16 @@ export default function Navbar() {
             }
         };
 
-        // Also listen for storage changes (multi-tab invite or video share)
+        // Also listen for storage changes (multi-tab invite, share, or backend update)
         const handleStorageChange = () => {
+            fetchNotifications();
             const localCommunityNotifs = getLocalCommunityNotifs();
             const localGenericNotifs = getLocalGenericNotifs();
             const allLocal = [...localCommunityNotifs, ...localGenericNotifs];
             if (allLocal.length > 0) {
                 setAllNotifs(prev => {
                     const prevLocalIds = new Set(prev.filter(n => n.isLocalNotif).map(n => String(n.id)));
-                    const newOnes = allLocal.filter(n => !prevLocalIds.has(String(n.id)));
+                    const newOnes = allLocal.filter(n => !prevLocalIds.has(String(n.id)) && !isSelfNotification(n, currentUser) && isNotificationForUser(n, currentUser));
                     if (newOnes.length === 0) return prev;
                     // Show toast for brand-new notification
                     if (newOnes[0].unread) {
@@ -581,13 +656,17 @@ export default function Navbar() {
         const handleGenericNotificationReceived = (e) => {
             const notif = e.detail;
             if (!notif) return;
-            if (notif.targetUserId && currentUser?.id && String(notif.targetUserId) !== String(currentUser.id)) {
+            if (isSelfNotification(notif, currentUser)) {
+                return; // Notification initiated by self, skip
+            }
+            if (!isNotificationForUser(notif, currentUser)) {
                 return; // Notification meant for another user
             }
             notif.createdDate = notif.createdDate || new Date().toISOString();
             notif.createdAt = notif.createdAt || new Date().toISOString();
             notif.unread = true;
-            notif.time = 'Just now';
+            notif.time = formatNotificationDate(notif.createdDate);
+            notif.displayDate = notif.time;
             setAllNotifs(prev => [notif, ...prev.filter(n => String(n.id) !== String(notif.id))]);
             setToastNotification(notif);
             playChimeSound();
@@ -595,6 +674,8 @@ export default function Navbar() {
 
         window.addEventListener('community-invite-sent', handleCommunityInviteSent);
         window.addEventListener('knome_notification_received', handleGenericNotificationReceived);
+        window.addEventListener('notification-updated', handleStorageChange);
+        window.addEventListener('knome_new_notification', handleStorageChange);
         window.addEventListener('storage', handleStorageChange);
 
         const token = localStorage.getItem('knome_jwt');
@@ -610,10 +691,14 @@ export default function Navbar() {
             .build();
 
         connection.on("ReceiveNotification", (notification) => {
+            if (isSelfNotification(notification, currentUser)) {
+                return; // Ignore self-triggered notification
+            }
             const mapped = mapNotificationItem(notification);
-            mapped.time = 'Just now';
             mapped.createdDate = new Date().toISOString();
             mapped.createdAt = new Date().toISOString();
+            mapped.time = formatNotificationDate(mapped.createdDate);
+            mapped.displayDate = mapped.time;
             mapped.unread = true;
             setAllNotifs(prev => {
                 const filtered = prev.filter(item => String(item.id) !== String(mapped.id));
@@ -636,13 +721,41 @@ export default function Navbar() {
             window.dispatchEvent(new CustomEvent('knome:share-updated', { detail: data }));
         });
 
-        connection.start().catch(() => {
+        const joinGroup = () => {
+            const currentUid = currentUser?.userId || currentUser?.id;
+            if (currentUid && connection.state === signalR.HubConnectionState.Connected) {
+                connection.invoke("JoinUserGroup", Number(currentUid)).catch(() => {});
+            }
+        };
+
+        connection.start().then(() => {
+            joinGroup();
+        }).catch(() => {
             /* Silently ignore startup/re-negotiation traces */
         });
 
+        connection.onreconnected(() => {
+            fetchNotifications();
+            joinGroup();
+        });
+
+        // Periodic polling backup every 15 seconds to ensure notifications are never missed
+        const notifInterval = setInterval(() => {
+            fetchNotifications();
+        }, 15000);
+
+        const handleWindowFocus = () => {
+            fetchNotifications();
+        };
+        window.addEventListener('focus', handleWindowFocus);
+
         return () => {
+            clearInterval(notifInterval);
+            window.removeEventListener('focus', handleWindowFocus);
             window.removeEventListener('community-invite-sent', handleCommunityInviteSent);
             window.removeEventListener('knome_notification_received', handleGenericNotificationReceived);
+            window.removeEventListener('notification-updated', handleStorageChange);
+            window.removeEventListener('knome_new_notification', handleStorageChange);
             window.removeEventListener('storage', handleStorageChange);
             if (connection.state === signalR.HubConnectionState.Connected) {
                 connection.stop().catch(() => {});
@@ -652,9 +765,22 @@ export default function Navbar() {
 
     const notifications = allNotifs.filter(n => {
         const matchesCategory = activeNotifFilter === 'All' || n.category === activeNotifFilter;
-        const matchesQuery = !notifSearchQuery || n.text?.toLowerCase().includes(notifSearchQuery.toLowerCase()) || n.senderName?.toLowerCase().includes(notifSearchQuery.toLowerCase());
+        const matchesQuery = !notifSearchQuery || n.text?.toLowerCase().includes(notifSearchQuery.toLowerCase()) || n.senderName?.toLowerCase().includes(notifSearchQuery.toLowerCase()) || n.message?.toLowerCase().includes(notifSearchQuery.toLowerCase());
         return matchesCategory && matchesQuery;
     });
+
+    const groupedNotifications = useMemo(() => {
+        const groups = { 'Today': [], 'This Week': [], 'Earlier': [] };
+        notifications.forEach(n => {
+            const grp = getTimeGroup(n.createdDate || n.createdAt || n.timestamp || n.date);
+            if (groups[grp]) {
+                groups[grp].push(n);
+            } else {
+                groups['Earlier'].push(n);
+            }
+        });
+        return groups;
+    }, [notifications]);
 
     const unreadCount = allNotifs.filter(n => n.unread).length;
 
@@ -772,11 +898,13 @@ export default function Navbar() {
             return;
         }
 
-        const isCommNotif = notif.category === 'Community' || notif.type?.includes('community') || msg.includes('community') || notif.communityId || notif.communityName;
+        const isVideoNotif = relType === 'video' || notif.isVideo || notif.type?.includes('video') || (msg.includes('video') && !msg.includes('podcast'));
+        const isPodcastNotif = !isVideoNotif && (relType === 'podcast' || notif.isPodcast || notif.type?.includes('podcast') || msg.includes('podcast'));
+        const isArticleNotif = !isVideoNotif && !isPodcastNotif && (relType === 'article' || notif.isArticle || notif.type?.includes('article') || msg.includes('article') || msg.includes('blog'));
+        const isPostNotif = !isVideoNotif && !isPodcastNotif && !isArticleNotif && (relType === 'post' || notif.isPost || notif.type?.includes('post') || (msg.includes('post') && !msg.includes('podcast')));
+        const isCommNotif = !isVideoNotif && !isPodcastNotif && !isArticleNotif && !isPostNotif && (notif.isCommunity || relType === 'community' || notif.category === 'Community' || notif.type?.includes('community') || msg.includes('community') || notif.communityId || notif.communityName);
 
-        if (isCommNotif) {
-            dest = resolveCommunityTarget(notif);
-        } else if (relType === 'video' || msg.includes('video') || notif.type?.includes('video')) {
+        if (isVideoNotif) {
             let vId = refId || notif.videoId;
             let vTitle = notif.videoTitle || notif.mediaTitle;
             let videoUrl = notif.videoUrl || notif.sourceUrl;
@@ -805,12 +933,14 @@ export default function Navbar() {
                 } 
             });
             return;
-        } else if (relType === 'podcast' || msg.includes('podcast') || notif.type?.includes('podcast')) {
+        } else if (isPodcastNotif) {
             dest = refId ? `/podcasts?id=${refId}` : (dest || '/podcasts');
-        } else if (relType === 'article' || msg.includes('article') || notif.type?.includes('article')) {
+        } else if (isArticleNotif) {
             dest = refId ? `/article-view?id=${refId}` : (dest || '/articles');
-        } else if (relType === 'post' || msg.includes('post') || notif.type?.includes('post')) {
+        } else if (isPostNotif) {
             dest = refId ? `/posts?id=${refId}` : (dest || '/posts');
+        } else if (isCommNotif) {
+            dest = resolveCommunityTarget(notif);
         } else if (notif.type === 'follow_request' || notif.type?.includes('connection') || msg.includes('connection request') || msg.includes('connection')) {
             dest = msg.includes('accepted') ? '/network?tab=Connections' : '/network?tab=Requests';
         } else if (relType === 'user' || notif.type?.includes('follow')) {
@@ -1181,41 +1311,49 @@ export default function Navbar() {
                             )}
                         </button>
 
-                        {/* Notification Dropdown */}
+                        {/* Instagram-Style Notification Dropdown */}
                         {isNotifOpen && (
-                            <div className="absolute right-0 top-12 w-88 rounded-2xl overflow-hidden shadow-2xl z-50"
+                            <div className="absolute right-0 top-12 w-96 rounded-2xl overflow-hidden shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-200"
                                 style={{
-                                    background: isDark ? 'rgba(8, 15, 32, 0.97)' : 'rgba(255,255,255,0.98)',
+                                    background: isDark ? 'rgba(8, 15, 32, 0.98)' : 'rgba(255, 255, 255, 0.98)',
                                     border: '1px solid var(--border-mid)',
                                     backdropFilter: 'blur(24px)',
-                                    boxShadow: isDark ? '0 24px 80px rgba(0,0,0,0.8)' : '0 24px 80px rgba(37,99,235,0.12), 0 4px 24px rgba(0,0,0,0.08)'
+                                    boxShadow: isDark ? '0 24px 80px rgba(0,0,0,0.85)' : '0 24px 80px rgba(37,99,235,0.12), 0 4px 24px rgba(0,0,0,0.08)'
                                 }}>
+                                {/* Header */}
                                 <div className="flex items-center justify-between px-4 py-3 border-b" style={{borderColor: 'var(--border-mid)'}}>
-                                    <span className="font-bold text-sm text-slate-900 dark:text-slate-100">Notifications</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-bold text-sm text-slate-900 dark:text-slate-100">Notifications</span>
+                                        {unreadCount > 0 && (
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-500/10 text-blue-500 dark:bg-blue-400/20 dark:text-blue-300">
+                                                {unreadCount} new
+                                            </span>
+                                        )}
+                                    </div>
                                     <div className="flex items-center gap-2.5">
                                         {allNotifs.length > 0 && (
                                             <>
-                                                <button onClick={markAllRead} className="text-[11px] font-bold text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors">Mark read</button>
+                                                <button onClick={markAllRead} className="text-[11px] font-bold text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors cursor-pointer">Mark read</button>
                                                 <span className="text-slate-300 dark:text-slate-700 text-xs">•</span>
-                                                <button onClick={clearAllNotifications} className="text-[11px] font-bold text-rose-500 hover:text-rose-600 transition-colors">Clear all</button>
+                                                <button onClick={clearAllNotifications} className="text-[11px] font-bold text-rose-500 hover:text-rose-600 transition-colors cursor-pointer">Clear all</button>
                                             </>
                                         )}
-                                        <button onClick={() => { setIsNotifSettingsOpen(true); setIsNotifOpen(false); }} className="text-slate-500 dark:text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 transition-colors ml-1">
-                                            <span className="material-symbols-outlined text-[16px]">settings</span>
+                                        <button onClick={() => { setIsNotifSettingsOpen(true); setIsNotifOpen(false); }} title="Notification Settings" className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors ml-1 cursor-pointer">
+                                            <span className="material-symbols-outlined text-[17px]">settings</span>
                                         </button>
                                     </div>
                                 </div>
 
                                 {/* Category Filters */}
-                                <div className="flex items-center gap-1 p-2 border-b border-slate-100 dark:border-slate-800 overflow-x-auto custom-scrollbar">
-                                    {['All', 'Shares', 'Reactions', 'Comments', 'Connections', 'Mentions'].map(cat => (
+                                <div className="flex items-center gap-1.5 px-3 py-2 border-b border-slate-100 dark:border-slate-800 overflow-x-auto custom-scrollbar">
+                                    {['All', 'Shares', 'Reactions', 'Comments', 'Connections', 'Community', 'Mentions'].map(cat => (
                                         <button
                                             key={cat}
                                             onClick={() => setActiveNotifFilter(cat)}
-                                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition-colors ${
+                                            className={`px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer ${
                                                 activeNotifFilter === cat 
-                                                    ? 'bg-blue-600 text-white shadow-sm' 
-                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                                                    ? 'bg-blue-600 text-white shadow-xs' 
+                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
                                             }`}
                                         >
                                             {cat}
@@ -1224,128 +1362,238 @@ export default function Navbar() {
                                 </div>
 
                                 {/* Live Notification Search */}
-                                <div className="p-2 border-b border-slate-100 dark:border-slate-800">
+                                <div className="p-2.5 border-b border-slate-100 dark:border-slate-800">
                                     <div className="relative">
-                                        <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[14px]">search</span>
+                                        <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[15px]">search</span>
                                         <input
                                             type="text"
                                             value={notifSearchQuery}
                                             onChange={(e) => setNotifSearchQuery(e.target.value)}
                                             placeholder="Search notifications..."
-                                            className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-lg py-1.5 pl-8 pr-3 text-xs text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-blue-500"
+                                            className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl py-1.5 pl-8 pr-3 text-xs text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-blue-500"
                                         />
                                     </div>
                                 </div>
-                                <div className="max-h-80 overflow-y-auto custom-scrollbar">
-                                    {notifications.map((n, idx) => (
-                                        <div 
-                                            key={n.id ? `${n.id}-${idx}` : idx} 
-                                            onClick={() => handleNotificationClick(n)}
-                                            className={`group relative flex flex-col gap-2 px-4 py-3 border-b border-slate-100 dark:border-slate-800/60 transition-colors cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 ${n.unread ? 'border-l-2 border-blue-500 bg-blue-50/20 dark:bg-blue-900/10' : ''}`}
-                                        >
-                                            <div className="flex items-start gap-3">
-                                                {n.senderAvatar ? (
-                                                    <img 
-                                                        src={n.senderAvatar} 
-                                                        alt={n.senderName} 
-                                                        className="w-9 h-9 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700 shadow-sm"
-                                                    />
-                                                ) : (
-                                                    <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${n.bg}`}>
-                                                        <span className={`material-symbols-outlined text-[18px] ${n.color}`} style={{fontVariationSettings:"'FILL' 1"}}>{n.icon}</span>
-                                                    </div>
-                                                )}
 
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center justify-between gap-1">
-                                                        <span className="text-[12px] font-bold text-slate-900 dark:text-slate-100 truncate">{n.senderName || n.title}</span>
-                                                        <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 shrink-0">{n.time}</span>
-                                                    </div>
-                                                    <p className="text-[12.5px] text-slate-700 dark:text-slate-300 leading-snug mt-0.5">{n.text}</p>
+                                {/* Instagram-Style Grouped Notifications List */}
+                                <div className="max-h-96 overflow-y-auto custom-scrollbar">
+                                    {['Today', 'This Week', 'Earlier'].map((groupKey) => {
+                                        const items = groupedNotifications[groupKey] || [];
+                                        if (items.length === 0) return null;
+
+                                        return (
+                                            <div key={groupKey} className="border-b last:border-b-0 border-slate-100/60 dark:border-slate-800/40">
+                                                {/* Section Header */}
+                                                <div className="sticky top-0 z-10 px-4 py-1.5 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-md flex items-center justify-between border-y border-slate-100 dark:border-slate-800/80">
+                                                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">{groupKey}</span>
+                                                    <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500">{items.length}</span>
                                                 </div>
 
-                                                <div className="flex items-center gap-1.5 shrink-0">
-                                                    {n.unread && <div className="w-2 h-2 rounded-full bg-blue-500"></div>}
-                                                    <button 
-                                                        onClick={(e) => handleDeleteNotification(e, n.id)} 
-                                                        title="Delete notification"
-                                                        className="p-1 text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all rounded-lg cursor-pointer"
-                                                    >
-                                                        <span className="material-symbols-outlined text-[17px]">delete</span>
-                                                    </button>
+                                                {/* Section Cards */}
+                                                <div className="divide-y divide-slate-100/60 dark:divide-slate-800/30">
+                                                    {items.map((n, idx) => (
+                                                        <div 
+                                                            key={n.id ? `${n.id}-${idx}` : idx} 
+                                                            onClick={() => handleNotificationClick(n)}
+                                                            className={`group relative flex items-start gap-3 px-4 py-3 transition-colors cursor-pointer hover:bg-slate-50 dark:hover:bg-white/5 ${n.unread ? 'bg-blue-50/30 dark:bg-blue-900/10' : ''}`}
+                                                        >
+                                                            {/* Instagram-Style Avatar with Badge */}
+                                                            <div className="relative shrink-0 mt-0.5">
+                                                                {n.senderAvatar ? (
+                                                                    <img 
+                                                                        src={n.senderAvatar} 
+                                                                        alt={n.senderName} 
+                                                                        className="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-xs"
+                                                                        onError={(e) => {
+                                                                            e.currentTarget.onerror = null;
+                                                                            e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(n.senderName || 'User')}&background=6366f1&color=fff`;
+                                                                        }}
+                                                                    />
+                                                                ) : (
+                                                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${n.bg} border border-slate-200/50 dark:border-slate-700/50 shadow-xs`}>
+                                                                        <span className={`material-symbols-outlined text-[19px] ${n.color}`} style={{fontVariationSettings:"'FILL' 1"}}>{n.icon}</span>
+                                                                    </div>
+                                                                )}
+                                                                {/* Mini badge icon at bottom right of avatar */}
+                                                                <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center bg-white dark:bg-slate-900 shadow-xs border border-slate-200 dark:border-slate-700`}>
+                                                                    <span className={`material-symbols-outlined text-[10px] ${n.color}`} style={{fontVariationSettings:"'FILL' 1"}}>{n.icon}</span>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Instagram-Style Notification Text */}
+                                                            <div className="flex-1 min-w-0">
+                                                                <p className="text-[12.5px] leading-snug text-slate-800 dark:text-slate-200">
+                                                                    <span className="font-bold text-slate-900 dark:text-white mr-1">
+                                                                        {n.parsedSender || n.senderName || n.title || 'Colleague'}
+                                                                    </span>
+                                                                    <span className="text-slate-600 dark:text-slate-300">
+                                                                        {n.parsedAction || n.text || n.message}
+                                                                    </span>
+                                                                </p>
+
+                                                                {/* Date in standard DD-MM-YYYY format */}
+                                                                <div className="flex items-center gap-2 mt-1">
+                                                                    <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 whitespace-nowrap">
+                                                                        {n.time || n.displayDate}
+                                                                    </span>
+                                                                    {n.category && n.category !== 'System' && (
+                                                                        <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded">
+                                                                            {n.category}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+
+                                                                {/* Inline Action Buttons for Follow Requests */}
+                                                                {n.type === 'follow_request' && !n.handled && (
+                                                                    <div className="flex items-center gap-2 mt-2">
+                                                                        <button 
+                                                                            onClick={(e) => handleApproveFollowRequest(e, n.id, true)}
+                                                                            className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold shadow-xs transition-colors cursor-pointer"
+                                                                        >
+                                                                            Accept
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={(e) => handleApproveFollowRequest(e, n.id, false)}
+                                                                            className="px-3 py-1 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg text-[11px] font-bold transition-colors cursor-pointer"
+                                                                        >
+                                                                            Decline
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Follow Back Button */}
+                                                                {n.type === 'follow_request' && n.handled && n.status === 'approved' && !n.followedBack && (
+                                                                    <div className="mt-2">
+                                                                        <button 
+                                                                            onClick={(e) => handleFollowBack(e, n)}
+                                                                            className="px-3 py-1 bg-pink-500/10 hover:bg-pink-500/20 text-pink-500 border border-pink-500/20 rounded-lg text-[11px] font-bold transition-colors shadow-xs cursor-pointer"
+                                                                        >
+                                                                            Follow Back
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Inline Action Button for Shared Content or Invitations */}
+                                                                {(() => {
+                                                                    const textLower = (n.text || n.message || '').toLowerCase();
+                                                                    const relType = (n.relatedContentType || '').toLowerCase();
+                                                                    const isVid = n.isVideo || relType === 'video' || n.type === 'video_share' || n.type === 'video_shared' || (textLower.includes('video') && !textLower.includes('podcast'));
+                                                                    const isPod = !isVid && (n.isPodcast || relType === 'podcast' || n.type === 'podcast_share' || n.type === 'podcast_shared' || textLower.includes('podcast'));
+                                                                    const isArt = !isVid && !isPod && (n.isArticle || relType === 'article' || n.type === 'article_share' || n.type === 'article_shared' || textLower.includes('article') || textLower.includes('blog'));
+                                                                    const isPost = !isVid && !isPod && !isArt && (n.isPost || relType === 'post' || n.type === 'post_share' || n.type === 'post_shared' || textLower.includes('post'));
+                                                                    const isComm = !isVid && !isPod && !isArt && (n.isCommunity || relType === 'community' || n.type === 'invite' || n.type === 'community_invite' || n.type === 'community_shared' || textLower.includes('community'));
+
+                                                                    if (isVid) {
+                                                                        return (
+                                                                            <div className="mt-2">
+                                                                                <button 
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        handleNotificationClick(n);
+                                                                                    }}
+                                                                                    className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                                                                                >
+                                                                                    <span className="material-symbols-outlined text-[14px]">videocam</span>
+                                                                                    Watch Video
+                                                                                </button>
+                                                                            </div>
+                                                                        );
+                                                                    }
+                                                                    if (isPod) {
+                                                                        return (
+                                                                            <div className="mt-2">
+                                                                                <button 
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        handleNotificationClick(n);
+                                                                                    }}
+                                                                                    className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                                                                                >
+                                                                                    <span className="material-symbols-outlined text-[14px]">podcasts</span>
+                                                                                    Listen Podcast
+                                                                                </button>
+                                                                            </div>
+                                                                        );
+                                                                    }
+                                                                    if (isArt) {
+                                                                        return (
+                                                                            <div className="mt-2">
+                                                                                <button 
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        handleNotificationClick(n);
+                                                                                    }}
+                                                                                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                                                                                >
+                                                                                    <span className="material-symbols-outlined text-[14px]">article</span>
+                                                                                    Read Article
+                                                                                </button>
+                                                                            </div>
+                                                                        );
+                                                                    }
+                                                                    if (isPost) {
+                                                                        return (
+                                                                            <div className="mt-2">
+                                                                                <button 
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        handleNotificationClick(n);
+                                                                                    }}
+                                                                                    className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                                                                                >
+                                                                                    <span className="material-symbols-outlined text-[14px]">chat</span>
+                                                                                    View Post
+                                                                                </button>
+                                                                            </div>
+                                                                        );
+                                                                    }
+                                                                    if (isComm) {
+                                                                        return (
+                                                                            <div className="mt-2">
+                                                                                <button 
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        handleNotificationClick(n);
+                                                                                    }}
+                                                                                    className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                                                                                >
+                                                                                    <span className="material-symbols-outlined text-[14px]">groups</span>
+                                                                                    View Community
+                                                                                </button>
+                                                                            </div>
+                                                                        );
+                                                                    }
+                                                                    return null;
+                                                                })()}
+                                                            </div>
+
+                                                            {/* Right actions: Unread indicator & Hover delete */}
+                                                            <div className="flex items-center gap-1 shrink-0 self-center">
+                                                                {n.unread && <div className="w-2 h-2 rounded-full bg-blue-500 mr-1 shadow-xs"></div>}
+                                                                <button 
+                                                                    onClick={(e) => handleDeleteNotification(e, n.id)} 
+                                                                    title="Delete notification"
+                                                                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all rounded-lg cursor-pointer"
+                                                                >
+                                                                    <span className="material-symbols-outlined text-[16px]">close</span>
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             </div>
+                                        );
+                                    })}
 
-                                            {/* Action Buttons for Admin Join Requests */}
-                                            {n.type === 'request' && !n.handled && (
-                                                <div className="flex items-center gap-2 pl-12 mt-1">
-                                                    <button 
-                                                        onClick={(e) => handleApproveRequest(e, n.id, true)}
-                                                        className="px-3 py-1 bg-emerald-500 text-white rounded-lg text-[11px] font-bold hover:bg-emerald-600 transition-colors shadow-sm"
-                                                    >
-                                                        Approve
-                                                    </button>
-                                                    <button 
-                                                        onClick={(e) => handleApproveRequest(e, n.id, false)}
-                                                        className="px-3 py-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-[11px] font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
-                                                    >
-                                                        Decline
-                                                    </button>
-                                                </div>
-                                            )}
-
-                                            {/* Action Buttons for Follow Requests */}
-                                            {n.type === 'follow_request' && !n.handled && (
-                                                <div className="flex items-center gap-2 pl-12 mt-1">
-                                                    <button 
-                                                        onClick={(e) => handleApproveFollowRequest(e, n.id, true)}
-                                                        className="px-3 py-1 bg-indigo-500 text-white rounded-lg text-[11px] font-bold hover:bg-indigo-600 transition-colors shadow-sm"
-                                                    >
-                                                        Accept
-                                                    </button>
-                                                    <button 
-                                                        onClick={(e) => handleApproveFollowRequest(e, n.id, false)}
-                                                        className="px-3 py-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-[11px] font-bold hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
-                                                    >
-                                                        Decline
-                                                    </button>
-                                                </div>
-                                            )}
-
-                                            {/* Follow Back Button */}
-                                            {n.type === 'follow_request' && n.handled && n.status === 'approved' && !n.followedBack && (
-                                                <div className="flex items-center gap-2 pl-12 mt-1">
-                                                    <button 
-                                                        onClick={(e) => handleFollowBack(e, n)}
-                                                        className="px-3 py-1 bg-pink-500/10 text-pink-500 rounded-lg text-[11px] font-bold hover:bg-pink-500/20 transition-colors border border-pink-500/20 shadow-sm"
-                                                    >
-                                                        Follow Back
-                                                    </button>
-                                                                                     {/* Action Button for Community Invitations & Shares */}
-                                            {(n.type === 'invite' || n.type === 'community_invite' || n.type === 'community_shared' || (n.text && n.text.toLowerCase().includes('community'))) && (
-                                                <div className="pl-12 mt-1">
-                                                    <button 
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            handleNotificationClick(n);
-                                                        }}
-                                                        className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-[11px] font-bold transition-all shadow-md shadow-indigo-500/20 flex items-center gap-1.5 cursor-pointer"
-                                                    >
-                                                        <span className="material-symbols-outlined text-[15px]">groups</span>
-                                                        View Community
-                                                    </button>
-                                                </div>
-                                            )}           </div>
-                                            )}
-                                        </div>
-                                    ))}
                                     {notifications.length === 0 && (
-                                        <div className="py-10 px-4 text-center flex flex-col items-center justify-center">
+                                        <div className="py-12 px-4 text-center flex flex-col items-center justify-center">
                                             <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mb-3">
                                                 <span className="material-symbols-outlined text-[24px]">notifications_paused</span>
                                             </div>
                                             <p className="text-xs font-extrabold text-slate-800 dark:text-slate-200">No Notifications</p>
-                                            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 font-medium">Only real & current notifications for your account will appear here.</p>
+                                            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 font-medium max-w-xs">
+                                                Only real & current notifications for your account will appear here.
+                                            </p>
                                         </div>
                                     )}
                                 </div>

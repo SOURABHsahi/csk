@@ -399,9 +399,11 @@ export default function AdminConsole() {
                     category: 'Karma',
                     text: `🎉 Your ${mediaItem.mediaType} "${mediaItem.title}" was approved by Admin! You earned +${pointsAwarded} Karma Points!`,
                     senderName: 'System Admin',
+                    senderUserId: currentUser?.userId || currentUser?.id || 'admin',
+                    createdDate: new Date().toISOString(),
+                    createdAt: new Date().toISOString(),
                     targetUserId: targetAuthorId,
                     targetUrl: mediaItem.mediaType === 'Video' ? '/videos' : '/podcasts',
-                    time: 'Just now',
                     unread: true
                 };
                 const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
@@ -440,9 +442,11 @@ export default function AdminConsole() {
                 category: 'System',
                 text: `⚠️ Your ${mediaItem.mediaType} "${mediaItem.title}" was reviewed and not approved by Admin.`,
                 senderName: 'System Admin',
+                senderUserId: currentUser?.userId || currentUser?.id || 'admin',
+                createdDate: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
                 targetUserId: mediaItem.authorId,
                 targetUrl: mediaItem.mediaType === 'Video' ? '/videos' : '/podcasts',
-                time: 'Just now',
                 unread: true
             };
             const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');

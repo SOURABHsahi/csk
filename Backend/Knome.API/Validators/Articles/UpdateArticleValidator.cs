@@ -23,6 +23,6 @@ public class UpdateArticleValidator : AbstractValidator<UpdateArticleDto>
             .GreaterThan(0).WithMessage("Valid Category ID is required.");
 
         RuleFor(x => x.Status)
-            .Must(ArticleStatuses.IsValid).WithMessage("Status must be 'Published', 'Draft', or 'Archived'.");
+            .Must(ArticleStatuses.IsValid).WithMessage("Status must be 'Published', 'Draft', 'Scheduled', or 'Archived'.");
     }
 }

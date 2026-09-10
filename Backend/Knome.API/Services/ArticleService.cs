@@ -70,7 +70,7 @@ public class ArticleService : IArticleService
 
     public async Task<List<ArticleDto>> GetArticlesAsync(int? categoryId, string? tag, string? status, string? search, int pageNumber, int pageSize, int currentUserId)
     {
-        var articles = await _repo.GetArticlesAsync(categoryId, tag, status, search, pageNumber, pageSize);
+        var articles = await _repo.GetArticlesAsync(categoryId, tag, status, search, pageNumber, pageSize, currentUserId);
         var ids = articles.Select(a => a.ArticleId).ToList();
         var summaries = ids.Count > 0 
             ? await _interactionService.GetContentSummariesBatchAsync(ContentTypes.Article, ids, currentUserId)
@@ -125,6 +125,19 @@ public class ArticleService : IArticleService
         if (!categoryExists)
             throw new BadRequestException($"Category ID {dto.CategoryId} does not exist.");
 
+        DateTime? scheduledDate = null;
+        if (dto.Status == ArticleStatuses.Scheduled && dto.ScheduledDate.HasValue)
+        {
+            scheduledDate = dto.ScheduledDate.Value;
+        }
+
+        var scheduledUtc = scheduledDate.HasValue 
+            ? (scheduledDate.Value.Kind == DateTimeKind.Utc ? scheduledDate.Value : scheduledDate.Value.ToUniversalTime()) 
+            : (DateTime?)null;
+        var isAlreadyDue = scheduledUtc.HasValue && scheduledUtc.Value <= DateTime.UtcNow;
+        var finalStatus = isAlreadyDue ? ArticleStatuses.Published : (string.IsNullOrEmpty(dto.Status) ? ArticleStatuses.Published : dto.Status);
+        var publishedDate = finalStatus == ArticleStatuses.Published ? (scheduledDate ?? DateTime.UtcNow) : (DateTime?)null;
+
         var article = new Article
         {
             AuthorUserId = currentUserId,
@@ -132,8 +145,9 @@ public class ArticleService : IArticleService
             Description = dto.Description,
             ContentHtml = dto.ContentHtml,
             CategoryId = dto.CategoryId,
-            Status = dto.Status,
-            PublishedDate = dto.Status == ArticleStatuses.Published ? DateTime.UtcNow : null,
+            Status = finalStatus,
+            ScheduledDate = scheduledDate,
+            PublishedDate = publishedDate,
             CreatedDate = DateTime.UtcNow,
             AvgReadTimeSeconds = CalculateAvgReadTimeSeconds(dto.ContentHtml),
             ViewCount = 0,
@@ -187,9 +201,30 @@ public class ArticleService : IArticleService
         article.Description = dto.Description;
         article.ContentHtml = dto.ContentHtml;
         article.CategoryId = dto.CategoryId;
-        article.Status = dto.Status;
-        if (dto.Status == ArticleStatuses.Published && article.PublishedDate == null)
-            article.PublishedDate = DateTime.UtcNow;
+
+        if (dto.Status == ArticleStatuses.Scheduled && dto.ScheduledDate.HasValue)
+        {
+            var scheduledUtc = dto.ScheduledDate.Value.Kind == DateTimeKind.Utc ? dto.ScheduledDate.Value : dto.ScheduledDate.Value.ToUniversalTime();
+            var isAlreadyDue = scheduledUtc <= DateTime.UtcNow;
+            if (isAlreadyDue)
+            {
+                article.Status = ArticleStatuses.Published;
+                article.ScheduledDate = dto.ScheduledDate;
+                article.PublishedDate = dto.ScheduledDate ?? DateTime.UtcNow;
+            }
+            else
+            {
+                article.Status = ArticleStatuses.Scheduled;
+                article.ScheduledDate = dto.ScheduledDate;
+            }
+        }
+        else
+        {
+            article.Status = dto.Status;
+            article.ScheduledDate = dto.ScheduledDate;
+            if (dto.Status == ArticleStatuses.Published && article.PublishedDate == null)
+                article.PublishedDate = DateTime.UtcNow;
+        }
         article.AvgReadTimeSeconds = CalculateAvgReadTimeSeconds(dto.ContentHtml);
 
         await _repo.UpdateArticleAsync(article, dto.Tags, dto.AttachmentUrls, newVersion);

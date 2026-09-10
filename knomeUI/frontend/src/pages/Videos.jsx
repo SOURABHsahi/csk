@@ -473,7 +473,12 @@ export default function Videos() {
         // Update viewsMap so cards reflect the new count immediately
         setViewsMap(prev => ({ ...prev, [activeVideo.id]: count }));
 
-        setLikesCount(activeVideo.likes || 0);
+        const savedLikes = (() => {
+            const raw = localStorage.getItem(`knome_video_likes_${activeVideo.id}`);
+            return raw ? parseInt(raw, 10) : null;
+        })();
+        const effectiveLikes = savedLikes != null ? Math.max(savedLikes, activeVideo.likes || 0) : (activeVideo.likes || 0);
+        setLikesCount(effectiveLikes);
         setShareCount(activeVideo.shares || 0);
         setDescExpanded(false);
         setShowSharePanel(false);
@@ -491,8 +496,10 @@ export default function Videos() {
         const isSelf = uploaderAuthorId && String(uploaderAuthorId) === String(currentUser?.id || currentUser?.userId);
         if (!liked) {
             setLiked(true);
-            setLikesCount(p => p + 1);
+            const newCount = likesCount + 1;
+            setLikesCount(newCount);
             localStorage.setItem(`knome_liked_video_${activeVideo.id}`, 'true');
+            localStorage.setItem(`knome_video_likes_${activeVideo.id}`, newCount.toString());
             if (disliked) {
                 setDisliked(false);
                 localStorage.removeItem(`knome_disliked_video_${activeVideo.id}`);
@@ -503,8 +510,10 @@ export default function Videos() {
             showToast(`Liked video! ${!isSelf ? '+1 Karma awarded to ' + (activeVideo.author || 'creator') : ''}`);
         } else {
             setLiked(false);
-            setLikesCount(p => Math.max(0, p - 1));
+            const newCount = Math.max(0, likesCount - 1);
+            setLikesCount(newCount);
             localStorage.removeItem(`knome_liked_video_${activeVideo.id}`);
+            localStorage.setItem(`knome_video_likes_${activeVideo.id}`, newCount.toString());
         }
     };
 
@@ -627,9 +636,12 @@ export default function Videos() {
                 icon: 'video_library',
                 color: 'text-cyan-400',
                 bg: 'bg-cyan-500/10',
-                text: `📹 ${currentUser?.name || 'A teammate'} shared a video with you: "${activeVideo.title}"`,
-                senderName: currentUser?.name || 'Teammate',
-                senderAvatar: currentUser?.avatar || null,
+                text: `📹 ${currentUser?.name || currentUser?.fullName || 'A teammate'} shared a video with you: "${activeVideo.title}"`,
+                senderName: currentUser?.name || currentUser?.fullName || 'Teammate',
+                senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
+                senderUserId: currentUser?.userId || currentUser?.id,
+                createdDate: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
                 actionLink: `/videos?id=${activeVideo.id}&title=${encodeURIComponent(activeVideo.title)}`,
                 targetUrl: `/videos?id=${activeVideo.id}&title=${encodeURIComponent(activeVideo.title)}`,
                 relatedContentType: 'Video',
@@ -637,7 +649,6 @@ export default function Videos() {
                 videoId: activeVideo.id,
                 videoTitle: activeVideo.title,
                 videoUrl: activeVideo.sourceUrl,
-                time: 'Just now',
                 unread: true
             }));
 

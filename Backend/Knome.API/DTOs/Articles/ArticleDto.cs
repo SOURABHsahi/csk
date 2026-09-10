@@ -27,6 +27,7 @@ public class ArticleDto
     public int CategoryId { get; set; }
     public string CategoryName { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public DateTime? ScheduledDate { get; set; }
     public DateTime? PublishedDate { get; set; }
     public DateTime CreatedDate { get; set; }
     public int ViewCount { get; set; }

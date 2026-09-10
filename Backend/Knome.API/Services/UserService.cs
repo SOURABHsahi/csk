@@ -407,6 +407,15 @@ public class UserService : IUserService
         return await MapToNetworkUsersAsync(effectiveRequestingUserId, following, false);
     }
 
+    private static string ResolvePrimaryRole(IEnumerable<Models.Role> roles)
+    {
+        var roleNames = roles.Select(r => r.RoleName).ToList();
+        if (roleNames.Contains("System Administrator")) return "System Administrator";
+        if (roleNames.Contains("HR Administrator")) return "HR Administrator";
+        if (roleNames.Contains("Community Admin") || roleNames.Contains("Community Administrator")) return "Community Admin";
+        return roleNames.FirstOrDefault(r => !string.IsNullOrWhiteSpace(r)) ?? "Employee";
+    }
+
     public async Task<System.Collections.Generic.List<NetworkUserDto>> GetPendingReceivedRequestsAsync(int currentUserId)
     {
         var requests = await _userRepo.GetPendingReceivedConnectionRequestsAsync(currentUserId);
@@ -417,12 +426,15 @@ public class UserService : IUserService
             var mutualCount = await _userRepo.GetMutualConnectionsCountAsync(currentUserId, sender.UserId);
             var mutuals = await _userRepo.GetMutualConnectionsAsync(currentUserId, sender.UserId);
             var avatars = mutuals.Where(m => !string.IsNullOrEmpty(m.ProfilePhotoUrl)).Select(m => m.ProfilePhotoUrl!).Take(3).ToList();
+            var senderRoles = sender.Roles.Select(r => r.RoleName).ToList();
 
             result.Add(new NetworkUserDto
             {
                 Id = sender.UserId,
                 Name = sender.FullName,
-                Role = sender.Roles.FirstOrDefault()?.RoleName ?? "Employee",
+                Role = ResolvePrimaryRole(sender.Roles),
+                Roles = senderRoles,
+                Designation = sender.Designation,
                 Department = sender.Department?.Name ?? "General",
                 Avatar = sender.ProfilePhotoUrl,
                 MutualConnections = mutualCount,
@@ -447,12 +459,15 @@ public class UserService : IUserService
             var mutualCount = await _userRepo.GetMutualConnectionsCountAsync(currentUserId, receiver.UserId);
             var mutuals = await _userRepo.GetMutualConnectionsAsync(currentUserId, receiver.UserId);
             var avatars = mutuals.Where(m => !string.IsNullOrEmpty(m.ProfilePhotoUrl)).Select(m => m.ProfilePhotoUrl!).Take(3).ToList();
+            var receiverRoles = receiver.Roles.Select(r => r.RoleName).ToList();
 
             result.Add(new NetworkUserDto
             {
                 Id = receiver.UserId,
                 Name = receiver.FullName,
-                Role = receiver.Roles.FirstOrDefault()?.RoleName ?? "Employee",
+                Role = ResolvePrimaryRole(receiver.Roles),
+                Roles = receiverRoles,
+                Designation = receiver.Designation,
                 Department = receiver.Department?.Name ?? "General",
                 Avatar = receiver.ProfilePhotoUrl,
                 MutualConnections = mutualCount,
@@ -478,13 +493,18 @@ public class UserService : IUserService
         var result = new System.Collections.Generic.List<NetworkUserDto>();
         foreach (var user in users)
         {
+            var userRoles = user.Roles.Select(r => r.RoleName).ToList();
+            var primaryRole = ResolvePrimaryRole(user.Roles);
+
             if (user.UserId == currentUserId)
             {
                 result.Add(new NetworkUserDto
                 {
                     Id = user.UserId,
                     Name = user.FullName,
-                    Role = user.Roles.FirstOrDefault()?.RoleName ?? "Employee",
+                    Role = primaryRole,
+                    Roles = userRoles,
+                    Designation = user.Designation,
                     Department = user.Department?.Name ?? "General",
                     Avatar = user.ProfilePhotoUrl,
                     ConnectionStatus = "Self"
@@ -532,7 +552,9 @@ public class UserService : IUserService
             {
                 Id = user.UserId,
                 Name = user.FullName,
-                Role = user.Roles.FirstOrDefault()?.RoleName ?? "Employee",
+                Role = primaryRole,
+                Roles = userRoles,
+                Designation = user.Designation,
                 Department = user.Department?.Name ?? "General",
                 Avatar = user.ProfilePhotoUrl,
                 MutualConnections = mutualCount,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { interactionsApi, searchApi, communitiesApi, adminApi, resolveMediaUrl, getCommunityImages } from '../../utils/apiService';
+import { interactionsApi, searchApi, communitiesApi, adminApi, postsApi, notificationsApi, resolveMediaUrl, getCommunityImages } from '../../utils/apiService';
 import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
 
@@ -35,6 +35,15 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
 
     const contentId = item?.id || item?.postId || item?.articleId || item?.videoId || item?.podcastId || item?.communityId || 1;
     const itemTitle = item?.title || item?.name || (item?.content ? (item.content.length > 50 ? item.content.substring(0, 50) + '...' : item.content) : contentTypeStr);
+    const itemThumbnail = (
+        item?.thumbnail || item?.thumbnailUrl || item?.coverImage || item?.coverUrl || item?.banner ||
+        item?.bannerUrl || item?.bannerImageUrl || (item?.attachments && item.attachments[0]?.url) ||
+        item?.imageUrl || item?.image || null
+    );
+    const itemAuthor = (
+        item?.authorName || item?.authorFullName || item?.author?.name || (typeof item?.author === 'string' ? item.author : '') ||
+        item?.host || item?.speaker || item?.createdBy || item?.createdByUserName || 'MPOnline Team'
+    );
 
     useEffect(() => {
         if (isOpen) {
@@ -232,7 +241,7 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
         contentTypeStr === 'Podcast' ? `${window.location.origin}/podcasts?id=${contentId}` :
         contentTypeStr === 'Video' ? `${window.location.origin}/videos?id=${contentId}` :
         contentTypeStr === 'Post' ? `${window.location.origin}/posts?id=${contentId}` :
-        contentTypeStr === 'Community' ? `${window.location.origin}/communities?id=${contentId}` :
+        contentTypeStr === 'Community' ? `${window.location.origin}/community/view?id=${contentId}` :
         `${window.location.origin}/article-view?id=${contentId}`
     );
 
@@ -266,33 +275,111 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
         setIsSharing(true);
         const targetComm = communities.find(c => String(c.communityId || c.id) === String(selectedCommunityId));
         const commName = targetComm?.name || targetComm?.title || 'Community';
+        const targetCommIdNum = parseInt(selectedCommunityId);
+
         try {
-            await interactionsApi.shareContent(contentTypeStr, contentId, 'Community', parseInt(selectedCommunityId)).catch(() => {});
+            // 1. Record backend share interaction
+            await interactionsApi.shareContent(contentTypeStr, contentId, 'Community', targetCommIdNum).catch(() => {});
             
-            // If post/video/article, also persist to local community feed for immediate visibility
+            // 2. Persist post to SQL Server database Posts & CommunityPosts tables
             try {
-                const newFeedItem = {
-                    id: `shared_${contentTypeStr.toLowerCase()}_${Date.now()}`,
-                    userId: currentUser?.userId || currentUser?.id || 1,
-                    author: {
-                        userId: currentUser?.userId || currentUser?.id || 1,
-                        name: currentUser?.fullName || currentUser?.name || 'Employee',
-                        role: currentUser?.roleName || 'Employee',
-                        avatar: currentUser?.profilePhotoUrl || currentUser?.avatar || null
-                    },
-                    content: `Shared ${contentTypeStr}: "${itemTitle}"\n${shareUrl}`,
+                await postsApi.create({
+                    contentText: `Shared ${contentTypeStr}: "${itemTitle}"\n${shareUrl}`,
+                    audienceType: 'Community',
+                    audienceCommunityIds: [targetCommIdNum]
+                });
+            } catch (postErr) {
+                console.warn('Backend community post creation notice:', postErr);
+            }
+
+            // 3. Build rich community feed post item for immediate local visibility
+            const newFeedItem = {
+                id: `shared_${contentTypeStr.toLowerCase()}_${Date.now()}`,
+                userId: currentUser?.userId || currentUser?.id || 1,
+                author: currentUser?.fullName || currentUser?.name || 'Employee',
+                authorName: currentUser?.fullName || currentUser?.name || 'Employee',
+                authorRole: currentUser?.roleName || 'Employee',
+                authorAvatar: currentUser?.profilePhotoUrl || currentUser?.avatar || null,
+                avatar: currentUser?.profilePhotoUrl || currentUser?.avatar || null,
+                time: 'Just now',
+                timeAgo: 'Just now',
+                publishedDate: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
+                title: itemTitle,
+                content: `Shared ${contentTypeStr}: "${itemTitle}"\n${shareUrl}`,
+                communityId: targetCommIdNum,
+                communityName: commName,
+                type: `${contentTypeStr.toLowerCase()}_share`,
+                // Specific typed metadata so CommunityView can render beautiful preview cards:
+                sharedContent: {
+                    type: contentTypeStr,
+                    id: contentId,
                     title: itemTitle,
-                    time: 'Just now',
-                    communityId: parseInt(selectedCommunityId),
-                    communityName: commName,
-                    type: contentTypeStr.toLowerCase()
-                };
-                const existingCommFeed = JSON.parse(localStorage.getItem(`knome_community_posts_${selectedCommunityId}`) || '[]');
-                localStorage.setItem(`knome_community_posts_${selectedCommunityId}`, JSON.stringify([newFeedItem, ...existingCommFeed]));
-            } catch (e) {}
+                    url: shareUrl,
+                    thumbnail: itemThumbnail,
+                    author: itemAuthor
+                },
+                ...(contentTypeStr === 'Video' ? {
+                    sharedVideo: {
+                        id: contentId,
+                        title: itemTitle,
+                        sourceUrl: item?.videoUrl || item?.url || item?.sourceUrl || shareUrl,
+                        thumbnail: itemThumbnail,
+                        author: itemAuthor
+                    },
+                    videoUrl: item?.videoUrl || item?.url || item?.sourceUrl || shareUrl,
+                    thumbnail: itemThumbnail
+                } : {}),
+                ...(contentTypeStr === 'Article' ? {
+                    sharedArticle: {
+                        id: contentId,
+                        title: itemTitle,
+                        url: shareUrl,
+                        thumbnail: itemThumbnail,
+                        author: itemAuthor
+                    },
+                    thumbnail: itemThumbnail
+                } : {}),
+                ...(contentTypeStr === 'Podcast' ? {
+                    sharedPodcast: {
+                        id: contentId,
+                        title: itemTitle,
+                        url: shareUrl,
+                        thumbnail: itemThumbnail,
+                        author: itemAuthor
+                    },
+                    thumbnail: itemThumbnail
+                } : {}),
+                ...(contentTypeStr === 'Post' ? {
+                    sharedPostId: contentId,
+                    title: `Shared Post: "${itemTitle}"`
+                } : {}),
+                attachments: itemThumbnail ? [{ type: 'image', url: itemThumbnail }] : [],
+                likes: 0,
+                comments: 0,
+                shares: 0,
+                isPinned: false
+            };
+
+            // Save to community-specific posts list
+            const savedKey = `knome_community_posts_${selectedCommunityId}`;
+            const existingCommFeed = JSON.parse(localStorage.getItem(savedKey) || '[]');
+            localStorage.setItem(savedKey, JSON.stringify([newFeedItem, ...existingCommFeed]));
+
+            // Also save to global feed cache
+            try {
+                const globalPosts = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
+                localStorage.setItem('knome_local_posts', JSON.stringify([newFeedItem, ...globalPosts]));
+            } catch (_) {}
+
+            // 4. Dispatch events for instantaneous UI updates across all open views
+            window.dispatchEvent(new StorageEvent('storage', { key: savedKey }));
+            window.dispatchEvent(new CustomEvent('community-posts-updated', { detail: { communityId: selectedCommunityId, post: newFeedItem } }));
+            window.dispatchEvent(new CustomEvent('community-post-created', { detail: { communityId: selectedCommunityId, post: newFeedItem } }));
+            window.dispatchEvent(new CustomEvent('post-created'));
 
             if (onShared) onShared('community');
-            addToast(`${contentTypeStr} successfully shared to ${commName}!`, 'success');
+            addToast(`🎉 ${contentTypeStr} successfully shared to "${commName}" community feed!`, 'success');
             onClose();
         } catch (err) {
             console.error(`Failed to share ${contentTypeStr.toLowerCase()} to community`, err);
@@ -306,20 +393,48 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
         if (selectedUsers.length === 0) return;
         setIsSharing(true);
         try {
+            const senderName = currentUser?.fullName || currentUser?.name || 'Someone';
+            const icon = (
+                contentTypeStr === 'Podcast' ? 'podcasts' : 
+                contentTypeStr === 'Video' ? 'videocam' : 
+                contentTypeStr === 'Community' ? 'groups' :
+                contentTypeStr === 'Post' ? 'chat' : 'article'
+            );
+            const color = (
+                contentTypeStr === 'Podcast' ? 'text-pink-500' : 
+                contentTypeStr === 'Video' ? 'text-rose-500' : 
+                contentTypeStr === 'Community' ? 'text-indigo-400' :
+                contentTypeStr === 'Post' ? 'text-blue-500' : 'text-emerald-500'
+            );
+            const bg = (
+                contentTypeStr === 'Podcast' ? 'bg-pink-500/10' : 
+                contentTypeStr === 'Video' ? 'bg-rose-500/10' : 
+                contentTypeStr === 'Community' ? 'bg-indigo-500/10' :
+                contentTypeStr === 'Post' ? 'bg-blue-500/10' : 'bg-emerald-500/10'
+            );
+            const textMsg = `${senderName} shared a ${contentTypeStr.toLowerCase()} with you: "${itemTitle}"`;
+
+            // 1. Send backend share interaction for each user
             await Promise.all(selectedUsers.map(u => 
                 interactionsApi.shareContent(contentTypeStr, contentId, 'User', u.id || u.userId).catch(() => {})
             ));
-            
-            const senderName = currentUser?.fullName || currentUser?.name || 'Someone';
-            const icon = contentTypeStr === 'Podcast' ? 'podcasts' : contentTypeStr === 'Video' ? 'videocam' : contentTypeStr === 'Post' ? 'chat' : 'article';
-            const color = contentTypeStr === 'Podcast' ? 'text-pink-500' : contentTypeStr === 'Video' ? 'text-rose-500' : 'text-emerald-500';
-            const bg = contentTypeStr === 'Podcast' ? 'bg-pink-500/10' : contentTypeStr === 'Video' ? 'bg-rose-500/10' : 'bg-emerald-500/10';
-            const textMsg = `${senderName} shared a ${contentTypeStr.toLowerCase()} with you: "${itemTitle}"`;
 
+            // 2. Persist backend notifications in SQL Server database
+            await Promise.all(selectedUsers.map(u => 
+                notificationsApi.create({
+                    recipientUserId: u.id || u.userId,
+                    notificationType: 'Share',
+                    message: textMsg,
+                    relatedContentType: contentTypeStr,
+                    referenceId: contentId
+                }).catch(() => {})
+            ));
+
+            // 3. Construct rich local notification objects for instant recipient isolation
             const notifsToStore = selectedUsers.map(u => ({
-                id: `local_share_${contentTypeStr.toLowerCase()}_${contentId}_${u.id || u.userId}_${Date.now()}`,
+                id: `local_share_${contentTypeStr.toLowerCase()}_${contentId}_${u.id || u.userId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
                 type: 'share',
-                category: 'Shares',
+                category: contentTypeStr === 'Community' ? 'Community' : 'Shares',
                 icon,
                 color,
                 bg,
@@ -327,22 +442,37 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
                 message: textMsg,
                 senderName,
                 senderAvatar: currentUser?.profilePhotoUrl || currentUser?.avatar || null,
+                senderUserId: currentUser?.userId || currentUser?.id,
+                createdDate: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
                 targetUserId: u.id || u.userId,
-                time: 'Just now',
+                targetEmployeeId: u.employeeId,
+                recipientUserId: u.id || u.userId,
+                employeeId: u.employeeId,
                 unread: true,
                 targetUrl: shareUrl,
                 actionLink: shareUrl,
+                linkUrl: shareUrl,
                 relatedContentType: contentTypeStr,
-                relatedContentId: contentId
+                relatedContentId: contentId,
+                thumbnail: itemThumbnail,
+                title: itemTitle
             }));
+
+            // Save to localStorage
             const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
             localStorage.setItem('knome_notifications', JSON.stringify([...notifsToStore, ...existingNotifs]));
-            if (notifsToStore.length > 0) {
-                window.dispatchEvent(new CustomEvent('knome_notification_received', { detail: notifsToStore[0] }));
-            }
+
+            // 4. Dispatch events for real-time notification bell & dropdown update
+            window.dispatchEvent(new StorageEvent('storage', { key: 'knome_notifications' }));
+            window.dispatchEvent(new CustomEvent('notification-updated'));
+            window.dispatchEvent(new CustomEvent('knome_new_notification'));
+            notifsToStore.forEach(n => {
+                window.dispatchEvent(new CustomEvent('knome_notification_received', { detail: n }));
+            });
 
             if (onShared) onShared('users', selectedUsers.length);
-            addToast(`${contentTypeStr} successfully shared with ${selectedUsers.length} team member(s)!`, 'success');
+            addToast(`🚀 ${contentTypeStr} successfully shared with ${selectedUsers.length} team member(s)!`, 'success');
             onClose();
         } catch (err) {
             console.error(`Failed to share ${contentTypeStr.toLowerCase()} with users`, err);

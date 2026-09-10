@@ -17,6 +17,7 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
     const [tags, setTags] = useState([]);
     const [tagInput, setTagInput] = useState('');
     const [isUploading, setIsUploading] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
 
     const [sourceUrlInput, setSourceUrlInput] = useState('');
     
@@ -105,64 +106,75 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
         }
     };
 
+    const processVideoFile = async (file) => {
+        if (!file) return;
+        // Validate Maximum Direct Upload File Size: 500MB (FR-VC-06)
+        const maxMb = 500;
+        if (file.size > maxMb * 1024 * 1024) {
+            addToast(`File size (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds the maximum allowed limit of 500MB.`, 'warning');
+            if (videoInputRef.current) videoInputRef.current.value = '';
+            return;
+        }
+
+        setVideoFile(file);
+        // Pre-fill title if user hasn't typed one yet
+        if (!title.trim() && file.name) {
+            const cleanName = file.name.replace(/\.[^/.]+$/, "").replace(/[_-]/g, ' ');
+            setTitle(cleanName.charAt(0).toUpperCase() + cleanName.slice(1));
+        }
+
+        setVideoDuration('Calculating...');
+        
+        // Auto-detect video duration from video file metadata
+        const tempVideo = document.createElement('video');
+        tempVideo.preload = 'metadata';
+        const objectUrl = URL.createObjectURL(file);
+        tempVideo.src = objectUrl;
+        tempVideo.onloadedmetadata = () => {
+            if (tempVideo.duration && !isNaN(tempVideo.duration)) {
+                const totalSeconds = Math.floor(tempVideo.duration);
+                const minutes = Math.floor(totalSeconds / 60);
+                const seconds = totalSeconds % 60;
+                const formatted = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                setVideoDuration(formatted);
+                setDurationSeconds(totalSeconds);
+            } else {
+                setVideoDuration('00:00');
+            }
+            try {
+                tempVideo.pause();
+                tempVideo.removeAttribute('src');
+                tempVideo.load();
+            } catch (e) {}
+            setTimeout(() => {
+                try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+            }, 2000);
+        };
+        tempVideo.onerror = () => {
+            try {
+                tempVideo.pause();
+                tempVideo.removeAttribute('src');
+                tempVideo.load();
+            } catch (e) {}
+            setTimeout(() => {
+                try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+            }, 2000);
+            setVideoDuration('Unknown');
+        };
+
+        // Automatically extract thumbnail frame directly from the selected video
+        const extracted = await extractVideoThumbnail(file);
+        if (extracted) {
+            setThumbnailFile(extracted.file);
+            setThumbnailPreview(extracted.previewUrl);
+            setIsAutoThumbnail(true);
+        }
+    };
+
     const handleVideoFileSelect = async (e) => {
-        const file = e.target.files[0];
+        const file = e.target.files?.[0];
         if (file) {
-            // Validate Maximum Direct Upload File Size: 500MB (FR-VC-06)
-            const maxMb = 500;
-            if (file.size > maxMb * 1024 * 1024) {
-                addToast(`File size (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds the maximum allowed limit of 500MB.`, 'warning');
-                e.target.value = '';
-                return;
-            }
-
-            setVideoFile(file);
-            setVideoDuration('Calculating...');
-            
-            // Auto-detect video duration from video file metadata
-            const tempVideo = document.createElement('video');
-            tempVideo.preload = 'metadata';
-            const objectUrl = URL.createObjectURL(file);
-            tempVideo.src = objectUrl;
-            tempVideo.onloadedmetadata = () => {
-                if (tempVideo.duration && !isNaN(tempVideo.duration)) {
-                    const totalSeconds = Math.floor(tempVideo.duration);
-                    const minutes = Math.floor(totalSeconds / 60);
-                    const seconds = totalSeconds % 60;
-                    const formatted = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-                    setVideoDuration(formatted);
-                    setDurationSeconds(totalSeconds);
-                } else {
-                    setVideoDuration('00:00');
-                }
-                try {
-                    tempVideo.pause();
-                    tempVideo.removeAttribute('src');
-                    tempVideo.load();
-                } catch (e) {}
-                setTimeout(() => {
-                    try { URL.revokeObjectURL(objectUrl); } catch (e) {}
-                }, 2000);
-            };
-            tempVideo.onerror = () => {
-                try {
-                    tempVideo.pause();
-                    tempVideo.removeAttribute('src');
-                    tempVideo.load();
-                } catch (e) {}
-                setTimeout(() => {
-                    try { URL.revokeObjectURL(objectUrl); } catch (e) {}
-                }, 2000);
-                setVideoDuration('Unknown');
-            };
-
-            // Automatically extract thumbnail frame directly from the selected video
-            const extracted = await extractVideoThumbnail(file);
-            if (extracted) {
-                setThumbnailFile(extracted.file);
-                setThumbnailPreview(extracted.previewUrl);
-                setIsAutoThumbnail(true);
-            }
+            await processVideoFile(file);
         }
     };
 
@@ -376,12 +388,14 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                     id: `notif_approval_${Date.now()}`,
                     type: 'media_approval',
                     category: 'System',
-                    text: `${currentUser?.name || 'Employee'} uploaded video "${title.trim()}" awaiting your admin approval.`,
-                    senderName: currentUser?.name || 'Employee',
-                    senderAvatar: currentUser?.avatar,
+                    text: `${currentUser?.name || currentUser?.fullName || 'Employee'} uploaded video "${title.trim()}" awaiting your admin approval.`,
+                    senderName: currentUser?.name || currentUser?.fullName || 'Employee',
+                    senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
+                    senderUserId: currentUser?.userId || currentUser?.id,
+                    createdDate: new Date().toISOString(),
+                    createdAt: new Date().toISOString(),
                     targetUserId: 'admin',
                     targetUrl: '/admin-console',
-                    time: 'Just now',
                     unread: true,
                     mediaType: 'Video',
                     pendingId: pendingItem.id
@@ -417,105 +431,245 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-slate-950/70 backdrop-blur-md overflow-hidden animate-in fade-in duration-200">
+            {/* Backdrop click dismiss */}
+            <div className="fixed inset-0" onClick={onClose} aria-hidden="true" />
             
-            <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in duration-200">
-                
-                <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800">
-                    <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <span className="material-symbols-outlined text-cyan-500">video_call</span>
-                        Upload Video
-                    </h2>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
-                        <span className="material-symbols-outlined">close</span>
+            {/* Centered Modal Card */}
+            <div 
+                className="relative bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col border border-slate-200/90 dark:border-slate-800 overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-200"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Header - Always pinned at top */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800/80 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm shrink-0 z-10">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-cyan-500/10 text-cyan-500 flex items-center justify-center border border-cyan-500/20 shadow-xs">
+                            <span className="material-symbols-outlined text-[24px]">video_call</span>
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-bold text-slate-900 dark:text-white leading-tight">
+                                Upload Video
+                            </h2>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                                Share knowledge, tutorials, or engineering sessions with MPOnline
+                            </p>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={onClose} 
+                        className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                        title="Close modal"
+                    >
+                        <span className="material-symbols-outlined text-[20px]">close</span>
                     </button>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+                {/* Body - Clean scrollable container that never overflows outer viewport */}
+                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-6 py-5 space-y-4">
                     {/* Source Tabs */}
-                    <div className="flex gap-4 mb-6 border-b border-slate-200 dark:border-slate-800 overflow-x-auto custom-scrollbar">
+                    <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800/80 pb-3 overflow-x-auto custom-scrollbar">
                         {[
                             { id: 'direct', label: 'Direct Upload', icon: 'upload' },
                             { id: 'onedrive', label: 'OneDrive', icon: 'cloud' },
                             { id: 'stream', label: 'MS Stream', icon: 'play_circle' },
                             { id: 'embed', label: 'Embed URL', icon: 'link' }
-                        ].map(tab => (
-                            <button 
-                                key={tab.id}
-                                onClick={() => setSourceTab(tab.id)}
-                                className={`flex items-center gap-2 pb-3 font-bold text-sm transition-colors relative whitespace-nowrap ${sourceTab === tab.id ? 'text-cyan-500' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                            >
-                                <span className="material-symbols-outlined text-[18px]">{tab.icon}</span>
-                                {tab.label}
-                                {sourceTab === tab.id && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-cyan-500 rounded-t-full"></div>}
-                            </button>
-                        ))}
+                        ].map(tab => {
+                            const isActive = sourceTab === tab.id;
+                            return (
+                                <button 
+                                    key={tab.id}
+                                    onClick={() => setSourceTab(tab.id)}
+                                    type="button"
+                                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer whitespace-nowrap ${
+                                        isActive 
+                                            ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 shadow-xs' 
+                                            : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                                    }`}
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">{tab.icon}</span>
+                                    {tab.label}
+                                </button>
+                            );
+                        })}
                     </div>
 
                     {/* Dynamic Source Input */}
-                    <div className="mb-8 p-6 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex flex-col items-center justify-center text-center relative overflow-hidden">
-                        {sourceTab === 'direct' && (
-                            <>
-                                <input type="file" accept="video/mp4,video/quicktime,video/x-msvideo,video/x-matroska" ref={videoInputRef} onChange={handleVideoFileSelect} className="hidden" />
-                                {videoFile ? (
-                                    <div className="flex flex-col items-center gap-2">
-                                        <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center text-green-500 mb-2">
-                                            <span className="material-symbols-outlined text-[32px]">check_circle</span>
+                    {sourceTab === 'direct' && (
+                        <div>
+                            <input 
+                                type="file" 
+                                accept="video/mp4,video/quicktime,video/x-msvideo,video/x-matroska" 
+                                ref={videoInputRef} 
+                                onChange={handleVideoFileSelect} 
+                                className="hidden" 
+                            />
+                            {videoFile ? (
+                                <div className="p-4 rounded-2xl border border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 flex items-center justify-between gap-4">
+                                    <div className="flex items-center gap-3.5 min-w-0">
+                                        <div className="w-11 h-11 rounded-xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-emerald-500/20">
+                                            <span className="material-symbols-outlined text-[22px]">videocam</span>
                                         </div>
-                                        <h3 className="text-[15px] font-bold text-slate-900 dark:text-white">{videoFile.name}</h3>
-                                        <p className="text-[12px] text-slate-500">{(videoFile.size / (1024 * 1024)).toFixed(2)} MB</p>
-                                        <button onClick={() => videoInputRef.current?.click()} className="mt-2 text-xs font-bold text-cyan-500 hover:underline">Change File</button>
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                                                    {videoFile.name}
+                                                </h4>
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300">
+                                                    Ready
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-2 font-medium">
+                                                <span>{(videoFile.size / (1024 * 1024)).toFixed(2)} MB</span>
+                                                <span>•</span>
+                                                <span>Duration: {videoDuration || 'Auto-detecting...'}</span>
+                                            </p>
+                                        </div>
                                     </div>
-                                ) : (
-                                    <>
-                                        <div className="w-16 h-16 bg-cyan-100 dark:bg-cyan-900/30 rounded-full flex items-center justify-center text-cyan-500 mb-4">
-                                            <span className="material-symbols-outlined text-[32px]">cloud_upload</span>
-                                        </div>
-                                        <h3 className="text-[15px] font-bold text-slate-900 dark:text-white mb-2">Drag and drop video file</h3>
-                                        <p className="text-[12px] text-slate-500 mb-4 max-w-sm">Maximum file size: 500MB. Supported formats: MP4, MOV, AVI, MKV.</p>
-                                        <button onClick={() => videoInputRef.current?.click()} className="px-6 py-2 bg-cyan-500 text-white font-bold rounded-xl hover:bg-cyan-600 transition-colors shadow-md shadow-cyan-500/20">
-                                            Select File
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <button 
+                                            type="button"
+                                            onClick={() => videoInputRef.current?.click()} 
+                                            className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+                                        >
+                                            <span className="material-symbols-outlined text-[15px]">refresh</span>
+                                            Change Video
                                         </button>
-                                    </>
-                                )}
-                            </>
-                        )}
-                        {sourceTab === 'onedrive' && (
-                            <>
-                                <span className="material-symbols-outlined text-[48px] text-blue-500 mb-4">cloud</span>
-                                <p className="text-[13px] font-bold text-slate-700 dark:text-slate-300 mb-4">Paste OneDrive sharing link</p>
-                                <input type="text" value={sourceUrlInput} onChange={e => handleUrlInputChange(e.target.value)} placeholder="https://onedrive.live.com/..." className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none" />
-                            </>
-                        )}
-                        {sourceTab === 'stream' && (
-                            <>
-                                <span className="material-symbols-outlined text-[48px] text-pink-500 mb-4">play_circle</span>
-                                <p className="text-[13px] font-bold text-slate-700 dark:text-slate-300 mb-4">Paste Microsoft Stream video link</p>
-                                <input type="text" value={sourceUrlInput} onChange={e => handleUrlInputChange(e.target.value)} placeholder="https://web.microsoftstream.com/video/..." className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none" />
-                            </>
-                        )}
-                        {sourceTab === 'embed' && (
-                            <>
-                                <span className="material-symbols-outlined text-[48px] text-slate-400 mb-4">link</span>
-                                <p className="text-[13px] font-bold text-slate-700 dark:text-slate-300 mb-4">Paste Embed Code or URL</p>
-                                <input type="text" value={sourceUrlInput} onChange={e => handleUrlInputChange(e.target.value)} placeholder="<iframe src=..." className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none" />
-                            </>
-                        )}
-                    </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setVideoFile(null);
+                                                setVideoDuration('');
+                                                setDurationSeconds(0);
+                                                if (isAutoThumbnail) {
+                                                    setThumbnailFile(null);
+                                                    setThumbnailPreview('');
+                                                    setIsAutoThumbnail(false);
+                                                }
+                                                if (videoInputRef.current) videoInputRef.current.value = '';
+                                            }}
+                                            className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition-all cursor-pointer"
+                                            title="Remove file"
+                                        >
+                                            <span className="material-symbols-outlined text-[18px]">close</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div 
+                                    onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                                    onDragLeave={() => setIsDragging(false)}
+                                    onDrop={(e) => {
+                                        e.preventDefault();
+                                        setIsDragging(false);
+                                        if (e.dataTransfer.files?.[0]) processVideoFile(e.dataTransfer.files[0]);
+                                    }}
+                                    onClick={() => videoInputRef.current?.click()}
+                                    className={`p-4 sm:p-5 rounded-2xl border-2 border-dashed transition-all flex flex-col sm:flex-row items-center justify-between gap-4 cursor-pointer group ${
+                                        isDragging 
+                                            ? 'border-cyan-500 bg-cyan-500/10 scale-[0.99]' 
+                                            : 'border-slate-300 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/40 hover:bg-cyan-500/5 hover:border-cyan-400/80'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-3.5 text-center sm:text-left">
+                                        <div className="w-11 h-11 rounded-2xl bg-cyan-500/10 dark:bg-cyan-500/20 text-cyan-500 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                                            <span className="material-symbols-outlined text-[24px]">cloud_upload</span>
+                                        </div>
+                                        <div>
+                                            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                                                Drag & drop video file or browse
+                                            </h3>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                                Supports MP4, MOV, AVI, MKV up to 500 MB
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            videoInputRef.current?.click();
+                                        }} 
+                                        className="px-4 py-2 bg-cyan-500 hover:bg-cyan-600 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-cyan-500/20 flex items-center gap-1.5 shrink-0 cursor-pointer"
+                                    >
+                                        <span className="material-symbols-outlined text-[16px]">add</span>
+                                        Select File
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-[12px] font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider">Video Title</label>
-                                <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Enter video title" className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white" />
+                    {sourceTab === 'onedrive' && (
+                        <div className="p-4 rounded-2xl border border-blue-200 dark:border-blue-900/40 bg-blue-50/50 dark:bg-blue-950/20 flex items-center gap-3">
+                            <span className="material-symbols-outlined text-[26px] text-blue-500 shrink-0">cloud</span>
+                            <div className="flex-1">
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Paste OneDrive Sharing Link</label>
+                                <input 
+                                    type="text" 
+                                    value={sourceUrlInput} 
+                                    onChange={e => handleUrlInputChange(e.target.value)} 
+                                    placeholder="https://onedrive.live.com/..." 
+                                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none" 
+                                />
                             </div>
+                        </div>
+                    )}
+
+                    {sourceTab === 'stream' && (
+                        <div className="p-4 rounded-2xl border border-pink-200 dark:border-pink-900/40 bg-pink-50/50 dark:bg-pink-950/20 flex items-center gap-3">
+                            <span className="material-symbols-outlined text-[26px] text-pink-500 shrink-0">play_circle</span>
+                            <div className="flex-1">
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Paste Microsoft Stream Video Link</label>
+                                <input 
+                                    type="text" 
+                                    value={sourceUrlInput} 
+                                    onChange={e => handleUrlInputChange(e.target.value)} 
+                                    placeholder="https://web.microsoftstream.com/video/..." 
+                                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs focus:ring-2 focus:ring-pink-500 outline-none" 
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {sourceTab === 'embed' && (
+                        <div className="p-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40 flex items-center gap-3">
+                            <span className="material-symbols-outlined text-[26px] text-slate-400 shrink-0">link</span>
+                            <div className="flex-1">
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Paste Embed Code or Video URL</label>
+                                <input 
+                                    type="text" 
+                                    value={sourceUrlInput} 
+                                    onChange={e => handleUrlInputChange(e.target.value)} 
+                                    placeholder="https://www.youtube.com/watch?v=... or <iframe src=..." 
+                                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs focus:ring-2 focus:ring-cyan-500 outline-none" 
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Form Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
+                        {/* Left Column */}
+                        <div className="space-y-3.5">
                             <div>
-                                <label className="block text-[12px] font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider flex items-center justify-between">
-                                    <span>Video Duration</span>
-                                    <span className="text-[10px] text-cyan-600 font-extrabold uppercase bg-cyan-500/10 px-2 py-0.5 rounded">Auto-Detected</span>
+                                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wider">
+                                    Video Title <span className="text-rose-500">*</span>
                                 </label>
-                                <div className="w-full bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between select-none cursor-not-allowed">
+                                <input 
+                                    type="text" 
+                                    value={title} 
+                                    onChange={e => setTitle(e.target.value)} 
+                                    placeholder="Enter video title" 
+                                    className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white font-medium" 
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wider flex items-center justify-between">
+                                    <span>Video Duration</span>
+                                    <span className="text-[10px] text-cyan-600 dark:text-cyan-400 font-extrabold uppercase bg-cyan-500/10 px-2 py-0.5 rounded">Auto-Detected</span>
+                                </label>
+                                <div className="w-full bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between select-none">
                                     <div className="flex items-center gap-2">
                                         <span className="material-symbols-outlined text-[18px] text-cyan-500">schedule</span>
                                         <span>{videoDuration || (videoFile ? 'Calculating duration...' : 'Select a video file to auto-detect duration')}</span>
@@ -523,29 +677,50 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                                     <span className="material-symbols-outlined text-[16px] text-slate-400">lock</span>
                                 </div>
                             </div>
+
                             <div>
-                                <label className="block text-[12px] font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider">Description</label>
-                                <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="What is this video about?" rows="3" className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white resize-none"></textarea>
+                                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wider">
+                                    Description
+                                </label>
+                                <textarea 
+                                    value={description} 
+                                    onChange={e => setDescription(e.target.value)} 
+                                    placeholder="What is this video about?" 
+                                    rows="3" 
+                                    className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 rounded-xl px-3.5 py-2 text-sm focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white resize-none" 
+                                />
                             </div>
                         </div>
 
-                        <div className="space-y-4">
+                        {/* Right Column */}
+                        <div className="space-y-3.5">
                             <div>
-                                <label className="block text-[12px] font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider">Category</label>
-                                <select value={category} onChange={e => setCategory(e.target.value)} className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white font-medium">
+                                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wider">
+                                    Category
+                                </label>
+                                <select 
+                                    value={category} 
+                                    onChange={e => setCategory(e.target.value)} 
+                                    className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white font-medium cursor-pointer"
+                                >
                                     <option value="13">Training & Tutorials</option>
                                     <option value="14">Townhalls</option>
                                     <option value="15">Engineering Tech Talks</option>
                                     <option value="16">Leadership Updates</option>
                                 </select>
                             </div>
+
                             <div>
-                                <label className="block text-[12px] font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider">Tags</label>
-                                <div className="p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl flex flex-wrap gap-2 focus-within:ring-2 focus-within:ring-cyan-500">
+                                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wider">
+                                    Tags
+                                </label>
+                                <div className="p-2 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 rounded-xl flex flex-wrap gap-1.5 focus-within:ring-2 focus-within:ring-cyan-500 min-h-[42px] items-center">
                                     {tags.map(tag => (
-                                        <span key={tag} className="flex items-center gap-1 bg-cyan-100 dark:bg-cyan-900/50 text-cyan-700 dark:text-cyan-400 px-2 py-1 rounded-md text-[11px] font-bold">
+                                        <span key={tag} className="flex items-center gap-1 bg-cyan-100 dark:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 px-2 py-0.5 rounded-md text-[11px] font-bold">
                                             {tag}
-                                            <button onClick={() => setTags(tags.filter(t => t !== tag))} className="hover:text-red-500"><span className="material-symbols-outlined text-[14px]">close</span></button>
+                                            <button type="button" onClick={() => setTags(tags.filter(t => t !== tag))} className="hover:text-rose-500">
+                                                <span className="material-symbols-outlined text-[13px]">close</span>
+                                            </button>
                                         </span>
                                     ))}
                                     <input 
@@ -553,38 +728,52 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                                         value={tagInput}
                                         onChange={(e) => setTagInput(e.target.value)}
                                         onKeyDown={handleTagKeyDown}
-                                        placeholder="Add tag and press Enter..."
-                                        className="flex-1 min-w-[120px] bg-transparent border-none p-1 text-sm text-slate-900 dark:text-white focus:ring-0 placeholder-slate-400"
+                                        placeholder={tags.length === 0 ? "Add tag and press Enter..." : "Add tag..."}
+                                        className="flex-1 min-w-[120px] bg-transparent border-none p-1 text-xs text-slate-900 dark:text-white focus:ring-0 placeholder-slate-400 outline-none"
                                     />
                                 </div>
                             </div>
+
                             <div>
-                                <label className="block text-[12px] font-bold text-slate-700 dark:text-slate-300 mb-2 uppercase tracking-wider flex items-center justify-between">
+                                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wider flex items-center justify-between">
                                     <span>Video Thumbnail</span>
                                     {isAutoThumbnail && (
                                         <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-black uppercase bg-emerald-500/10 px-2 py-0.5 rounded-md flex items-center gap-1 border border-emerald-500/20">
                                             <span className="material-symbols-outlined text-[12px]">auto_awesome</span>
-                                            Auto-Extracted from Video
+                                            Auto-Extracted
                                         </span>
                                     )}
                                 </label>
                                 <input type="file" accept="image/*" ref={thumbnailInputRef} onChange={handleThumbnailSelect} className="hidden" />
                                 {thumbnailPreview ? (
-                                    <div className="relative w-full h-24 rounded-xl overflow-hidden group border border-slate-200 dark:border-slate-700 shadow-xs">
+                                    <div className="relative w-full h-20 rounded-xl overflow-hidden group border border-slate-200 dark:border-slate-700 shadow-xs">
                                         <img src={thumbnailPreview} alt="Thumbnail preview" className="w-full h-full object-cover" />
-                                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button onClick={() => thumbnailInputRef.current?.click()} className="px-3 py-1 bg-white/20 hover:bg-white/40 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1">
-                                                <span className="material-symbols-outlined text-[14px]">edit</span>
-                                                Change Custom
+                                        <div className="absolute inset-0 bg-slate-950/60 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button 
+                                                type="button"
+                                                onClick={() => thumbnailInputRef.current?.click()} 
+                                                className="px-2.5 py-1 bg-white/20 hover:bg-white/40 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                                            >
+                                                <span className="material-symbols-outlined text-[13px]">edit</span>
+                                                Change
                                             </button>
-                                            <button onClick={() => {setThumbnailFile(null); setThumbnailPreview(''); setIsAutoThumbnail(false);}} className="p-1.5 bg-white/20 hover:bg-rose-500 text-white rounded-lg transition-colors">
-                                                <span className="material-symbols-outlined text-[16px]">delete</span>
+                                            <button 
+                                                type="button"
+                                                onClick={() => { setThumbnailFile(null); setThumbnailPreview(''); setIsAutoThumbnail(false); }} 
+                                                className="p-1 bg-white/20 hover:bg-rose-500 text-white rounded-lg transition-colors cursor-pointer"
+                                                title="Remove thumbnail"
+                                            >
+                                                <span className="material-symbols-outlined text-[15px]">delete</span>
                                             </button>
                                         </div>
                                     </div>
                                 ) : (
-                                    <button onClick={() => thumbnailInputRef.current?.click()} className="w-full flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-xl py-2.5 text-[13px] font-bold text-slate-600 dark:text-slate-300 transition-colors">
-                                        <span className="material-symbols-outlined text-[18px]">add_photo_alternate</span>
+                                    <button 
+                                        type="button"
+                                        onClick={() => thumbnailInputRef.current?.click()} 
+                                        className="w-full flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-700/80 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl py-2 text-xs font-bold text-slate-600 dark:text-slate-300 transition-colors cursor-pointer"
+                                    >
+                                        <span className="material-symbols-outlined text-[17px] text-cyan-500">add_photo_alternate</span>
                                         Upload Custom Thumbnail (Optional)
                                     </button>
                                 )}
@@ -593,22 +782,51 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                     </div>
                 </div>
 
-                <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3 rounded-b-2xl relative">
-                    {isUploading && (
-                        <div className="absolute left-6 top-1/2 -translate-y-1/2 flex items-center gap-2 text-cyan-500">
-                            <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
-                            <span className="text-[13px] font-bold">Uploading video... Please wait</span>
-                        </div>
-                    )}
-                    <button onClick={onClose} disabled={isUploading} className="px-6 py-2.5 text-[13px] font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors disabled:opacity-50">
-                        Cancel
-                    </button>
-                    <button 
-                        onClick={handleUpload}
-                        disabled={isUploading}
-                        className="px-8 py-2.5 bg-cyan-500 text-white text-[13px] font-bold rounded-xl hover:bg-cyan-600 transition-colors shadow-md shadow-cyan-500/20 disabled:opacity-50 flex items-center gap-2">
-                        {isUploading ? 'Processing...' : 'Upload Video'}
-                    </button>
+                {/* Footer - Fixed, always visible, never cut off */}
+                <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/90 dark:bg-slate-800/50 flex items-center justify-between gap-3 shrink-0 z-10">
+                    <div className="text-xs text-slate-500 dark:text-slate-400 font-medium truncate">
+                        {isUploading ? (
+                            <span className="flex items-center gap-2 text-cyan-600 dark:text-cyan-400 font-bold">
+                                <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
+                                Uploading video... Please wait
+                            </span>
+                        ) : videoFile ? (
+                            <span className="text-slate-600 dark:text-slate-300 font-medium">
+                                Selected: <b className="text-slate-900 dark:text-white font-bold">{videoFile.name}</b> ({(videoFile.size / (1024 * 1024)).toFixed(1)} MB)
+                            </span>
+                        ) : (
+                            <span>All fields marked with <span className="text-rose-500 font-bold">*</span> are required</span>
+                        )}
+                    </div>
+
+                    <div className="flex items-center gap-2.5 shrink-0">
+                        <button 
+                            type="button"
+                            onClick={onClose} 
+                            disabled={isUploading} 
+                            className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/80 dark:hover:bg-slate-700/80 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            type="button"
+                            onClick={handleUpload}
+                            disabled={isUploading}
+                            className="px-6 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-cyan-500/25 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                        >
+                            {isUploading ? (
+                                <>
+                                    <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
+                                    <span>Processing...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <span className="material-symbols-outlined text-[16px]">cloud_upload</span>
+                                    <span>Upload Video</span>
+                                </>
+                            )}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

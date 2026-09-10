@@ -320,12 +320,14 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                     id: `notif_approval_${Date.now()}`,
                     type: 'media_approval',
                     category: 'System',
-                    text: `${currentUser?.name || 'Employee'} uploaded podcast "${title.trim()}" awaiting your admin approval.`,
-                    senderName: currentUser?.name || 'Employee',
-                    senderAvatar: currentUser?.avatar,
+                    text: `${currentUser?.name || currentUser?.fullName || 'Employee'} uploaded podcast "${title.trim()}" awaiting your admin approval.`,
+                    senderName: currentUser?.name || currentUser?.fullName || 'Employee',
+                    senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
+                    senderUserId: currentUser?.userId || currentUser?.id,
+                    createdDate: new Date().toISOString(),
+                    createdAt: new Date().toISOString(),
                     targetUserId: 'admin',
                     targetUrl: '/admin-console',
-                    time: 'Just now',
                     unread: true,
                     mediaType: 'Podcast',
                     pendingId: pendingItem.id
@@ -348,22 +350,22 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
+        <div className="fixed inset-0 z-[100] overflow-y-auto p-3 sm:p-4 md:p-6 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="fixed inset-0" onClick={onClose}></div>
             
-            <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in duration-200 z-10">
+            <div className="relative bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-3xl max-h-[92vh] sm:max-h-[88vh] flex flex-col my-auto border border-slate-200 dark:border-slate-800 overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-150">
                 
-                <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800">
-                    <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <div className="flex items-center justify-between p-4 sm:p-6 border-b border-slate-100 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 z-10">
+                    <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
                         <span className="material-symbols-outlined text-pink-500">mic</span>
                         Publish Podcast Episode
                     </h2>
-                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
                         <span className="material-symbols-outlined">close</span>
                     </button>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
+                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 sm:p-6">
                     {/* Source Tabs */}
                     <div className="flex gap-6 mb-6 border-b border-slate-200 dark:border-slate-800">
                         <button 
@@ -526,7 +528,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                     </div>
                 </div>
 
-                <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3 rounded-b-2xl">
+                <div className="p-4 sm:p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex justify-end gap-3 rounded-b-2xl sm:rounded-b-3xl shrink-0 z-10">
                     <button onClick={onClose} className="px-6 py-2.5 text-[13px] font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors">
                         Cancel
                     </button>

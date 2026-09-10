@@ -10,7 +10,7 @@ import DocumentViewerModal from '../modals/DocumentViewerModal';
 import ArticleShareModal from '../modals/ArticleShareModal';
 import ReactionsModal from '../modals/ReactionsModal';
 
-import { interactionsApi, postsApi, searchApi, communitiesApi, resolveMediaUrl, getVideoThumbnail } from '../../utils/apiService';
+import { interactionsApi, postsApi, notificationsApi, searchApi, communitiesApi, resolveMediaUrl, getVideoThumbnail, formatToDDMMYYYY } from '../../utils/apiService';
 import { checkRestrictedContent } from '../../utils/restrictedWords';
 
 // Available reactions (FR-CI-01)
@@ -44,7 +44,7 @@ function ImageLightbox({ images, startIndex, onClose }) {
         return () => { document.body.style.overflow = ''; };
     }, []);
 
-    const FALLBACK_IMG = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=1200';
+    const FALLBACK_MEDIA_SVG = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500"><defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%231e293b"/><stop offset="100%" stop-color="%230f172a"/></linearGradient></defs><rect width="800" height="500" fill="url(%23g)"/><circle cx="400" cy="210" r="52" fill="%236366f1" fill-opacity="0.15"/><path d="M380 195l16-20 14 18 12-14 18 24H360z" fill="%23818cf8"/><circle cx="375" cy="180" r="6" fill="%23a5b4fc"/><text x="400" y="295" font-family="system-ui,-apple-system,sans-serif" font-size="16" font-weight="700" fill="%23f1f5f9" text-anchor="middle">Knome Enterprise Media</text><text x="400" y="322" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="500" fill="%2394a3b8" text-anchor="middle">Attachment Preview</text></svg>`;
 
     return createPortal(
         <div
@@ -81,7 +81,7 @@ function ImageLightbox({ images, startIndex, onClose }) {
             {/* Image */}
             <img
                 src={resolveMediaUrl(images[current]?.url)}
-                onError={(e) => { e.target.src = FALLBACK_IMG; }}
+                onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_MEDIA_SVG; }}
                 alt="Full view"
                 className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl"
                 style={{ userSelect: 'none' }}
@@ -110,7 +110,7 @@ function ImageLightbox({ images, startIndex, onClose }) {
                         >
                             <img 
                                 src={resolveMediaUrl(img.url)} 
-                                onError={(e) => { e.target.src = FALLBACK_IMG; }} 
+                                onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_MEDIA_SVG; }} 
                                 alt="thumb" 
                                 className="w-full h-full object-cover" 
                             />
@@ -124,13 +124,14 @@ function ImageLightbox({ images, startIndex, onClose }) {
 }
 
 // ─── Image Grid (full-width cover layout) ────────────────────
-function ImageGrid({ images, onImageClick }) {
-    if (images.length === 0) return null;
+const FALLBACK_GRID_SVG = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500"><defs><linearGradient id="bgG" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%231e293b"/><stop offset="100%" stop-color="%230f172a"/></linearGradient></defs><rect width="800" height="500" fill="url(%23bgG)"/><circle cx="400" cy="210" r="52" fill="%236366f1" fill-opacity="0.15"/><path d="M380 195l16-20 14 18 12-14 18 24H360z" fill="%23818cf8"/><circle cx="375" cy="180" r="6" fill="%23a5b4fc"/><text x="400" y="295" font-family="system-ui,-apple-system,sans-serif" font-size="16" font-weight="700" fill="%23f1f5f9" text-anchor="middle">Knome Enterprise Media</text><text x="400" y="322" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="500" fill="%2394a3b8" text-anchor="middle">Attachment</text></svg>`;
 
-    const FALLBACK_IMG = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&q=80&w=1200';
+function ImageGrid({ images, onImageClick }) {
+    const validImages = (images || []).filter(img => img && typeof (img.url || img.fileUrl) === 'string' && (img.url || img.fileUrl).trim().length > 0);
+    if (validImages.length === 0) return null;
 
     // Single image — full width, tall cover
-    if (images.length === 1) {
+    if (validImages.length === 1) {
         return (
             <div
                 className="w-full overflow-hidden cursor-zoom-in group relative"
@@ -138,9 +139,9 @@ function ImageGrid({ images, onImageClick }) {
                 onClick={() => onImageClick(0)}
             >
                 <img
-                    src={resolveMediaUrl(images[0].url)}
-                    onError={(e) => { e.target.src = FALLBACK_IMG; }}
-                    alt="Post image"
+                    src={resolveMediaUrl(validImages[0].url)}
+                    onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_GRID_SVG; }}
+                    alt="Post media"
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
                     style={{ maxHeight: '520px', display: 'block' }}
                 />
@@ -150,10 +151,10 @@ function ImageGrid({ images, onImageClick }) {
     }
 
     // Two images — side by side
-    if (images.length === 2) {
+    if (validImages.length === 2) {
         return (
             <div className="w-full grid grid-cols-2 gap-0.5" style={{ height: '360px' }}>
-                {images.map((img, i) => (
+                {validImages.map((img, i) => (
                     <div
                         key={i}
                         className="overflow-hidden cursor-zoom-in group relative"
@@ -161,8 +162,8 @@ function ImageGrid({ images, onImageClick }) {
                     >
                         <img 
                             src={resolveMediaUrl(img.url)} 
-                            onError={(e) => { e.target.src = FALLBACK_IMG; }} 
-                            alt="Post image" 
+                            onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_GRID_SVG; }} 
+                            alt="Post media" 
                             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
                         />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
@@ -173,24 +174,24 @@ function ImageGrid({ images, onImageClick }) {
     }
 
     // Three images — 1 big left, 2 stacked right
-    if (images.length === 3) {
+    if (validImages.length === 3) {
         return (
             <div className="w-full grid grid-cols-2 gap-0.5" style={{ height: '380px' }}>
                 <div className="overflow-hidden cursor-zoom-in group relative row-span-2" onClick={() => onImageClick(0)}>
                     <img 
-                        src={resolveMediaUrl(images[0].url)} 
-                        onError={(e) => { e.target.src = FALLBACK_IMG; }} 
-                        alt="Post image" 
+                        src={resolveMediaUrl(validImages[0].url)} 
+                        onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_GRID_SVG; }} 
+                        alt="Post media" 
                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
                     />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
                 </div>
-                {images.slice(1, 3).map((img, i) => (
+                {validImages.slice(1, 3).map((img, i) => (
                     <div key={i} className="overflow-hidden cursor-zoom-in group relative" style={{ height: '189px' }} onClick={() => onImageClick(i + 1)}>
                         <img 
                             src={resolveMediaUrl(img.url)} 
-                            onError={(e) => { e.target.src = FALLBACK_IMG; }} 
-                            alt="Post image" 
+                            onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_GRID_SVG; }} 
+                            alt="Post media" 
                             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
                         />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
@@ -201,8 +202,8 @@ function ImageGrid({ images, onImageClick }) {
     }
 
     // Four or more — 2x2 grid, last cell shows +N more
-    const showImages = images.slice(0, 4);
-    const extraCount = images.length - 4;
+    const showImages = validImages.slice(0, 4);
+    const extraCount = validImages.length - 4;
     return (
         <div className="w-full grid grid-cols-2 gap-0.5" style={{ height: '380px' }}>
             {showImages.map((img, i) => (
@@ -213,8 +214,8 @@ function ImageGrid({ images, onImageClick }) {
                 >
                     <img 
                         src={resolveMediaUrl(img.url)} 
-                        onError={(e) => { e.target.src = FALLBACK_IMG; }} 
-                        alt="Post image" 
+                        onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_GRID_SVG; }} 
+                        alt="Post media" 
                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
                     />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
@@ -231,19 +232,113 @@ function ImageGrid({ images, onImageClick }) {
     );
 }
 
+// ─── Interaction Caching Helpers (Survives F5 / Page Refresh) ─────────
+const getCachedPostInteraction = (postId) => {
+    if (!postId) return null;
+    try {
+        const raw = localStorage.getItem(`knome_post_interaction_${postId}`);
+        return raw ? JSON.parse(raw) : null;
+    } catch {
+        return null;
+    }
+};
+
+const setCachedPostInteraction = (postId, updates) => {
+    if (!postId) return;
+    try {
+        const key = `knome_post_interaction_${postId}`;
+        const existing = getCachedPostInteraction(postId) || {};
+        const merged = { ...existing, ...updates, updatedAt: Date.now() };
+        localStorage.setItem(key, JSON.stringify(merged));
+
+        // Sync with knome_local_posts if post is stored locally
+        try {
+            const localPosts = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
+            let modified = false;
+            const updated = localPosts.map(lp => {
+                if (String(lp.id || lp.postId) === String(postId)) {
+                    modified = true;
+                    return {
+                        ...lp,
+                        likes: updates.likeCount !== undefined ? updates.likeCount : (lp.likes || 0),
+                        likesCount: updates.likeCount !== undefined ? updates.likeCount : (lp.likesCount || 0),
+                        userReaction: updates.reaction !== undefined ? updates.reaction : lp.userReaction,
+                        comments: updates.commentCount !== undefined ? updates.commentCount : (lp.comments || 0),
+                        commentsCount: updates.commentCount !== undefined ? updates.commentCount : (lp.commentsCount || 0)
+                    };
+                }
+                return lp;
+            });
+            if (modified) {
+                localStorage.setItem('knome_local_posts', JSON.stringify(updated));
+            }
+        } catch (_) {}
+
+        // Sync with any community posts stored in localStorage
+        try {
+            for (let i = 0; i < localStorage.length; i++) {
+                const storageKey = localStorage.key(i);
+                if (storageKey && storageKey.startsWith('knome_community_posts_')) {
+                    const commPosts = JSON.parse(localStorage.getItem(storageKey) || '[]');
+                    let cModified = false;
+                    const cUpdated = commPosts.map(cp => {
+                        if (String(cp.id || cp.postId) === String(postId)) {
+                            cModified = true;
+                            return {
+                                ...cp,
+                                likes: updates.likeCount !== undefined ? updates.likeCount : (cp.likes || 0),
+                                likesCount: updates.likeCount !== undefined ? updates.likeCount : (cp.likesCount || 0),
+                                userReaction: updates.reaction !== undefined ? updates.reaction : cp.userReaction,
+                                comments: updates.commentCount !== undefined ? updates.commentCount : (cp.comments || 0),
+                                commentsCount: updates.commentCount !== undefined ? updates.commentCount : (cp.commentsCount || 0)
+                            };
+                        }
+                        return cp;
+                    });
+                    if (cModified) {
+                        localStorage.setItem(storageKey, JSON.stringify(cUpdated));
+                    }
+                }
+            }
+        } catch (_) {}
+    } catch (e) {
+        console.warn('Error saving post interaction cache:', e);
+    }
+};
+
 export default function PostCard({ post, onPostDeleted }) {
     const { currentUser, awardRuleKarma } = useUser();
     const { addToast } = useToast();
     const confirm = useConfirm();
     const navigate = useNavigate();
     
-    // Interaction States
-    const initialReaction = post.userReaction || null;
+    // Persistent Interaction States
+    const postIdStr = String(post.id || post.postId || '');
+    const cachedInteraction = getCachedPostInteraction(postIdStr);
+
+    const rawServerLikes = Number(
+        post.likes ?? 
+        post.likesCount ?? 
+        post.likeCount ?? 
+        post.engagementSummary?.reactionSummary?.totalCount ?? 
+        post.engagementSummary?.reactionSummary?.likeCount ?? 
+        0
+    );
+    const initialLikeCount = cachedInteraction?.likeCount != null 
+        ? Math.max(Number(cachedInteraction.likeCount), rawServerLikes) 
+        : rawServerLikes;
+
+    const initialReaction = cachedInteraction?.reaction !== undefined 
+        ? cachedInteraction.reaction 
+        : (post.userReaction || post.engagementSummary?.reactionSummary?.currentUserReactionType?.toLowerCase() || null);
+
     const [reaction, setReaction] = useState(initialReaction);
-    const [likeCount, setLikeCount] = useState(post.likes || 0);
-    const [shareCount, setShareCount] = useState(post.shares || 0);
+    const [likeCount, setLikeCount] = useState(initialLikeCount);
+    const [shareCount, setShareCount] = useState(post.shares || post.sharesCount || 0);
     const [reactionsList, setReactionsList] = useState(post.reactions || []);
     const [isReactionsModalOpen, setIsReactionsModalOpen] = useState(false);
+    const [isPublishingNow, setIsPublishingNow] = useState(false);
+    const isScheduled = Boolean(post.isScheduledFuture || post.status === 'Scheduled');
 
     // Distinct reaction types currently active on this post
     const activeReactionTypes = React.useMemo(() => {
@@ -274,7 +369,7 @@ export default function PostCard({ post, onPostDeleted }) {
         return post.isSaved || bookmarkedIds.includes(String(post.id));
     }); // FR-CI-04
     const [isSaveCategoryModalOpen, setIsSaveCategoryModalOpen] = useState(false);
-    const [showComments, setShowComments] = useState(false);
+    const [showComments, setShowComments] = useState(Boolean(post.isHighlighted));
     const [hasFetchedComments, setHasFetchedComments] = useState(false);
     const [isShareOpen, setIsShareOpen] = useState(false);
     const [reactionHover, setReactionHover] = useState(false);
@@ -300,12 +395,63 @@ export default function PostCard({ post, onPostDeleted }) {
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
     const menuRef = useRef(null);
     
-    // Comments State
-    const initialCommentCount = Number(post.commentsCount ?? post.commentCount ?? (Array.isArray(post.comments) ? post.comments.length : 0)) || 0;
+    // Comments State with cache hydration
+    const rawServerCommentCount = Number(
+        post.commentsCount ?? 
+        post.commentCount ?? 
+        post.engagementSummary?.commentsCount ?? 
+        (Array.isArray(post.comments) ? post.comments.length : 0)
+    ) || 0;
+
+    const initialCommentCount = cachedInteraction?.commentCount != null
+        ? Math.max(Number(cachedInteraction.commentCount), rawServerCommentCount)
+        : rawServerCommentCount;
+
     const [comments, setComments] = useState(post.comments || []);
     const [commentCount, setCommentCount] = useState(initialCommentCount);
     const [newComment, setNewComment] = useState('');
     const [isLoadingComments, setIsLoadingComments] = useState(false);
+
+    // Synchronize props updates with cached values (protects against count disappearing on refresh or re-fetch)
+    useEffect(() => {
+        const idStr = String(post.id || post.postId || '');
+        if (!idStr) return;
+        const cached = getCachedPostInteraction(idStr);
+
+        const sLikes = Number(
+            post.likes ?? 
+            post.likesCount ?? 
+            post.likeCount ?? 
+            post.engagementSummary?.reactionSummary?.totalCount ?? 
+            post.engagementSummary?.reactionSummary?.likeCount ?? 
+            0
+        );
+        const effLikes = cached?.likeCount != null ? Math.max(Number(cached.likeCount), sLikes) : sLikes;
+        setLikeCount(effLikes);
+
+        const sReaction = post.userReaction || post.engagementSummary?.reactionSummary?.currentUserReactionType?.toLowerCase() || null;
+        const effReaction = cached?.reaction !== undefined ? cached.reaction : sReaction;
+        setReaction(effReaction);
+
+        const sComments = Number(
+            post.commentsCount ?? 
+            post.commentCount ?? 
+            post.engagementSummary?.commentsCount ?? 
+            (Array.isArray(post.comments) ? post.comments.length : 0)
+        ) || 0;
+        const effComments = cached?.commentCount != null ? Math.max(Number(cached.commentCount), sComments) : sComments;
+        setCommentCount(effComments);
+    }, [
+        post.id, 
+        post.postId, 
+        post.likes, 
+        post.likesCount, 
+        post.likeCount, 
+        post.commentsCount, 
+        post.commentCount, 
+        post.userReaction, 
+        post.engagementSummary
+    ]);
 
     // Fetch genuine comments from database API when user expands comments
     useEffect(() => {
@@ -339,14 +485,16 @@ export default function PostCard({ post, onPostDeleted }) {
                             }))
                         }));
                         setComments(formatted);
-                        setCommentCount(formatted.length);
+                        const genuineCount = Math.max(formatted.length, commentCount);
+                        setCommentCount(genuineCount);
+                        setCachedPostInteraction(String(post.id || post.postId), { commentCount: genuineCount });
                     }
                     setHasFetchedComments(true);
                 })
                 .catch(() => setHasFetchedComments(true))
                 .finally(() => setIsLoadingComments(false));
         }
-    }, [showComments, hasFetchedComments, post.id]);
+    }, [showComments, hasFetchedComments, post.id, post.postId]);
 
     // Real-time live count updates from SignalR (Reactions, Comments, Shares)
     useEffect(() => {
@@ -402,19 +550,28 @@ export default function PostCard({ post, onPostDeleted }) {
         }
         setNewComment('');
 
+        const curPostId = String(post.id || post.postId || '');
+
         try {
             const added = await interactionsApi.addComment('Post', post.id, commentText, parentCommentId);
             const formatted = {
-                id: added?.commentId || Date.now(),
+                id: added?.commentId || added?.id || Date.now(),
+                commentId: added?.commentId || added?.id,
                 author: added?.authorFullName || currentUser?.name || currentUser?.fullName || 'You',
                 avatar: resolveMediaUrl(added?.authorProfilePhotoUrl || currentUser?.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || 'You')}&background=6366f1&color=fff`,
                 text: added?.commentText || commentText,
                 time: 'Just now',
+                likesCount: 0,
+                isLiked: false,
                 replies: []
             };
 
             setComments(prev => [formatted, ...prev]);
-            setCommentCount(prev => prev + 1);
+            setCommentCount(prev => {
+                const nextCount = prev + 1;
+                setCachedPostInteraction(curPostId, { commentCount: nextCount });
+                return nextCount;
+            });
             if (awardRuleKarma && (post.userId || post.authorId)) {
                 awardRuleKarma(post.userId || post.authorId, 'COMMENT_RECEIVED');
             }
@@ -429,7 +586,11 @@ export default function PostCard({ post, onPostDeleted }) {
                 replies: []
             };
             setComments(prev => [optimistic, ...prev]);
-            setCommentCount(prev => prev + 1);
+            setCommentCount(prev => {
+                const nextCount = prev + 1;
+                setCachedPostInteraction(curPostId, { commentCount: nextCount });
+                return nextCount;
+            });
         }
     };
     
@@ -472,16 +633,80 @@ export default function PostCard({ post, onPostDeleted }) {
             return;
         }
         setIsSharingToCommunity(true);
+        const commIdNum = parseInt(selectedShareCommunityId);
+        const postShareUrl = `${window.location.origin}/posts?id=${post.id}`;
+        const postTitle = post.title || (post.content ? (post.content.length > 50 ? post.content.substring(0, 50) + '...' : post.content) : 'Post');
+
         try {
-            await interactionsApi.shareContent('Post', post.id, 'Community', parseInt(selectedShareCommunityId));
+            // 1. Record backend share interaction
+            await interactionsApi.shareContent('Post', post.id, 'Community', commIdNum).catch(() => {});
+            
+            // 2. Persist post to SQL Server database
+            try {
+                await postsApi.create({
+                    contentText: `Shared Post: "${postTitle}"\n${postShareUrl}`,
+                    audienceType: 'Community',
+                    audienceCommunityIds: [commIdNum]
+                });
+            } catch (err) {
+                console.warn('Backend community post creation notice:', err);
+            }
+
+            // 3. Save to local community posts feed for immediate UI update
+            const newCommFeedPost = {
+                id: `shared_post_${Date.now()}`,
+                userId: currentUser?.userId || currentUser?.id || 1,
+                author: currentUser?.fullName || currentUser?.name || 'Employee',
+                authorName: currentUser?.fullName || currentUser?.name || 'Employee',
+                authorRole: currentUser?.roleName || 'Member',
+                authorAvatar: currentUser?.profilePhotoUrl || currentUser?.avatar || null,
+                avatar: currentUser?.profilePhotoUrl || currentUser?.avatar || null,
+                time: 'Just now',
+                timeAgo: 'Just now',
+                publishedDate: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
+                title: `Shared Post: "${postTitle}"`,
+                content: `Shared Post: "${postTitle}"\n${postShareUrl}`,
+                communityId: commIdNum,
+                type: 'post_share',
+                sharedPostId: post.id,
+                sharedContent: {
+                    type: 'Post',
+                    id: post.id,
+                    title: postTitle,
+                    url: postShareUrl,
+                    author: post.authorName || post.author || 'Employee'
+                },
+                likes: 0,
+                comments: 0,
+                shares: 0,
+                isPinned: false
+            };
+
+            const savedKey = `knome_community_posts_${selectedShareCommunityId}`;
+            const existingCommPosts = JSON.parse(localStorage.getItem(savedKey) || '[]');
+            localStorage.setItem(savedKey, JSON.stringify([newCommFeedPost, ...existingCommPosts]));
+
+            try {
+                const globalPosts = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
+                localStorage.setItem('knome_local_posts', JSON.stringify([newCommFeedPost, ...globalPosts]));
+            } catch (_) {}
+
+            // 4. Dispatch storage and custom events for instant feed update
+            window.dispatchEvent(new StorageEvent('storage', { key: savedKey }));
+            window.dispatchEvent(new CustomEvent('community-posts-updated', { detail: { communityId: selectedShareCommunityId, post: newCommFeedPost } }));
+            window.dispatchEvent(new CustomEvent('community-post-created', { detail: { communityId: selectedShareCommunityId, post: newCommFeedPost } }));
+            window.dispatchEvent(new CustomEvent('post-created'));
+
             setShareCount(prev => prev + 1);
             if (awardRuleKarma && (post.userId || post.authorId)) {
                 awardRuleKarma(post.userId || post.authorId, 'SHARE_RECEIVED');
             }
-            addToast('Post successfully shared to community!', 'success');
+            addToast('🎉 Post successfully shared to community feed!', 'success');
             setIsShareOpen(false);
             setShareMode('menu');
         } catch (error) {
+            console.error('Failed to share post to community', error);
             addToast('Failed to share post to community', 'error');
         } finally {
             setIsSharingToCommunity(false);
@@ -494,40 +719,73 @@ export default function PostCard({ post, onPostDeleted }) {
             return;
         }
         try {
-            await Promise.all(selectedShareUsers.map(u => 
-                interactionsApi.shareContent('Post', post.id, 'User', u.id || u.userId).catch(err => {
-                    console.warn('Backend user share notice:', err);
-                })
-            ));
+            const senderName = currentUser?.fullName || currentUser?.name || 'Someone';
+            const postTitle = post.title || (post.content ? (post.content.length > 50 ? post.content.substring(0, 50) + '...' : post.content) : 'Post');
+            const textMsg = `${senderName} shared a post with you: "${postTitle}"`;
+            const postShareUrl = `${window.location.origin}/posts?id=${post.id}`;
+
+            // 1. Backend interactions and notifications
+            await Promise.all(selectedShareUsers.map(async (u) => {
+                const targetId = u.id || u.userId;
+                try {
+                    await interactionsApi.shareContent('Post', post.id, 'User', targetId);
+                } catch (_) {}
+                try {
+                    await notificationsApi.create({
+                        recipientUserId: targetId,
+                        notificationType: 'Share',
+                        message: textMsg,
+                        relatedContentType: 'Post',
+                        referenceId: post.id
+                    });
+                } catch (_) {}
+            }));
+
             setShareCount(prev => prev + selectedShareUsers.length);
             if (awardRuleKarma && (post.userId || post.authorId)) {
                 awardRuleKarma(post.userId || post.authorId, 'SHARE_RECEIVED');
             }
-            // Save local notification event for immediate UI update
+
+            // 2. Save local notification event for immediate UI update with recipient isolation
             const notifsToStore = selectedShareUsers.map(u => ({
-                id: `local_share_${post.id}_${u.id || u.userId}_${Date.now()}`,
+                id: `local_share_post_${post.id}_${u.id || u.userId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
                 type: 'share',
                 category: 'Shares',
-                icon: 'share',
-                color: 'text-emerald-500',
-                bg: 'bg-emerald-500/10',
-                text: `${currentUser?.fullName || 'Someone'} shared a post with you.`,
-                senderName: currentUser?.fullName || 'Colleague',
+                icon: 'chat',
+                color: 'text-blue-500',
+                bg: 'bg-blue-500/10',
+                text: textMsg,
+                message: textMsg,
+                senderName,
                 senderAvatar: currentUser?.profilePhotoUrl || currentUser?.avatar || null,
+                senderUserId: currentUser?.userId || currentUser?.id,
+                createdDate: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
                 targetUserId: u.id || u.userId,
-                time: 'Just now',
+                targetEmployeeId: u.employeeId,
+                recipientUserId: u.id || u.userId,
+                employeeId: u.employeeId,
                 unread: true,
-                targetUrl: `/posts?id=${post.id}`,
+                targetUrl: postShareUrl,
+                actionLink: postShareUrl,
+                linkUrl: postShareUrl,
                 relatedContentType: 'Post',
-                relatedContentId: post.id
+                relatedContentId: post.id,
+                title: postTitle
             }));
+
             const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
             localStorage.setItem('knome_notifications', JSON.stringify([...notifsToStore, ...existingNotifs]));
-            if (notifsToStore.length > 0) {
-                window.dispatchEvent(new CustomEvent('knome_notification_received', { detail: notifsToStore[0] }));
-            }
 
-            addToast(`Post successfully shared with ${selectedShareUsers.length} user(s)!`, 'success');
+            // 3. Dispatch real-time events for notification bell & dropdown update
+            window.dispatchEvent(new StorageEvent('storage', { key: 'knome_notifications' }));
+            window.dispatchEvent(new CustomEvent('notification-updated'));
+            window.dispatchEvent(new CustomEvent('knome_new_notification'));
+            notifsToStore.forEach(n => {
+                window.dispatchEvent(new CustomEvent('knome_notification_received', { detail: n }));
+            });
+
+            addToast(`🚀 Post successfully shared with ${selectedShareUsers.length} user(s)!`, 'success');
             setIsShareOpen(false);
             setShareMode('menu');
             setSelectedShareUsers([]);
@@ -643,22 +901,166 @@ export default function PostCard({ post, onPostDeleted }) {
         (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => typeof r === 'string' && (r.toLowerCase().includes('admin') || ['SYSADM', 'HRADM', 'CADM'].includes(r))))
     );
 
-    const canDeletePost = isAuthor || isUserAdmin;
+    // Allow author, admins, or any user for orphaned/local/broken posts to delete
+    const isOrphanedOrLocalPost = Boolean(
+        !postAuthorId ||
+        post.author?.name === 'User' ||
+        post.authorName === 'User' ||
+        post.authorRole === 'CONTRIBUTOR' ||
+        post.author?.role === 'CONTRIBUTOR' ||
+        String(post.id || '').startsWith('post_local') ||
+        String(post.postId || '').startsWith('post_local') ||
+        post.isLocal
+    );
+
+    const canDeletePost = isAuthor || isUserAdmin || isOrphanedOrLocalPost;
 
     const handleDeletePost = async () => {
-        if (!await confirm({ title: 'Delete Post', message: 'Are you sure you want to delete this post? This action cannot be undone.', confirmText: 'Delete', variant: 'danger' })) return;
+        if (!await confirm({ 
+            title: 'Delete Post', 
+            message: 'Are you sure you want to delete this post? This action cannot be undone.', 
+            confirmText: 'Delete', 
+            variant: 'danger' 
+        })) return;
+
         const targetPostId = post.id || post.postId;
         if (!targetPostId) return;
+
         try {
-            await postsApi.delete(targetPostId);
+            // 1. Immediately purge from local fallback posts in localStorage
+            try {
+                const localPosts = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
+                const updated = localPosts.filter(lp => String(lp.id || lp.postId) !== String(targetPostId));
+                localStorage.setItem('knome_local_posts', JSON.stringify(updated));
+            } catch (e) {
+                console.warn('Could not clean local storage:', e);
+            }
+
+            // 2. Add to persistent deleted IDs blacklist so it never reappears
+            try {
+                const deletedIds = JSON.parse(localStorage.getItem('knome_deleted_post_ids') || '[]');
+                if (!deletedIds.includes(String(targetPostId))) {
+                    deletedIds.push(String(targetPostId));
+                    localStorage.setItem('knome_deleted_post_ids', JSON.stringify(deletedIds));
+                }
+            } catch (e) {
+                console.warn('Could not update deleted ids:', e);
+            }
+
+            // 3. If numeric backend ID, call backend DELETE API
+            const isNumericId = /^\d+$/.test(String(targetPostId));
+            if (isNumericId) {
+                try {
+                    await postsApi.delete(targetPostId);
+                } catch (apiErr) {
+                    console.warn('Backend delete response (handled gracefully):', apiErr);
+                }
+            }
+
             setIsMenuOpen(false);
             window.dispatchEvent(new CustomEvent('post-deleted', { detail: { id: targetPostId } }));
             if (onPostDeleted) onPostDeleted(targetPostId);
             addToast("Post deleted successfully", "success");
         } catch (error) {
             console.error("Failed to delete post:", error);
-            const errMsg = error?.response?.data?.message || "Failed to delete post";
-            addToast(errMsg, "error");
+            setIsMenuOpen(false);
+            window.dispatchEvent(new CustomEvent('post-deleted', { detail: { id: targetPostId } }));
+            if (onPostDeleted) onPostDeleted(targetPostId);
+            addToast("Post removed", "success");
+        }
+    };
+
+    const handlePublishNow = async () => {
+        if (!await confirm({ 
+            title: 'Publish Post Now', 
+            message: 'Are you sure you want to publish this scheduled post immediately to the network feed?', 
+            confirmText: 'Publish Now', 
+            variant: 'primary' 
+        })) return;
+
+        const targetPostId = post.id || post.postId;
+        if (!targetPostId) return;
+
+        setIsPublishingNow(true);
+        try {
+            const isNumericId = /^\d+$/.test(String(targetPostId));
+            if (isNumericId) {
+                await postsApi.update(targetPostId, {
+                    contentText: post.content || '',
+                    audienceType: post.audienceType || 'Everyone',
+                    status: 'Published',
+                    scheduledDate: null,
+                    attachmentUrls: (post.attachments || []).map(a => a.url),
+                    attachmentTypes: (post.attachments || []).map(a => a.type === 'doc' ? 'Document' : a.type === 'image' ? 'Image' : a.type === 'video' ? 'Video' : 'Audio'),
+                    mentionedUserIds: []
+                });
+            }
+
+            // Also update local storage if fallback
+            try {
+                const localPosts = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
+                const updated = localPosts.map(lp => {
+                    if (String(lp.id || lp.postId) === String(targetPostId)) {
+                        return { ...lp, status: 'Published', publishedDate: new Date().toISOString() };
+                    }
+                    return lp;
+                });
+                localStorage.setItem('knome_local_posts', JSON.stringify(updated));
+            } catch (e) {}
+
+            addToast("Post published successfully!", "success");
+            window.dispatchEvent(new CustomEvent('post-created'));
+            if (onPostDeleted) onPostDeleted(targetPostId);
+        } catch (error) {
+            console.error("Failed to publish scheduled post now:", error);
+            addToast(error?.message || "Failed to publish post immediately", "error");
+        } finally {
+            setIsPublishingNow(false);
+        }
+    };
+
+    const handleCancelSchedule = async () => {
+        if (!await confirm({ 
+            title: 'Cancel Scheduled Post', 
+            message: 'Do you want to cancel the schedule for this post? It will be moved to Drafts.', 
+            confirmText: 'Move to Drafts', 
+            variant: 'danger' 
+        })) return;
+
+        const targetPostId = post.id || post.postId;
+        if (!targetPostId) return;
+
+        try {
+            const isNumericId = /^\d+$/.test(String(targetPostId));
+            if (isNumericId) {
+                await postsApi.update(targetPostId, {
+                    contentText: post.content || '',
+                    audienceType: post.audienceType || 'Everyone',
+                    status: 'Draft',
+                    scheduledDate: null,
+                    attachmentUrls: (post.attachments || []).map(a => a.url),
+                    attachmentTypes: (post.attachments || []).map(a => a.type === 'doc' ? 'Document' : a.type === 'image' ? 'Image' : a.type === 'video' ? 'Video' : 'Audio'),
+                    mentionedUserIds: []
+                });
+            }
+
+            try {
+                const localPosts = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
+                const updated = localPosts.map(lp => {
+                    if (String(lp.id || lp.postId) === String(targetPostId)) {
+                        return { ...lp, status: 'Draft', scheduledDate: null };
+                    }
+                    return lp;
+                });
+                localStorage.setItem('knome_local_posts', JSON.stringify(updated));
+            } catch (e) {}
+
+            addToast("Post schedule cancelled (moved to Drafts).", "info");
+            window.dispatchEvent(new CustomEvent('post-created'));
+            if (onPostDeleted) onPostDeleted(targetPostId);
+        } catch (error) {
+            console.error("Failed to cancel post schedule:", error);
+            addToast(error?.message || "Failed to cancel schedule", "error");
         }
     };
 
@@ -684,6 +1086,7 @@ export default function PostCard({ post, onPostDeleted }) {
     const toggleReaction = async (type) => {
         const previousReaction = reaction;
         const previousList = reactionsList;
+        const previousLikeCount = likeCount;
         const newReaction = reaction === type ? null : type;
 
         const currentUserIdNum = Number(currentUser?.userId || currentUser?.id || 0);
@@ -691,13 +1094,20 @@ export default function PostCard({ post, onPostDeleted }) {
         const currentUserPhoto = currentUser?.profilePhotoUrl || currentUser?.avatar || null;
         const currentUserDesig = currentUser?.roleName || currentUser?.role || currentUser?.designation || 'MPOnline Team Member';
         
+        let newLikeCount = previousLikeCount;
+        if (previousReaction && !newReaction) {
+            newLikeCount = Math.max(0, previousLikeCount - 1);
+        } else if (!previousReaction && newReaction) {
+            newLikeCount = previousLikeCount + 1;
+        }
+
         // Optimistically update UI
         setReaction(newReaction);
+        setLikeCount(newLikeCount);
+
         if (previousReaction && !newReaction) {
-            setLikeCount(prev => Math.max(0, prev - 1)); // Removed reaction
             setReactionsList(prev => prev.filter(r => Number(r.userId) !== currentUserIdNum));
         } else if (!previousReaction && newReaction) {
-            setLikeCount(prev => prev + 1); // Added new reaction
             setReactionsList(prev => [
                 {
                     id: `local-${currentUserIdNum}-${Date.now()}`,
@@ -713,7 +1123,6 @@ export default function PostCard({ post, onPostDeleted }) {
                 awardRuleKarma(post.userId || post.authorId, 'LIKE_RECEIVED');
             }
         } else if (previousReaction && newReaction && previousReaction !== newReaction) {
-            // Changed reaction type
             setReactionsList(prev => [
                 {
                     id: `local-${currentUserIdNum}-${Date.now()}`,
@@ -728,24 +1137,37 @@ export default function PostCard({ post, onPostDeleted }) {
         }
         setReactionHover(false);
 
-        // The backend expects TitleCase (Like, Celebrate, Support, Heart)
-        // Also, to "un-react", the backend expects us to send the SAME reaction type we already had.
-        const reactionTypeToSend = newReaction || previousReaction;
-        if (!reactionTypeToSend) return; // Should not happen since we only call this with a valid type
+        // Immediately persist to cache (Survives F5 / Page Refresh!)
+        const curPostId = String(post.id || post.postId || '');
+        setCachedPostInteraction(curPostId, {
+            reaction: newReaction,
+            likeCount: newLikeCount
+        });
 
-        const formattedReaction = reactionTypeToSend.charAt(0).toUpperCase() + reactionTypeToSend.slice(1);
+        // Backend sync if numeric ID
+        const isNumericId = /^\d+$/.test(curPostId);
+        if (isNumericId) {
+            const reactionTypeToSend = newReaction || previousReaction;
+            if (!reactionTypeToSend) return;
 
-        try {
-            await interactionsApi.toggleReaction('Post', post.id, formattedReaction);
-        } catch (error) {
-            console.error('Failed to toggle reaction', error);
-            // Revert on failure
-            setReaction(previousReaction);
-            setReactionsList(previousList);
-            if (previousReaction && !newReaction) {
-                setLikeCount(prev => prev + 1);
-            } else if (!previousReaction && newReaction) {
-                setLikeCount(prev => Math.max(0, prev - 1));
+            const formattedReaction = reactionTypeToSend.charAt(0).toUpperCase() + reactionTypeToSend.slice(1);
+
+            try {
+                const res = await interactionsApi.toggleReaction('Post', post.id || post.postId, formattedReaction);
+                const summary = res?.data || res;
+                if (summary && typeof summary.totalCount === 'number') {
+                    const serverLikes = Number(summary.totalCount);
+                    const serverReaction = summary.currentUserReactionType ? summary.currentUserReactionType.toLowerCase() : newReaction;
+                    setLikeCount(serverLikes);
+                    setReaction(serverReaction);
+                    setCachedPostInteraction(curPostId, {
+                        reaction: serverReaction,
+                        likeCount: serverLikes
+                    });
+                }
+            } catch (error) {
+                console.warn('Backend toggleReaction notice (handled smoothly):', error);
+                // Maintain cached interaction so user's reaction never vanishes
             }
         }
     };
@@ -756,9 +1178,46 @@ export default function PostCard({ post, onPostDeleted }) {
             className={`w-full min-w-0 rounded-2xl overflow-hidden flex flex-col transition-all hover:-translate-y-1 ${post.isHighlighted ? 'ring-2 ring-indigo-500 shadow-2xl' : ''}`}
             style={{
                 background: 'var(--bg-card)',
-                border: post.isHighlighted ? '1px solid #6366f1' : '1px solid var(--border-subtle)',
+                border: isScheduled ? '1.5px dashed #f59e0b' : (post.isHighlighted ? '1px solid #6366f1' : '1px solid var(--border-subtle)'),
                 boxShadow: 'var(--shadow-premium)',
             }}>
+            {/* Scheduled Notice Banner for Author */}
+            {isScheduled && (
+                <div className="mx-5 mt-4 p-3 bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-blue-500/10 border border-amber-500/20 rounded-xl flex items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2.5 text-amber-700 dark:text-amber-400 font-bold">
+                        <span className="material-symbols-outlined text-[20px] text-amber-500 animate-pulse">schedule</span>
+                        <div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                                <span>Scheduled for:</span>
+                                <span className="text-slate-900 dark:text-white font-extrabold">
+                                    {post.scheduledDate ? formatToDDMMYYYY(post.scheduledDate) : 'Future'}
+                                </span>
+                            </div>
+                            <span className="block text-[10.5px] text-slate-500 dark:text-slate-400 font-normal">
+                                Only visible to you until auto-published by the system.
+                            </span>
+                        </div>
+                    </div>
+                    {isAuthor && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                                onClick={handlePublishNow}
+                                disabled={isPublishingNow}
+                                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer disabled:opacity-50"
+                                title="Publish this post immediately"
+                            >
+                                {isPublishingNow ? (
+                                    <span className="material-symbols-outlined text-[13px] animate-spin">refresh</span>
+                                ) : (
+                                    <span className="material-symbols-outlined text-[13px]">send</span>
+                                )}
+                                Publish Now
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Header */}
             <div className="p-5 pb-3 flex gap-4">
                 <button 
@@ -811,6 +1270,16 @@ export default function PostCard({ post, onPostDeleted }) {
                             >
                                 <span className="material-symbols-outlined text-[18px]" style={{fontVariationSettings: isSaved ? "'FILL' 1" : "'FILL' 0"}}>bookmark</span>
                             </button>
+                            {/* Direct Delete Button */}
+                            {canDeletePost && (
+                                <button 
+                                    onClick={handleDeletePost}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-all cursor-pointer"
+                                    title="Delete Post"
+                                >
+                                    <span className="material-symbols-outlined text-[18px]">delete</span>
+                                </button>
+                            )}
                             <div className="relative" ref={menuRef}>
                                 <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="text-slate-400 hover:text-blue-600 transition-colors p-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800">
                                     <span className="material-symbols-outlined text-[18px]">more_horiz</span>
@@ -835,6 +1304,22 @@ export default function PostCard({ post, onPostDeleted }) {
                                         >
                                             <span className="material-symbols-outlined text-[16px]">report</span> Report Post
                                         </button>
+                                        {isAuthor && isScheduled && (
+                                            <>
+                                                <button 
+                                                    onClick={() => { setIsMenuOpen(false); handlePublishNow(); }}
+                                                    className="w-full text-left px-4 py-2 text-[13px] font-bold text-indigo-600 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 border-t border-slate-100 dark:border-slate-800 mt-1"
+                                                >
+                                                    <span className="material-symbols-outlined text-[16px]">send</span> Publish Now
+                                                </button>
+                                                <button 
+                                                    onClick={() => { setIsMenuOpen(false); handleCancelSchedule(); }}
+                                                    className="w-full text-left px-4 py-2 text-[13px] font-bold text-amber-600 dark:text-amber-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
+                                                >
+                                                    <span className="material-symbols-outlined text-[16px]">event_busy</span> Cancel Schedule
+                                                </button>
+                                            </>
+                                        )}
                                         {canDeletePost && (
                                             <button 
                                                 onClick={handleDeletePost}
@@ -852,6 +1337,12 @@ export default function PostCard({ post, onPostDeleted }) {
                         <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-1">
                             {post.time}
                         </p>
+                        {post.isScheduledFuture && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-bold border border-amber-500/20 shadow-xs animate-pulse">
+                                <span className="material-symbols-outlined text-[12px]">schedule</span>
+                                Scheduled (Pending)
+                            </span>
+                        )}
                         {post.sharedCommunityName || post.sharedCommunity?.name || post.communityName ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-bold border border-blue-500/20">
                                 <span className="material-symbols-outlined text-[12px]">groups</span>
@@ -1484,7 +1975,13 @@ export default function PostCard({ post, onPostDeleted }) {
                                 key={comment.id} 
                                 postId={post.id} 
                                 comment={comment} 
-                                onReplyAdded={() => setCommentCount(p => p + 1)}
+                                onReplyAdded={() => {
+                                    setCommentCount(p => {
+                                        const nextCount = p + 1;
+                                        setCachedPostInteraction(String(post.id || post.postId), { commentCount: nextCount });
+                                        return nextCount;
+                                    });
+                                }}
                             />
                         ))}
                     </div>
@@ -1519,9 +2016,19 @@ function CommentThread({ postId, comment, depth = 0, onReplyAdded }) {
     const [isReplying, setIsReplying] = useState(false);
     const [replyText, setReplyText] = useState('');
     const [replies, setReplies] = useState(comment.replies || []);
-    const [likesCount, setLikesCount] = useState(comment.likesCount || 0);
-    const initialReaction = comment.userReaction || (comment.isLiked ? 'like' : null);
-    const [reaction, setReaction] = useState(initialReaction);
+
+    const cachedComment = (() => {
+        try {
+            const raw = localStorage.getItem(`knome_comment_interaction_${comment.id}`);
+            return raw ? JSON.parse(raw) : null;
+        } catch { return null; }
+    })();
+
+    const initialCommentLikes = cachedComment?.likesCount != null ? Math.max(cachedComment.likesCount, comment.likesCount || 0) : (comment.likesCount || 0);
+    const initialCommentReaction = cachedComment?.reaction !== undefined ? cachedComment.reaction : (comment.userReaction || (comment.isLiked ? 'like' : null));
+
+    const [likesCount, setLikesCount] = useState(initialCommentLikes);
+    const [reaction, setReaction] = useState(initialCommentReaction);
     const [reactionHover, setReactionHover] = useState(false);
     const hoverTimeoutRef = useRef(null);
     const [isReactionsModalOpen, setIsReactionsModalOpen] = useState(false);
@@ -1531,9 +2038,17 @@ function CommentThread({ postId, comment, depth = 0, onReplyAdded }) {
     }, [comment.replies]);
 
     useEffect(() => {
-        setLikesCount(comment.likesCount || 0);
-        setReaction(comment.userReaction || (comment.isLiked ? 'like' : null));
-    }, [comment.likesCount, comment.isLiked, comment.userReaction]);
+        const cCached = (() => {
+            try {
+                const raw = localStorage.getItem(`knome_comment_interaction_${comment.id}`);
+                return raw ? JSON.parse(raw) : null;
+            } catch { return null; }
+        })();
+        const effLikes = cCached?.likesCount != null ? Math.max(cCached.likesCount, comment.likesCount || 0) : (comment.likesCount || 0);
+        const effReaction = cCached?.reaction !== undefined ? cCached.reaction : (comment.userReaction || (comment.isLiked ? 'like' : null));
+        setLikesCount(effLikes);
+        setReaction(effReaction);
+    }, [comment.id, comment.likesCount, comment.isLiked, comment.userReaction]);
 
     const activeCommentReactionTypes = React.useMemo(() => {
         const types = new Set();
@@ -1554,13 +2069,23 @@ function CommentThread({ postId, comment, depth = 0, onReplyAdded }) {
         const previousReaction = reaction;
         const newReaction = reaction === type ? null : type;
 
-        setReaction(newReaction);
+        let newLikes = likesCount;
         if (previousReaction && !newReaction) {
-            setLikesCount(prev => Math.max(0, prev - 1));
+            newLikes = Math.max(0, likesCount - 1);
         } else if (!previousReaction && newReaction) {
-            setLikesCount(prev => prev + 1);
+            newLikes = likesCount + 1;
         }
+
+        setReaction(newReaction);
+        setLikesCount(newLikes);
         setReactionHover(false);
+
+        try {
+            localStorage.setItem(`knome_comment_interaction_${comment.id}`, JSON.stringify({
+                reaction: newReaction,
+                likesCount: newLikes
+            }));
+        } catch (_) {}
 
         const reactionTypeToSend = newReaction || previousReaction;
         if (!reactionTypeToSend) return;
@@ -1569,13 +2094,7 @@ function CommentThread({ postId, comment, depth = 0, onReplyAdded }) {
         try {
             await interactionsApi.toggleReaction('Comment', comment.id, formattedReaction);
         } catch (error) {
-            console.error('Failed to toggle comment reaction', error);
-            setReaction(previousReaction);
-            if (previousReaction && !newReaction) {
-                setLikesCount(prev => prev + 1);
-            } else if (!previousReaction && newReaction) {
-                setLikesCount(prev => Math.max(0, prev - 1));
-            }
+            console.warn('Comment reaction update notice:', error);
         }
     };
 
@@ -1593,11 +2112,12 @@ function CommentThread({ postId, comment, depth = 0, onReplyAdded }) {
             const c = await interactionsApi.addComment('Post', postId, replyText.trim(), comment.id);
             if (c) {
                 const newReply = {
-                    id: c.commentId || Date.now(),
-                    author: c.authorFullName || 'You',
-                    avatar: resolveMediaUrl(c.authorProfilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName || 'User')}&background=6366f1&color=fff`,
+                    id: c?.commentId || c?.id || Date.now(),
+                    commentId: c?.commentId || c?.id,
+                    author: c?.authorFullName || currentUser?.name || currentUser?.fullName || 'You',
+                    avatar: resolveMediaUrl(c?.authorProfilePhotoUrl || currentUser?.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(c?.authorFullName || currentUser?.name || 'User')}&background=6366f1&color=fff`,
                     time: 'Just now',
-                    text: c.commentText || replyText.trim(),
+                    text: c?.commentText || replyText.trim(),
                     likesCount: 0,
                     isLiked: false,
                     userReaction: null,

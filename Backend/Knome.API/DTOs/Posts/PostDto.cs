@@ -23,6 +23,7 @@ public class PostDto
     public string ContentText { get; set; } = string.Empty;
     public string AudienceType { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public DateTime? ScheduledDate { get; set; }
     public DateTime? PublishedDate { get; set; }
     public DateTime CreatedDate { get; set; }
     public List<string> AttachmentUrls { get; set; } = new();

@@ -17,17 +17,20 @@ public class NotificationService : INotificationService
     private readonly IUserRepository _userRepository;
     private readonly IMapper _mapper;
     private readonly IHubContext<NotificationHub> _hubContext;
+    private readonly ILogger<NotificationService> _logger;
 
     public NotificationService(
         INotificationRepository repository,
         IUserRepository userRepository,
         IMapper mapper,
-        IHubContext<NotificationHub> hubContext)
+        IHubContext<NotificationHub> hubContext,
+        ILogger<NotificationService> logger)
     {
         _repository = repository;
         _userRepository = userRepository;
         _mapper = mapper;
         _hubContext = hubContext;
+        _logger = logger;
     }
 
     public async Task<NotificationDto?> PublishAsync(
@@ -60,11 +63,13 @@ public class NotificationService : INotificationService
 
             // Real-time broadcast to user group
             await _hubContext.Clients.Group($"User_{recipientUserId}").SendAsync("ReceiveNotification", dto);
+            _logger.LogInformation("Notification {NotificationId} ({EventType}) published successfully to User {UserId}", saved.NotificationId, eventType, recipientUserId);
 
             return dto;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Failed to publish notification for User {UserId}: {Message}", recipientUserId, message);
             return null;
         }
     }
@@ -184,14 +189,14 @@ public class NotificationService : INotificationService
         {
             Constants.NotificationTypes.Follower => "New Follower",
             Constants.NotificationTypes.ConnectionRequest => "Connection Request",
-            Constants.NotificationTypes.Comment => "New Comment",
+            Constants.NotificationTypes.Comment => dto.Message?.Contains("replied", StringComparison.OrdinalIgnoreCase) == true ? "Comment Reply" : "New Comment",
             Constants.NotificationTypes.CommunityJoin => "Community Access Approved",
             Constants.NotificationTypes.CommunityInvite => "Community Invitation",
             Constants.NotificationTypes.HrAnnouncement => "HR Announcement",
             Constants.NotificationTypes.Job => "New Job Posting",
             Constants.NotificationTypes.Badge => "Karma Badge Earned",
             Constants.NotificationTypes.Mention => "Mentioned You",
-            Constants.NotificationTypes.Reaction => "New Reaction",
+            Constants.NotificationTypes.Reaction => dto.Message?.Contains("comment", StringComparison.OrdinalIgnoreCase) == true ? "Comment Liked" : "New Reaction",
             Constants.NotificationTypes.Share => "Content Shared",
             _ => dto.EventType ?? "Notification"
         };
@@ -210,7 +215,7 @@ public class NotificationService : INotificationService
 
         if (string.IsNullOrEmpty(dto.SenderName) && !string.IsNullOrEmpty(dto.Message))
         {
-            var match = System.Text.RegularExpressions.Regex.Match(dto.Message, @"^(.+?)\s+(shared|invited|sent|commented|liked|reacted|posted|mentioned)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            var match = System.Text.RegularExpressions.Regex.Match(dto.Message, @"^(.+?)\s+(shared|invited|sent|commented|liked|reacted|posted|mentioned|replied)\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             if (match.Success && !string.IsNullOrWhiteSpace(match.Groups[1].Value))
             {
                 dto.SenderName = match.Groups[1].Value.Trim();
@@ -238,6 +243,7 @@ public class NotificationService : INotificationService
             dto.TargetUrl = type switch
             {
                 "post" => $"/posts?id={id}",
+                "comment" => $"/posts?id={id}",
                 "article" => $"/article-view?id={id}",
                 "video" => $"/videos?id={id}",
                 "podcast" => $"/podcasts?id={id}",

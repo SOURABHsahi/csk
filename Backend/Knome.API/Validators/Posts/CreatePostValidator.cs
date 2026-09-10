@@ -16,6 +16,6 @@ public class CreatePostValidator : AbstractValidator<CreatePostDto>
             .Must(PostAudiences.IsValid).WithMessage("Audience type must be 'Everyone', 'Connections', or 'Community'.");
 
         RuleFor(x => x.Status)
-            .Must(PostStatuses.IsValid).WithMessage("Status must be 'Published', 'Draft', or 'Archived'.");
+            .Must(PostStatuses.IsValid).WithMessage("Status must be 'Published', 'Draft', 'Scheduled', or 'Archived'.");
     }
 }

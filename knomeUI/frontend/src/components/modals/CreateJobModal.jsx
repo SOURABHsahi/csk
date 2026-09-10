@@ -70,25 +70,25 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
     };
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
+        <div className="fixed inset-0 z-[100] overflow-y-auto p-3 sm:p-4 md:p-6 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="fixed inset-0" onClick={onClose}></div>
             
-            <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[95vh] flex flex-col border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in duration-200">
+            <div className="relative bg-white dark:bg-slate-900 rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-3xl max-h-[92vh] sm:max-h-[88vh] flex flex-col my-auto border border-slate-200 dark:border-slate-800 overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-150">
                 
-                <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 rounded-t-2xl">
+                <div className="flex items-center justify-between p-4 sm:p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 shrink-0">
                     <div>
-                        <h2 className="text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                        <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
                             <span className="material-symbols-outlined text-teal-500">work</span>
                             Post Internal Job
                         </h2>
-                        <p className="text-sm font-medium text-slate-500 mt-1">Create a new opportunity in MS SQL Database.</p>
+                        <p className="text-xs sm:text-sm font-medium text-slate-500 mt-0.5 sm:mt-1">Create a new opportunity in MS SQL Database.</p>
                     </div>
-                    <button onClick={onClose} className="w-10 h-10 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition-colors">
+                    <button onClick={onClose} className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition-colors">
                         <span className="material-symbols-outlined">close</span>
                     </button>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8">
+                <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 sm:p-6 md:p-8">
                     {errorMsg && (
                         <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs font-bold">
                             {errorMsg}
@@ -201,7 +201,7 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
                     </div>
                 </div>
 
-                <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 rounded-b-2xl bg-slate-50/50 dark:bg-slate-800/50">
+                <div className="p-4 sm:p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3 rounded-b-2xl sm:rounded-b-3xl bg-slate-50/50 dark:bg-slate-800/50 shrink-0 z-10">
                     <button type="button" onClick={onClose} className="px-6 py-2.5 text-[13px] font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors">
                         Cancel
                     </button>

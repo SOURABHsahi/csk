@@ -41,6 +41,7 @@ public class Program
             // Background workers
             builder.Services.AddHostedService<Knome.API.Background.JobExpiryHostedService>();
             builder.Services.AddHostedService<Knome.API.Background.DataArchivalHostedService>();
+            builder.Services.AddHostedService<Knome.API.Background.ScheduledPostHostedService>();
 
             var app = builder.Build();
 

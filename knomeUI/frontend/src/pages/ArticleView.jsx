@@ -169,10 +169,38 @@ export default function ArticleView() {
             setNewComment('');
             
             // Fetch live reaction status from backend API
+            const cachedArticle = (() => {
+                try {
+                    const raw = localStorage.getItem(`knome_article_interaction_${article.id}`);
+                    return raw ? JSON.parse(raw) : null;
+                } catch { return null; }
+            })();
+
+            if (cachedArticle) {
+                if (typeof cachedArticle.likes === 'number') setLikes(cachedArticle.likes);
+                if (typeof cachedArticle.liked === 'boolean') setUserLiked(cachedArticle.liked);
+            }
+
             interactionsApi.getSummary('Article', article.id).then(summary => {
                 if (summary) {
-                    setLikes(summary.totalCount ?? summary.reactionsCount ?? summary.totalLikes ?? Number(article.likes || 0));
-                    setUserLiked(Boolean(summary.userReaction || summary.hasReacted || summary.isLiked));
+                    const totalLikes = Number(
+                        summary.reactionSummary?.totalCount ?? 
+                        summary.reactionSummary?.likeCount ?? 
+                        summary.totalCount ?? 
+                        summary.reactionsCount ?? 
+                        summary.totalLikes ?? 
+                        Number(article.likes || 0)
+                    );
+                    const isLiked = Boolean(
+                        summary.reactionSummary?.currentUserReactionType || 
+                        summary.userReaction || 
+                        summary.hasReacted || 
+                        summary.isLiked
+                    );
+                    const finalLikes = cachedArticle?.likes != null ? Math.max(cachedArticle.likes, totalLikes) : totalLikes;
+                    const finalLiked = cachedArticle?.liked !== undefined ? cachedArticle.liked : isLiked;
+                    setLikes(finalLikes);
+                    setUserLiked(finalLiked);
                 }
             }).catch(() => {});
 
@@ -187,15 +215,21 @@ export default function ArticleView() {
     const handleLike = async () => {
         if (!article?.id) return;
         const nextLiked = !userLiked;
+        const newLikes = nextLiked ? likes + 1 : Math.max(0, likes - 1);
         setUserLiked(nextLiked);
-        setLikes(prev => nextLiked ? prev + 1 : Math.max(0, prev - 1));
+        setLikes(newLikes);
+
+        try {
+            localStorage.setItem(`knome_article_interaction_${article.id}`, JSON.stringify({
+                liked: nextLiked,
+                likes: newLikes
+            }));
+        } catch (_) {}
 
         try {
             await interactionsApi.toggleReaction('Article', article.id, 'Like');
         } catch (err) {
-            console.error('Failed to toggle article reaction', err);
-            setUserLiked(!nextLiked);
-            setLikes(prev => !nextLiked ? prev + 1 : Math.max(0, prev - 1));
+            console.warn('Article reaction notice:', err);
         }
     };
 
