@@ -5,6 +5,8 @@ import { useToast } from '../components/contexts/ToastContext';
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import CreateCommunityModal from '../components/modals/CreateCommunityModal';
 import { communitiesApi, getCommunityImages, resolveMediaUrl } from '../utils/apiService';
+import { useScrollLoading } from '../hooks/useScrollLoading';
+import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 
 const defaultSeeds = [];
 
@@ -538,6 +540,12 @@ export default function Communities() {
         return true;
     });
 
+    const { visibleCount, reset: resetScrollLoading } = useScrollLoading(filteredCommunities.length, 8, 8);
+
+    useEffect(() => {
+        resetScrollLoading();
+    }, [activeTab, filterType, filterCategory, searchQuery, resetScrollLoading]);
+
     // Employee's own pending communities for "My Communities" tab
     const myPendingCommunities = pendingApprovals.filter(p => String(p.creatorUserId) === String(currentUser?.id));
 
@@ -858,7 +866,7 @@ export default function Communities() {
 
                         {/* Communities Grid */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                            {filteredCommunities.map(community => (
+                            {filteredCommunities.slice(0, visibleCount).map(community => (
                                 <div key={community.id} onClick={() => navigate(`/community/view?id=${community.id}`)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer group flex flex-col h-full">
                                     <div className="h-32 relative overflow-hidden bg-slate-200 dark:bg-slate-800">
                                         <img 
@@ -976,6 +984,7 @@ export default function Communities() {
                                     </div>
                                 </div>
                             ))}
+                            <ScrollLoadingIndicator isVisible={visibleCount < filteredCommunities.length} text="Loading more communities on scroll..." />
                         </div>
                     </>
                 )}

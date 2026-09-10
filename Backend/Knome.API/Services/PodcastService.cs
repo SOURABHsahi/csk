@@ -290,4 +290,16 @@ public class PodcastService : IPodcastService
         await CheckIsUploaderOrAdminAsync(podcast, currentUserId);
         await _repo.DeletePodcastAsync(podcast);
     }
+
+    public async Task<int> IncrementViewCountAsync(long podcastId)
+    {
+        var newCount = await _repo.IncrementViewCountAsync(podcastId);
+        if (newCount == 0)
+        {
+            var exists = await _repo.GetPodcastByIdAsync(podcastId);
+            if (exists == null)
+                throw new NotFoundException($"Podcast ID {podcastId} not found.");
+        }
+        return newCount;
+    }
 }

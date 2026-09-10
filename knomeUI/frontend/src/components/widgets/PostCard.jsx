@@ -80,7 +80,7 @@ function ImageLightbox({ images, startIndex, onClose }) {
 
             {/* Image */}
             <img
-                src={resolveMediaUrl(images[current]?.url)}
+                src={resolveMediaUrl(images[current]?.url || images[current]?.fileUrl) || images[current]?.url || images[current]?.fileUrl}
                 onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_MEDIA_SVG; }}
                 alt="Full view"
                 className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl"
@@ -109,7 +109,7 @@ function ImageLightbox({ images, startIndex, onClose }) {
                             style={{ borderColor: i === current ? 'white' : 'rgba(255,255,255,0.3)' }}
                         >
                             <img 
-                                src={resolveMediaUrl(img.url)} 
+                                src={resolveMediaUrl(img.url || img.fileUrl) || img.url || img.fileUrl} 
                                 onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_MEDIA_SVG; }} 
                                 alt="thumb" 
                                 className="w-full h-full object-cover" 
@@ -130,6 +130,8 @@ function ImageGrid({ images, onImageClick }) {
     const validImages = (images || []).filter(img => img && typeof (img.url || img.fileUrl) === 'string' && (img.url || img.fileUrl).trim().length > 0);
     if (validImages.length === 0) return null;
 
+    const getImgUrl = (img) => resolveMediaUrl(img.url || img.fileUrl) || img.url || img.fileUrl;
+
     // Single image — full width, tall cover
     if (validImages.length === 1) {
         return (
@@ -139,7 +141,7 @@ function ImageGrid({ images, onImageClick }) {
                 onClick={() => onImageClick(0)}
             >
                 <img
-                    src={resolveMediaUrl(validImages[0].url)}
+                    src={getImgUrl(validImages[0])}
                     onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_GRID_SVG; }}
                     alt="Post media"
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
@@ -161,7 +163,7 @@ function ImageGrid({ images, onImageClick }) {
                         onClick={() => onImageClick(i)}
                     >
                         <img 
-                            src={resolveMediaUrl(img.url)} 
+                            src={getImgUrl(img)} 
                             onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_GRID_SVG; }} 
                             alt="Post media" 
                             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
@@ -179,7 +181,7 @@ function ImageGrid({ images, onImageClick }) {
             <div className="w-full grid grid-cols-2 gap-0.5" style={{ height: '380px' }}>
                 <div className="overflow-hidden cursor-zoom-in group relative row-span-2" onClick={() => onImageClick(0)}>
                     <img 
-                        src={resolveMediaUrl(validImages[0].url)} 
+                        src={getImgUrl(validImages[0])} 
                         onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_GRID_SVG; }} 
                         alt="Post media" 
                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
@@ -189,7 +191,7 @@ function ImageGrid({ images, onImageClick }) {
                 {validImages.slice(1, 3).map((img, i) => (
                     <div key={i} className="overflow-hidden cursor-zoom-in group relative" style={{ height: '189px' }} onClick={() => onImageClick(i + 1)}>
                         <img 
-                            src={resolveMediaUrl(img.url)} 
+                            src={getImgUrl(img)} 
                             onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_GRID_SVG; }} 
                             alt="Post media" 
                             className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
@@ -213,7 +215,7 @@ function ImageGrid({ images, onImageClick }) {
                     onClick={() => onImageClick(i)}
                 >
                     <img 
-                        src={resolveMediaUrl(img.url)} 
+                        src={getImgUrl(img)} 
                         onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_GRID_SVG; }} 
                         alt="Post media" 
                         className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
@@ -466,7 +468,7 @@ export default function PostCard({ post, onPostDeleted }) {
                             author: c.authorFullName || c.authorName || 'Colleague',
                             avatar: resolveMediaUrl(c.authorProfilePhotoUrl || c.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName || 'User')}&background=6366f1&color=fff`,
                             text: c.commentText || c.text,
-                            time: new Date(c.createdDate || c.createdAt || Date.now()).toLocaleDateString(),
+                            time: formatToDDMMYYYY(c.createdDate || c.createdAt || Date.now()),
                             likesCount: c.likesCount || 0,
                             isLiked: Boolean(c.isLiked),
                             userReaction: c.userReactionType?.toLowerCase() || (c.isLiked ? 'like' : null),
@@ -476,7 +478,7 @@ export default function PostCard({ post, onPostDeleted }) {
                                 author: r.authorFullName || r.authorName || 'Colleague',
                                 avatar: resolveMediaUrl(r.authorProfilePhotoUrl || r.avatar) || `https://ui-avatars.com/api/?name=${encodeURIComponent(r.authorFullName || 'User')}&background=6366f1&color=fff`,
                                 text: r.commentText || r.text,
-                                time: new Date(r.createdDate || Date.now()).toLocaleDateString(),
+                                time: formatToDDMMYYYY(r.createdDate || Date.now()),
                                 likesCount: r.likesCount || 0,
                                 isLiked: Boolean(r.isLiked),
                                 userReaction: r.userReactionType?.toLowerCase() || (r.isLiked ? 'like' : null),
@@ -597,9 +599,21 @@ export default function PostCard({ post, onPostDeleted }) {
     // Timer for reaction popover delay
     const hoverTimeoutRef = useRef(null);
 
+    // Helper to identify true image attachments
+    const isImageAttachment = (a) => {
+        if (!a) return false;
+        const u = (a.url || a.fileUrl || '').split('?')[0].toLowerCase();
+        const t = (a.type || a.fileType || '').toLowerCase();
+        if (u.match(/\.(mp4|webm|ogg|mov|mkv|avi|mp3|wav|aac|m4a|flac|pdf|doc|docx|txt|xls|xlsx|ppt|pptx|csv)$/i)) {
+            return false;
+        }
+        if (t === 'image' || t === 'img' || t === 'photo') return true;
+        return Boolean(u.match(/\.(jpeg|jpg|png|gif|webp|svg|bmp|ico)$/i)) || u.startsWith('data:image/');
+    };
+
     // Separate image attachments from other attachments
-    const imageAttachments = (post.attachments || []).filter(a => a.type === 'image');
-    const otherAttachments = (post.attachments || []).filter(a => a.type !== 'image');
+    const imageAttachments = (post.attachments || []).filter(isImageAttachment);
+    const otherAttachments = (post.attachments || []).filter(a => !isImageAttachment(a));
 
     const handleCopyPostLink = () => {
         const link = `${window.location.origin}/posts?id=${post.id}`;
@@ -1008,6 +1022,12 @@ export default function PostCard({ post, onPostDeleted }) {
                 localStorage.setItem('knome_local_posts', JSON.stringify(updated));
             } catch (e) {}
 
+            if (awardRuleKarma && (currentUser?.userId || currentUser?.id)) {
+                const targetUid = currentUser?.userId || currentUser?.id;
+                const pts = awardRuleKarma(targetUid, 'POST', { customTitle: 'Published Scheduled Post' }) || 2;
+                addToast(`⚡ +${pts} Karma Points earned!`, 'info');
+            }
+
             addToast("Post published successfully!", "success");
             window.dispatchEvent(new CustomEvent('post-created'));
             if (onPostDeleted) onPostDeleted(targetPostId);
@@ -1409,7 +1429,27 @@ export default function PostCard({ post, onPostDeleted }) {
                                     </a>
                                 );
                             }
-                            return part;
+                            // Format hashtags into clickable search links
+                            const hashtagRegex = /(#[a-zA-Z0-9_\u0900-\u097F]+)/g;
+                            const subParts = part.split(hashtagRegex);
+                            return subParts.map((subPart, subIdx) => {
+                                if (subPart.match(hashtagRegex)) {
+                                    return (
+                                        <span
+                                            key={`${index}-${subIdx}`}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                navigate(`/search?q=${encodeURIComponent(subPart)}`);
+                                            }}
+                                            className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer transition-colors"
+                                            title={`Search posts tagged with ${subPart}`}
+                                        >
+                                            {subPart}
+                                        </span>
+                                    );
+                                }
+                                return subPart;
+                            });
                         });
                     };
 
@@ -1613,11 +1653,21 @@ export default function PostCard({ post, onPostDeleted }) {
             {otherAttachments.length > 0 && (
                 <div className="mt-2 w-full flex flex-col gap-2">
                     {otherAttachments.map(att => {
-                        if (att.type === 'video') {
+                        const rawUrl = att.url || att.fileUrl || '';
+                        const resolvedUrl = resolveMediaUrl(rawUrl) || rawUrl;
+                        const rawType = (att.type || att.fileType || '').toLowerCase();
+                        const urlClean = rawUrl.split('?')[0].toLowerCase();
+                        let effectiveType = rawType;
+                        if (urlClean.match(/\.(mp4|webm|ogg|mov|mkv|avi)$/i)) effectiveType = 'video';
+                        else if (urlClean.match(/\.(mp3|wav|ogg|aac|m4a|flac)$/i)) effectiveType = 'audio';
+                        else if (urlClean.match(/\.(pdf|doc|docx|txt|xls|xlsx|ppt|pptx|csv)$/i)) effectiveType = 'doc';
+                        else if (rawType === 'document') effectiveType = 'doc';
+
+                        if (effectiveType === 'video') {
                             return (
-                                <div key={att.id} className="overflow-hidden bg-black rounded-xl border border-slate-200 dark:border-slate-800">
+                                <div key={att.id || rawUrl} className="overflow-hidden bg-black rounded-xl border border-slate-200 dark:border-slate-800">
                                     <video 
-                                        src={att.url} 
+                                        src={resolvedUrl} 
                                         controls 
                                         controlsList="nodownload" 
                                         disablePictureInPicture 
@@ -1627,16 +1677,16 @@ export default function PostCard({ post, onPostDeleted }) {
                                     />
                                 </div>
                             );
-                        } else if (att.type === 'audio') {
+                        } else if (effectiveType === 'audio') {
                             return (
-                                <div key={att.id} className="mx-5 mb-1 p-4 rounded-2xl flex items-center gap-4"
+                                <div key={att.id || rawUrl} className="mx-5 mb-1 p-4 rounded-2xl flex items-center gap-4"
                                     style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-subtle)' }}>
                                     <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                                         style={{ background: 'linear-gradient(135deg,#8b5cf6,#6366f1)' }}>
                                         <span className="material-symbols-outlined text-white text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>headphones</span>
                                     </div>
                                     <audio 
-                                        src={att.url} 
+                                        src={resolvedUrl} 
                                         controls 
                                         controlsList="nodownload" 
                                         onContextMenu={(e) => e.preventDefault()} 
@@ -1644,39 +1694,40 @@ export default function PostCard({ post, onPostDeleted }) {
                                     />
                                 </div>
                             );
-                        } else if (att.type === 'doc') {
-                            const isPdf = att.name?.toLowerCase().endsWith('.pdf') || att.url?.toLowerCase().includes('.pdf');
-                            const resolvedDocUrl = resolveMediaUrl(att.url);
+                        } else if (effectiveType === 'doc') {
+                            const isPdf = att.name?.toLowerCase().endsWith('.pdf') || urlClean.endsWith('.pdf');
+                            const isTxt = att.name?.toLowerCase().endsWith('.txt') || urlClean.endsWith('.txt');
+                            const displayName = (att.name && att.name !== 'attachment') ? att.name : (rawUrl.split('/').pop()?.split('?')[0] || 'Document');
                             return (
                                 <div 
-                                    key={att.id} 
-                                    onClick={() => setActiveDocViewer(att)}
+                                    key={att.id || rawUrl} 
+                                    onClick={() => setActiveDocViewer({ ...att, name: displayName, url: resolvedUrl })}
                                     className="mx-5 mb-3 p-3.5 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl flex items-center justify-between gap-4 shadow-sm hover:shadow-md transition-all group cursor-pointer"
                                 >
                                     <div className="flex items-center gap-3.5 overflow-hidden">
                                         <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-sm transition-transform group-hover:scale-105 ${
-                                            isPdf ? 'bg-red-500/10 text-red-500 border border-red-500/20' : 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/20'
+                                            isPdf ? 'bg-red-500/10 text-red-500 border border-red-500/20' : isTxt ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20' : 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/20'
                                         }`}>
                                             <span className="material-symbols-outlined text-[24px]">
-                                                {isPdf ? 'picture_as_pdf' : 'description'}
+                                                {isPdf ? 'picture_as_pdf' : isTxt ? 'article' : 'description'}
                                             </span>
                                         </div>
                                         <div className="min-w-0">
-                                            <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" title={att.name}>{att.name}</p>
+                                            <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" title={displayName}>{displayName}</p>
                                             <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
                                                 <span className={`font-semibold uppercase tracking-wider text-[10px] px-1.5 py-0.5 rounded ${
-                                                    isPdf ? 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300' : 'bg-slate-200/70 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300'
+                                                    isPdf ? 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300' : isTxt ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-slate-200/70 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300'
                                                 }`}>
-                                                    {isPdf ? 'PDF' : 'DOC'}
+                                                    {isPdf ? 'PDF' : isTxt ? 'TXT' : 'DOC'}
                                                 </span>
                                                 <span>Document</span>
                                             </div>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                        {resolvedDocUrl && (
+                                        {resolvedUrl && (
                                             <a
-                                                href={resolvedDocUrl}
+                                                href={resolvedUrl}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-700/60 rounded-xl transition-all"
@@ -1686,7 +1737,7 @@ export default function PostCard({ post, onPostDeleted }) {
                                             </a>
                                         )}
                                         <button 
-                                            onClick={() => setActiveDocViewer(att)}
+                                            onClick={() => setActiveDocViewer({ ...att, name: displayName, url: resolvedUrl })}
                                             className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-500/20 active:scale-95 cursor-pointer"
                                         >
                                             <span className="material-symbols-outlined text-[16px]">visibility</span>
@@ -1848,7 +1899,7 @@ export default function PostCard({ post, onPostDeleted }) {
                                         author: c.authorFullName,
                                         avatar: resolveMediaUrl(c.authorProfilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.authorFullName)}&background=6366f1&color=fff`,
                                         text: c.commentText,
-                                        time: new Date(c.createdDate).toLocaleDateString(),
+                                        time: formatToDDMMYYYY(c.createdDate),
                                         likesCount: c.likesCount || 0,
                                         isLiked: Boolean(c.isLiked),
                                         userReaction: c.userReactionType?.toLowerCase() || (c.isLiked ? 'like' : null),
@@ -1858,7 +1909,7 @@ export default function PostCard({ post, onPostDeleted }) {
                                             author: r.authorFullName,
                                             avatar: resolveMediaUrl(r.authorProfilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(r.authorFullName)}&background=6366f1&color=fff`,
                                             text: r.commentText,
-                                            time: new Date(r.createdDate).toLocaleDateString(),
+                                            time: formatToDDMMYYYY(r.createdDate),
                                             likesCount: r.likesCount || 0,
                                             isLiked: Boolean(r.isLiked),
                                             userReaction: r.userReactionType?.toLowerCase() || (r.isLiked ? 'like' : null),

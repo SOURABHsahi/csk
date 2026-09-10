@@ -3,8 +3,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import { apiClient } from '../utils/apiClient';
-import { communitiesApi, mediaApi, postsApi, notificationsApi, interactionsApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages } from '../utils/apiService';
+import { communitiesApi, mediaApi, postsApi, notificationsApi, interactionsApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages, formatRelativeTime } from '../utils/apiService';
 import { checkRestrictedContent } from '../utils/restrictedWords';
+import ArticleShareModal from '../components/modals/ArticleShareModal';
 
 const ENTERPRISE_CHANNELS_SEED = {
     '1': {
@@ -100,7 +101,7 @@ const ENTERPRISE_CHANNELS_SEED = {
 };
 
 export default function CommunityView() {
-    const { currentUser, users: contextUsers, awardRuleKarma } = useUser();
+    const { currentUser, users: contextUsers, awardRuleKarma, refreshKarma } = useUser();
     const confirm = useConfirm();
     const navigate = useNavigate();
     const location = useLocation();
@@ -122,6 +123,19 @@ export default function CommunityView() {
     const [membershipStatus, setMembershipStatus] = useState('none');
     const [postText, setPostText] = useState('');
     const [posts, setPosts] = useState([]);
+    // Real-time Like, Comment & Share States for Community Feed Posts
+    const [likedPostsMap, setLikedPostsMap] = useState(() => {
+        try {
+            const key = `knome_community_likes_${currentUser?.id || 'guest'}`;
+            return JSON.parse(localStorage.getItem(key) || '{}');
+        } catch { return {}; }
+    });
+    const [activeCommentPostId, setActiveCommentPostId] = useState(null);
+    const [communityCommentsMap, setCommunityCommentsMap] = useState({});
+    const [commentInputMap, setCommentInputMap] = useState({});
+    const [isLoadingComments, setIsLoadingComments] = useState(false);
+    const [sharingPost, setSharingPost] = useState(null);
+    const [isPostShareModalOpen, setIsPostShareModalOpen] = useState(false);
     const [joinRequests, setJoinRequests] = useState([]);
     const [membersList, setMembersList] = useState([]);
     const [subscribersList, setSubscribersList] = useState([]);
@@ -129,6 +143,14 @@ export default function CommunityView() {
     const [memberSearchQuery, setMemberSearchQuery] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const [toast, setToast] = useState(null); // { message, type }
+
+    // Rules & FAQ Management State
+    const [editRules, setEditRules] = useState([]);
+    const [editFaq, setEditFaq] = useState([]);
+    const [newRuleInput, setNewRuleInput] = useState('');
+    const [newFaqQ, setNewFaqQ] = useState('');
+    const [newFaqA, setNewFaqA] = useState('');
+    const [isSavingRulesFaq, setIsSavingRulesFaq] = useState(false);
 
     // Files & Media State
     const [filesList, setFilesList] = useState([]);
@@ -189,6 +211,68 @@ export default function CommunityView() {
             }
         };
     }, [previewModalFile]);
+
+    // Real-time live count updates (Reactions, Comments, Shares)
+    useEffect(() => {
+        const handleReactionUpdated = (e) => {
+            const data = e.detail;
+            if (data && data.contentId) {
+                setPosts(prev => prev.map(p => {
+                    if (String(p.id) === String(data.contentId) || String(p.postId) === String(data.contentId)) {
+                        const likes = typeof data.totalLikes === 'number' ? data.totalLikes : (p.likes || 0);
+                        return { ...p, likes, likesCount: likes };
+                    }
+                    return p;
+                }));
+            }
+        };
+
+        const handleCommentUpdated = (e) => {
+            const data = e.detail;
+            if (data && data.contentId) {
+                setPosts(prev => prev.map(p => {
+                    if (String(p.id) === String(data.contentId) || String(p.postId) === String(data.contentId)) {
+                        const comments = typeof data.commentsCount === 'number' ? data.commentsCount : (p.comments || 0);
+                        return { ...p, comments, commentsCount: comments };
+                    }
+                    return p;
+                }));
+            }
+        };
+
+        const handleShareUpdated = (e) => {
+            const data = e.detail;
+            if (data && data.contentId) {
+                setPosts(prev => prev.map(p => {
+                    if (String(p.id) === String(data.contentId) || String(p.postId) === String(data.contentId)) {
+                        const shares = typeof data.sharesCount === 'number' ? data.sharesCount : (p.shares || 0);
+                        return { ...p, shares, sharesCount: shares };
+                    }
+                    return p;
+                }));
+            }
+        };
+
+        window.addEventListener('knome:reaction-updated', handleReactionUpdated);
+        window.addEventListener('knome:comment-updated', handleCommentUpdated);
+        window.addEventListener('knome:share-updated', handleShareUpdated);
+
+        return () => {
+            window.removeEventListener('knome:reaction-updated', handleReactionUpdated);
+            window.removeEventListener('knome:comment-updated', handleCommentUpdated);
+            window.removeEventListener('knome:share-updated', handleShareUpdated);
+        };
+    }, []);
+
+    // Sync rules and FAQs into edit state whenever community loads
+    useEffect(() => {
+        if (community?.rules && Array.isArray(community.rules)) {
+            setEditRules(community.rules);
+        }
+        if (community?.faq && Array.isArray(community.faq)) {
+            setEditFaq(community.faq);
+        }
+    }, [community?.rules, community?.faq]);
 
     // Load all available communities for share dropdown
     const loadAllCommunities = async () => {
@@ -690,12 +774,53 @@ export default function CommunityView() {
         setTimeout(() => setToast(null), 3000);
     };
 
+    const parseRulesList = (raw) => {
+        if (!raw) return ['1. Be respectful.', '2. Share knowledge.', '3. Follow company policy.'];
+        if (Array.isArray(raw)) return raw.map(r => String(r).trim()).filter(Boolean);
+        if (typeof raw === 'string') {
+            const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+            return lines.length > 0 ? lines : [raw.trim()];
+        }
+        return ['1. Be respectful.', '2. Share knowledge.', '3. Follow company policy.'];
+    };
+
+    const parseFaqList = (raw) => {
+        if (!raw) return [{ q: 'Who can join?', a: 'All MPOnline employees may join or request access.' }];
+        if (Array.isArray(raw)) return raw.filter(item => item && (item.q || item.a));
+        if (typeof raw === 'string') {
+            const trimmed = raw.trim();
+            if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+                try {
+                    const parsed = JSON.parse(trimmed);
+                    if (Array.isArray(parsed)) return parsed.filter(item => item && (item.q || item.a));
+                } catch (e) {}
+            }
+            const lines = trimmed.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+            const items = [];
+            let q = '', a = '';
+            lines.forEach(l => {
+                if (/^q:/i.test(l)) {
+                    if (q) items.push({ q, a: a || 'Yes' });
+                    q = l.replace(/^q:\s*/i, '');
+                    a = '';
+                } else if (/^a:/i.test(l)) {
+                    a = l.replace(/^a:\s*/i, '');
+                } else if (q) {
+                    a += (a ? ' ' : '') + l;
+                }
+            });
+            if (q) items.push({ q, a: a || 'Yes' });
+            return items.length > 0 ? items : [{ q: 'Who can join?', a: trimmed }];
+        }
+        return [{ q: 'Who can join?', a: 'All MPOnline employees may join or request access.' }];
+    };
+
     const loadData = async () => {
         setIsLoading(true);
         try {
             const customList = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
-            const isLocalCustomCommunity = customList.some(c => String(c.id) === String(communityId)) || (Number(communityId) > 1000000);
-            const isValidInt32 = communityId && !isNaN(communityId) && Number(communityId) > 0 && Number(communityId) <= 2147483647 && !isLocalCustomCommunity;
+            const isPureMockId = communityId && (isNaN(communityId) || Number(communityId) > 1000000000);
+            const isValidInt32 = communityId && !isNaN(communityId) && Number(communityId) > 0 && Number(communityId) <= 2147483647 && !isPureMockId;
 
             const [commData, postsData, rawMembers] = await Promise.all([
                 isValidInt32 ? communitiesApi.getById(communityId).catch(() => null) : null,
@@ -707,6 +832,14 @@ export default function CommunityView() {
                 const imgs = getCommunityImages(commData.name, commData.categoryName);
                 const customComms = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
                 const localMatch = customComms.find(c => String(c.id) === String(commData.communityId) || (c.name && c.name.toLowerCase() === commData.name?.toLowerCase()));
+                const localRulesFaq = JSON.parse(localStorage.getItem(`knome_community_rules_faq_${commData.communityId}`) || 'null');
+
+                const resolvedRules = localRulesFaq?.rules 
+                    ? parseRulesList(localRulesFaq.rules) 
+                    : (commData.rules ? parseRulesList(commData.rules) : (localMatch?.rules ? parseRulesList(localMatch.rules) : parseRulesList(null)));
+                const resolvedFaq = localRulesFaq?.faq 
+                    ? parseFaqList(localRulesFaq.faq) 
+                    : (commData.faq ? parseFaqList(commData.faq) : (localMatch?.faq ? parseFaqList(localMatch.faq) : parseFaqList(null)));
 
                 setCommunity({
                     id: commData.communityId,
@@ -718,47 +851,8 @@ export default function CommunityView() {
                     banner: localMatch?.banner || localMatch?.bannerUrl || resolveMediaUrl(commData.bannerUrl || commData.bannerImageUrl) || imgs.banner,
                     thumbnail: localMatch?.thumbnail || localMatch?.avatar || localMatch?.thumbnailUrl || resolveMediaUrl(commData.thumbnailUrl) || imgs.thumbnail,
                     description: commData.description || 'Community for MPOnline team members.',
-                    rules: commData.rules ? (Array.isArray(commData.rules) ? commData.rules : commData.rules.split('\n')) : ['1. Be respectful and constructive.', '2. Keep discussions relevant.', '3. Follow company guidelines.'],
-                    faq: (() => {
-                        if (!commData.faq) {
-                            return [
-                                { q: 'Who can join?', a: 'All MPOnline employees and department members.' },
-                                { q: 'How to post?', a: 'Join as a Member to write posts and participate in discussions.' }
-                            ];
-                        }
-                        if (Array.isArray(commData.faq)) return commData.faq;
-                        if (typeof commData.faq === 'string') {
-                            const trimmedFaq = commData.faq.trim();
-                            if (trimmedFaq.startsWith('[') || trimmedFaq.startsWith('{')) {
-                                try {
-                                    const parsed = JSON.parse(trimmedFaq);
-                                    if (Array.isArray(parsed)) return parsed;
-                                } catch (e) {
-                                    // Plain text string
-                                }
-                            }
-                            const lines = commData.faq.split('\n').map(l => l.trim()).filter(Boolean);
-                            const items = [];
-                            let q = '', a = '';
-                            lines.forEach(l => {
-                                if (/^q:/i.test(l)) {
-                                    if (q) items.push({ q, a: a || 'Yes' });
-                                    q = l.replace(/^q:\s*/i, '');
-                                    a = '';
-                                } else if (/^a:/i.test(l)) {
-                                    a = l.replace(/^a:\s*/i, '');
-                                } else if (q) {
-                                    a += (a ? ' ' : '') + l;
-                                }
-                            });
-                            if (q) items.push({ q, a: a || 'Yes' });
-                            return items.length > 0 ? items : [{ q: 'Community FAQ', a: commData.faq }];
-                        }
-                        return [
-                            { q: 'Who can join?', a: 'All MPOnline employees and department members.' },
-                            { q: 'How to post?', a: 'Join as a Member to write posts and participate in discussions.' }
-                        ];
-                    })()
+                    rules: resolvedRules,
+                    faq: resolvedFaq
                 });
 
                 // Resolve Persistent Members for this Community (FR-CM-06)
@@ -890,6 +984,14 @@ export default function CommunityView() {
                 const calcStatus = (isUserJoined || isDefaultOrgFallback) ? 'joined' : (myRequest ? 'requested' : 'none');
 
                 if (found) {
+                    const localRulesFaq = JSON.parse(localStorage.getItem(`knome_community_rules_faq_${targetId}`) || 'null');
+                    const resolvedRules = localRulesFaq?.rules 
+                        ? parseRulesList(localRulesFaq.rules) 
+                        : (found.rules ? parseRulesList(found.rules) : parseRulesList(null));
+                    const resolvedFaq = localRulesFaq?.faq 
+                        ? parseFaqList(localRulesFaq.faq) 
+                        : (found.faq ? parseFaqList(found.faq) : parseFaqList(null));
+
                     setCommunity({
                         id: found.id,
                         name: found.name,
@@ -900,12 +1002,13 @@ export default function CommunityView() {
                         banner: found.banner || found.bannerUrl || found.thumbnail || found.avatar || 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=1200&h=400',
                         thumbnail: found.thumbnail || found.avatar || found.thumbnailUrl || found.banner || 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=200&h=200',
                         description: found.description || 'A community for collaboration.',
-                        rules: ['1. Be respectful.', '2. Share knowledge.', '3. Follow company policy.'],
-                        faq: [{ q: 'Purpose?', a: 'Knowledge sharing & teamwork.' }]
+                        rules: resolvedRules,
+                        faq: resolvedFaq
                     });
                     setMembershipStatus(calcStatus);
                 } else {
                     const enterpriseChannel = ENTERPRISE_CHANNELS_SEED[String(targetId)];
+                    const localRulesFaq = JSON.parse(localStorage.getItem(`knome_community_rules_faq_${targetId}`) || 'null');
                     if (enterpriseChannel) {
                         const imgs = getCommunityImages(enterpriseChannel.name, enterpriseChannel.category);
                         setCommunity({
@@ -918,8 +1021,8 @@ export default function CommunityView() {
                             banner: imgs.banner,
                             thumbnail: imgs.thumbnail,
                             description: enterpriseChannel.description,
-                            rules: enterpriseChannel.rules,
-                            faq: enterpriseChannel.faq
+                            rules: localRulesFaq?.rules ? parseRulesList(localRulesFaq.rules) : enterpriseChannel.rules,
+                            faq: localRulesFaq?.faq ? parseFaqList(localRulesFaq.faq) : enterpriseChannel.faq
                         });
                         setMembershipStatus(calcStatus);
                     } else {
@@ -934,8 +1037,8 @@ export default function CommunityView() {
                             banner: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=1200&h=400',
                             thumbnail: 'https://images.unsplash.com/photo-1550751827-4bd374c3f58b?auto=format&fit=crop&q=80&w=200&h=200',
                             description: 'The DotNet Developers Community is a place for developers, students, and technology enthusiasts to collaborate.',
-                            rules: ['1. Keep discussions technical and constructive.', '2. No unverified code snippets.', '3. Respect all members.'],
-                            faq: [
+                            rules: localRulesFaq?.rules ? parseRulesList(localRulesFaq.rules) : ['1. Keep discussions technical and constructive.', '2. No unverified code snippets.', '3. Respect all members.'],
+                            faq: localRulesFaq?.faq ? parseFaqList(localRulesFaq.faq) : [
                                 { q: 'Who can post?', a: 'Any approved Community Member can share code and technical updates.' },
                                 { q: 'How are posts moderated?', a: 'Community Admins review reports and pin top discussions.' }
                             ]
@@ -1039,18 +1142,7 @@ export default function CommunityView() {
                     };
                 });
             } else {
-                mergedPosts = [
-                    {
-                        id: 1,
-                        author: 'Loveneesh Sharma',
-                        role: 'System Administrator',
-                        time: '2 hours ago',
-                        content: 'Welcome to the community! Please feel free to introduce yourself and share any technical questions or resources here.',
-                        likes: 5,
-                        comments: 2,
-                        isPinned: true
-                    }
-                ];
+                mergedPosts = [];
             }
 
             if (localCommunityPosts.length > 0) {
@@ -1116,6 +1208,57 @@ export default function CommunityView() {
                     mergedPosts = [...mappedGlobal, ...mergedPosts];
                 }
             } catch (_) {}
+
+            // Clean dynamic community welcome post in the name of the active community
+            const activeCommName = commData?.name || community?.name || (customList.find(c => String(c.id) === String(resolvedTargetId))?.name) || 'Company Community';
+            const activeCommAvatar = commData?.thumbnailUrl || commData?.bannerUrl || community?.thumbnail || community?.banner || (customList.find(c => String(c.id) === String(resolvedTargetId))?.thumbnail) || null;
+
+            // 1. Sanitize any old post that was hardcoded with "Loveneesh Sharma" as a dummy welcome
+            mergedPosts = mergedPosts.map(p => {
+                if (p.author === 'Loveneesh Sharma' && (p.id === 1 || String(p.id).startsWith('welcome_') || (p.content || '').includes('Welcome to the community'))) {
+                    return {
+                        ...p,
+                        isWelcome: true,
+                        author: activeCommName,
+                        role: 'Official Community Space',
+                        avatar: activeCommAvatar,
+                        content: `Welcome to ${activeCommName}! Please feel free to introduce yourself, collaborate with fellow members, and share any technical questions, discussions, or resources here.`,
+                        isPinned: true
+                    };
+                }
+                if (String(p.id).startsWith('welcome_') || p.role === 'Official Community Space') {
+                    return {
+                        ...p,
+                        isWelcome: true
+                    };
+                }
+                return p;
+            });
+
+            // 2. If no posts exist at all, seed with the official welcome post under the community's own name!
+            if (mergedPosts.length === 0) {
+                const commWelcomePost = {
+                    id: `welcome_${resolvedTargetId}`,
+                    postId: `welcome_${resolvedTargetId}`,
+                    isWelcome: true,
+                    author: activeCommName,
+                    role: 'Official Community Space',
+                    avatar: activeCommAvatar,
+                    time: 'Just now',
+                    content: `Welcome to ${activeCommName}! Please feel free to introduce yourself, collaborate with fellow members, and share any technical questions, discussions, or resources here.`,
+                    likes: 0,
+                    likesCount: 0,
+                    comments: 0,
+                    commentsCount: 0,
+                    shares: 0,
+                    sharesCount: 0,
+                    isPinned: true
+                };
+                mergedPosts = [commWelcomePost];
+            }
+
+            // Sync sanitized posts into community storage so stale Loveneesh post is wiped
+            safeSetStorage(savedPostsKey, mergedPosts);
 
             setPosts(mergedPosts);
         } catch (error) {
@@ -1290,7 +1433,236 @@ export default function CommunityView() {
         setPosts(prev => [newPostItem, ...prev]);
         setPostText('');
         showToast('Post shared to community discussions!', 'success');
+
+        if (awardRuleKarma && (currentUser?.userId || currentUser?.id)) {
+            const targetUid = currentUser?.userId || currentUser?.id;
+            const pts = awardRuleKarma(targetUid, 'POST', { customTitle: `Posted in ${community?.name || 'Community'}` }) || 2;
+            showToast(`⚡ +${pts} Karma Points earned for publishing a Post!`, 'info');
+            if (refreshKarma) {
+                setTimeout(() => refreshKarma(targetUid), 400);
+            }
+        }
+
         window.dispatchEvent(new CustomEvent('post-created'));
+    };
+
+    // ─────────────────────────────────────────
+    // Real-Time Interaction Handlers (Like, Comment, Share)
+    // ─────────────────────────────────────────
+    const handleToggleLike = async (postId) => {
+        const pid = String(postId);
+        const isCurrentlyLiked = !!likedPostsMap[pid];
+        const nextLiked = !isCurrentlyLiked;
+
+        setLikedPostsMap(prev => {
+            const updated = { ...prev, [pid]: nextLiked };
+            safeSetStorage(`knome_community_likes_${currentUser?.id || 'guest'}`, updated);
+            return updated;
+        });
+
+        let newLikesCount = 0;
+        setPosts(prev => prev.map(p => {
+            if (String(p.id) === pid || String(p.postId) === pid) {
+                const cur = Number(p.likes || p.likesCount || 0);
+                const next = nextLiked ? cur + 1 : Math.max(0, cur - 1);
+                newLikesCount = next;
+                return { ...p, likes: next, likesCount: next };
+            }
+            return p;
+        }));
+
+        safeSetStorage(`knome_post_interaction_${pid}`, { liked: nextLiked, likeCount: newLikesCount });
+
+        const targetId = communityId || community?.id || 101;
+        const savedKey = `knome_community_posts_${targetId}`;
+        const localPosts = JSON.parse(localStorage.getItem(savedKey) || '[]');
+        const updatedLocal = localPosts.map(p => {
+            if (String(p.id) === pid || String(p.postId) === pid) {
+                return { ...p, likes: newLikesCount, likesCount: newLikesCount };
+            }
+            return p;
+        });
+        safeSetStorage(savedKey, updatedLocal);
+
+        const numId = Number(pid);
+        if (!isNaN(numId) && numId > 0 && numId < 2147483647) {
+            try {
+                await interactionsApi.toggleReaction('Post', numId, 'like');
+            } catch (e) {
+                console.warn('Backend like API note:', e);
+            }
+        }
+
+        window.dispatchEvent(new CustomEvent('knome:reaction-updated', {
+            detail: { contentId: pid, contentType: 'Post', totalLikes: newLikesCount }
+        }));
+        window.dispatchEvent(new CustomEvent('post-interaction-updated', {
+            detail: { postId: pid, likes: newLikesCount }
+        }));
+    };
+
+    const handleToggleComments = async (postId) => {
+        const pid = String(postId);
+        if (activeCommentPostId === pid) {
+            setActiveCommentPostId(null);
+            return;
+        }
+        setActiveCommentPostId(pid);
+
+        if (!communityCommentsMap[pid]) {
+            setIsLoadingComments(true);
+            try {
+                const localSaved = JSON.parse(localStorage.getItem(`knome_community_comments_${pid}`) || '[]');
+                let apiComments = [];
+                const numId = Number(pid);
+                if (!isNaN(numId) && numId > 0 && numId < 2147483647) {
+                    try {
+                        const res = await interactionsApi.getComments('Post', numId);
+                        const rawList = res?.data || res || [];
+                        if (Array.isArray(rawList)) {
+                            apiComments = rawList.map(c => ({
+                                id: c.commentId || c.id,
+                                author: c.authorFullName || c.author || 'Member',
+                                role: c.authorDesignation || 'Member',
+                                avatar: resolveMediaUrl(c.authorProfilePhotoUrl) || null,
+                                text: c.commentText || c.text,
+                                time: c.createdDate ? formatRelativeTime(c.createdDate) : 'Recently',
+                                createdDate: c.createdDate || new Date().toISOString()
+                            }));
+                        }
+                    } catch (_) {}
+                }
+                const combined = [...localSaved, ...apiComments.filter(a => !localSaved.some(l => String(l.id) === String(a.id)))];
+                setCommunityCommentsMap(prev => ({ ...prev, [pid]: combined }));
+            } catch (_) {
+                setCommunityCommentsMap(prev => ({ ...prev, [pid]: [] }));
+            } finally {
+                setIsLoadingComments(false);
+            }
+        }
+    };
+
+    const handleAddCommunityComment = async (postId) => {
+        const pid = String(postId);
+        const text = (commentInputMap[pid] || '').trim();
+        if (!text) return;
+
+        const restricted = checkRestrictedContent(text);
+        if (restricted) {
+            showToast(`Security Alert: "${restricted}" is restricted. Remove it to comment.`, 'warning');
+            return;
+        }
+
+        const newComment = {
+            id: Date.now(),
+            author: currentUser?.name || currentUser?.fullName || 'Member',
+            role: currentUser?.roleName || 'Member',
+            avatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
+            text: text,
+            time: 'Just now',
+            createdDate: new Date().toISOString()
+        };
+
+        const updatedComments = [...(communityCommentsMap[pid] || []), newComment];
+        setCommunityCommentsMap(prev => ({ ...prev, [pid]: updatedComments }));
+        setCommentInputMap(prev => ({ ...prev, [pid]: '' }));
+
+        let newCommentsCount = updatedComments.length;
+        setPosts(prev => prev.map(p => {
+            if (String(p.id) === pid || String(p.postId) === pid) {
+                const cur = Number(p.comments || p.commentsCount || 0);
+                const next = cur + 1;
+                newCommentsCount = next;
+                return { ...p, comments: next, commentsCount: next };
+            }
+            return p;
+        }));
+
+        safeSetStorage(`knome_community_comments_${pid}`, updatedComments);
+
+        const targetId = communityId || community?.id || 101;
+        const savedKey = `knome_community_posts_${targetId}`;
+        const localPosts = JSON.parse(localStorage.getItem(savedKey) || '[]');
+        const updatedLocal = localPosts.map(p => {
+            if (String(p.id) === pid || String(p.postId) === pid) {
+                return { ...p, comments: newCommentsCount, commentsCount: newCommentsCount };
+            }
+            return p;
+        });
+        safeSetStorage(savedKey, updatedLocal);
+
+        const numId = Number(pid);
+        if (!isNaN(numId) && numId > 0 && numId < 2147483647) {
+            try {
+                await interactionsApi.addComment('Post', numId, text);
+            } catch (e) {
+                console.warn('Backend comment API note:', e);
+            }
+        }
+
+        window.dispatchEvent(new CustomEvent('knome:comment-updated', {
+            detail: { contentId: pid, contentType: 'Post', commentsCount: newCommentsCount }
+        }));
+
+        showToast('Comment added successfully!', 'success');
+    };
+
+    const handleSharePost = (post) => {
+        const pid = String(post.id || post.postId);
+        const targetId = communityId || community?.id || 101;
+
+        let newSharesCount = 0;
+        setPosts(prev => prev.map(p => {
+            if (String(p.id) === pid || String(p.postId) === pid) {
+                const cur = Number(p.shares || p.sharesCount || 0);
+                const next = cur + 1;
+                newSharesCount = next;
+                return { ...p, shares: next, sharesCount: next };
+            }
+            return p;
+        }));
+
+        const savedKey = `knome_community_posts_${targetId}`;
+        const localPosts = JSON.parse(localStorage.getItem(savedKey) || '[]');
+        const updatedLocal = localPosts.map(p => {
+            if (String(p.id) === pid || String(p.postId) === pid) {
+                return { ...p, shares: newSharesCount, sharesCount: newSharesCount };
+            }
+            return p;
+        });
+        safeSetStorage(savedKey, updatedLocal);
+
+        const shareUrl = `${window.location.origin}/community/view?id=${targetId}&postId=${pid}`;
+        try {
+            navigator.clipboard.writeText(shareUrl);
+            showToast('🔗 Community post link copied to clipboard! Share it with your team.', 'success');
+        } catch (_) {
+            showToast('Post link: ' + shareUrl, 'info');
+        }
+
+        setSharingPost(post);
+        setIsPostShareModalOpen(true);
+
+        const numId = Number(pid);
+        if (!isNaN(numId) && numId > 0 && numId < 2147483647) {
+            interactionsApi.shareContent('Post', numId, 'Community', targetId).catch(() => {});
+        }
+
+        window.dispatchEvent(new CustomEvent('knome:share-updated', {
+            detail: { contentId: pid, contentType: 'Post', sharesCount: newSharesCount }
+        }));
+    };
+
+    const handleOpenPost = (post) => {
+        const postUrlMatch = (post.content || '').match(/(?:https?:\/\/[^\s]+)?\/posts\?id=(\d+)/i);
+        const targetId = postUrlMatch ? postUrlMatch[1] : (post.sharedPostId || post.postId || post.id);
+        const numId = Number(targetId);
+        if (!isNaN(numId) && numId > 0 && numId < 2147483647) {
+            navigate(`/posts?id=${targetId}`);
+        } else {
+            handleToggleComments(post.id);
+            showToast('Viewing community post discussion & interactions below!', 'info');
+        }
     };
 
 
@@ -1483,6 +1855,101 @@ export default function CommunityView() {
         });
         setCommunity(prev => ({ ...prev, membersCount: Math.max(1, (prev.membersCount || 1) - 1) }));
         showToast(`You have left "${community?.name}".`, 'info');
+    };
+
+    const handleSaveRulesFaq = async () => {
+        const validRules = editRules.filter(r => String(r).trim());
+        const validFaq = editFaq.filter(f => f && (String(f.q || '').trim() || String(f.a || '').trim()));
+        if (validRules.length === 0) {
+            showToast('Please specify at least one community rule.', 'warning');
+            return;
+        }
+        setIsSavingRulesFaq(true);
+        try {
+            const rulesText = validRules.join('\n');
+            const faqJson = JSON.stringify(validFaq);
+            const targetId = community?.id || communityId;
+
+            // 1. If live integer ID, update in SQL Server database via API!
+            if (targetId && !isNaN(targetId) && Number(targetId) > 0 && Number(targetId) < 1000000000) {
+                try {
+                    await communitiesApi.update(targetId, {
+                        name: community.name,
+                        description: community.description,
+                        bannerUrl: community.banner,
+                        thumbnailUrl: community.thumbnail,
+                        categoryId: community.categoryId || 1,
+                        rules: rulesText,
+                        faq: faqJson
+                    });
+                } catch (apiErr) {
+                    console.warn('Backend API update warning (fallback to local):', apiErr);
+                }
+            }
+
+            // 2. Persist to dedicated local storage key
+            localStorage.setItem(`knome_community_rules_faq_${targetId}`, JSON.stringify({
+                rules: validRules,
+                faq: validFaq
+            }));
+
+            // 3. Update knome_custom_communities if present
+            try {
+                const customComms = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+                const updatedComms = customComms.map(c => {
+                    if (String(c.id) === String(targetId)) {
+                        return { ...c, rules: validRules, faq: validFaq };
+                    }
+                    return c;
+                });
+                localStorage.setItem('knome_custom_communities', JSON.stringify(updatedComms));
+            } catch (_) {}
+
+            setCommunity(prev => ({
+                ...prev,
+                rules: validRules,
+                faq: validFaq
+            }));
+            setEditRules(validRules);
+            setEditFaq(validFaq);
+
+            window.dispatchEvent(new CustomEvent('community-rules-updated', { detail: { communityId: targetId, rules: validRules, faq: validFaq } }));
+            showToast('Community Rules & FAQ updated successfully!', 'success');
+        } catch (err) {
+            console.error('Failed to update community rules and FAQ:', err);
+            showToast('Failed to save rules and FAQ.', 'error');
+        } finally {
+            setIsSavingRulesFaq(false);
+        }
+    };
+
+    const handleAddRule = () => {
+        if (!newRuleInput.trim()) return;
+        setEditRules(prev => [...prev, newRuleInput.trim()]);
+        setNewRuleInput('');
+    };
+
+    const handleRemoveRule = (index) => {
+        setEditRules(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleUpdateRule = (index, value) => {
+        setEditRules(prev => prev.map((r, i) => i === index ? value : r));
+    };
+
+    const handleAddFaq = () => {
+        if (!newFaqQ.trim() || !newFaqA.trim()) return;
+        setEditFaq(prev => [...prev, { q: newFaqQ.trim(), a: newFaqA.trim() }]);
+        setNewFaqQ('');
+        setNewFaqA('');
+    };
+
+    const handleRemoveFaq = (index) => {
+        setEditFaq(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleUpdateFaq = (index, field, value) => {
+        setEditFaq(prev => prev.map((f, i) => i === index ? { ...f, [field]: value } : f));
     };
 
     const handlePin = async (postId) => {
@@ -1840,7 +2307,10 @@ export default function CommunityView() {
     const sortedPosts = [...posts].sort((a, b) => {
         if (a.isPinned && !b.isPinned) return -1;
         if (!a.isPinned && b.isPinned) return 1;
-        return b.id - a.id;
+        const timeA = new Date(a.createdDate || a.time || 0).getTime() || 0;
+        const timeB = new Date(b.createdDate || b.time || 0).getTime() || 0;
+        if (timeA && timeB) return timeB - timeA;
+        return String(b.id || '').localeCompare(String(a.id || ''));
     });
 
     return (
@@ -2140,9 +2610,23 @@ export default function CommunityView() {
                                 const authorAvatar = rawAvatar ? resolveMediaUrl(rawAvatar) : null;
                                 const authorInitial = (authorName || 'M').charAt(0).toUpperCase();
 
+                                const isWelcomePost = Boolean(
+                                    post.isWelcome ||
+                                    String(post.id).startsWith('welcome_') ||
+                                    post.role === 'Official Community Space' ||
+                                    authorRole === 'Official Community Space' ||
+                                    (authorName === community?.name && (post.content || '').toLowerCase().includes('welcome to')) ||
+                                    (post.id === 1 && (post.content || '').toLowerCase().includes('welcome to the community'))
+                                );
+
                                 return (
-                                <div key={post.id} className={`glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 ${post.isPinned ? 'ring-2 ring-indigo-500/50 bg-indigo-50/10' : ''}`}>
-                                    {post.isPinned && (
+                                <div key={post.id} className={`glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 ${isWelcomePost ? 'bg-gradient-to-br from-indigo-50/20 via-white to-slate-50 dark:from-slate-900 dark:to-indigo-950/20 border-indigo-100 dark:border-indigo-900/30' : post.isPinned ? 'ring-2 ring-indigo-500/50 bg-indigo-50/10' : ''}`}>
+                                    {isWelcomePost ? (
+                                        <div className="flex items-center gap-1.5 text-[11px] font-black text-indigo-600 dark:text-indigo-400 mb-3 uppercase tracking-wider bg-indigo-50 dark:bg-indigo-950/40 px-3 py-1 rounded-lg w-fit border border-indigo-200/50 dark:border-indigo-800/40">
+                                            <span className="material-symbols-outlined text-[15px]">verified</span>
+                                            Official Community Space
+                                        </div>
+                                    ) : post.isPinned && (
                                         <div className="flex items-center gap-1.5 text-[11px] font-black text-indigo-500 mb-3 uppercase tracking-wider">
                                             <span className="material-symbols-outlined text-[15px]">push_pin</span>
                                             Pinned by Community Admin
@@ -2172,17 +2656,14 @@ export default function CommunityView() {
                                             </div>
                                         </div>
                                         
-                                        {/* FR-CM-07: Moderation Controls (Pin, Delete, Suspend) */}
-                                        {isAdmin && (
+                                        {/* FR-CM-07: Moderation Controls (Pin, Delete) - Only for regular user posts, not the official welcome banner */}
+                                        {!isWelcomePost && isAdmin && (
                                             <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
                                                 <button onClick={() => handlePin(post.id)} className={`p-1.5 rounded-lg transition-colors ${post.isPinned ? 'text-indigo-500 bg-indigo-100 dark:bg-indigo-900/40' : 'text-slate-400 hover:text-indigo-500'}`} title={post.isPinned ? "Unpin Post" : "Pin Post"}>
                                                     <span className="material-symbols-outlined text-[18px]">{post.isPinned ? 'do_not_disturb_on' : 'push_pin'}</span>
                                                 </button>
                                                 <button onClick={() => handleDelete(post.id)} className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 transition-colors" title="Remove Post">
                                                     <span className="material-symbols-outlined text-[18px]">delete</span>
-                                                </button>
-                                                <button onClick={() => handleSuspend(authorName)} className="p-1.5 rounded-lg text-slate-400 hover:text-amber-500 transition-colors" title="Suspend Member">
-                                                    <span className="material-symbols-outlined text-[18px]">person_off</span>
                                                 </button>
                                             </div>
                                         )}
@@ -2545,34 +3026,120 @@ export default function CommunityView() {
                                         );
                                     })()}
                                     
-                                    <div className="flex items-center gap-4 sm:gap-6 pt-4 border-t border-slate-100 dark:border-slate-800 text-slate-500 flex-wrap">
-                                        <button className="flex items-center gap-2 hover:text-indigo-500 transition-colors text-[13px] font-bold">
-                                            <span className="material-symbols-outlined text-[18px]">thumb_up</span>
-                                            {post.likes || 0} Likes
-                                        </button>
-                                        <button className="flex items-center gap-2 hover:text-indigo-500 transition-colors text-[13px] font-bold">
-                                            <span className="material-symbols-outlined text-[18px]">chat_bubble</span>
-                                            {post.comments || 0} Comments
-                                        </button>
-                                        <button className="flex items-center gap-2 hover:text-indigo-500 transition-colors text-[13px] font-bold">
-                                            <span className="material-symbols-outlined text-[18px]">share</span>
-                                            {post.shares || 0} Shares
-                                        </button>
+                                    {/* Action Bar (Like, Comment, Share, Open Post) - Only for regular user posts, not official welcome announcement */}
+                                    {!isWelcomePost && (
+                                        <div className="flex items-center gap-4 sm:gap-6 pt-4 border-t border-slate-100 dark:border-slate-800 text-slate-500 flex-wrap">
+                                            <button 
+                                                onClick={() => handleToggleLike(post.id)}
+                                                className={`flex items-center gap-2 transition-all text-[13px] font-bold cursor-pointer hover:scale-105 active:scale-95 ${likedPostsMap[String(post.id)] ? 'text-indigo-600 dark:text-indigo-400 font-black' : 'hover:text-indigo-500'}`}
+                                                title={likedPostsMap[String(post.id)] ? "Unlike post" : "Like post"}
+                                            >
+                                                <span 
+                                                    className="material-symbols-outlined text-[18px]" 
+                                                    style={likedPostsMap[String(post.id)] ? { fontVariationSettings: "'FILL' 1" } : {}}
+                                                >
+                                                    thumb_up
+                                                </span>
+                                                <span>{post.likes || 0} {post.likes === 1 ? 'Like' : 'Likes'}</span>
+                                            </button>
+                                            
+                                            <button 
+                                                onClick={() => handleToggleComments(post.id)}
+                                                className={`flex items-center gap-2 transition-all text-[13px] font-bold cursor-pointer hover:scale-105 active:scale-95 ${activeCommentPostId === String(post.id) ? 'text-indigo-600 dark:text-indigo-400 font-black' : 'hover:text-indigo-500'}`}
+                                                title="View or add comments"
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">chat_bubble</span>
+                                                <span>{post.comments || 0} {post.comments === 1 ? 'Comment' : 'Comments'}</span>
+                                            </button>
+                                            
+                                            <button 
+                                                onClick={() => handleSharePost(post)}
+                                                className="flex items-center gap-2 hover:text-indigo-500 transition-all text-[13px] font-bold cursor-pointer hover:scale-105 active:scale-95"
+                                                title="Share post or copy link"
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">share</span>
+                                                <span>{post.shares || 0} {post.shares === 1 ? 'Share' : 'Shares'}</span>
+                                            </button>
 
-                                        {/* Open Post Action Button */}
-                                        <button 
-                                            onClick={() => {
-                                                const postUrlMatch = (post.content || '').match(/(?:https?:\/\/[^\s]+)?\/posts\?id=(\d+)/i);
-                                                const targetId = postUrlMatch ? postUrlMatch[1] : (post.sharedPostId || post.id || post.postId);
-                                                if (targetId) navigate(`/posts?id=${targetId}`);
-                                            }}
-                                            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400 font-bold text-xs transition-all shadow-xs hover:shadow-sm cursor-pointer"
-                                            title="Open Post in full view"
-                                        >
-                                            <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                                            <span>Open Post</span>
-                                        </button>
-                                    </div>
+                                            {/* Open Post Action Button */}
+                                            <button 
+                                                onClick={() => handleOpenPost(post)}
+                                                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400 font-bold text-xs transition-all shadow-xs hover:shadow-sm cursor-pointer"
+                                                title="Open Post in full view"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                                                <span>Open Post</span>
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* Real-Time Inline Comments Drawer */}
+                                    {!isWelcomePost && activeCommentPostId === String(post.id) && (
+                                        <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-3">
+                                            {/* Add Comment Input */}
+                                            <form 
+                                                onSubmit={(e) => {
+                                                    e.preventDefault();
+                                                    handleAddCommunityComment(post.id);
+                                                }} 
+                                                className="flex items-center gap-2.5"
+                                            >
+                                                <div className="w-8 h-8 rounded-full bg-indigo-500 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-sm overflow-hidden">
+                                                    {currentUser?.avatar ? (
+                                                        <img src={currentUser.avatar} alt={currentUser.name} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        currentUser?.name?.charAt(0) || 'U'
+                                                    )}
+                                                </div>
+                                                <input
+                                                    type="text"
+                                                    value={commentInputMap[String(post.id)] || ''}
+                                                    onChange={(e) => setCommentInputMap(prev => ({ ...prev, [String(post.id)]: e.target.value }))}
+                                                    placeholder="Write a comment..."
+                                                    className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                                                />
+                                                <button
+                                                    type="submit"
+                                                    disabled={!(commentInputMap[String(post.id)] || '').trim()}
+                                                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer shrink-0"
+                                                >
+                                                    <span className="material-symbols-outlined text-[14px]">send</span>
+                                                    <span>Comment</span>
+                                                </button>
+                                            </form>
+
+                                            {/* Comments List */}
+                                            {isLoadingComments ? (
+                                                <div className="py-2 text-center text-slate-400 text-xs flex items-center justify-center gap-1.5">
+                                                    <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
+                                                    <span>Loading comments...</span>
+                                                </div>
+                                            ) : (communityCommentsMap[String(post.id)] || []).length > 0 ? (
+                                                <div className="space-y-2 mt-1 max-h-64 overflow-y-auto pr-1">
+                                                    {(communityCommentsMap[String(post.id)] || []).map((c, cIdx) => (
+                                                        <div key={c.id || cIdx} className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 flex items-start gap-2.5">
+                                                            <div className="w-7 h-7 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 flex items-center justify-center font-bold text-[11px] shrink-0 overflow-hidden">
+                                                                {c.avatar ? (
+                                                                    <img src={c.avatar} alt={c.author} className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    (c.author || 'M').charAt(0).toUpperCase()
+                                                                )}
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <span className="font-bold text-xs text-slate-900 dark:text-white truncate">{c.author}</span>
+                                                                    <span className="text-[10px] text-slate-400 shrink-0">{c.time || 'Recently'}</span>
+                                                                </div>
+                                                                <p className="text-xs text-slate-700 dark:text-slate-300 mt-0.5 whitespace-pre-wrap">{c.text}</p>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <p className="text-[11px] text-slate-400 italic py-1 text-center">No comments yet. Be the first to start the discussion!</p>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
@@ -2885,6 +3452,178 @@ export default function CommunityView() {
                                     )}
                                 </div>
                             </div>
+
+                            {/* Manage Community Rules & FAQ (FR-CM-08) */}
+                            <div className="glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+                                <div className="p-5 border-b border-slate-100 dark:border-slate-800 bg-indigo-50/40 dark:bg-indigo-950/20 flex items-center justify-between gap-4 flex-wrap">
+                                    <div>
+                                        <h3 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-indigo-500">gavel</span>
+                                            Community Rules & FAQs
+                                        </h3>
+                                        <p className="text-[12px] text-slate-500 mt-1">Configure the official guidelines and FAQ items displayed to all community members.</p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleSaveRulesFaq}
+                                        disabled={isSavingRulesFaq}
+                                        className="px-5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shrink-0"
+                                    >
+                                        {isSavingRulesFaq ? (
+                                            <>
+                                                <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                                                Saving...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <span className="material-symbols-outlined text-[16px]">save</span>
+                                                Save Changes
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+
+                                <div className="p-6 space-y-8">
+                                    {/* Community Rules Builder */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-3">
+                                            <label className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-[18px] text-indigo-500">policy</span>
+                                                Rules Guidelines ({editRules.length})
+                                            </label>
+                                        </div>
+
+                                        <div className="space-y-2.5 mb-3">
+                                            {editRules.map((rule, idx) => (
+                                                <div key={idx} className="flex items-center gap-2 group">
+                                                    <span className="text-xs font-black text-slate-400 w-6 shrink-0">{idx + 1}.</span>
+                                                    <input
+                                                        type="text"
+                                                        value={rule}
+                                                        onChange={(e) => handleUpdateRule(idx, e.target.value)}
+                                                        placeholder={`Rule ${idx + 1}...`}
+                                                        className="flex-1 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveRule(idx)}
+                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-all cursor-pointer"
+                                                        title="Delete rule"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[18px]">delete</span>
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Add Rule Input Row */}
+                                        <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                                            <input
+                                                type="text"
+                                                value={newRuleInput}
+                                                onChange={(e) => setNewRuleInput(e.target.value)}
+                                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddRule(); } }}
+                                                placeholder="Type a new community rule and click Add..."
+                                                className="flex-1 bg-white dark:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2 text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={handleAddRule}
+                                                disabled={!newRuleInput.trim()}
+                                                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 disabled:opacity-40 transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                                                Add Rule
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* FAQ Builder */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-3">
+                                            <label className="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-[18px] text-indigo-500">help</span>
+                                                Frequently Asked Questions ({editFaq.length})
+                                            </label>
+                                        </div>
+
+                                        <div className="space-y-3 mb-3">
+                                            {editFaq.map((faq, idx) => (
+                                                <div key={idx} className="p-3.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-2xl relative group">
+                                                    <div className="flex items-center justify-between gap-2 mb-2">
+                                                        <span className="text-[11px] font-black uppercase tracking-wider text-indigo-500">Q&A #{idx + 1}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemoveFaq(idx)}
+                                                            className="text-slate-400 hover:text-red-500 p-1 transition-colors cursor-pointer"
+                                                            title="Delete FAQ"
+                                                        >
+                                                            <span className="material-symbols-outlined text-[16px]">delete</span>
+                                                        </button>
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs font-bold text-slate-400 w-4">Q:</span>
+                                                            <input
+                                                                type="text"
+                                                                value={faq.q}
+                                                                onChange={(e) => handleUpdateFaq(idx, 'q', e.target.value)}
+                                                                placeholder="Question..."
+                                                                className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 font-bold"
+                                                            />
+                                                        </div>
+                                                        <div className="flex items-start gap-2">
+                                                            <span className="text-xs font-bold text-slate-400 w-4 pt-1.5">A:</span>
+                                                            <textarea
+                                                                value={faq.a}
+                                                                onChange={(e) => handleUpdateFaq(idx, 'a', e.target.value)}
+                                                                placeholder="Answer..."
+                                                                rows={2}
+                                                                className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 resize-none"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Add Q&A Form */}
+                                        <div className="p-4 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl bg-white dark:bg-slate-800/40 space-y-2.5">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs font-bold text-slate-400 w-4">Q:</span>
+                                                <input
+                                                    type="text"
+                                                    value={newFaqQ}
+                                                    onChange={(e) => setNewFaqQ(e.target.value)}
+                                                    placeholder="Enter new question..."
+                                                    className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                                                />
+                                            </div>
+                                            <div className="flex items-start gap-2">
+                                                <span className="text-xs font-bold text-slate-400 w-4 pt-1.5">A:</span>
+                                                <textarea
+                                                    value={newFaqA}
+                                                    onChange={(e) => setNewFaqA(e.target.value)}
+                                                    placeholder="Enter corresponding answer..."
+                                                    rows={2}
+                                                    className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 resize-none"
+                                                />
+                                            </div>
+                                            <div className="flex justify-end pt-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={handleAddFaq}
+                                                    disabled={!newFaqQ.trim() || !newFaqA.trim()}
+                                                    className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-indigo-600 dark:text-indigo-400 disabled:opacity-40 transition-all flex items-center gap-1 cursor-pointer"
+                                                >
+                                                    <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                                                    Add FAQ Q&A
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -2960,10 +3699,22 @@ export default function CommunityView() {
 
                     {/* Rules (FR-CM-08) */}
                     <div className="glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5">
-                        <h3 className="font-bold text-slate-900 dark:text-white mb-4 text-[15px] flex items-center gap-2">
-                            <span className="material-symbols-outlined text-indigo-500">gavel</span>
-                            Community Rules
-                        </h3>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-bold text-slate-900 dark:text-white text-[15px] flex items-center gap-2">
+                                <span className="material-symbols-outlined text-indigo-500">gavel</span>
+                                Community Rules
+                            </h3>
+                            {isAdmin && (
+                                <button
+                                    onClick={() => setActiveTab('admin')}
+                                    className="text-[12px] font-bold text-indigo-500 hover:text-indigo-600 flex items-center gap-1 cursor-pointer transition-colors"
+                                    title="Edit rules in Admin Tools"
+                                >
+                                    <span className="material-symbols-outlined text-[15px]">edit</span>
+                                    Edit
+                                </button>
+                            )}
+                        </div>
                         <ul className="space-y-3">
                             {community.rules.map((rule, idx) => (
                                 <li key={idx} className="text-[13px] text-slate-600 dark:text-slate-300 leading-relaxed">
@@ -2975,10 +3726,22 @@ export default function CommunityView() {
 
                     {/* FAQ (FR-CM-08) */}
                     <div className="glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5">
-                        <h3 className="font-bold text-slate-900 dark:text-white mb-4 text-[15px] flex items-center gap-2">
-                            <span className="material-symbols-outlined text-indigo-500">help</span>
-                            Frequently Asked Questions
-                        </h3>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-bold text-slate-900 dark:text-white text-[15px] flex items-center gap-2">
+                                <span className="material-symbols-outlined text-indigo-500">help</span>
+                                Frequently Asked Questions
+                            </h3>
+                            {isAdmin && (
+                                <button
+                                    onClick={() => setActiveTab('admin')}
+                                    className="text-[12px] font-bold text-indigo-500 hover:text-indigo-600 flex items-center gap-1 cursor-pointer transition-colors"
+                                    title="Edit FAQs in Admin Tools"
+                                >
+                                    <span className="material-symbols-outlined text-[15px]">edit</span>
+                                    Edit
+                                </button>
+                            )}
+                        </div>
                         <div className="space-y-4">
                             {community.faq.map((item, idx) => (
                                 <div key={idx}>
@@ -3575,6 +4338,29 @@ export default function CommunityView() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Universal Share Modal for Community Posts */}
+            {sharingPost && (
+                <ArticleShareModal 
+                    isOpen={isPostShareModalOpen} 
+                    onClose={() => {
+                        setIsPostShareModalOpen(false);
+                        setSharingPost(null);
+                    }} 
+                    post={sharingPost}
+                    contentType="Post"
+                    onShared={(type, count) => {
+                        const pid = String(sharingPost.id || sharingPost.postId);
+                        setPosts(prev => prev.map(p => {
+                            if (String(p.id) === pid || String(p.postId) === pid) {
+                                const next = Number(p.shares || p.sharesCount || 0) + (count || 1);
+                                return { ...p, shares: next, sharesCount: next };
+                            }
+                            return p;
+                        }));
+                    }}
+                />
             )}
         </main>
     );

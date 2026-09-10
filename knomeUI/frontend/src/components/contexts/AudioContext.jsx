@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
-import { resolveMediaUrl } from '../../utils/apiService';
+import { resolveMediaUrl, podcastsApi } from '../../utils/apiService';
 
 const defaultAudioContext = {
     currentPodcast: null,
@@ -97,15 +97,54 @@ export function AudioProvider({ children }) {
         }
     }, [speed]);
 
+    const triggerRecordView = (podcast) => {
+        const pid = podcast?.podcastId || podcast?.id;
+        if (!pid) return;
+
+        // Instant optimistic client update so user sees view count increase immediately
+        window.dispatchEvent(new CustomEvent('knome_podcast_viewed', { 
+            detail: { id: Number(pid), increment: 1 } 
+        }));
+
+        // Authoritative backend record and sync
+        podcastsApi.recordView(pid)
+            .then(res => {
+                const newViews = (res && typeof res === 'object' && 'data' in res) ? res.data : res;
+                if (newViews !== undefined && newViews !== null) {
+                    window.dispatchEvent(new CustomEvent('knome_podcast_viewed', { 
+                        detail: { id: Number(pid), viewCount: Number(newViews) } 
+                    }));
+                }
+            })
+            .catch(err => console.warn('Failed to record podcast view:', err));
+    };
+
     const playPodcast = (podcast) => {
-        if (currentPodcast?.id === podcast.id) {
-            setIsPlaying(!isPlaying); // toggle if same
+        if (!podcast) return;
+        const targetId = podcast.podcastId || podcast.id;
+        const currentId = currentPodcast?.podcastId || currentPodcast?.id;
+        const isSame = currentId && targetId && Number(currentId) === Number(targetId);
+
+        if (isSame) {
+            if (isPlaying) {
+                setIsPlaying(false);
+            } else {
+                setIsPlaying(true);
+                triggerRecordView(podcast);
+            }
         } else {
             setCurrentPodcast(podcast);
+            setIsPlaying(true);
+            triggerRecordView(podcast);
         }
     };
 
-    const togglePlay = () => setIsPlaying(!isPlaying);
+    const togglePlay = () => {
+        if (!isPlaying && currentPodcast) {
+            triggerRecordView(currentPodcast);
+        }
+        setIsPlaying(!isPlaying);
+    };
     
     const closePlayer = () => {
         setCurrentPodcast(null);

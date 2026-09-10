@@ -119,4 +119,12 @@ public class PodcastController : KnomeControllerBase
         await _podcastService.DeletePodcastAsync(podcastId, GetCurrentUserId());
         return Ok(ApiResponse.SuccessResponse(200, "Podcast deleted successfully."));
     }
+
+    [HttpPost("{podcastId:long}/view")]
+    [ProducesResponseType(typeof(ApiResponse<int>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RecordView(long podcastId)
+    {
+        var newCount = await _podcastService.IncrementViewCountAsync(podcastId);
+        return Ok(ApiResponse<int>.SuccessResponse(200, "Podcast view recorded.", newCount));
+    }
 }

@@ -9,6 +9,8 @@ import SaveToCategoryModal from '../components/modals/SaveToCategoryModal';
 import ArticleShareModal from '../components/modals/ArticleShareModal';
 import { podcastsApi, savedContentApi, interactionsApi, resolveMediaUrl, getPersonalizedRecommendations } from '../utils/apiService';
 import { checkRestrictedContent } from '../utils/restrictedWords';
+import { useScrollLoading } from '../hooks/useScrollLoading';
+import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 
 // Helper function to recursively insert a new reply into a nested comments tree
 function addReplyToTree(items, targetId, newReply) {
@@ -215,7 +217,8 @@ export default function Podcasts() {
                     likes: p.engagementSummary?.reactionSummary?.totalCount || p.engagementSummary?.reactionCount || p.engagementSummary?.likeCount || 0,
                     isLiked: !!p.engagementSummary?.reactionSummary?.userReaction || !!p.engagementSummary?.userReaction,
                     comments: p.engagementSummary?.commentsCount || p.engagementSummary?.commentCount || 0,
-                    shares: p.engagementSummary?.sharesCount || p.engagementSummary?.shareCount || 0
+                    shares: p.engagementSummary?.sharesCount || p.engagementSummary?.shareCount || 0,
+                    views: p.viewCount || p.engagementSummary?.viewsCount || 0
                 }));
                 setPodcastEpisodes(mappedPodcasts);
             }
@@ -225,6 +228,27 @@ export default function Podcasts() {
             setIsLoading(false);
         }
     };
+
+    // Live update view count when any podcast is played anywhere in the app
+    useEffect(() => {
+        const handlePodcastViewed = (e) => {
+            const { id, viewCount, increment } = e.detail || {};
+            if (id) {
+                setPodcastEpisodes(prev => prev.map(p => {
+                    if (Number(p.id) === Number(id)) {
+                        const currentViews = Number(p.views) || 0;
+                        const nextViews = (viewCount !== undefined && viewCount !== null)
+                            ? Number(viewCount)
+                            : currentViews + (increment || 1);
+                        return { ...p, views: nextViews };
+                    }
+                    return p;
+                }));
+            }
+        };
+        window.addEventListener('knome_podcast_viewed', handlePodcastViewed);
+        return () => window.removeEventListener('knome_podcast_viewed', handlePodcastViewed);
+    }, []);
 
     // Auto-play / highlight podcast from URL query params (e.g. from notifications)
     useEffect(() => {
@@ -445,6 +469,12 @@ export default function Podcasts() {
             return b.id - a.id; // Newest First
         });
 
+    const { visibleCount, reset: resetScrollLoading } = useScrollLoading(displayedEpisodes.length, 6, 6);
+
+    useEffect(() => {
+        resetScrollLoading();
+    }, [activeTab, filterKeyword, filterCategory, filterSort, selectedSeries, resetScrollLoading]);
+
     const resetFilters = () => {
         setFilterKeyword('');
         setFilterCategory('All');
@@ -599,7 +629,7 @@ export default function Podcasts() {
                             </h2>
                             
                             <div className="flex flex-col gap-3">
-                                 {displayedEpisodes.map(ep => {
+                                 {displayedEpisodes.slice(0, visibleCount).map(ep => {
                                     const isThisPlaying = currentPodcast?.id === ep.id && isPlaying;
                                     const isCommentsOpen = activeCommentsPodcastId === ep.id;
                                     const episodeComments = commentsMap[ep.id] || [];
@@ -643,6 +673,7 @@ export default function Podcasts() {
                                                     <div className="flex flex-wrap items-center gap-3 text-[12px] font-bold text-slate-500">
                                                         <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">schedule</span> {ep.duration}</span>
                                                         <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">person</span> {ep.author}</span>
+                                                        <span className="flex items-center gap-1 text-cyan-600 dark:text-cyan-400 font-bold" title="Views / Listens"><span className="material-symbols-outlined text-[14px]">visibility</span> {ep.views || 0}</span>
                                                         <span className="flex items-center gap-1 text-rose-500/90 dark:text-rose-400"><span className="material-symbols-outlined text-[14px]" style={{ fontVariationSettings: ep.isLiked ? "'FILL' 1" : "'FILL' 0" }}>favorite</span> {ep.likes || 0}</span>
                                                         <span className="flex items-center gap-1 text-indigo-500/90 dark:text-indigo-400"><span className="material-symbols-outlined text-[14px]">chat_bubble</span> {ep.comments || 0}</span>
                                                         <span className="flex items-center gap-1 text-emerald-500/90 dark:text-emerald-400"><span className="material-symbols-outlined text-[14px]">share</span> {ep.shares || 0}</span>
@@ -690,7 +721,7 @@ export default function Podcasts() {
                                                 </div>
                                             </div>
 
-                                            {/* Interaction Bar (Like, Comment, Share) */}
+                                            {/* Interaction Bar (Like, Comment, Share, Views) */}
                                             <div className="flex items-center gap-3 pt-3 border-t border-slate-100 dark:border-slate-800/80 text-xs font-bold">
                                                 <button
                                                     onClick={() => handleToggleLike(ep)}
@@ -725,6 +756,14 @@ export default function Podcasts() {
                                                     <span className="material-symbols-outlined text-[16px]">share</span>
                                                     <span>{ep.shares || 0} Shares</span>
                                                 </button>
+
+                                                <div
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border bg-slate-50 dark:bg-slate-800/50 text-cyan-700 dark:text-cyan-400 border-slate-200 dark:border-slate-700/60 font-bold select-none ml-auto"
+                                                    title="Total Views & Plays"
+                                                >
+                                                    <span className="material-symbols-outlined text-[16px] text-cyan-600 dark:text-cyan-400">visibility</span>
+                                                    <span>{ep.views || 0} Views</span>
+                                                </div>
                                             </div>
 
                                             {/* Expandable Comments Drawer */}
@@ -791,6 +830,7 @@ export default function Podcasts() {
                                         </div>
                                     );
                                 })}
+                                <ScrollLoadingIndicator isVisible={visibleCount < displayedEpisodes.length} text="Loading more episodes on scroll..." />
                                 {displayedEpisodes.length === 0 && (
                                     <div className="text-center py-8 text-slate-500">No episodes found.</div>
                                 )}

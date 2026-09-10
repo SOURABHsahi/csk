@@ -22,5 +22,6 @@ public class PodcastDto
     public string? SeriesTitle { get; set; }
     public int? FileSizeMb { get; set; }
     public DateTime UploadedDate { get; set; }
+    public int ViewCount { get; set; }
     public ContentSummaryDto? EngagementSummary { get; set; }
 }

@@ -179,7 +179,7 @@ public class SearchRepository : ISearchRepository
         if (req.CategoryId.HasValue || HasTags(req) || !string.IsNullOrWhiteSpace(req.Author))
             return new List<SearchItemDto>();
 
-        var ql = NormalisedQuery(req);
+        var (ql, cleanQ) = GetQueryTerms(req);
         var query = _context.Users.AsQueryable();
 
         if (!string.IsNullOrEmpty(ql))
@@ -188,7 +188,14 @@ public class SearchRepository : ISearchRepository
                 u.FullName.ToLower().Contains(ql) ||
                 u.EmployeeId.ToLower().Contains(ql) ||
                 u.Email.ToLower().Contains(ql) ||
-                (u.Designation != null && u.Designation.ToLower().Contains(ql))));
+                (u.Designation != null && u.Designation.ToLower().Contains(ql)) ||
+                (!string.IsNullOrEmpty(cleanQ) && (
+                    u.FullName.ToLower().Contains(cleanQ) ||
+                    u.EmployeeId.ToLower().Contains(cleanQ) ||
+                    u.Email.ToLower().Contains(cleanQ) ||
+                    (u.Designation != null && u.Designation.ToLower().Contains(cleanQ))
+                ))
+            ));
         }
         else
         {
@@ -223,14 +230,19 @@ public class SearchRepository : ISearchRepository
         if (req.DepartmentId.HasValue || !string.IsNullOrWhiteSpace(req.Author))
             return new List<SearchItemDto>();
 
-        var ql = NormalisedQuery(req);
+        var (ql, cleanQ) = GetQueryTerms(req);
         var query = _context.Communities.Where(c => c.IsActive).AsQueryable();
 
         if (!string.IsNullOrEmpty(ql))
         {
             query = query.Where(c =>
                 c.Name.ToLower().Contains(ql) ||
-                (c.Description != null && c.Description.ToLower().Contains(ql)));
+                (c.Description != null && c.Description.ToLower().Contains(ql)) ||
+                (!string.IsNullOrEmpty(cleanQ) && (
+                    c.Name.ToLower().Contains(cleanQ) ||
+                    (c.Description != null && c.Description.ToLower().Contains(cleanQ))
+                ))
+            );
         }
 
         if (req.CategoryId.HasValue)
@@ -257,22 +269,26 @@ public class SearchRepository : ISearchRepository
 
     private async Task<List<SearchItemDto>> QueryPosts(GlobalSearchRequestDto req)
     {
-        // Posts carry no tags.
-        if (HasTags(req))
-            return new List<SearchItemDto>();
-
-        var ql = NormalisedQuery(req);
+        var (ql, cleanQ) = GetQueryTerms(req);
         var query = _context.Posts.AsQueryable();
+
+        if (HasTags(req))
+        {
+            var lowerTags = req.Tags!.Where(t => !string.IsNullOrWhiteSpace(t)).Select(t => t.Trim().ToLower().TrimStart('#')).ToList();
+            query = query.Where(p => lowerTags.Any(t => p.ContentText.ToLower().Contains("#" + t) || p.ContentText.ToLower().Contains(t)));
+        }
 
         if (!string.IsNullOrEmpty(ql))
         {
-            query = query.Where(p => p.AudienceType == "Everyone" && (
+            query = query.Where(p => (p.AudienceType == "Everyone" || p.AudienceType == "Community") && (
                 p.ContentText.ToLower().Contains(ql) ||
-                p.PostAttachments.Any(a => a.FileUrl.ToLower().Contains(ql))));
+                (!string.IsNullOrEmpty(cleanQ) && p.ContentText.ToLower().Contains(cleanQ)) ||
+                p.PostAttachments.Any(a => a.FileUrl.ToLower().Contains(ql) || (!string.IsNullOrEmpty(cleanQ) && a.FileUrl.ToLower().Contains(cleanQ)))
+            ));
         }
         else
         {
-            query = query.Where(p => p.AudienceType == "Everyone");
+            query = query.Where(p => p.AudienceType == "Everyone" || p.AudienceType == "Community");
         }
 
         if (!string.IsNullOrWhiteSpace(req.Author))
@@ -291,9 +307,11 @@ public class SearchRepository : ISearchRepository
         {
             ContentType = "Post",
             Id = p.PostId,
-            Title = string.Empty,
-            Summary = p.ContentText.Length > 100
-                ? p.ContentText.Substring(0, 100) + "..."
+            Title = p.ContentText.Length > 60
+                ? p.ContentText.Substring(0, 60).Trim() + "..."
+                : (string.IsNullOrWhiteSpace(p.ContentText) ? "Post" : p.ContentText.Trim()),
+            Summary = p.ContentText.Length > 150
+                ? p.ContentText.Substring(0, 150).Trim() + "..."
                 : p.ContentText,
             AuthorFullName = p.AuthorUser != null ? p.AuthorUser.FullName : string.Empty,
             AuthorEmployeeId = p.AuthorUser != null ? p.AuthorUser.EmployeeId : string.Empty,
@@ -306,7 +324,7 @@ public class SearchRepository : ISearchRepository
 
     private async Task<List<SearchItemDto>> QueryArticles(GlobalSearchRequestDto req)
     {
-        var ql = NormalisedQuery(req);
+        var (ql, cleanQ) = GetQueryTerms(req);
         var query = _context.Articles.AsQueryable();
 
         if (!string.IsNullOrEmpty(ql))
@@ -314,7 +332,15 @@ public class SearchRepository : ISearchRepository
             query = query.Where(a => a.Status == "Published" && (
                 a.Title.ToLower().Contains(ql) ||
                 (a.Description != null && a.Description.ToLower().Contains(ql)) ||
-                a.ContentHtml.ToLower().Contains(ql)));
+                a.ContentHtml.ToLower().Contains(ql) ||
+                a.ArticleTags.Any(t => t.Tag.ToLower().Contains(ql)) ||
+                (!string.IsNullOrEmpty(cleanQ) && (
+                    a.Title.ToLower().Contains(cleanQ) ||
+                    (a.Description != null && a.Description.ToLower().Contains(cleanQ)) ||
+                    a.ContentHtml.ToLower().Contains(cleanQ) ||
+                    a.ArticleTags.Any(t => t.Tag.ToLower().Contains(cleanQ))
+                ))
+            ));
         }
         else
         {
@@ -357,13 +383,21 @@ public class SearchRepository : ISearchRepository
 
     private async Task<List<SearchItemDto>> QueryVideos(GlobalSearchRequestDto req)
     {
-        var ql = NormalisedQuery(req);
+        var (ql, cleanQ) = GetQueryTerms(req);
         var query = _context.Videos.AsQueryable();
 
         if (!string.IsNullOrEmpty(ql))
         {
-            query = query.Where(v => v.Title.ToLower().Contains(ql) ||
-                                     (v.Description != null && v.Description.ToLower().Contains(ql)));
+            query = query.Where(v =>
+                v.Title.ToLower().Contains(ql) ||
+                (v.Description != null && v.Description.ToLower().Contains(ql)) ||
+                v.VideoTags.Any(t => t.Tag.ToLower().Contains(ql)) ||
+                (!string.IsNullOrEmpty(cleanQ) && (
+                    v.Title.ToLower().Contains(cleanQ) ||
+                    (v.Description != null && v.Description.ToLower().Contains(cleanQ)) ||
+                    v.VideoTags.Any(t => t.Tag.ToLower().Contains(cleanQ))
+                ))
+            );
         }
 
         if (req.CategoryId.HasValue)
@@ -407,13 +441,19 @@ public class SearchRepository : ISearchRepository
         if (HasTags(req))
             return new List<SearchItemDto>();
 
-        var ql = NormalisedQuery(req);
+        var (ql, cleanQ) = GetQueryTerms(req);
         var query = _context.Podcasts.AsQueryable();
 
         if (!string.IsNullOrEmpty(ql))
         {
-            query = query.Where(p => p.Title.ToLower().Contains(ql) ||
-                                     (p.Description != null && p.Description.ToLower().Contains(ql)));
+            query = query.Where(p =>
+                p.Title.ToLower().Contains(ql) ||
+                (p.Description != null && p.Description.ToLower().Contains(ql)) ||
+                (!string.IsNullOrEmpty(cleanQ) && (
+                    p.Title.ToLower().Contains(cleanQ) ||
+                    (p.Description != null && p.Description.ToLower().Contains(cleanQ))
+                ))
+            );
         }
 
         if (req.CategoryId.HasValue)
@@ -454,15 +494,23 @@ public class SearchRepository : ISearchRepository
         if (req.CategoryId.HasValue || !string.IsNullOrWhiteSpace(req.Author) || HasTags(req))
             return new List<SearchItemDto>();
 
-        var ql = NormalisedQuery(req);
+        var (ql, cleanQ) = GetQueryTerms(req);
         var query = _context.Jobs.AsQueryable();
 
         if (!string.IsNullOrEmpty(ql))
         {
-            query = query.Where(j => j.Title.ToLower().Contains(ql) ||
-                                     j.Description.ToLower().Contains(ql) ||
-                                     (j.SkillsRequired != null && j.SkillsRequired.ToLower().Contains(ql)) ||
-                                     (j.Location != null && j.Location.ToLower().Contains(ql)));
+            query = query.Where(j =>
+                j.Title.ToLower().Contains(ql) ||
+                j.Description.ToLower().Contains(ql) ||
+                (j.SkillsRequired != null && j.SkillsRequired.ToLower().Contains(ql)) ||
+                (j.Location != null && j.Location.ToLower().Contains(ql)) ||
+                (!string.IsNullOrEmpty(cleanQ) && (
+                    j.Title.ToLower().Contains(cleanQ) ||
+                    j.Description.ToLower().Contains(cleanQ) ||
+                    (j.SkillsRequired != null && j.SkillsRequired.ToLower().Contains(cleanQ)) ||
+                    (j.Location != null && j.Location.ToLower().Contains(cleanQ))
+                ))
+            );
         }
 
         if (req.DepartmentId.HasValue)
@@ -489,6 +537,13 @@ public class SearchRepository : ISearchRepository
     // ------------------------------------------------------------------ //
     // Shared helpers
     // ------------------------------------------------------------------ //
+
+    private static (string raw, string clean) GetQueryTerms(GlobalSearchRequestDto req)
+    {
+        var raw = (req.Query ?? string.Empty).Trim().ToLower();
+        var clean = raw.StartsWith('#') ? raw.TrimStart('#').Trim() : raw;
+        return (raw, clean);
+    }
 
     private static string NormalisedQuery(GlobalSearchRequestDto req)
         => (req.Query ?? string.Empty).Trim().ToLower();
@@ -570,18 +625,19 @@ public class SearchRepository : ISearchRepository
     {
         if (string.IsNullOrEmpty(q)) return 0;
 
+        var cleanQ = q.TrimStart('#');
         var score = 0;
         var titleLower = (item.Title ?? string.Empty).ToLower();
         var summaryLower = (item.Summary ?? string.Empty).ToLower();
         var authorLower = (item.AuthorFullName ?? string.Empty).ToLower();
-        var qTokens = q.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var qTokens = (q + " " + cleanQ).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct();
 
         // 1. Exact Title match
-        if (titleLower == q) score += 100;
+        if (titleLower == q || titleLower == cleanQ) score += 100;
         // 2. StartsWith Title match
-        else if (titleLower.StartsWith(q)) score += 80;
+        else if (titleLower.StartsWith(q) || titleLower.StartsWith(cleanQ)) score += 80;
         // 3. Contains full query
-        else if (titleLower.Contains(q)) score += 50;
+        else if (titleLower.Contains(q) || titleLower.Contains(cleanQ)) score += 50;
 
         // 4. Tokenized title and content matching
         foreach (var token in qTokens)

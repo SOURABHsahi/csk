@@ -43,6 +43,7 @@ public class ContentSummaryDto
     public long CommentsCount { get; set; }
     public ReactionSummaryDto ReactionSummary { get; set; } = new ReactionSummaryDto();
     public long SharesCount { get; set; }
+    public long ViewsCount { get; set; }
     public bool IsBookmarkedByCurrentUser { get; set; }
     public long EngagementScore { get; set; }
 }

@@ -1,27 +1,40 @@
+import { parseLaptopDate } from './apiService';
+
 /**
  * Utility helpers for Instagram-style Notifications, Date Formatting, and Recipient Isolation
  */
 
 /**
- * Format any date/timestamp value to standard DD-MM-YYYY format.
- * Example: 2026-09-09T05:30:00Z -> "09-09-2026"
+ * Format any date/timestamp value to standard DD-MM-YYYY, hh:mm AM/PM format according to laptop local time.
  */
 export const formatNotificationDate = (dateVal) => {
     if (!dateVal) return formatToday();
-    const d = new Date(dateVal);
-    if (isNaN(d.getTime())) return formatToday();
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const d = parseLaptopDate(dateVal);
+    if (!d || isNaN(d.getTime())) return formatToday();
+    const pad = (n) => String(n).padStart(2, '0');
+    const day = pad(d.getDate());
+    const month = pad(d.getMonth() + 1);
     const year = d.getFullYear();
-    return `${day}-${month}-${year}`;
+    let hours = d.getHours();
+    const minutes = pad(d.getMinutes());
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${day}-${month}-${year}, ${pad(hours)}:${minutes} ${ampm}`;
 };
 
 export const formatToday = () => {
     const d = new Date();
-    const day = String(d.getDate()).padStart(2, '0');
-    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const pad = (n) => String(n).padStart(2, '0');
+    const day = pad(d.getDate());
+    const month = pad(d.getMonth() + 1);
     const year = d.getFullYear();
-    return `${day}-${month}-${year}`;
+    let hours = d.getHours();
+    const minutes = pad(d.getMinutes());
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${day}-${month}-${year}, ${pad(hours)}:${minutes} ${ampm}`;
 };
 
 /**
@@ -30,8 +43,8 @@ export const formatToday = () => {
  */
 export const getTimeGroup = (dateVal) => {
     if (!dateVal) return 'Today';
-    const d = new Date(dateVal);
-    if (isNaN(d.getTime())) return 'Today';
+    const d = parseLaptopDate(dateVal);
+    if (!d || isNaN(d.getTime())) return 'Today';
 
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
@@ -80,7 +93,7 @@ export const isNotificationForUser = (notif, currentUser) => {
 
     // If notification has no target at all (e.g. system broadcast), allow if it's explicitly broad
     if (targets.length === 0) {
-        if (notif.isBroadcast || notif.type === 'BROADCAST' || notif.type === 'ANNOUNCEMENT') {
+        if (notif.isBroadcast || notif.type === 'BROADCAST' || notif.type === 'ANNOUNCEMENT' || notif.isEveryone || notif.type === 'post_everyone' || notif.type === 'everyone') {
             return true;
         }
         return false;
@@ -168,6 +181,9 @@ export const parseNotificationContent = (notif) => {
         ' requested to join',
         ' approved your request',
         ' rejected your request',
+        ' posted in ',
+        ' shared a new post in ',
+        ' published a new post',
         ' tagged you',
         ' mentioned you'
     ];

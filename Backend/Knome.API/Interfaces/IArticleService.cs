@@ -16,5 +16,6 @@ public interface IArticleService
     Task DeleteArticleAsync(long articleId, int currentUserId);
     Task<List<CategoryDto>> GetArticleCategoriesAsync();
     Task<CategoryDto> CreateArticleCategoryAsync(CreateCategoryDto dto, int currentUserId);
+    Task<int> IncrementViewCountAsync(long articleId);
 }
 

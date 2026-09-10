@@ -490,6 +490,11 @@ public class ContentInteractionRepository : IContentInteractionRepository
             var article = await _db.Articles.AsNoTracking().FirstOrDefaultAsync(a => a.ArticleId == contentId);
             return article?.ViewCount ?? 0;
         }
+        else if (norm == ContentTypes.Podcast)
+        {
+            var podcast = await _db.Podcasts.AsNoTracking().FirstOrDefaultAsync(p => p.PodcastId == contentId);
+            return podcast?.ViewCount ?? 0;
+        }
         return 0;
     }
 }

@@ -86,9 +86,39 @@ export default function Sidebar() {
     const userName = currentUser?.fullName || currentUser?.name || 'Employee';
     const userRole = currentUser?.roleName || currentUser?.role || 'Member';
     const userDept = currentUser?.department || currentUser?.departmentName || 'MPOnline';
-    const userKarma = (currentUser?.karmaPoints ?? currentUser?.karma ?? 0).toLocaleString();
-    const userPosts = currentUser?.postsCount ?? 0;
+    const [liveKarma, setLiveKarma] = useState(currentUser?.karmaPoints ?? currentUser?.karma ?? 0);
+    const [livePosts, setLivePosts] = useState(currentUser?.postsCount ?? 0);
     const userFollowers = currentUser?.followersCount ?? 0;
+
+    useEffect(() => {
+        if (currentUser?.karmaPoints !== undefined || currentUser?.karma !== undefined) {
+            setLiveKarma(currentUser.karmaPoints ?? currentUser.karma ?? 0);
+        }
+        if (currentUser?.postsCount !== undefined) {
+            setLivePosts(currentUser.postsCount);
+        }
+    }, [currentUser?.karmaPoints, currentUser?.karma, currentUser?.postsCount]);
+
+    useEffect(() => {
+        const handleKarmaUpdated = (e) => {
+            if (e.detail?.totalKarma !== undefined && typeof e.detail.totalKarma === 'number') {
+                setLiveKarma(e.detail.totalKarma);
+            } else if (e.detail?.points) {
+                setLiveKarma(prev => prev + e.detail.points);
+            }
+        };
+
+        const handlePostCreated = () => {
+            setLivePosts(prev => prev + 1);
+        };
+
+        window.addEventListener('karma-updated', handleKarmaUpdated);
+        window.addEventListener('post-created', handlePostCreated);
+        return () => {
+            window.removeEventListener('karma-updated', handleKarmaUpdated);
+            window.removeEventListener('post-created', handlePostCreated);
+        };
+    }, []);
 
     const renderSidebarContent = (isMobile = false) => (
         <>
@@ -122,18 +152,16 @@ export default function Sidebar() {
                     </div>
 
                     {/* Stats Row */}
-                    <div className={`relative z-10 grid ${currentUser?.role === 'SYSADM' ? 'grid-cols-2' : 'grid-cols-3'} gap-2 pt-2.5 border-t border-theme-30`}>
-                        {currentUser?.role !== 'SYSADM' && (
-                            <div className="text-center">
-                                <p className="text-[13px] font-black text-slate-900 dark:text-white">{userKarma}</p>
-                                <p className="text-[9px] uppercase tracking-wider font-bold text-theme-30-text">Points</p>
-                            </div>
-                        )}
-                        <div className={`text-center ${currentUser?.role !== 'SYSADM' ? 'border-x border-theme-30' : ''}`}>
-                            <p className="text-[13px] font-black text-slate-900 dark:text-white">{userPosts}</p>
+                    <div className="relative z-10 grid grid-cols-3 gap-2 pt-2.5 border-t border-theme-30">
+                        <div className="text-center">
+                            <p className="text-[13px] font-black text-slate-900 dark:text-white">{liveKarma.toLocaleString()}</p>
+                            <p className="text-[9px] uppercase tracking-wider font-bold text-theme-30-text">Points</p>
+                        </div>
+                        <div className="text-center border-x border-theme-30">
+                            <p className="text-[13px] font-black text-slate-900 dark:text-white">{livePosts}</p>
                             <p className="text-[9px] uppercase tracking-wider font-bold text-theme-30-text">Posts</p>
                         </div>
-                        <div className={`text-center ${currentUser?.role === 'SYSADM' ? 'border-l border-theme-30' : ''}`}>
+                        <div className="text-center">
                             <p className="text-[13px] font-black text-slate-900 dark:text-white">{userFollowers}</p>
                             <p className="text-[9px] uppercase tracking-wider font-bold text-theme-30-text">Followers</p>
                         </div>

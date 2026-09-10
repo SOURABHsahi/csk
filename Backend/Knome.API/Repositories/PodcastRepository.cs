@@ -146,4 +146,16 @@ public class PodcastRepository : IPodcastRepository
         _db.Podcasts.Remove(podcast);
         await _db.SaveChangesAsync();
     }
+
+    public async Task<int> IncrementViewCountAsync(long podcastId)
+    {
+        var podcast = await _db.Podcasts.FindAsync(podcastId);
+        if (podcast != null)
+        {
+            podcast.ViewCount++;
+            await _db.SaveChangesAsync();
+            return podcast.ViewCount;
+        }
+        return 0;
+    }
 }

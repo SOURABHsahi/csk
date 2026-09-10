@@ -145,12 +145,17 @@ public class PostService : IPostService
 
         var savedPost = await _repo.AddPostAsync(post, dto.AttachmentUrls, dto.AttachmentTypes, allTargetedUserIds);
         await _karmaService.AwardKarmaAsync(currentUserId, KarmaActivityTypes.CreatePost, KarmaPoints.CreatePostPoints, ContentTypes.Post, savedPost.PostId, KarmaCaps.CreatePostDailyCap);
+        var authorUser = await _db.Users.FindAsync(currentUserId);
+        var authorName = authorUser?.FullName ?? "Someone";
+        var snippet = post.ContentText?.Length > 60 ? post.ContentText.Substring(0, 57) + "..." : (post.ContentText ?? string.Empty);
+
+        // 1. Community Post linking & Member Notifications
         if (dto.AudienceCommunityIds != null && dto.AudienceCommunityIds.Any())
         {
             foreach (var commId in dto.AudienceCommunityIds.Distinct())
             {
-                var commExists = await _db.Communities.AnyAsync(c => c.CommunityId == commId);
-                if (commExists)
+                var comm = await _db.Communities.FindAsync(commId);
+                if (comm != null)
                 {
                     var alreadyLinked = await _db.CommunityPosts.AnyAsync(cp => cp.CommunityId == commId && cp.PostId == savedPost.PostId);
                     if (!alreadyLinked)
@@ -162,24 +167,73 @@ public class PostService : IPostService
                             IsPinned = false
                         });
                     }
+
+                    // Notify community members when post is published
+                    if (finalStatus == PostStatuses.Published)
+                    {
+                        var memberUserIds = await _db.CommunityMembers
+                            .Where(cm => cm.CommunityId == commId && (cm.Status == "Approved" || cm.Status == "Active" || string.IsNullOrEmpty(cm.Status)) && cm.UserId != currentUserId)
+                            .Select(cm => cm.UserId)
+                            .ToListAsync();
+
+                        if (comm.CreatedByUserId != currentUserId && !memberUserIds.Contains(comm.CreatedByUserId))
+                        {
+                            memberUserIds.Add(comm.CreatedByUserId);
+                        }
+
+                        foreach (var memberId in memberUserIds)
+                        {
+                            await _notificationService.PublishAsync(
+                                memberId,
+                                NotificationTypes.Community,
+                                $"{authorName} posted in {comm.Name}: \"{snippet}\"",
+                                relatedContentType: ContentTypes.Post,
+                                relatedContentId: savedPost.PostId);
+                        }
+                    }
                 }
                 await _karmaService.AwardCommunityParticipationAsync(currentUserId, commId);
             }
             await _db.SaveChangesAsync();
         }
 
-        // FR-NT-01: notify mentioned & targeted users (producer -> generic engine)
-        if (allTargetedUserIds.Any())
+        // 2. Specific Connections / Targeted users Notifications
+        if (allTargetedUserIds.Any() && finalStatus == PostStatuses.Published)
         {
-            var authorName = (await _db.Users.FindAsync(currentUserId))?.FullName ?? "Someone";
             foreach (var targetUserId in allTargetedUserIds.Where(id => id != currentUserId))
             {
                 await _notificationService.PublishAsync(
                     targetUserId,
-                    NotificationTypes.Mention,
-                    dto.AudienceType == "Connections"
-                        ? $"{authorName} shared a post with you."
-                        : $"You were mentioned in a post by {authorName}.",
+                    NotificationTypes.Share,
+                    dto.AudienceType == "Connections" || dto.AudienceType == "SpecificConnections"
+                        ? $"{authorName} shared a post with you: \"{snippet}\""
+                        : $"You were mentioned in a post by {authorName}: \"{snippet}\"",
+                    relatedContentType: ContentTypes.Post,
+                    relatedContentId: savedPost.PostId);
+            }
+        }
+
+        // 3. Everyone (Organization-wide post) Notifications
+        if ((dto.AudienceType == "Everyone" || string.IsNullOrEmpty(dto.AudienceType)) && finalStatus == PostStatuses.Published)
+        {
+            var followerUserIds = await _db.Followers
+                .Where(f => f.FollowingUserId == currentUserId)
+                .Select(f => f.FollowerUserId)
+                .ToListAsync();
+
+            var otherActiveUsers = await _db.Users
+                .Where(u => u.UserId != currentUserId && u.IsActive && !u.IsPermanentlySuspended)
+                .Select(u => u.UserId)
+                .Take(50)
+                .ToListAsync();
+
+            var everyoneRecipients = followerUserIds.Concat(otherActiveUsers).Distinct().ToList();
+            foreach (var recipientId in everyoneRecipients)
+            {
+                await _notificationService.PublishAsync(
+                    recipientId,
+                    NotificationTypes.HrAnnouncement,
+                    $"{authorName} published a new post: \"{snippet}\"",
                     relatedContentType: ContentTypes.Post,
                     relatedContentId: savedPost.PostId);
             }
@@ -187,6 +241,22 @@ public class PostService : IPostService
 
         var resDto = _mapper.Map<PostDto>(savedPost);
         resDto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Post, savedPost.PostId, currentUserId);
+
+        if (dto.AudienceCommunityIds != null && dto.AudienceCommunityIds.Any())
+        {
+            var firstCommId = dto.AudienceCommunityIds.First();
+            var comm = await _db.Communities.FindAsync(firstCommId);
+            resDto.CommunityId = firstCommId;
+            resDto.CommunityName = comm?.Name;
+        }
+
+        if (savedPost.MentionedUsers != null && savedPost.MentionedUsers.Any())
+        {
+            resDto.SharedWithName = savedPost.MentionedUsers.Count == 1 
+                ? savedPost.MentionedUsers.First().FullName 
+                : $"{savedPost.MentionedUsers.First().FullName} +{savedPost.MentionedUsers.Count - 1} others";
+        }
+
         return resDto;
     }
 

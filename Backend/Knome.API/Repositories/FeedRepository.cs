@@ -47,7 +47,7 @@ public class FeedRepository : IFeedRepository
             .Include(p => p.AuthorUser)
             .Include(p => p.PostAttachments)
             .Include(p => p.MentionedUsers)
-            .Where(p => p.CreatedDate >= retentionCutoff && (string.IsNullOrEmpty(p.Status) || p.Status == "Published") &&
+            .Where(p => p.CreatedDate >= retentionCutoff && (string.IsNullOrEmpty(p.Status) || p.Status == "Published" || (p.Status == "Scheduled" && p.AuthorUserId == currentUserId)) &&
                         (p.AuthorUserId == currentUserId ||
                          p.AudienceType == AudienceTypes.Everyone ||
                          p.AudienceType == "Public" ||
@@ -65,11 +65,11 @@ public class FeedRepository : IFeedRepository
         return await _db.Articles
             .Include(a => a.AuthorUser)
             .Include(a => a.ArticleAttachments)
-            .Where(a => a.Status == ArticleStatuses.Published &&
+            .Where(a => (a.Status == ArticleStatuses.Published || (a.Status == ArticleStatuses.Scheduled && a.AuthorUserId == currentUserId)) &&
                         (followedUserIds.Contains(a.AuthorUserId) ||
                          a.AuthorUserId == currentUserId ||
                          true)) // Published enterprise articles
-            .OrderByDescending(a => a.PublishedDate)
+            .OrderByDescending(a => a.PublishedDate ?? a.CreatedDate)
             .Take(limit)
             .ToListAsync();
     }

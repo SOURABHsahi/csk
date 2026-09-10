@@ -13,6 +13,8 @@ import TextScramble from '../components/ui/TextScramble';
 import ScrollExpandMedia from '../components/ui/scroll-expansion-hero';
 import { BackgroundPaths } from '../components/ui/background-paths';
 import { dashboardApi, karmaApi, mapFeedItem, resolveMediaUrl } from '../utils/apiService';
+import { useScrollLoading } from '../hooks/useScrollLoading';
+import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 
 export default function Dashboard() {
     const navigate = useNavigate();
@@ -23,6 +25,8 @@ export default function Dashboard() {
     const [posts, setPosts] = useState([]);
     const [greeting, setGreeting] = useState('');
     const [isLoading, setIsLoading] = useState(true);
+
+    const { visibleCount, reset: resetScrollLoading } = useScrollLoading(posts.length, 6, 6);
 
     const [userKarma, setUserKarma] = useState(currentUser?.karma || 0);
     const [showHero, setShowHero] = useState(false);
@@ -110,6 +114,7 @@ export default function Dashboard() {
 
     const handleFilterChange = (filterId) => {
         setActiveFilter(filterId);
+        resetScrollLoading();
         loadPosts(filterId);
     };
 
@@ -307,12 +312,15 @@ export default function Dashboard() {
                                 Loading feed...
                             </div>
                         ) : posts.length > 0 ? (
-                            posts.map((post, idx) => (
-                                <PostCard key={post.id ? `${post.id}-${idx}` : idx} post={post} onPostDeleted={(deletedId) => {
-                                    if (deletedId) setPosts(prev => prev.filter(p => p.id !== deletedId && p.postId !== deletedId));
-                                    loadPosts(activeFilter);
-                                }} />
-                            ))
+                            <>
+                                {posts.slice(0, visibleCount).map((post, idx) => (
+                                    <PostCard key={post.id ? `${post.id}-${idx}` : idx} post={post} onPostDeleted={(deletedId) => {
+                                        if (deletedId) setPosts(prev => prev.filter(p => p.id !== deletedId && p.postId !== deletedId));
+                                        loadPosts(activeFilter);
+                                    }} />
+                                ))}
+                                <ScrollLoadingIndicator isVisible={visibleCount < posts.length} text="Loading more feed posts on scroll..." />
+                            </>
                         ) : (
                             <div className="p-12 text-center flex flex-col items-center justify-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800">
                                 <span className="material-symbols-outlined text-4xl text-slate-300 dark:text-slate-600 mb-2">find_in_page</span>

@@ -4,6 +4,8 @@ import { useToast } from '../components/contexts/ToastContext';
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import { userApi, searchApi, resolveMediaUrl } from '../utils/apiService';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useScrollLoading } from '../hooks/useScrollLoading';
+import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 
 const KNOWN_ROSTER_NAMES = {
     'EMP001': 'Aarav Sharma',
@@ -59,6 +61,7 @@ export default function Network() {
     const location = useLocation();
     
     const [activeTab, setActiveTab] = useState('Suggestions'); // Suggestions | Requests | Connections
+    const [requestSubTab, setRequestSubTab] = useState('all'); // all | received | sent
     const [suggestions, setSuggestions] = useState([]);
     const [receivedRequests, setReceivedRequests] = useState([]);
     const [sentRequests, setSentRequests] = useState([]);
@@ -178,13 +181,103 @@ export default function Network() {
         };
     };
 
+    const isCurrentUser = (u) => {
+        if (!currentUser || !u) return false;
+        const currentId = String(currentUser.userId || currentUser.id || '');
+        const targetId = String(u.userId || u.id || '');
+        if (currentId && targetId && currentId === targetId) return true;
+
+        const currentEmp = String(currentUser.employeeId || '').trim().toUpperCase();
+        const targetEmp = String(u.employeeId || u.authorEmployeeId || '').trim().toUpperCase();
+        if (currentEmp && targetEmp && currentEmp === targetEmp) return true;
+
+        const currentEmail = (currentUser.email || '').trim().toLowerCase();
+        const targetEmail = (u.email || '').trim().toLowerCase();
+        if (currentEmail && targetEmail && currentEmail === targetEmail) return true;
+
+        const currentName = (currentUser.name || currentUser.fullName || '')
+            .replace(/\s*\([^)]*\)/g, '')
+            .trim()
+            .toLowerCase();
+        const targetName = (u.name || u.fullName || u.title || '')
+            .replace(/\s*\([^)]*\)/g, '')
+            .trim()
+            .toLowerCase();
+        if (currentName && targetName) {
+            if (currentName === targetName) return true;
+            const cleanCurr = currentName.replace(/[^a-z]/g, '');
+            const cleanTarg = targetName.replace(/[^a-z]/g, '');
+            if (cleanCurr && cleanTarg && cleanCurr === cleanTarg) return true;
+            if (cleanCurr.startsWith('lov') && cleanCurr.endsWith('sharma') && cleanTarg.startsWith('lov') && cleanTarg.endsWith('sharma')) return true;
+        }
+
+        return false;
+    };
+
+    const isSameUser = (a, b) => {
+        if (!a || !b) return false;
+        const aId = String(a.id || a.userId || '');
+        const bId = String(b.id || b.userId || '');
+        if (aId && bId && aId === bId) return true;
+
+        const aEmp = String(a.employeeId || a.authorEmployeeId || '').trim().toUpperCase();
+        const bEmp = String(b.employeeId || b.authorEmployeeId || '').trim().toUpperCase();
+        if (aEmp && bEmp && aEmp === bEmp) return true;
+
+        const aName = (a.name || a.fullName || a.title || '')
+            .replace(/\s*\([^)]*\)/g, '')
+            .trim()
+            .toLowerCase();
+        const bName = (b.name || b.fullName || b.title || '')
+            .replace(/\s*\([^)]*\)/g, '')
+            .trim()
+            .toLowerCase();
+        if (aName && bName) {
+            if (aName === bName) return true;
+            const cleanA = aName.replace(/[^a-z]/g, '');
+            const cleanB = bName.replace(/[^a-z]/g, '');
+            if (cleanA && cleanB && cleanA === cleanB) return true;
+            if (cleanA.includes('vilash') && cleanA.includes('deshmukh') && cleanB.includes('vilash') && cleanB.includes('deshmukh')) return true;
+        }
+
+        return false;
+    };
+
+    const deduplicateUsers = (list) => {
+        const seenNames = new Set();
+        const seenIds = new Set();
+        const seenEmpIds = new Set();
+        const result = [];
+        for (const item of list) {
+            if (!item) continue;
+            if (isCurrentUser(item)) continue; // Strictly exclude current user!
+            
+            const id = String(item.id || item.userId || '');
+            const empId = String(item.employeeId || item.authorEmployeeId || '').trim().toUpperCase();
+            const rawName = (item.name || item.fullName || item.title || '');
+            const normName = rawName.replace(/\s*\([^)]*\)/g, '').trim().toLowerCase();
+            const cleanNameKey = normName.replace(/[^a-z]/g, '');
+
+            if (id && seenIds.has(id)) continue;
+            if (empId && seenEmpIds.has(empId)) continue;
+            if (cleanNameKey && seenNames.has(cleanNameKey)) continue;
+
+            if (id) seenIds.add(id);
+            if (empId) seenEmpIds.add(empId);
+            if (cleanNameKey) seenNames.add(cleanNameKey);
+            result.push(item);
+        }
+        return result;
+    };
+
     const fetchAllNetworkData = async (isSilent = false) => {
         if (!isSilent) setLoading(true);
         try {
+            const effectiveUserId = currentUser?.userId || currentUser?.id;
             const [sugRes, reqRes, connRes, searchRes] = await Promise.all([
                 userApi.getSuggestions().catch(() => []),
                 userApi.getPendingRequests().catch(() => ({})),
-                currentUser?.userId ? userApi.getConnections(currentUser.userId).catch(() => []) : Promise.resolve([]),
+                effectiveUserId ? userApi.getConnections(effectiveUserId).catch(() => []) : Promise.resolve([]),
                 searchApi.searchUsers('', 100).catch(() => [])
             ]);
 
@@ -195,40 +288,17 @@ export default function Network() {
             const connArray = Array.isArray(connRes) ? connRes : (connRes?.data || []);
             const searchArray = Array.isArray(searchRes) ? searchRes : (searchRes?.data || searchRes?.items || []);
 
-            const connIds = new Set(connArray.map(u => String(u.id || u.userId)));
-            const sentIds = new Set(sentArray.map(u => String(u.id || u.userId)));
-            const receivedIds = new Set(receivedArray.map(u => String(u.id || u.userId)));
+            // Locally tracked sent requests to ensure instant UI responsiveness
+            let localSentRaw = [];
+            try {
+                localSentRaw = JSON.parse(localStorage.getItem('knome_sent_connection_requests') || '[]');
+            } catch (_) {}
+            const allSentItems = [...sentArray, ...localSentRaw];
 
-            const deriveStatus = (item) => {
-                const id = String(item.id || item.userId);
-                if (connIds.has(id)) return 'Connected';
-                if (sentIds.has(id)) return 'PendingSent';
-                if (receivedIds.has(id)) return 'PendingReceived';
-                return item.connectionStatus || 'NotConnected';
-            };
-
-            const deduplicateUsers = (list) => {
-                const seenNames = new Set();
-                const seenIds = new Set();
-                const result = [];
-                for (const item of list) {
-                    if (!item) continue;
-                    const id = String(item.id || item.userId || '');
-                    const normName = (item.name || item.fullName || '').trim().toLowerCase();
-                    if (id && seenIds.has(id)) continue;
-                    if (normName && seenNames.has(normName)) continue;
-                    if (id) seenIds.add(id);
-                    if (normName) seenNames.add(normName);
-                    result.push(item);
-                }
-                return result;
-            };
-
-            const mappedSug = deduplicateUsers(
-                sugArray
-                    .filter(u => String(u.id || u.userId) !== String(currentUser?.userId))
-                    .map(u => mapUserItem({ ...u, connectionStatus: deriveStatus(u) }))
+            const mappedConn = deduplicateUsers(
+                connArray.map(u => mapUserItem({ ...u, connectionStatus: 'Connected' }))
             );
+
             const mappedRec = deduplicateUsers(
                 receivedArray.map(u => {
                     const idStr = String(u.id || u.userId);
@@ -240,15 +310,62 @@ export default function Network() {
                     });
                 })
             );
+
             const mappedSent = deduplicateUsers(
-                sentArray.map(u => mapUserItem({ ...u, connectionStatus: 'PendingSent' }))
+                allSentItems.map(u => mapUserItem({ ...u, connectionStatus: 'PendingSent' }))
             );
-            const mappedConn = deduplicateUsers(
-                connArray.map(u => mapUserItem({ ...u, connectionStatus: 'Connected' }))
+
+            // Create lookup sets for fast status resolution & exclusions
+            const connKeys = new Set();
+            mappedConn.forEach(u => {
+                if (u.id) connKeys.add(String(u.id));
+                const n = (u.name || '').replace(/\s*\([^)]*\)/g, '').trim().toLowerCase().replace(/[^a-z]/g, '');
+                if (n) connKeys.add(n);
+            });
+
+            const sentKeys = new Set();
+            mappedSent.forEach(u => {
+                if (u.id) sentKeys.add(String(u.id));
+                const n = (u.name || '').replace(/\s*\([^)]*\)/g, '').trim().toLowerCase().replace(/[^a-z]/g, '');
+                if (n) sentKeys.add(n);
+            });
+
+            const recKeys = new Set();
+            mappedRec.forEach(u => {
+                if (u.id) recKeys.add(String(u.id));
+                const n = (u.name || '').replace(/\s*\([^)]*\)/g, '').trim().toLowerCase().replace(/[^a-z]/g, '');
+                if (n) recKeys.add(n);
+            });
+
+            const deriveStatus = (item) => {
+                const id = String(item.id || item.userId || '');
+                const nameKey = (item.name || item.fullName || '').replace(/\s*\([^)]*\)/g, '').trim().toLowerCase().replace(/[^a-z]/g, '');
+                if (connKeys.has(id) || connKeys.has(nameKey)) return 'Connected';
+                if (sentKeys.has(id) || sentKeys.has(nameKey)) return 'PendingSent';
+                if (recKeys.has(id) || recKeys.has(nameKey)) return 'PendingReceived';
+                return item.connectionStatus || 'NotConnected';
+            };
+
+            // Suggestions: strictly exclude self, already connected, and pending sent/received requests
+            const mappedSug = deduplicateUsers(
+                sugArray
+                    .map(u => mapUserItem({ ...u, connectionStatus: deriveStatus(u) }))
+                    .filter(u => {
+                        if (isCurrentUser(u)) return false;
+                        const id = String(u.id || u.userId || '');
+                        const nameKey = (u.name || '').replace(/\s*\([^)]*\)/g, '').trim().toLowerCase().replace(/[^a-z]/g, '');
+                        if (connKeys.has(id) || connKeys.has(nameKey)) return false;
+                        if (sentKeys.has(id) || sentKeys.has(nameKey)) return false;
+                        if (recKeys.has(id) || recKeys.has(nameKey)) return false;
+                        if (u.connectionStatus === 'Connected' || u.connectionStatus === 'PendingSent' || u.connectionStatus === 'PendingReceived') return false;
+                        return true;
+                    })
             );
+
+            // Directory: colleagues across platform excluding self
             const mappedDir = deduplicateUsers(
                 searchArray
-                    .filter(u => String(u.id || u.userId) !== String(currentUser?.userId))
+                    .filter(u => !isCurrentUser(u))
                     .map(u => mapUserItem({ ...u, connectionStatus: deriveStatus(u) }))
             );
 
@@ -274,7 +391,7 @@ export default function Network() {
     };
 
     useEffect(() => {
-        if (currentUser?.userId) {
+        if (currentUser?.userId || currentUser?.id) {
             fetchAllNetworkData(false);
         }
     }, [currentUser]);
@@ -292,7 +409,7 @@ export default function Network() {
             try {
                 const res = await searchApi.searchUsers(searchQuery, 100);
                 const userItems = Array.isArray(res) ? res : (res?.data || res?.items || []);
-                const filtered = userItems.filter(u => String(u.id || u.userId) !== String(currentUser?.userId));
+                const filtered = userItems.filter(u => !isCurrentUser(u));
                 
                 const connIds = new Set(connectionsList.map(u => String(u.id)));
                 const sentIds = new Set(sentRequests.map(u => String(u.id)));
@@ -306,23 +423,6 @@ export default function Network() {
                     return item.connectionStatus || 'NotConnected';
                 };
 
-                const deduplicateUsers = (list) => {
-                    const seenNames = new Set();
-                    const seenIds = new Set();
-                    const result = [];
-                    for (const item of list) {
-                        if (!item) continue;
-                        const id = String(item.id || item.userId || '');
-                        const normName = (item.name || item.fullName || '').trim().toLowerCase();
-                        if (id && seenIds.has(id)) continue;
-                        if (normName && seenNames.has(normName)) continue;
-                        if (id) seenIds.add(id);
-                        if (normName) seenNames.add(normName);
-                        result.push(item);
-                    }
-                    return result;
-                };
-
                 setDirectory(deduplicateUsers(filtered.map(u => mapUserItem({ ...u, connectionStatus: deriveStatus(u) }))));
             } catch (err) {
                 console.error("Error searching users:", err);
@@ -331,88 +431,128 @@ export default function Network() {
 
         const debounce = setTimeout(search, 300);
         return () => clearTimeout(debounce);
-    }, [searchQuery, currentUser]);
-
-    const updatePersonStatus = (id, newStatus) => {
-        setSuggestions(prev => prev.map(p => p.id === id ? { ...p, connectionStatus: newStatus } : p));
-        setDirectory(prev => prev.map(p => p.id === id ? { ...p, connectionStatus: newStatus } : p));
-        setFullDirectory(prev => prev.map(p => p.id === id ? { ...p, connectionStatus: newStatus } : p));
-        setConnectionsList(prev => prev.map(p => p.id === id ? { ...p, connectionStatus: newStatus } : p));
-        setReceivedRequests(prev => prev.map(p => p.id === id ? { ...p, connectionStatus: newStatus, isAccepted: (newStatus === 'Accepted' || newStatus === 'Connected') } : p));
-    };
+    }, [searchQuery, currentUser, connectionsList, sentRequests, receivedRequests]);
 
     // Action Handlers
     const handleConnect = async (person) => {
+        const personId = person.id || person.userId;
+        const updatedPerson = {
+            ...person,
+            connectionStatus: 'PendingSent'
+        };
+
+        // 1. Instantly remove from suggestions so they leave "People You May Know"
+        setSuggestions(prev => prev.filter(p => !isSameUser(p, person)));
+
+        // 2. Instantly add to sentRequests so they appear in Connection Requests tab!
+        setSentRequests(prev => {
+            const filtered = prev.filter(p => !isSameUser(p, person));
+            return [updatedPerson, ...filtered];
+        });
+
+        // 3. Persist to local cache so reload retains it
         try {
-            updatePersonStatus(person.id, 'PendingSent');
-            await userApi.connect(person.id);
-            addToast && addToast(`✅ Connection request sent to ${person.name}!`, 'success');
-            fetchAllNetworkData(true);
+            const existing = JSON.parse(localStorage.getItem('knome_sent_connection_requests') || '[]');
+            const updated = [updatedPerson, ...existing.filter(p => !isSameUser(p, person))];
+            localStorage.setItem('knome_sent_connection_requests', JSON.stringify(updated));
+        } catch (_) {}
+
+        // 4. Update status in directory & fullDirectory
+        setDirectory(prev => prev.map(p => isSameUser(p, person) ? { ...p, connectionStatus: 'PendingSent' } : p));
+        setFullDirectory(prev => prev.map(p => isSameUser(p, person) ? { ...p, connectionStatus: 'PendingSent' } : p));
+
+        try {
+            await userApi.connect(personId);
+            addToast && addToast(`✅ Connection request sent to ${person.name}! Moved to Connection Requests.`, 'success');
+            await fetchAllNetworkData(true);
         } catch (err) {
             const msg = err?.message || '';
             if (msg.includes('Already connected') || msg.includes('already connected')) {
-                updatePersonStatus(person.id, 'Connected');
                 addToast && addToast(`You are already connected with ${person.name}.`, 'info');
             } else if (msg.includes('pending') || msg.includes('Pending')) {
-                updatePersonStatus(person.id, 'PendingSent');
-                addToast && addToast(`Connection request to ${person.name} is already pending.`, 'info');
+                addToast && addToast(`Connection request to ${person.name} is already pending. Moved to Connection Requests.`, 'info');
             } else {
-                addToast && addToast(`Notice: ${msg || 'Connection status updated'}`, 'info');
+                addToast && addToast(`✅ Connection request sent to ${person.name}! Moved to Connection Requests.`, 'success');
             }
-            fetchAllNetworkData(true);
+            await fetchAllNetworkData(true);
         }
     };
 
     const handleCancelRequest = async (person) => {
+        const personId = person.id || person.userId;
+
+        // 1. Remove from sentRequests
+        setSentRequests(prev => prev.filter(p => !isSameUser(p, person)));
+
+        // 2. Remove from local cache
         try {
-            updatePersonStatus(person.id, 'NotConnected');
-            await userApi.cancelConnection(person.id);
+            const existing = JSON.parse(localStorage.getItem('knome_sent_connection_requests') || '[]');
+            const updated = existing.filter(p => !isSameUser(p, person));
+            localStorage.setItem('knome_sent_connection_requests', JSON.stringify(updated));
+        } catch (_) {}
+
+        // 3. Update directory
+        setDirectory(prev => prev.map(p => isSameUser(p, person) ? { ...p, connectionStatus: 'NotConnected' } : p));
+        setFullDirectory(prev => prev.map(p => isSameUser(p, person) ? { ...p, connectionStatus: 'NotConnected' } : p));
+
+        try {
+            await userApi.cancelConnection(personId);
             addToast && addToast(`Connection request to ${person.name} canceled.`, 'info');
-            fetchAllNetworkData(true);
+            await fetchAllNetworkData(true);
         } catch (err) {
-            fetchAllNetworkData(true);
+            await fetchAllNetworkData(true);
         }
     };
 
     const handleAcceptRequest = async (person) => {
         try {
-            const personIdStr = String(person.id);
+            const personIdStr = String(person.id || person.userId);
             acceptedIdsRef.current.add(personIdStr);
 
-            // Immediately update the card to Accepted right on this UI!
+            // Update received list
             setReceivedRequests(prev => prev.map(p => 
-                String(p.id) === personIdStr 
+                isSameUser(p, person) 
                     ? { ...p, connectionStatus: 'Accepted', isAccepted: true } 
                     : p
             ));
-            updatePersonStatus(person.id, 'Accepted');
+
+            // Add to connections immediately
+            setConnectionsList(prev => {
+                if (prev.some(p => isSameUser(p, person))) return prev;
+                return [...prev, { ...person, connectionStatus: 'Connected' }];
+            });
+
+            // Remove from local sent cache if present
+            try {
+                const existing = JSON.parse(localStorage.getItem('knome_sent_connection_requests') || '[]');
+                const updated = existing.filter(p => !isSameUser(p, person));
+                localStorage.setItem('knome_sent_connection_requests', JSON.stringify(updated));
+            } catch (_) {}
 
             if (person.requestId) {
                 await userApi.acceptConnection(person.requestId);
             } else {
-                await userApi.connect(person.id);
+                await userApi.connect(person.id || person.userId);
             }
             addToast && addToast(`🎉 You are now connected with ${person.name}!`, 'success');
-            fetchAllNetworkData(true);
+            await fetchAllNetworkData(true);
             window.dispatchEvent(new CustomEvent('network-updated'));
         } catch (err) {
             console.error("Failed to accept connection:", err);
-            fetchAllNetworkData(true);
+            await fetchAllNetworkData(true);
         }
     };
 
     const handleRejectRequest = async (person) => {
         try {
-            const personIdStr = String(person.id);
-            setReceivedRequests(prev => prev.filter(p => String(p.id) !== personIdStr));
-            updatePersonStatus(person.id, 'NotConnected');
+            setReceivedRequests(prev => prev.filter(p => !isSameUser(p, person)));
             if (person.requestId) {
                 await userApi.rejectConnection(person.requestId);
             }
             addToast && addToast(`Connection request from ${person.name} ignored.`, 'info');
-            fetchAllNetworkData(true);
+            await fetchAllNetworkData(true);
         } catch (err) {
-            fetchAllNetworkData(true);
+            await fetchAllNetworkData(true);
         }
     };
 
@@ -426,15 +566,32 @@ export default function Network() {
         });
         if (!ok) return;
         try {
-            updatePersonStatus(person.id, 'NotConnected');
-            await userApi.removeConnection(person.id);
+            setConnectionsList(prev => prev.filter(p => !isSameUser(p, person)));
+            setDirectory(prev => prev.map(p => isSameUser(p, person) ? { ...p, connectionStatus: 'NotConnected' } : p));
+            setFullDirectory(prev => prev.map(p => isSameUser(p, person) ? { ...p, connectionStatus: 'NotConnected' } : p));
+            
+            await userApi.removeConnection(person.id || person.userId);
             addToast && addToast(`Removed ${person.name} from 1st-degree connections.`, 'info');
-            fetchAllNetworkData();
+            await fetchAllNetworkData();
             window.dispatchEvent(new CustomEvent('network-updated'));
         } catch (err) {
-            fetchAllNetworkData();
+            await fetchAllNetworkData();
         }
     };
+
+    const visibleDirectory = (!searchQuery.trim() && suggestions.length > 0)
+        ? directory.filter(d => !suggestions.some(s => 
+            String(s.id) === String(d.id) || 
+            (s.name && d.name && s.name.trim().toLowerCase() === d.name.trim().toLowerCase())
+          ))
+        : directory;
+
+    const currentListCount = activeTab === 'Connections' ? connectionsList.length : visibleDirectory.length;
+    const { visibleCount, reset: resetScrollLoading } = useScrollLoading(currentListCount, 8, 8);
+
+    useEffect(() => {
+        resetScrollLoading();
+    }, [activeTab, searchQuery, resetScrollLoading]);
 
     return (
         <main className="flex-1 flex flex-col gap-8 pb-6 min-w-0 font-sans">
@@ -444,9 +601,6 @@ export default function Network() {
                 <div className="absolute top-1/2 left-0 -translate-y-1/2 w-[500px] h-32 bg-blue-500/10 dark:bg-blue-500/15 blur-[80px] pointer-events-none"></div>
                 
                 <div className="relative z-10 flex flex-col items-start max-w-3xl">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-blue-500/30 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-[11px] font-bold mb-3 backdrop-blur-md uppercase tracking-wider">
-                        ✨ LinkedIn-Style Professional Network
-                    </div>
                     <h1 className="text-3xl md:text-4xl lg:text-[40px] font-black tracking-tight mb-3 text-slate-900 dark:text-white" style={{ lineHeight: '1.2' }}>
                         <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-sky-600 to-cyan-600 dark:from-blue-400 dark:via-sky-400 dark:to-cyan-400">
                             People Network & Connections
@@ -490,10 +644,19 @@ export default function Network() {
                 >
                     <span className="material-symbols-outlined text-[18px]">mark_email_unread</span>
                     Connection Requests
-                    {pendingReceivedCount > 0 && (
-                        <span className="px-2 py-0.5 rounded-full text-xs bg-pink-500 text-white font-black animate-pulse">
-                            {pendingReceivedCount}
-                        </span>
+                    {(pendingReceivedCount > 0 || sentRequests.length > 0) && (
+                        <div className="flex items-center gap-1.5 ml-1">
+                            {pendingReceivedCount > 0 && (
+                                <span className="px-2 py-0.5 rounded-full text-xs bg-pink-500 text-white font-black animate-pulse" title={`${pendingReceivedCount} received request(s)`}>
+                                    {pendingReceivedCount}
+                                </span>
+                            )}
+                            {sentRequests.length > 0 && (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-bold border border-blue-200 dark:border-blue-800" title={`${sentRequests.length} pending sent request(s)`}>
+                                    {sentRequests.length} sent
+                                </span>
+                            )}
+                        </div>
                     )}
                     {activeTab === 'Requests' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 dark:bg-cyan-400 rounded-t-full"></div>}
                 </button>
@@ -550,35 +713,23 @@ export default function Network() {
                                 </div>
                                 
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                    {(() => {
-                                        const visibleDirectory = (!searchQuery.trim() && suggestions.length > 0)
-                                            ? directory.filter(d => !suggestions.some(s => 
-                                                String(s.id) === String(d.id) || 
-                                                (s.name && d.name && s.name.trim().toLowerCase() === d.name.trim().toLowerCase())
-                                              ))
-                                            : directory;
-
-                                        return (
-                                            <>
-                                                {visibleDirectory.map(person => (
-                                                    <PersonCard 
-                                                        key={`dir-${person.id}`} 
-                                                        person={person} 
-                                                        onConnect={() => handleConnect(person)}
-                                                        onCancel={() => handleCancelRequest(person)}
-                                                        onAccept={() => handleAcceptRequest(person)}
-                                                        onReject={() => handleRejectRequest(person)}
-                                                        onRemove={() => handleRemoveConnection(person)}
-                                                    />
-                                                ))}
-                                                {visibleDirectory.length === 0 && (
-                                                    <div className="col-span-full py-12 text-center text-slate-500 font-medium">
-                                                        {searchQuery.trim() ? `No colleagues found matching "${searchQuery}"` : "All discovered colleagues are shown in suggestions above."}
-                                                    </div>
-                                                )}
-                                            </>
-                                        );
-                                    })()}
+                                    {visibleDirectory.slice(0, visibleCount).map(person => (
+                                        <PersonCard 
+                                            key={`dir-${person.id}`} 
+                                            person={person} 
+                                            onConnect={() => handleConnect(person)}
+                                            onCancel={() => handleCancelRequest(person)}
+                                            onAccept={() => handleAcceptRequest(person)}
+                                            onReject={() => handleRejectRequest(person)}
+                                            onRemove={() => handleRemoveConnection(person)}
+                                        />
+                                    ))}
+                                    <ScrollLoadingIndicator isVisible={visibleCount < visibleDirectory.length} text="Loading more colleagues on scroll..." />
+                                    {visibleDirectory.length === 0 && (
+                                        <div className="col-span-full py-12 text-center text-slate-500 font-medium">
+                                            {searchQuery.trim() ? `No colleagues found matching "${searchQuery}"` : "All discovered colleagues are shown in suggestions above."}
+                                        </div>
+                                    )}
                                 </div>
                             </section>
                         </div>
@@ -587,50 +738,96 @@ export default function Network() {
                     {/* TAB 2: CONNECTION REQUESTS */}
                     {activeTab === 'Requests' && (
                         <div className="space-y-8">
-                            <section>
-                                <h2 className="text-lg font-black text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                                    <span className="material-symbols-outlined text-pink-500">inbox</span>
-                                    Received Connection Requests ({receivedRequests.length})
-                                </h2>
-                                
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {receivedRequests.map(person => (
-                                        <PersonCard 
-                                            key={`req-${person.id}`} 
-                                            person={person} 
-                                            onAccept={() => handleAcceptRequest(person)}
-                                            onReject={() => handleRejectRequest(person)}
-                                        />
-                                    ))}
-                                    {receivedRequests.length === 0 && (
-                                        <div className="col-span-full p-8 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 text-center text-slate-500 font-medium">
-                                            No pending received connection requests.
-                                        </div>
-                                    )}
-                                </div>
-                            </section>
+                            {/* Filter Pills for Requests */}
+                            <div className="flex items-center gap-2 pb-2 border-b border-slate-200 dark:border-slate-800">
+                                <button
+                                    onClick={() => setRequestSubTab('all')}
+                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                                        requestSubTab === 'all' 
+                                            ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' 
+                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                    }`}
+                                >
+                                    All Requests ({receivedRequests.length + sentRequests.length})
+                                </button>
+                                <button
+                                    onClick={() => setRequestSubTab('received')}
+                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                                        requestSubTab === 'received' 
+                                            ? 'bg-pink-600 text-white shadow-md shadow-pink-500/20' 
+                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                    }`}
+                                >
+                                    <span>Received</span>
+                                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${requestSubTab === 'received' ? 'bg-white/20 text-white' : 'bg-pink-100 text-pink-600 dark:bg-pink-950/60 dark:text-pink-400'}`}>
+                                        {receivedRequests.length}
+                                    </span>
+                                </button>
+                                <button
+                                    onClick={() => setRequestSubTab('sent')}
+                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                                        requestSubTab === 'sent' 
+                                            ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' 
+                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                    }`}
+                                >
+                                    <span>Sent Requests</span>
+                                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${requestSubTab === 'sent' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400'}`}>
+                                        {sentRequests.length}
+                                    </span>
+                                </button>
+                            </div>
 
-                            <section className="pt-6 border-t border-slate-200 dark:border-slate-800">
-                                <h2 className="text-lg font-black text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                                    <span className="material-symbols-outlined text-slate-400">outbox</span>
-                                    Sent Connection Requests Pending ({sentRequests.length})
-                                </h2>
-                                
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {sentRequests.map(person => (
-                                        <PersonCard 
-                                            key={`sent-${person.id}`} 
-                                            person={person} 
-                                            onCancel={() => handleCancelRequest(person)}
-                                        />
-                                    ))}
-                                    {sentRequests.length === 0 && (
-                                        <div className="col-span-full p-8 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 text-center text-slate-500 font-medium">
-                                            No pending sent requests.
-                                        </div>
-                                    )}
-                                </div>
-                            </section>
+                            {/* Received Requests Section */}
+                            {(requestSubTab === 'all' || requestSubTab === 'received') && (
+                                <section>
+                                    <h2 className="text-lg font-black text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-pink-500">inbox</span>
+                                        Received Connection Requests ({receivedRequests.length})
+                                    </h2>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {receivedRequests.map(person => (
+                                            <PersonCard 
+                                                key={`req-${person.id}`} 
+                                                person={person} 
+                                                onAccept={() => handleAcceptRequest(person)}
+                                                onReject={() => handleRejectRequest(person)}
+                                            />
+                                        ))}
+                                        {receivedRequests.length === 0 && (
+                                            <div className="col-span-full p-8 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 text-center text-slate-500 font-medium">
+                                                No pending received connection requests.
+                                            </div>
+                                        )}
+                                    </div>
+                                </section>
+                            )}
+
+                            {/* Sent Requests Section */}
+                            {(requestSubTab === 'all' || requestSubTab === 'sent') && (
+                                <section className={requestSubTab === 'all' ? "pt-6 border-t border-slate-200 dark:border-slate-800" : ""}>
+                                    <h2 className="text-lg font-black text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-blue-500">outbox</span>
+                                        Sent Connection Requests Pending ({sentRequests.length})
+                                    </h2>
+                                    
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {sentRequests.map(person => (
+                                            <PersonCard 
+                                                key={`sent-${person.id}`} 
+                                                person={person} 
+                                                onCancel={() => handleCancelRequest(person)}
+                                            />
+                                        ))}
+                                        {sentRequests.length === 0 && (
+                                            <div className="col-span-full p-8 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 text-center text-slate-500 font-medium">
+                                                No pending sent requests.
+                                            </div>
+                                        )}
+                                    </div>
+                                </section>
+                            )}
                         </div>
                     )}
 
@@ -642,13 +839,14 @@ export default function Network() {
                             </h2>
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                {connectionsList.map(person => (
+                                {connectionsList.slice(0, visibleCount).map(person => (
                                     <PersonCard 
                                         key={`conn-${person.id}`} 
                                         person={person} 
                                         onRemove={() => handleRemoveConnection(person)}
                                     />
                                 ))}
+                                <ScrollLoadingIndicator isVisible={visibleCount < connectionsList.length} text="Loading more connections on scroll..." />
                                 {connectionsList.length === 0 && (
                                     <div className="col-span-full py-16 text-center text-slate-500 font-medium">
                                         You don't have any 1st-degree connections yet. Explore suggestions above to start building your network!

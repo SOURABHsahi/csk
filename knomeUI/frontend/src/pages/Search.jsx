@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { searchApi, resolveMediaUrl, saveRecentSearch, getLocalRecentSearches, clearLocalRecentSearches } from '../utils/apiService';
+import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 
 function useQuery() {
     return new URLSearchParams(useLocation().search);
@@ -183,6 +184,18 @@ export default function Search() {
         return () => clearTimeout(timer);
     }, [performSearch]);
 
+    useEffect(() => {
+        const handleScroll = () => {
+            if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 400) {
+                if (!isSearching && hasMore) {
+                    performSearch(true);
+                }
+            }
+        };
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, [isSearching, hasMore, performSearch]);
+
     const handleSearchSubmit = (e) => {
         e.preventDefault();
         const term = searchQuery.trim();
@@ -236,6 +249,8 @@ export default function Search() {
             navigate('/podcasts');
         } else if (type === 'Job') {
             navigate('/jobs');
+        } else if (type === 'Post') {
+            navigate(`/posts?id=${id}`);
         } else {
             navigate('/');
         }
@@ -412,7 +427,7 @@ export default function Search() {
                                                                 {isUser ? 'People' : res.contentType}
                                                             </span>
                                                             <h4 className="text-[15px] font-bold text-slate-900 dark:text-white group-hover:text-indigo-500 transition-colors truncate">
-                                                                <HighlightText text={res.title} query={searchQuery} />
+                                                                <HighlightText text={res.title || (res.contentType === 'Post' ? `${res.authorFullName || 'Employee'}'s Post` : res.summary)} query={searchQuery} />
                                                             </h4>
                                                         </div>
                                                         
@@ -441,7 +456,9 @@ export default function Search() {
                                         );
                                     })}
 
-                                    {hasMore && (
+                                    <ScrollLoadingIndicator isVisible={isSearching && results.length > 0} text="Loading more search results on scroll..." />
+
+                                    {hasMore && !isSearching && (
                                         <button
                                             onClick={() => performSearch(true)}
                                             className="mt-4 w-full py-3 rounded-xl font-bold text-xs bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-indigo-500 hover:text-white transition-colors"

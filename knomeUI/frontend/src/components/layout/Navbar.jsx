@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useUser } from '../contexts/UserContext';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import NotificationSettingsModal from '../modals/NotificationSettingsModal';
+import NotificationSettingsModal, { DEFAULT_NOTIF_PREFERENCES } from '../modals/NotificationSettingsModal';
 import NotificationToast from '../ui/NotificationToast';
 import knomeLogo from '../../assets/knome_logo.png';
 import { notificationsApi, profileApi, searchApi, karmaApi, resolveMediaUrl, saveRecentSearch, getLocalRecentSearches, clearLocalRecentSearches } from '../../utils/apiService';
@@ -26,14 +26,41 @@ export default function Navbar() {
         const fetchKarma = async () => {
             try {
                 const bal = await karmaApi.getMyBalance();
-                if (bal && typeof bal.totalPoints === 'number') {
-                    setUserKarma(bal.totalPoints);
+                const total = bal?.totalPoints ?? bal?.data?.totalPoints;
+                if (typeof total === 'number') {
+                    setUserKarma(total);
                 }
             } catch {
                 /* fallback to existing userKarma */
             }
         };
         fetchKarma();
+
+        const handleKarmaUpdated = (e) => {
+            if (e.detail?.totalKarma !== undefined && typeof e.detail.totalKarma === 'number') {
+                setUserKarma(e.detail.totalKarma);
+            } else if (e.detail?.points) {
+                setUserKarma(prev => prev + e.detail.points);
+            } else {
+                fetchKarma();
+            }
+        };
+
+        const handleContentCreated = () => {
+            setTimeout(() => {
+                fetchKarma();
+            }, 300);
+        };
+
+        window.addEventListener('karma-updated', handleKarmaUpdated);
+        window.addEventListener('post-created', handleContentCreated);
+        window.addEventListener('article-created', handleContentCreated);
+
+        return () => {
+            window.removeEventListener('karma-updated', handleKarmaUpdated);
+            window.removeEventListener('post-created', handleContentCreated);
+            window.removeEventListener('article-created', handleContentCreated);
+        };
     }, [currentUser?.userId, currentUser?.employeeId, currentUser?.karma]);
 
     const isSysAdmin = currentUser?.role === 'SYSADM' || 
@@ -219,6 +246,51 @@ export default function Navbar() {
         return false;
     });
 
+    // Notification Preferences State (Loaded from localStorage per user)
+    const [notifPreferences, setNotifPreferences] = useState(() => {
+        try {
+            const uid = currentUser?.userId || currentUser?.id || 'default';
+            const saved = localStorage.getItem(`knome_notif_prefs_${uid}`);
+            if (saved) return { ...DEFAULT_NOTIF_PREFERENCES, ...JSON.parse(saved) };
+        } catch (_) {}
+        return DEFAULT_NOTIF_PREFERENCES;
+    });
+
+    const notifPreferencesRef = useRef(notifPreferences);
+    useEffect(() => {
+        notifPreferencesRef.current = notifPreferences;
+    }, [notifPreferences]);
+
+    useEffect(() => {
+        const uid = currentUser?.userId || currentUser?.id || 'default';
+        const loadPrefs = () => {
+            try {
+                const saved = localStorage.getItem(`knome_notif_prefs_${uid}`);
+                if (saved) {
+                    const parsed = { ...DEFAULT_NOTIF_PREFERENCES, ...JSON.parse(saved) };
+                    setNotifPreferences(parsed);
+                    notifPreferencesRef.current = parsed;
+                }
+            } catch (_) {}
+        };
+        loadPrefs();
+
+        const handlePrefsUpdated = (e) => {
+            if (e.detail) {
+                const merged = { ...DEFAULT_NOTIF_PREFERENCES, ...e.detail };
+                setNotifPreferences(merged);
+                notifPreferencesRef.current = merged;
+            } else {
+                loadPrefs();
+            }
+        };
+
+        window.addEventListener('notification-preferences-updated', handlePrefsUpdated);
+        return () => {
+            window.removeEventListener('notification-preferences-updated', handlePrefsUpdated);
+        };
+    }, [currentUser?.userId, currentUser?.id]);
+
     // Notifications state (FR-NT-01, FR-NT-04)
     const [isNotifOpen, setIsNotifOpen] = useState(false);
     const [isNotifSettingsOpen, setIsNotifSettingsOpen] = useState(false);
@@ -284,6 +356,45 @@ export default function Navbar() {
 
     const formatRelativeTime = (dateStr) => {
         return formatNotificationDate(dateStr);
+    };
+
+    // Helper: Determine if an in-app notification is allowed according to user preferences
+    const isNotificationAllowed = (n, prefs) => {
+        if (!prefs) return true;
+        const type = (n.notificationType || n.eventType || n.type || '').toLowerCase();
+        const msg = (n.message || n.text || n.title || '').toLowerCase();
+        const cat = (n.category || '').toLowerCase();
+        const relType = (n.relatedContentType || '').toLowerCase();
+
+        // 1. Comments & Replies
+        const isComment = cat === 'comments' || type.includes('comment') || msg.includes('commented') || msg.includes('comment') || msg.includes('replied');
+        if (isComment) return prefs.comments !== false;
+
+        // 2. Reactions & Likes
+        const isReaction = cat === 'reactions' || type.includes('reaction') || type.includes('like') || msg.includes('liked') || msg.includes('reacted');
+        if (isReaction) return prefs.reactions !== false;
+
+        // 3. Followers & Connections
+        const isFollow = cat === 'connections' || type.includes('follow') || type.includes('connection') || msg.includes('following') || msg.includes('connection');
+        if (isFollow) return prefs.followers !== false;
+
+        // 4. Community Invitations & Join Requests
+        const isCommInvite = type.includes('community_invite') || type.includes('join_request') || type.includes('invite') || msg.includes('invited') || msg.includes('invitation');
+        if (isCommInvite) return prefs.communityInvites !== false;
+
+        // 5. @Mentions
+        const isMention = cat === 'mentions' || type.includes('mention') || msg.includes('mentioned');
+        if (isMention) return prefs.mentions !== false;
+
+        // 6. Job Postings
+        const isJob = type.includes('job') || relType === 'job' || msg.includes('job') || msg.includes('vacancy') || msg.includes('opening');
+        if (isJob) return prefs.jobPostings !== false;
+
+        // 7. Community Posts & Updates
+        const isCommPost = cat === 'community' || type.includes('community') || relType === 'community' || msg.includes('community');
+        if (isCommPost) return prefs.communityPosts !== false;
+
+        return true;
     };
 
     const mapNotificationItem = (n) => {
@@ -626,8 +737,10 @@ export default function Navbar() {
                     const filtered = prev.filter(n => String(n.id) !== String(newNotif.id));
                     return [newNotif, ...filtered];
                 });
-                setToastNotification(newNotif);
-                playChimeSound();
+                if (isNotificationAllowed(newNotif, notifPreferencesRef.current)) {
+                    setToastNotification(newNotif);
+                    playChimeSound();
+                }
             }
         };
 
@@ -643,7 +756,7 @@ export default function Navbar() {
                     const newOnes = allLocal.filter(n => !prevLocalIds.has(String(n.id)) && !isSelfNotification(n, currentUser) && isNotificationForUser(n, currentUser));
                     if (newOnes.length === 0) return prev;
                     // Show toast for brand-new notification
-                    if (newOnes[0].unread) {
+                    if (newOnes[0].unread && isNotificationAllowed(newOnes[0], notifPreferencesRef.current)) {
                         setToastNotification(newOnes[0]);
                         playChimeSound();
                     }
@@ -668,8 +781,10 @@ export default function Navbar() {
             notif.time = formatNotificationDate(notif.createdDate);
             notif.displayDate = notif.time;
             setAllNotifs(prev => [notif, ...prev.filter(n => String(n.id) !== String(notif.id))]);
-            setToastNotification(notif);
-            playChimeSound();
+            if (isNotificationAllowed(notif, notifPreferencesRef.current)) {
+                setToastNotification(notif);
+                playChimeSound();
+            }
         };
 
         window.addEventListener('community-invite-sent', handleCommunityInviteSent);
@@ -704,8 +819,10 @@ export default function Navbar() {
                 const filtered = prev.filter(item => String(item.id) !== String(mapped.id));
                 return [mapped, ...filtered];
             });
-            setToastNotification(mapped);
-            playChimeSound();
+            if (isNotificationAllowed(mapped, notifPreferencesRef.current)) {
+                setToastNotification(mapped);
+                playChimeSound();
+            }
             window.dispatchEvent(new CustomEvent('network-updated'));
         });
 
@@ -763,11 +880,18 @@ export default function Navbar() {
         };
     }, [currentUser]);
 
-    const notifications = allNotifs.filter(n => {
-        const matchesCategory = activeNotifFilter === 'All' || n.category === activeNotifFilter;
-        const matchesQuery = !notifSearchQuery || n.text?.toLowerCase().includes(notifSearchQuery.toLowerCase()) || n.senderName?.toLowerCase().includes(notifSearchQuery.toLowerCase()) || n.message?.toLowerCase().includes(notifSearchQuery.toLowerCase());
-        return matchesCategory && matchesQuery;
-    });
+    // Filter notifications based on active user preferences
+    const allowedNotifs = useMemo(() => {
+        return allNotifs.filter(n => isNotificationAllowed(n, notifPreferences));
+    }, [allNotifs, notifPreferences]);
+
+    const notifications = useMemo(() => {
+        return allowedNotifs.filter(n => {
+            const matchesCategory = activeNotifFilter === 'All' || n.category === activeNotifFilter;
+            const matchesQuery = !notifSearchQuery || n.text?.toLowerCase().includes(notifSearchQuery.toLowerCase()) || n.senderName?.toLowerCase().includes(notifSearchQuery.toLowerCase()) || n.message?.toLowerCase().includes(notifSearchQuery.toLowerCase());
+            return matchesCategory && matchesQuery;
+        });
+    }, [allowedNotifs, activeNotifFilter, notifSearchQuery]);
 
     const groupedNotifications = useMemo(() => {
         const groups = { 'Today': [], 'This Week': [], 'Earlier': [] };
@@ -782,7 +906,9 @@ export default function Navbar() {
         return groups;
     }, [notifications]);
 
-    const unreadCount = allNotifs.filter(n => n.unread).length;
+    const unreadCount = useMemo(() => {
+        return allowedNotifs.filter(n => n.unread).length;
+    }, [allowedNotifs]);
 
     const markAllRead = async () => {
         try {
@@ -1250,8 +1376,8 @@ export default function Navbar() {
                 {/* ─── RIGHT: Actions & Profile ─── */}
                 <div className="flex items-center gap-2.5 justify-end">
 
-                    {/* Karma Badge (Hidden for System Admin) */}
-                    {!isSysAdmin && (
+                    {/* Karma Badge (Visible for all logged-in members) */}
+                    {currentUser && (
                         <Link to="/karma-history" className="relative hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all hover:scale-105"
                             style={{
                                 background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.12), rgba(245, 158, 11, 0.08))',
@@ -1331,7 +1457,7 @@ export default function Navbar() {
                                         )}
                                     </div>
                                     <div className="flex items-center gap-2.5">
-                                        {allNotifs.length > 0 && (
+                                        {allowedNotifs.length > 0 && (
                                             <>
                                                 <button onClick={markAllRead} className="text-[11px] font-bold text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors cursor-pointer">Mark read</button>
                                                 <span className="text-slate-300 dark:text-slate-700 text-xs">•</span>

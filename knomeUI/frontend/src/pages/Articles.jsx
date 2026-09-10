@@ -10,6 +10,8 @@ import SaveToCategoryModal from '../components/modals/SaveToCategoryModal';
 import ArticleShareModal from '../components/modals/ArticleShareModal';
 import { useToast } from '../components/contexts/ToastContext';
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
+import { useScrollLoading } from '../hooks/useScrollLoading';
+import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 
 export default function Articles() {
     const { currentUser } = useUser();
@@ -612,6 +614,12 @@ export default function Articles() {
         ? getPersonalizedRecommendations(rawFiltered, currentUser)
         : rawFiltered;
 
+    const { visibleCount, reset: resetScrollLoading } = useScrollLoading(filteredArticles.length, 6, 6);
+
+    useEffect(() => {
+        resetScrollLoading();
+    }, [selectedCategory, searchQuery, resetScrollLoading]);
+
     const categories = [
         'All', 
         '✨ Recommended', 
@@ -738,7 +746,7 @@ export default function Articles() {
                         </div>
                     ) : filteredArticles.length > 0 ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-                            {filteredArticles.map(art => {
+                            {filteredArticles.slice(0, visibleCount).map(art => {
                                 const isScheduled = art.status === 'Scheduled' || art.isScheduledFuture;
                                 return (
                                 <div 
@@ -896,6 +904,10 @@ export default function Articles() {
                                                         <span className="material-symbols-outlined text-[16px]">delete</span>
                                                     </button>
                                                 )}
+                                                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500 dark:text-slate-400" title="Total Views">
+                                                    <span className="material-symbols-outlined text-[13px] text-cyan-600 dark:text-cyan-400">visibility</span>
+                                                    <span>{art.views || 0}</span>
+                                                </div>
                                                 <div className="flex items-center gap-1 text-[10px] font-black text-blue-500">
                                                     <span className="material-symbols-outlined text-[14px]">schedule</span>
                                                     {art.readTime}
@@ -906,6 +918,7 @@ export default function Articles() {
                                 </div>
                                 );
                             })}
+                            <ScrollLoadingIndicator isVisible={visibleCount < filteredArticles.length} text="Loading more articles on scroll..." />
                         </div>
                     ) : (
                         <div className="flex-1 py-20 flex flex-col items-center justify-center text-center opacity-60">

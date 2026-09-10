@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
-import { postsApi, mediaApi, communitiesApi, formatToDDMMYYYY } from '../../utils/apiService';
+import { postsApi, mediaApi, communitiesApi, profileApi, notificationsApi, formatToDDMMYYYY } from '../../utils/apiService';
 import { checkRestrictedContent } from '../../utils/restrictedWords';
 
 const PREDEFINED_HASHTAGS = ['Announcement', 'Development', 'Design', 'Marketing', 'Help', 'Kudos', 'Team', 'Project'];
 
 const DEFAULT_COMMUNITIES = [
-    { id: 177, name: 'dotnet' },
+    { id: 184, name: 'sql first' },
+    { id: 183, name: 'All department' },
     { id: 176, name: 'DevOps & AI Innovation Hub' },
     { id: 165, name: 'tech' }
 ];
@@ -19,7 +20,7 @@ const formatSize = (bytes) => {
 };
 
 export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
-    const { currentUser, users, awardRuleKarma } = useUser();
+    const { currentUser, users, awardRuleKarma, refreshKarma } = useUser();
     const { addToast } = useToast();
     
     const [text, setText] = useState('');
@@ -31,6 +32,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
     const [audienceSubView, setAudienceSubView] = useState(null); // null | 'communities' | 'connections'
     const [audienceSearch, setAudienceSearch] = useState('');
     const [availableCommunities, setAvailableCommunities] = useState(DEFAULT_COMMUNITIES);
+    const [allColleagues, setAllColleagues] = useState(users || []);
     const audienceMenuRef = useRef(null);
 
     const toggleConnection = (userObj) => {
@@ -127,9 +129,21 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
 
     const MAX_CHARS = 400;
 
-    // Load available communities
+    // Sync users roster into allColleagues
     useEffect(() => {
-        const loadCommunities = async () => {
+        if (users && users.length > 0) {
+            setAllColleagues(prev => {
+                const map = new Map();
+                users.forEach(u => map.set(String(u.id || u.userId), u));
+                prev.forEach(u => map.set(String(u.id || u.userId), u));
+                return Array.from(map.values());
+            });
+        }
+    }, [users]);
+
+    // Load available communities and real DB colleagues
+    useEffect(() => {
+        const loadAudienceData = async () => {
             try {
                 const res = await communitiesApi.getAll();
                 if (res && Array.isArray(res) && res.length > 0) {
@@ -139,7 +153,6 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                         type: c.communityType || c.type,
                         category: c.categoryName || c.category
                     }));
-                    // Display all available communities in audience selector
                     setAvailableCommunities(mapped);
                 } else {
                     setAvailableCommunities(DEFAULT_COMMUNITIES);
@@ -147,11 +160,40 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
             } catch (e) {
                 setAvailableCommunities(DEFAULT_COMMUNITIES);
             }
+
+            try {
+                const uRes = await profileApi.search('');
+                const rawList = Array.isArray(uRes) ? uRes : (uRes?.data || uRes?.items || []);
+                if (rawList && rawList.length > 0) {
+                    setAllColleagues(prev => {
+                        const map = new Map();
+                        (users || []).forEach(u => map.set(String(u.id || u.userId), u));
+                        prev.forEach(u => map.set(String(u.id || u.userId), u));
+                        rawList.forEach(u => {
+                            const uId = u.userId || u.id;
+                            const uName = u.fullName || u.name || u.authorFullName || u.title || 'Colleague';
+                            if (uId) {
+                                map.set(String(uId), {
+                                    id: uId,
+                                    userId: uId,
+                                    employeeId: u.employeeId || u.authorEmployeeId || `EMP${uId}`,
+                                    name: uName,
+                                    fullName: uName,
+                                    designation: u.designation || u.summary || 'Employee',
+                                    roleName: u.roleName || u.role || 'Employee',
+                                    avatar: u.profilePhotoUrl || u.thumbnailUrl || null
+                                });
+                            }
+                        });
+                        return Array.from(map.values());
+                    });
+                }
+            } catch (e) {}
         };
         if (isOpen) {
-            loadCommunities();
+            loadAudienceData();
         }
-    }, [isOpen]);
+    }, [isOpen, users]);
 
     // Close audience menu on outside click
     useEffect(() => {
@@ -423,12 +465,16 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                     : (selectedConnections.length > 2 ? `${selectedConnections[0].name} +${selectedConnections.length - 1} others` : null))
             };
 
+            let createdPostId = null;
             try {
-                await postsApi.create(payload);
+                const apiRes = await postsApi.create(payload);
+                const createdPost = apiRes?.data || apiRes;
+                createdPostId = createdPost?.postId || createdPost?.id;
             } catch (err) {
                 console.warn('API post creation notice, using local post fallback:', err);
+                createdPostId = `post_local_${Date.now()}`;
                 const localPost = {
-                    id: `post_local_${Date.now()}`,
+                    id: createdPostId,
                     userId: currentUser?.userId || currentUser?.id || 1,
                     authorName: currentUser?.name || currentUser?.fullName || 'Employee',
                     authorAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
@@ -442,10 +488,12 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                     commentsCount: 0,
                     attachments: attachments,
                     audienceType: payload.audienceType,
+                    communityId: selectedCommunity?.id || null,
+                    communityName: selectedCommunity?.name || null,
                     sharedCommunity: selectedCommunity,
                     sharedCommunityName: selectedCommunity?.name,
                     sharedUsers: selectedConnections,
-                    sharedWithNames: selectedConnections.map(c => c.name),
+                    sharedWithNames: selectedConnections.map(c => c.name || c.fullName),
                     sharedWithName: payload.sharedWithName
                 };
                 try {
@@ -460,7 +508,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                     const commPostKey = `knome_community_posts_${selectedCommunity.id}`;
                     const existingCommPosts = JSON.parse(localStorage.getItem(commPostKey) || '[]');
                     const commPostItem = {
-                        id: Date.now(),
+                        id: createdPostId || Date.now(),
                         author: currentUser?.name || currentUser?.fullName || 'Employee',
                         role: currentUser?.roleName || 'Member',
                         avatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
@@ -476,9 +524,143 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                 } catch (e) {}
             }
 
-            if (awardRuleKarma && (currentUser?.userId || currentUser?.id)) {
-                const pts = awardRuleKarma(currentUser?.userId || currentUser?.id, 'POST');
-                if (pts) addToast(`🎉 Earned +${pts} Karma Points for publishing a Post!`, 'info');
+            // Generate real-time & persistent notifications for Everyone, Specific Community, and Specific Connections
+            const authorName = currentUser?.name || currentUser?.fullName || 'Employee';
+            const authorId = currentUser?.userId || currentUser?.id;
+            const snippet = text.length > 60 ? text.substring(0, 57) + '...' : text;
+            const nowIso = new Date().toISOString();
+            const newNotifs = [];
+
+            if (selectedCommunity) {
+                // Scenario 2: Specific Community
+                const notifMsg = `${authorName} posted in ${selectedCommunity.name}: "${snippet}"`;
+                try {
+                    const commMembers = await communitiesApi.getMembers(selectedCommunity.id).catch(() => ({ data: [] }));
+                    const membersList = Array.isArray(commMembers) ? commMembers : (commMembers?.data || commMembers?.items || []);
+                    membersList.forEach(m => {
+                        const mId = m.userId || m.id;
+                        if (String(mId) !== String(authorId)) {
+                            newNotifs.push({
+                                id: `comm_post_${Date.now()}_${mId}`,
+                                type: 'community_post',
+                                category: 'Community',
+                                senderName: authorName,
+                                senderUserId: authorId,
+                                senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl,
+                                targetUserId: mId,
+                                communityId: selectedCommunity.id,
+                                communityName: selectedCommunity.name,
+                                text: notifMsg,
+                                message: notifMsg,
+                                createdDate: nowIso,
+                                unread: true,
+                                isLocalNotif: true,
+                                targetUrl: `/community/view?id=${selectedCommunity.id}`,
+                                relatedContentType: 'Community',
+                                relatedContentId: selectedCommunity.id
+                            });
+                        }
+                    });
+                } catch (e) {}
+
+                // Fallback ensure active colleagues get it if no members returned from API
+                if (newNotifs.length === 0) {
+                    allColleagues.filter(u => String(u.id || u.userId) !== String(authorId)).slice(0, 5).forEach(u => {
+                        const uId = u.id || u.userId;
+                        newNotifs.push({
+                            id: `comm_post_${Date.now()}_${uId}`,
+                            type: 'community_post',
+                            category: 'Community',
+                            senderName: authorName,
+                            senderUserId: authorId,
+                            senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl,
+                            targetUserId: uId,
+                            communityId: selectedCommunity.id,
+                            communityName: selectedCommunity.name,
+                            text: notifMsg,
+                            message: notifMsg,
+                            createdDate: nowIso,
+                            unread: true,
+                            isLocalNotif: true,
+                            targetUrl: `/community/view?id=${selectedCommunity.id}`,
+                            relatedContentType: 'Community',
+                            relatedContentId: selectedCommunity.id
+                        });
+                    });
+                }
+            } else if (selectedConnections.length > 0) {
+                // Scenario 3: Specific Connections / Specific Person
+                const notifMsg = `${authorName} shared a post with you: "${snippet}"`;
+                selectedConnections.forEach(c => {
+                    const cId = c.id || c.userId;
+                    newNotifs.push({
+                        id: `share_post_${Date.now()}_${cId}`,
+                        type: 'post_shared',
+                        category: 'Shares',
+                        senderName: authorName,
+                        senderUserId: authorId,
+                        senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl,
+                        targetUserId: cId,
+                        employeeId: c.employeeId,
+                        text: notifMsg,
+                        message: notifMsg,
+                        createdDate: nowIso,
+                        unread: true,
+                        isLocalNotif: true,
+                        targetUrl: createdPostId ? `/posts?id=${createdPostId}` : '/posts',
+                        relatedContentType: 'Post',
+                        relatedContentId: createdPostId
+                    });
+                });
+            } else {
+                // Scenario 1: Everyone
+                const notifMsg = `${authorName} published a new post: "${snippet}"`;
+                allColleagues.filter(u => String(u.id || u.userId) !== String(authorId)).forEach(u => {
+                    const uId = u.id || u.userId;
+                    newNotifs.push({
+                        id: `post_everyone_${Date.now()}_${uId}`,
+                        type: 'post_everyone',
+                        category: 'System',
+                        senderName: authorName,
+                        senderUserId: authorId,
+                        senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl,
+                        targetUserId: uId,
+                        employeeId: u.employeeId,
+                        text: notifMsg,
+                        message: notifMsg,
+                        createdDate: nowIso,
+                        unread: true,
+                        isLocalNotif: true,
+                        targetUrl: createdPostId ? `/posts?id=${createdPostId}` : '/posts',
+                        relatedContentType: 'Post',
+                        relatedContentId: createdPostId
+                    });
+                });
+            }
+
+            if (newNotifs.length > 0) {
+                try {
+                    const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+                    localStorage.setItem('knome_notifications', JSON.stringify([...newNotifs, ...existingNotifs]));
+                } catch (e) {}
+
+                // Trigger local notification listeners across all open tabs/components
+                window.dispatchEvent(new CustomEvent('notification-updated'));
+                window.dispatchEvent(new CustomEvent('knome_new_notification'));
+                newNotifs.forEach(n => {
+                    window.dispatchEvent(new CustomEvent('knome_notification_received', { detail: n }));
+                });
+            }
+
+            if (status !== 'Scheduled') {
+                if (awardRuleKarma && (currentUser?.userId || currentUser?.id)) {
+                    const targetUid = currentUser?.userId || currentUser?.id;
+                    const pts = awardRuleKarma(targetUid, 'POST') || 2;
+                    addToast(`⚡ +${pts} Karma Points earned for publishing a Post!`, 'info');
+                    if (refreshKarma) {
+                        setTimeout(() => refreshKarma(targetUid), 400);
+                    }
+                }
             }
             
             // Success
@@ -778,7 +960,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                                                     />
                                                 </div>
                                                 <div className="max-h-52 overflow-y-auto custom-scrollbar divide-y divide-slate-100 dark:divide-slate-800">
-                                                    {(users || [])
+                                                    {(allColleagues || users || [])
                                                         .filter(u => String(u.id || u.userId) !== String(currentUser?.userId || currentUser?.id))
                                                         .filter(u => !audienceSearch || (u.name || u.fullName || '').toLowerCase().includes(audienceSearch.toLowerCase()))
                                                         .map((u) => {
@@ -787,7 +969,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                                                             return (
                                                                 <div
                                                                     key={u.id || u.userId}
-                                                                    onClick={() => toggleConnection({ id: u.id || u.userId, name: uName, avatar: u.avatar || u.profilePhotoUrl })}
+                                                                    onClick={() => toggleConnection({ id: u.id || u.userId, name: uName, avatar: u.avatar || u.profilePhotoUrl, employeeId: u.employeeId })}
                                                                     className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer ${
                                                                         isSel ? 'bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 font-bold' : 'text-slate-700 dark:text-slate-200'
                                                                     }`}
@@ -824,6 +1006,9 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                                                             if (selectedConnections.length > 0) {
                                                                 setAudience('Connections');
                                                                 setSelectedCommunity(null);
+                                                            } else {
+                                                                setAudience('Everyone');
+                                                                setSelectedConnections([]);
                                                             }
                                                             setIsAudienceMenuOpen(false);
                                                             setAudienceSubView(null);

@@ -39,15 +39,42 @@ public class FeedService : IFeedService
         if (string.IsNullOrEmpty(contentTypeFilter) || contentTypeFilter.Equals(ContentTypes.Post, StringComparison.OrdinalIgnoreCase))
         {
             var posts = await _repo.GetCandidatePostsAsync(followedUserIds, myCommunityIds, currentUserId, 50);
+            var candidatePostIds = posts.Select(p => p.PostId).ToList();
+            var commPosts = await _db.CommunityPosts
+                .Include(cp => cp.Community)
+                .Where(cp => candidatePostIds.Contains(cp.PostId))
+                .ToListAsync();
+            var commMap = commPosts.GroupBy(cp => cp.PostId).ToDictionary(g => g.Key, g => g.First().Community);
+
             foreach (var p in posts)
             {
+                var comm = commMap.TryGetValue(p.PostId, out var c) ? c : null;
+                var sharedWith = (p.MentionedUsers != null && p.MentionedUsers.Any())
+                    ? (p.MentionedUsers.Count == 1 ? p.MentionedUsers.First().FullName : $"{p.MentionedUsers.First().FullName} +{p.MentionedUsers.Count - 1} others")
+                    : null;
+                var audUserIds = (p.MentionedUsers != null) ? p.MentionedUsers.Select(m => m.UserId).ToList() : new List<int>();
+
                 candidateItems.Add(new FeedItemDto
                 {
                     ContentType = ContentTypes.Post,
                     ContentId = p.PostId,
                     Title = string.Empty,
                     TextSummary = p.ContentText.Length > 200 ? p.ContentText.Substring(0, 197) + "..." : p.ContentText,
+                    ContentText = p.ContentText,
+                    Status = p.Status ?? "Published",
+                    ScheduledDate = p.ScheduledDate,
+                    CommunityId = comm?.CommunityId,
+                    CommunityName = comm?.Name,
+                    SharedWithName = sharedWith,
+                    AudienceUserIds = audUserIds,
                     AttachmentUrl = p.PostAttachments.FirstOrDefault()?.FileUrl,
+                    AttachmentUrls = p.PostAttachments.Select(pa => pa.FileUrl).ToList(),
+                    Attachments = p.PostAttachments.Select(pa => new FeedAttachmentDto
+                    {
+                        AttachmentId = pa.AttachmentId,
+                        FileUrl = pa.FileUrl,
+                        FileType = pa.FileType
+                    }).ToList(),
                     AuthorUserId = p.AuthorUserId,
                     AuthorEmployeeId = p.AuthorUser?.EmployeeId ?? string.Empty,
                     AuthorFullName = p.AuthorUser?.FullName ?? "Unknown",
@@ -70,7 +97,17 @@ public class FeedService : IFeedService
                     ContentId = a.ArticleId,
                     Title = a.Title,
                     TextSummary = a.Description ?? string.Empty,
+                    ContentText = a.Description ?? string.Empty,
+                    Status = a.Status ?? "Published",
+                    ScheduledDate = a.ScheduledDate,
                     AttachmentUrl = a.ArticleAttachments.FirstOrDefault()?.FileUrl,
+                    AttachmentUrls = a.ArticleAttachments.Select(aa => aa.FileUrl).ToList(),
+                    Attachments = a.ArticleAttachments.Select(aa => new FeedAttachmentDto
+                    {
+                        AttachmentId = aa.AttachmentId,
+                        FileUrl = aa.FileUrl,
+                        FileType = aa.FileType
+                    }).ToList(),
                     AuthorUserId = a.AuthorUserId,
                     AuthorEmployeeId = a.AuthorUser?.EmployeeId ?? string.Empty,
                     AuthorFullName = a.AuthorUser?.FullName ?? "Unknown",
@@ -189,7 +226,17 @@ public class FeedService : IFeedService
                 ContentId = p.PostId,
                 Title = string.Empty,
                 TextSummary = p.ContentText.Length > 200 ? p.ContentText.Substring(0, 197) + "..." : p.ContentText,
+                ContentText = p.ContentText,
+                Status = p.Status ?? "Published",
+                ScheduledDate = p.ScheduledDate,
                 AttachmentUrl = p.PostAttachments.FirstOrDefault()?.FileUrl,
+                AttachmentUrls = p.PostAttachments.Select(pa => pa.FileUrl).ToList(),
+                Attachments = p.PostAttachments.Select(pa => new FeedAttachmentDto
+                {
+                    AttachmentId = pa.AttachmentId,
+                    FileUrl = pa.FileUrl,
+                    FileType = pa.FileType
+                }).ToList(),
                 AuthorUserId = p.AuthorUserId,
                 AuthorEmployeeId = p.AuthorUser?.EmployeeId ?? string.Empty,
                 AuthorFullName = p.AuthorUser?.FullName ?? "Unknown",
@@ -217,7 +264,17 @@ public class FeedService : IFeedService
                 ContentId = a.ArticleId,
                 Title = a.Title,
                 TextSummary = a.Description ?? string.Empty,
+                ContentText = a.Description ?? string.Empty,
+                Status = a.Status ?? "Published",
+                ScheduledDate = a.ScheduledDate,
                 AttachmentUrl = a.ArticleAttachments.FirstOrDefault()?.FileUrl,
+                AttachmentUrls = a.ArticleAttachments.Select(aa => aa.FileUrl).ToList(),
+                Attachments = a.ArticleAttachments.Select(aa => new FeedAttachmentDto
+                {
+                    AttachmentId = aa.AttachmentId,
+                    FileUrl = aa.FileUrl,
+                    FileType = aa.FileType
+                }).ToList(),
                 AuthorUserId = a.AuthorUserId,
                 AuthorEmployeeId = a.AuthorUser?.EmployeeId ?? string.Empty,
                 AuthorFullName = a.AuthorUser?.FullName ?? "Unknown",

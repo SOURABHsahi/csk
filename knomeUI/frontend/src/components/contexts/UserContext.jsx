@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { apiClient } from '../../utils/apiClient';
-import { authApi, profileApi } from '../../utils/apiService';
+import { authApi, profileApi, karmaApi } from '../../utils/apiService';
 
 /**
  * Maps a human-readable roleName (from Admin UI dropdown) to the short role code
@@ -62,6 +62,7 @@ const UserContext = createContext({
     login: async () => {},
     logout: async () => {},
     refreshCurrentUser: async () => {},
+    refreshKarma: async () => {},
     updateCurrentUserRole: () => {},
     updateUserRoleInList: () => {},
 });
@@ -641,12 +642,14 @@ export const UserProvider = ({ children }) => {
         }
 
         const currentEarnedToday = dailyData[ruleKey] || 0;
-        if (currentEarnedToday >= rule.maxDailyPoints) {
-            return false; // Daily cap reached
+        let pointsToAward = options.overridePoints || rule.points;
+        if (rule.maxDailyPoints !== Infinity && currentEarnedToday >= rule.maxDailyPoints) {
+            // Still award standard points for user action if explicit
+            pointsToAward = options.overridePoints || rule.points;
+        } else if (rule.maxDailyPoints !== Infinity) {
+            pointsToAward = Math.min(pointsToAward, rule.maxDailyPoints - currentEarnedToday);
+            if (pointsToAward <= 0) pointsToAward = options.overridePoints || rule.points;
         }
-
-        const pointsToAward = Math.min(rule.points, rule.maxDailyPoints - currentEarnedToday);
-        if (pointsToAward <= 0) return false;
 
         dailyData[ruleKey] = currentEarnedToday + pointsToAward;
         try { localStorage.setItem(dailyTrackerKey, JSON.stringify(dailyData)); } catch (e) {}
@@ -654,12 +657,14 @@ export const UserProvider = ({ children }) => {
         const actionTitle = options.customTitle || rule.title;
 
         // 1. Update karmaPoints in usersList state
+        let updatedTotal = 0;
         setUsersList(prev => prev.map(u => {
             const matchById = u.userId && String(u.userId) === String(userId);
             const matchBySeedId = u.id && String(u.id) === String(userId);
             if (matchById || matchBySeedId) {
                 const currentVal = u.karmaPoints || u.karma || 0;
                 const newVal = currentVal + pointsToAward;
+                updatedTotal = newVal;
                 try { localStorage.setItem(`knome_user_karma_${userId}`, String(newVal)); } catch (e) {}
                 return { ...u, karmaPoints: newVal, karma: newVal };
             }
@@ -674,8 +679,10 @@ export const UserProvider = ({ children }) => {
             if (matchById || matchBySeedId) {
                 const currentVal = prev.karmaPoints || prev.karma || 0;
                 const newVal = currentVal + pointsToAward;
+                updatedTotal = newVal;
+                const newPosts = ruleKey === 'POST' ? (prev.postsCount || 0) + 1 : (prev.postsCount || 0);
                 try { localStorage.setItem(`knome_user_karma_${userId}`, String(newVal)); } catch (e) {}
-                return { ...prev, karmaPoints: newVal, karma: newVal };
+                return { ...prev, karmaPoints: newVal, karma: newVal, postsCount: newPosts };
             }
             return prev;
         });
@@ -700,8 +707,36 @@ export const UserProvider = ({ children }) => {
             console.warn("Failed to store karma history log", e);
         }
 
+        // 4. Dispatch global event for instant reactive UI updates
+        window.dispatchEvent(new CustomEvent('karma-updated', {
+            detail: { userId, points: pointsToAward, totalKarma: updatedTotal, ruleKey }
+        }));
+
         return pointsToAward;
     }, []);
+
+    /**
+     * Synchronize and fetch latest karma balance from live backend SQL Server
+     */
+    const refreshKarma = useCallback(async (userId = null) => {
+        const targetId = userId || currentUser?.userId || currentUser?.id;
+        if (!targetId) return null;
+        try {
+            const res = await karmaApi.getMyBalance();
+            const bal = res?.data || res;
+            const total = bal?.totalPoints;
+            if (typeof total === 'number') {
+                setCurrentUser(prev => prev ? { ...prev, karma: total, karmaPoints: total } : prev);
+                setUsersList(prev => prev.map(u => (String(u.userId || u.id) === String(targetId) ? { ...u, karma: total, karmaPoints: total } : u)));
+                try { localStorage.setItem(`knome_user_karma_${targetId}`, String(total)); } catch (_) {}
+                window.dispatchEvent(new CustomEvent('karma-updated', { detail: { userId: targetId, totalKarma: total } }));
+                return total;
+            }
+        } catch (e) {
+            console.warn('Karma refresh note:', e);
+        }
+        return null;
+    }, [currentUser?.userId, currentUser?.id]);
 
     const addKarmaPointsToUser = useCallback((userId, points = 50, reason = 'Media Upload Approved') => {
         return awardRuleKarma(userId, 'CUSTOM', { overridePoints: points, customTitle: reason });
@@ -760,6 +795,7 @@ export const UserProvider = ({ children }) => {
             toggleUserActiveStatus,
             addKarmaPointsToUser,
             awardRuleKarma,
+            refreshKarma,
         }}>
             {children}
         </UserContext.Provider>
@@ -778,6 +814,7 @@ export const useUser = () => {
             login: async () => {},
             logout: async () => {},
             refreshCurrentUser: async () => {},
+            refreshKarma: async () => {},
             updateCurrentUserRole: () => {},
             updateUserRoleInList: () => {},
         };

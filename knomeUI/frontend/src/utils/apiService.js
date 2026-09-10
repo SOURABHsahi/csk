@@ -207,6 +207,9 @@ export const articlesApi = {
 
     /** DELETE /Articles/{id} */
     delete: (id) => apiClient.delete(`/Articles/${id}`),
+
+    /** POST /Articles/{id}/view */
+    recordView: (id) => apiClient.post(`/Articles/${id}/view`),
 };
 
 // ─────────────────────────────────────────────
@@ -246,6 +249,8 @@ export const podcastsApi = {
     getByUserId: (userId, pageNumber = 1, pageSize = 20) => apiClient.get(`/Podcasts/user/${userId}?pageNumber=${pageNumber}&pageSize=${pageSize}`),
     /** GET /Podcasts/{id} */
     getById: (id) => apiClient.get(`/Podcasts/${id}`),
+    /** POST /Podcasts/{id}/view */
+    recordView: (id) => apiClient.post(`/Podcasts/${id}/view`),
     /** POST /Podcasts */
     create: (data) => apiClient.post('/Podcasts', data),
     /** DELETE /Podcasts/{id} */
@@ -544,7 +549,7 @@ export const adminApi = {
 
     /** PUT /users/{id}/suspend */
     suspendUser: (userId, reason, durationDays = 7) => {
-        const isPermanent = Number(durationDays) >= 3650;
+        const isPermanent = Number(durationDays) >= 365;
         const suspendedUntil = isPermanent 
             ? null 
             : new Date(Date.now() + Number(durationDays) * 24 * 60 * 60 * 1000).toISOString();
@@ -700,6 +705,17 @@ export const analyticsApi = {
 // ─────────────────────────────────────────────
 const ATTACHMENT_TYPE_MAP = { Image: 'image', Document: 'doc', Video: 'video', Audio: 'audio' };
 
+export const detectFileType = (url, fallbackType = 'image') => {
+    if (!url || typeof url !== 'string') return fallbackType;
+    const clean = url.split('?')[0].toLowerCase();
+    if (clean.match(/\.(jpeg|jpg|png|gif|webp|svg|bmp|ico)$/)) return 'image';
+    if (clean.match(/\.(mp4|webm|ogg|mov|mkv|avi)$/)) return 'video';
+    if (clean.match(/\.(mp3|wav|ogg|aac|m4a|flac)$/)) return 'audio';
+    if (clean.match(/\.(pdf|doc|docx|txt|xls|xlsx|ppt|pptx|csv)$/)) return 'doc';
+    return fallbackType;
+};
+
+
 export const resolveMediaUrl = (url) => {
     if (!url) return null;
     if (typeof url !== 'string') return url;
@@ -759,10 +775,40 @@ export const getVideoThumbnail = (video) => {
 };
 
 
+/**
+ * Robust date parser that handles:
+ * - Date instances
+ * - Timestamp numbers
+ * - ISO strings with 'Z' or timezone offsets
+ * - ISO strings WITHOUT 'Z' (e.g. from SQL Server datetime2: "2026-09-10T06:07:15")
+ * Automatically forces UTC interpretation for unspecified timestamps so that
+ * the browser converts it directly into the user's laptop local time.
+ */
+export const parseLaptopDate = (dateInput) => {
+    if (!dateInput) return null;
+    if (dateInput instanceof Date) {
+        return isNaN(dateInput.getTime()) ? null : dateInput;
+    }
+    if (typeof dateInput === 'number') {
+        const d = new Date(dateInput);
+        return isNaN(d.getTime()) ? null : d;
+    }
+    if (typeof dateInput !== 'string') return null;
+    let s = dateInput.trim();
+    if (!s) return null;
+
+    // If format like "YYYY-MM-DDTHH:mm:ss" or "YYYY-MM-DD HH:mm:ss.fff" without timezone indicator ('Z', '+', '-')
+    if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(s)) {
+        s = s.replace(' ', 'T') + 'Z';
+    }
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+};
+
 export const formatToDDMMYYYY = (dateInput) => {
     if (!dateInput) return '';
-    const d = new Date(dateInput);
-    if (isNaN(d.getTime())) return '';
+    const d = parseLaptopDate(dateInput);
+    if (!d || isNaN(d.getTime())) return '';
     const pad = (n) => String(n).padStart(2, '0');
     const day = pad(d.getDate());
     const month = pad(d.getMonth() + 1);
@@ -789,7 +835,8 @@ export const mapPost = (post) => {
 
     const commentsCount = post.commentsCount ?? post.commentCount ?? post.engagementSummary?.commentsCount ?? post.engagementSummary?.commentCount ?? (Array.isArray(post.comments) ? post.comments.length : 0);
 
-    const isScheduledFuture = post.status === 'Scheduled' && post.scheduledDate && new Date(post.scheduledDate).getTime() > Date.now();
+    const schedParsed = post.scheduledDate ? parseLaptopDate(post.scheduledDate) : null;
+    const isScheduledFuture = post.status === 'Scheduled' && schedParsed && schedParsed.getTime() > Date.now();
     const displayTime = isScheduledFuture
         ? `Scheduled for ${formatToDDMMYYYY(post.scheduledDate)}`
         : formatToDDMMYYYY(post.publishedDate || post.scheduledDate || post.createdDate || Date.now());
@@ -805,13 +852,18 @@ export const mapPost = (post) => {
         .map((a, idx) => {
             const rawUrl = a.fileUrl || a.url || a.backendUrl || (typeof a === 'string' ? a : null);
             const resolved = resolveMediaUrl(rawUrl);
-            const fileTypeStr = a.fileType || a.type || 'image';
-            const mappedType = ATTACHMENT_TYPE_MAP[fileTypeStr] || fileTypeStr.toLowerCase();
+            const fileTypeStr = a.fileType || a.type || detectFileType(rawUrl, 'image');
+            const mappedType = ATTACHMENT_TYPE_MAP[fileTypeStr] || fileTypeStr?.toLowerCase() || 'image';
+            const detected = detectFileType(rawUrl, mappedType);
+            const finalType = (detected === 'doc' || mappedType === 'doc' || mappedType === 'document') ? 'doc'
+                : (detected === 'video' || mappedType === 'video') ? 'video'
+                : (detected === 'audio' || mappedType === 'audio') ? 'audio'
+                : 'image';
             return {
                 id: a.attachmentId || a.id || idx + 1,
-                type: mappedType === 'doc' || mappedType === 'document' ? 'doc' : mappedType === 'video' ? 'video' : mappedType === 'audio' ? 'audio' : 'image',
+                type: finalType,
                 url: resolved || rawUrl,
-                name: a.name || rawUrl?.split('/').pop() || 'attachment',
+                name: a.name || rawUrl?.split('/').pop()?.split('?')[0] || 'attachment',
             };
         })
         .filter(att => att.url && typeof att.url === 'string' && att.url.trim().length > 0);
@@ -885,6 +937,12 @@ export const mapPost = (post) => {
         sharedUsers: post.mentionedUsers || post.sharedUsers || [],
         mentionedUsers: post.mentionedUsers || [],
         audienceType: post.audienceType || 'Everyone',
+        authorName: authorName,
+        authorAvatar: authorAvatar,
+        authorDesignation: authorRole,
+        contentText: rawContent,
+        text: rawContent,
+        createdDate: post.createdDate || post.publishedDate,
     };
 };
 
@@ -906,26 +964,48 @@ export const mapArticle = (article) => {
         0
     );
 
+    const firstImage = (article.attachments && article.attachments.find(a => a.fileType?.toLowerCase()?.includes('image') || a.type === 'image'))?.fileUrl ||
+        (article.attachmentUrls && article.attachmentUrls.find(u => /\.(jpg|jpeg|png|webp|gif)/i.test(u))) ||
+        article.coverImageUrl || article.thumbnailUrl || article.image || null;
+
+    const resolvedImage = resolveMediaUrl(firstImage) || firstImage || 'https://images.unsplash.com/photo-1499750310107-5fef28a66643?auto=format&fit=crop&w=600&q=80';
+    const authorName = article.authorFullName || article.authorUser?.fullName || article.authorName || article.author?.name || 'Writer';
+    const authorRole = article.authorDesignation || article.authorUser?.designation || article.authorRole || article.author?.role || 'Writer';
+    const authorAvatar = resolveMediaUrl(article.authorProfilePhotoUrl || article.authorUser?.profilePhotoUrl || article.authorAvatar || article.author?.avatar) ||
+        `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=6366f1&color=fff&size=256&bold=true`;
+    const readMins = article.estimatedReadMinutes || (article.avgReadTimeSeconds ? Math.max(1, Math.round(article.avgReadTimeSeconds / 60)) : 5);
+
     return {
         id: article.articleId || article.id,
+        articleId: article.articleId || article.id,
         title: article.title,
-        subtitle: article.summary || '',
-        content: article.contentBody || '',
-        category: article.category || 'General',
+        subtitle: article.description || article.summary || '',
+        description: article.description || article.summary || '',
+        content: article.contentHtml || article.contentBody || '',
+        contentHtml: article.contentHtml || article.contentBody || '',
+        category: article.categoryName || article.category || 'General',
+        categoryName: article.categoryName || article.category || 'General',
         tags: article.tags || [],
-        image: resolveMediaUrl(article.thumbnailUrl) || (article.thumbnailUrl || ''),
+        image: resolvedImage,
+        coverImageUrl: resolvedImage,
         author: {
-            id: article.authorId,
-            name: article.authorFullName,
-            role: article.authorDesignation || 'Writer',
-            avatar: article.authorProfilePhotoUrl ||
-                `https://ui-avatars.com/api/?name=${encodeURIComponent(article.authorFullName || 'User')}&background=6366f1&color=fff&size=256&bold=true`,
+            id: article.authorUserId || article.authorId,
+            name: authorName,
+            role: authorRole,
+            avatar: authorAvatar,
         },
-        time: new Date(article.publishedDate || article.createdDate).toLocaleString(),
-        readTime: article.estimatedReadMinutes ? `${article.estimatedReadMinutes} min read` : '5 min read',
+        authorFullName: authorName,
+        authorName: authorName,
+        time: formatToDDMMYYYY(article.publishedDate || article.scheduledDate || article.createdDate),
+        createdDate: article.createdDate,
+        publishedDate: article.publishedDate,
+        scheduledDate: article.scheduledDate,
+        readTime: `${readMins} min read`,
+        readTimeMinutes: readMins,
         likes: likesCount,
         likesCount: likesCount,
         views: article.viewCount || 0,
+        viewCount: article.viewCount || 0,
         commentsCount: commentsCount,
         commentCount: commentsCount,
         status: article.status || 'Published',
@@ -970,7 +1050,7 @@ export const mapVideo = (v) => {
         likesCount: likesCount,
         commentsCount: commentsCount,
         commentCount: commentsCount,
-        time: new Date(v.uploadedDate || v.createdDate).toLocaleString(),
+        time: formatToDDMMYYYY(v.uploadedDate || v.createdDate),
     };
 };
 
@@ -1014,7 +1094,7 @@ export const mapPodcast = (p) => {
         commentsCount: commentsCount,
         commentCount: commentsCount,
         plays: p.playCount || 0,
-        time: new Date(p.uploadedDate || p.createdDate).toLocaleString(),
+        time: formatToDDMMYYYY(p.uploadedDate || p.createdDate),
     };
 };
 
@@ -1045,13 +1125,16 @@ function formatDuration(seconds) {
     return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function formatRelativeTime(dateStr) {
+export function formatRelativeTime(dateStr) {
     if (!dateStr) return '';
-    const diff = (Date.now() - new Date(dateStr)) / 1000;
+    const d = parseLaptopDate(dateStr);
+    if (!d || isNaN(d.getTime())) return '';
+    const diff = Math.max(0, (Date.now() - d.getTime()) / 1000);
     if (diff < 60) return 'Just now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
-    return `${Math.floor(diff / 86400)}d`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+    return formatToDDMMYYYY(d);
 }
 
 export const mapFeedItem = (item) => {
@@ -1090,13 +1173,53 @@ export const mapFeedItem = (item) => {
         0
     );
 
+    const schedParsed = item.scheduledDate ? parseLaptopDate(item.scheduledDate) : null;
+    const isScheduledFuture = item.status === 'Scheduled' && schedParsed && schedParsed.getTime() > Date.now();
+    const displayTime = isScheduledFuture
+        ? `Scheduled for ${formatToDDMMYYYY(item.scheduledDate)}`
+        : formatToDDMMYYYY(item.publishedDate || item.scheduledDate || item.createdDate || Date.now());
+
+    // Map raw attachments from all possible shapes (FeedItemDto, PostDto, or local item)
+    const rawAttachments = (item.attachments && item.attachments.length > 0)
+        ? item.attachments
+        : (item.postAttachments && item.postAttachments.length > 0)
+        ? item.postAttachments
+        : (item.attachmentUrls && item.attachmentUrls.length > 0)
+        ? item.attachmentUrls.map((url, idx) => ({ attachmentId: idx + 1, fileUrl: url, fileType: detectFileType(url, 'image') }))
+        : (item.attachmentUrl ? [{ attachmentId: 1, fileUrl: item.attachmentUrl, fileType: detectFileType(item.attachmentUrl, 'image') }] : []);
+
+    const mappedAttachments = (rawAttachments || [])
+        .map((a, idx) => {
+            const rawUrl = a.fileUrl || a.url || a.backendUrl || (typeof a === 'string' ? a : null);
+            const resolved = resolveMediaUrl(rawUrl);
+            const fileTypeStr = a.fileType || a.type || detectFileType(rawUrl, 'image');
+            const mappedType = ATTACHMENT_TYPE_MAP[fileTypeStr] || fileTypeStr?.toLowerCase() || 'image';
+            const detected = detectFileType(rawUrl, mappedType);
+            const finalType = (detected === 'doc' || mappedType === 'doc' || mappedType === 'document') ? 'doc'
+                : (detected === 'video' || mappedType === 'video') ? 'video'
+                : (detected === 'audio' || mappedType === 'audio') ? 'audio'
+                : 'image';
+
+            return {
+                id: a.attachmentId || a.id || idx + 1,
+                type: finalType,
+                url: resolved || rawUrl,
+                name: a.name || rawUrl?.split('/').pop()?.split('?')[0] || 'attachment',
+            };
+        })
+        .filter(att => att.url && typeof att.url === 'string' && att.url.trim().length > 0);
+
     const base = {
         id: item.contentId || item.id || item.postId,
         contentId: item.contentId || item.id || item.postId,
         postId: item.contentId || item.id || item.postId,
         type: (item.contentType || 'Post').toLowerCase(),
+        status: item.status || 'Published',
+        scheduledDate: item.scheduledDate || null,
+        publishedDate: item.publishedDate || item.createdDate || null,
+        isScheduledFuture: isScheduledFuture,
         author,
-        time: new Date(item.publishedDate || item.createdDate || Date.now()).toLocaleString(),
+        time: displayTime,
         likes: likesCount,
         likesCount: likesCount,
         likeCount: likesCount,
@@ -1112,18 +1235,17 @@ export const mapFeedItem = (item) => {
         reactions: item.engagementSummary?.reactionSummary?.reactions || [],
         comments: Array.isArray(item.comments) ? item.comments : [],
         title: item.title,
-        content: item.textSummary || item.contentText || item.content,
+        content: item.contentText || item.textSummary || item.content,
         audienceType: item.audienceType || 'Everyone',
+        communityId: item.communityId || null,
+        communityName: item.communityName || null,
+        sharedCommunityName: item.communityName || null,
+        sharedWithName: item.sharedWithName || null,
+        audienceUserIds: item.audienceUserIds || [],
+        attachments: mappedAttachments,
     };
 
-    if (item.contentType === 'Post') {
-        base.attachments = item.attachmentUrl ? [{
-            id: 1,
-            type: 'image', // simplified for feed item mapping
-            url: resolveMediaUrl(item.attachmentUrl) || item.attachmentUrl,
-            name: 'attachment'
-        }] : [];
-    } else if (item.contentType === 'Article') {
+    if (item.contentType === 'Article') {
         base.image = resolveMediaUrl(item.attachmentUrl) || (item.attachmentUrl || '');
         base.readTime = '5 min read'; // Default fallback
         base.subtitle = item.textSummary;

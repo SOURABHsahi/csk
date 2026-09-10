@@ -9,6 +9,8 @@ import ArticleShareModal from '../components/modals/ArticleShareModal';
 import { getVideos, getPlaylists, savePlaylist, deletePlaylist, importYouTubePlaylist } from '../utils/videoService';
 
 import { savedContentApi, getPersonalizedRecommendations, resolveMediaUrl } from '../utils/apiService';
+import { useScrollLoading } from '../hooks/useScrollLoading';
+import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 
 const ENTERPRISE_COMMUNITIES = [
     { id: 1, name: 'Engineering & Tech', icon: 'developer_board' },
@@ -677,6 +679,12 @@ export default function Videos() {
     );
     const filteredVideos = activeFilter === '✨ For You' ? getPersonalizedRecommendations(rawFiltered, currentUser) : rawFiltered;
 
+    const { visibleCount, reset: resetScrollLoading } = useScrollLoading(filteredVideos.length, 8, 8);
+
+    useEffect(() => {
+        resetScrollLoading();
+    }, [activeFilter, viewTab, searchQuery, resetScrollLoading]);
+
     const sideVideos = activeVideo
         ? videos.filter(v => v.id !== activeVideo.id)
         : filteredVideos;
@@ -1339,7 +1347,7 @@ export default function Videos() {
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                                {filteredVideos.map(video => (
+                                {filteredVideos.slice(0, visibleCount).map(video => (
                                     <div key={video.id} onClick={() => handleSelectVideo(video)}
                                         className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 group cursor-pointer flex flex-col">
                                         {/* Thumbnail */}
@@ -1366,6 +1374,7 @@ export default function Videos() {
                                         </div>
                                     </div>
                                 ))}
+                                <ScrollLoadingIndicator isVisible={visibleCount < filteredVideos.length} text="Loading more videos on scroll..." />
                             </div>
                         )}
                     </div>

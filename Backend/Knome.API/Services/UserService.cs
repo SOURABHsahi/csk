@@ -54,7 +54,11 @@ public class UserService : IUserService
         var dto = _mapper.Map<UserProfileDto>(targetUser);
 
         dto.PostsCount = await _db.Posts.CountAsync(p => p.AuthorUserId == targetUserId);
-        dto.CommonCommunitiesCount = await _db.CommunityMembers.CountAsync(c => c.UserId == targetUserId);
+        dto.CommonCommunitiesCount = await _db.Communities.CountAsync(c => c.IsActive && 
+            (c.CreatedByUserId == targetUserId || 
+             c.CommunityMembers.Any(m => m.UserId == targetUserId && (m.Status == "Approved" || m.Status == "Active")) ||
+             c.Users.Any(u => u.UserId == targetUserId) ||
+             c.CommunityType == "Default"));
 
         if (targetUserId != requestingUserId)
         {

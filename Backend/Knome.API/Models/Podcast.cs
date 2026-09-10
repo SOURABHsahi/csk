@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace Knome.API.Models;
@@ -26,6 +26,8 @@ public partial class Podcast
     public DateTime UploadedDate { get; set; }
 
     public string? AudioUrl { get; set; }
+
+    public int ViewCount { get; set; }
 
     public virtual Category? Category { get; set; }
 

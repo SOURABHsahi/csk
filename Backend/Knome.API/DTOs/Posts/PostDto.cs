@@ -29,5 +29,8 @@ public class PostDto
     public List<string> AttachmentUrls { get; set; } = new();
     public List<PostAttachmentDto> Attachments { get; set; } = new();
     public List<MentionedUserDto> MentionedUsers { get; set; } = new();
+    public int? CommunityId { get; set; }
+    public string? CommunityName { get; set; }
+    public string? SharedWithName { get; set; }
     public ContentSummaryDto? EngagementSummary { get; set; }
 }

@@ -15,9 +15,11 @@ import {
     karmaApi,
     getCommunityImages, 
     mapPost,
+    mapArticle,
     resolveMediaUrl 
 } from '../utils/apiService';
 import ShareProfileModal from '../components/modals/ShareProfileModal';
+import PostCard from '../components/widgets/PostCard';
 
 const PRESET_BANNERS = [
     {
@@ -118,31 +120,58 @@ export default function Profile() {
     }, [activeUserId, isOwnProfile]);
 
     // Resolved user object merging backend profile data
-    const displayUser = isOwnProfile 
+    const rawUserSource = isOwnProfile 
         ? { ...currentUser, ...(fetchedUser || {}) }
-        : (fetchedUser || {
-            ...targetUserObj,
-            userId: targetUserId || targetUserObj?.id,
-            id: targetUserId || targetUserObj?.id,
-            name: targetUserObj?.name || targetUserObj?.fullName || 'User',
-            fullName: targetUserObj?.fullName || targetUserObj?.name || 'User',
-            avatar: targetUserObj?.avatar || targetUserObj?.profilePhotoUrl,
-            profilePhotoUrl: targetUserObj?.profilePhotoUrl || targetUserObj?.avatar,
-            designation: targetUserObj?.roleName || targetUserObj?.designation || targetUserObj?.role || 'Contributor',
-            department: targetUserObj?.department || targetUserObj?.departmentName || 'General',
-            departmentName: targetUserObj?.departmentName || targetUserObj?.department || 'General',
-            location: targetUserObj?.location || 'Main Office',
-            bio: targetUserObj?.bio || 'Professional team member at Knome.',
-            skills: targetUserObj?.skills || ['Collaboration', 'Problem Solving'],
-            interests: targetUserObj?.interests || ['Technology', 'Productivity'],
-            postsCount: targetUserObj?.postsCount || 0,
-            followersCount: targetUserObj?.followersCount || 0,
-            followingCount: targetUserObj?.followingCount || 0,
-            mutualConnectionsCount: targetUserObj?.mutualConnectionsCount || 0,
-            commonCommunitiesCount: targetUserObj?.commonCommunitiesCount || 0,
-            karmaPoints: targetUserObj?.karmaPoints || targetUserObj?.karma || 0,
-            karma: targetUserObj?.karma || targetUserObj?.karmaPoints || 0
-        });
+        : { ...(targetUserObj || {}), ...(fetchedUser || {}) };
+
+    const resolvedName = rawUserSource.fullName || rawUserSource.name || 'User';
+    const resolvedAvatar = rawUserSource.profilePhotoUrl || rawUserSource.avatar || null;
+    const resolvedRole = rawUserSource.designation || (Array.isArray(rawUserSource.roles) && rawUserSource.roles[0]) || rawUserSource.roleName || rawUserSource.role || 'Contributor';
+    const resolvedDept = rawUserSource.departmentName || rawUserSource.department || 'General';
+
+    const displayUser = {
+        ...rawUserSource,
+        userId: targetUserId || rawUserSource.userId || rawUserSource.id || activeUserId,
+        id: targetUserId || rawUserSource.userId || rawUserSource.id || activeUserId,
+        name: resolvedName,
+        fullName: resolvedName,
+        avatar: resolvedAvatar,
+        profilePhotoUrl: resolvedAvatar,
+        role: resolvedRole,
+        roleName: resolvedRole,
+        designation: resolvedRole,
+        department: resolvedDept,
+        departmentName: resolvedDept,
+        location: rawUserSource.location || 'Bhopal HQ',
+        bio: rawUserSource.bio || 'Professional team member at Knome.',
+        skills: rawUserSource.skills || ['Collaboration', 'Problem Solving'],
+        interests: rawUserSource.interests || ['Technology', 'Productivity'],
+        postsCount: Number(rawUserSource.postsCount ?? 0),
+        followersCount: Number(rawUserSource.followersCount ?? 0),
+        followingCount: Number(rawUserSource.followingCount ?? 0),
+        mutualConnectionsCount: Number(rawUserSource.mutualConnectionsCount ?? 0),
+        commonCommunitiesCount: Number(rawUserSource.commonCommunitiesCount ?? 0),
+        karmaPoints: Number(rawUserSource.karmaPoints ?? rawUserSource.karma ?? 0),
+        karma: Number(rawUserSource.karmaPoints ?? rawUserSource.karma ?? 0)
+    };
+
+    // Prefetch user communities for header stats and instant display
+    useEffect(() => {
+        if (activeUserId) {
+            const fetchInitialComms = async () => {
+                try {
+                    const commsRes = isOwnProfile
+                        ? await communitiesApi.getMyCommunities()
+                        : await profileApi.getUserCommunities(activeUserId);
+                    let comms = Array.isArray(commsRes) ? commsRes : (commsRes?.data || commsRes?.items || []);
+                    if (comms && comms.length > 0) {
+                        setTabData(prev => ({ ...prev, communities: comms }));
+                    }
+                } catch (_) {}
+            };
+            fetchInitialComms();
+        }
+    }, [activeUserId, isOwnProfile]);
 
     useEffect(() => {
         if (fetchedUser) {
@@ -364,7 +393,7 @@ export default function Profile() {
                             : await profileApi.getUserArticles(currentProfileUserId, 1, 50);
                         const rawArticles = Array.isArray(articlesRes) ? articlesRes : (articlesRes?.data || articlesRes?.items || []);
                         if (!isCancelled) {
-                            setTabData(prev => ({ ...prev, articles: rawArticles }));
+                            setTabData(prev => ({ ...prev, articles: rawArticles.map(mapArticle) }));
                         }
                         break;
                     }
@@ -392,7 +421,28 @@ export default function Profile() {
                         const commsRes = isOwnProfile
                             ? await communitiesApi.getMyCommunities()
                             : await profileApi.getUserCommunities(currentProfileUserId);
-                        const rawComms = Array.isArray(commsRes) ? commsRes : (commsRes?.data || commsRes?.items || []);
+                        let rawComms = Array.isArray(commsRes) ? commsRes : (commsRes?.data || commsRes?.items || []);
+
+                        try {
+                            const localJoined = JSON.parse(localStorage.getItem(`knome_joined_communities_${currentProfileUserId}`) || '[]');
+                            const allCommsRes = await communitiesApi.getAll().catch(() => null);
+                            const allComms = Array.isArray(allCommsRes) ? allCommsRes : (allCommsRes?.data || []);
+
+                            const existingIds = new Set(rawComms.map(c => String(c.communityId || c.id)));
+                            allComms.forEach(c => {
+                                const cid = String(c.communityId || c.id);
+                                const isDefault = c.communityType?.toLowerCase()?.includes('default') || c.communityType?.toLowerCase()?.includes('org');
+                                const isJoined = localJoined.some(lj => String(lj.id) === cid);
+                                const isCreator = String(c.createdByUserId) === String(currentProfileUserId);
+                                if ((isDefault || isJoined || isCreator) && !existingIds.has(cid)) {
+                                    rawComms.push(c);
+                                    existingIds.add(cid);
+                                }
+                            });
+                        } catch (e) {
+                            console.warn("Communities fallback merge error:", e);
+                        }
+
                         if (!isCancelled) {
                             setTabData(prev => ({ ...prev, communities: rawComms }));
                         }
@@ -437,11 +487,11 @@ export default function Profile() {
     const karmaBadge = getKarmaBadge(realKarmaPoints);
 
     const stats = {
-        posts: Number(displayUser.postsCount ?? 0),
+        posts: Number(tabData.posts.length > 0 ? tabData.posts.length : (displayUser.postsCount ?? 0)),
         followers: followersCount,
         following: Number(displayUser.followingCount ?? 0),
         mutuals: Number(displayUser.mutualConnectionsCount ?? 0),
-        commonCommunities: Number(displayUser.commonCommunitiesCount ?? 0),
+        commonCommunities: Number(tabData.communities.length > 0 ? tabData.communities.length : (displayUser.commonCommunitiesCount ?? 0)),
         karma: realKarmaPoints
     };
 
@@ -1027,64 +1077,28 @@ export default function Profile() {
                 )}
                 
                 {activeTab === 'Posts' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-6 max-w-3xl mx-auto">
                         {isTabLoading ? (
-                            <p className="col-span-2 text-center text-slate-500 font-medium py-8">Loading posts...</p>
+                            <p className="text-center text-slate-500 font-medium py-8">Loading posts...</p>
                         ) : tabData.posts.length === 0 ? (
-                            <div className="col-span-2 text-center py-12 glass rounded-2xl border border-slate-200 dark:border-slate-800">
+                            <div className="text-center py-12 glass rounded-2xl border border-slate-200 dark:border-slate-800">
                                 <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">article</span>
                                 <p className="text-slate-600 dark:text-slate-400 font-bold">No posts published yet</p>
                                 <p className="text-xs text-slate-400 mt-1">Updates and posts by this user will appear here.</p>
                             </div>
                         ) : (
-                            tabData.posts.map(post => {
-                                const authorAvatar = resolveImageUrl(post.authorAvatar || post.authorProfilePhotoUrl, post.authorName);
-                                return (
-                                    <div key={post.id || post.postId} className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-6 glass card-lift flex flex-col justify-between">
-                                        <div>
-                                            <div className="flex items-center gap-3 mb-4">
-                                                {authorAvatar ? (
-                                                    <img src={authorAvatar} alt={post.authorName} className="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700" />
-                                                ) : (
-                                                    <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 font-bold flex items-center justify-center">
-                                                        {(post.authorName || 'U').charAt(0)}
-                                                    </div>
-                                                )}
-                                                <div>
-                                                    <p className="font-bold text-slate-900 dark:text-white text-sm">{post.authorName || displayUser.name}</p>
-                                                    <p className="text-[11px] text-slate-400 font-medium">
-                                                        {post.createdDate ? new Date(post.createdDate).toLocaleDateString() : 'Recent'}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed mb-4 whitespace-pre-line">
-                                                {post.contentText || post.text || post.content}
-                                            </p>
-                                            {post.attachments && post.attachments.length > 0 && post.attachments[0].fileUrl && (
-                                                <img 
-                                                    src={resolveMediaUrl(post.attachments[0].fileUrl)} 
-                                                    alt="Post media" 
-                                                    className="w-full h-48 object-cover rounded-xl mb-4 border border-slate-100 dark:border-slate-800" 
-                                                />
-                                            )}
-                                        </div>
-                                        <div className="flex items-center gap-6 pt-3 border-t border-slate-100 dark:border-slate-800/60 text-xs font-bold text-slate-500">
-                                            <span className="flex items-center gap-1.5 hover:text-indigo-500 cursor-pointer">
-                                                <span className="material-symbols-outlined text-[18px]">favorite</span> 
-                                                {post.engagementSummary?.likeCount ?? post.likesCount ?? post.likes ?? 0}
-                                            </span>
-                                            <span className="flex items-center gap-1.5 hover:text-indigo-500 cursor-pointer">
-                                                <span className="material-symbols-outlined text-[18px]">chat_bubble</span> 
-                                                {post.engagementSummary?.commentsCount ?? post.engagementSummary?.commentCount ?? post.commentsCount ?? (Array.isArray(post.comments) ? post.comments.length : (typeof post.comments === 'number' ? post.comments : 0))}
-                                            </span>
-                                            <span className="flex items-center gap-1.5 hover:text-indigo-500 cursor-pointer">
-                                                <span className="material-symbols-outlined text-[18px]">share</span> 
-                                                {post.engagementSummary?.shareCount ?? post.sharesCount ?? post.shares ?? 0}
-                                            </span>
-                                        </div>
-                                    </div>
-                                );
-                            })
+                            tabData.posts.map(post => (
+                                <PostCard
+                                    key={post.id || post.postId}
+                                    post={post}
+                                    onPostDeleted={(deletedId) => {
+                                        setTabData(prev => ({
+                                            ...prev,
+                                            posts: prev.posts.filter(p => (p.id || p.postId) !== deletedId)
+                                        }));
+                                    }}
+                                />
+                            ))
                         )}
                     </div>
                 )}
@@ -1097,31 +1111,71 @@ export default function Profile() {
                             <div className="col-span-3 text-center py-12 glass rounded-2xl border border-slate-200 dark:border-slate-800">
                                 <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">menu_book</span>
                                 <p className="text-slate-600 dark:text-slate-400 font-bold">No articles published yet</p>
+                                <p className="text-xs text-slate-400 mt-1">Deep-dive articles and publications by this user will appear here.</p>
                             </div>
                         ) : (
                             tabData.articles.map(article => {
                                 const artId = article.articleId || article.id;
+                                const isScheduled = article.status === 'Scheduled';
+                                const coverImg = article.image || article.coverImageUrl;
                                 return (
                                     <div 
                                         key={artId} 
                                         onClick={() => navigate(`/article-view?id=${artId}`)}
-                                        className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden glass card-lift flex flex-col cursor-pointer group hover:border-indigo-500 transition-all"
+                                        className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden glass card-lift flex flex-col cursor-pointer group hover:border-indigo-500 transition-all bg-white dark:bg-slate-900"
                                     >
-                                        <img src={resolveMediaUrl(article.coverImageUrl) || 'https://images.unsplash.com/photo-1507238691740-187a5b1d37b8?auto=format&fit=crop&w=600&q=80'} alt={article.title} className="h-40 w-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                        <div className="h-44 w-full relative overflow-hidden bg-slate-100 dark:bg-slate-950">
+                                            <img 
+                                                src={coverImg} 
+                                                alt={article.title} 
+                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                                            />
+                                            <div className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-sm text-white px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
+                                                {article.categoryName || article.category || 'General'}
+                                            </div>
+                                            {isScheduled && (
+                                                <div className="absolute top-3 right-3 bg-amber-500 text-slate-950 font-black px-2.5 py-1 rounded-full text-[10px] flex items-center gap-1 shadow-md">
+                                                    <span className="material-symbols-outlined text-[12px]">schedule</span>
+                                                    Scheduled
+                                                </div>
+                                            )}
+                                        </div>
                                         <div className="p-5 flex-1 flex flex-col justify-between">
                                             <div>
                                                 <div className="flex items-center justify-between text-[11px] font-bold text-indigo-500 mb-2">
-                                                    <span>{article.readTimeMinutes || 5} min read</span>
-                                                    <span className="text-slate-400">{new Date(article.createdDate).toLocaleDateString()}</span>
+                                                    <span>{article.readTime || `${article.readTimeMinutes || 5} min read`}</span>
+                                                    <span className="text-slate-400">{article.time || (article.createdDate ? new Date(article.createdDate).toLocaleDateString() : 'Recent')}</span>
                                                 </div>
-                                                <h4 className="font-bold text-slate-900 dark:text-white text-base mb-2 leading-snug group-hover:text-indigo-500 transition-colors">{article.title}</h4>
-                                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-4 line-clamp-2">{article.description || article.summary}</p>
+                                                <h4 className="font-bold text-slate-900 dark:text-white text-base mb-2 leading-snug group-hover:text-indigo-500 transition-colors line-clamp-2">
+                                                    {article.title}
+                                                </h4>
+                                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-4 line-clamp-2">
+                                                    {article.subtitle || article.description || article.summary || 'Read this article on Knome.'}
+                                                </p>
                                             </div>
-                                            <div className="flex items-center justify-between text-xs font-semibold text-slate-400 pt-3 border-t border-slate-100 dark:border-slate-800">
-                                                <span className="flex items-center gap-1">
-                                                    <span className="material-symbols-outlined text-[16px]">visibility</span> {article.viewCount || 0} views
-                                                </span>
-                                                <button className="text-indigo-500 font-bold hover:underline cursor-pointer">Read Article →</button>
+                                            <div>
+                                                {article.tags && article.tags.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1 mb-3">
+                                                        {article.tags.slice(0, 3).map((tag, idx) => (
+                                                            <span key={idx} className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400">
+                                                                #{tag.replace('#', '')}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                <div className="flex items-center justify-between text-xs font-semibold text-slate-400 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="flex items-center gap-1">
+                                                            <span className="material-symbols-outlined text-[16px]">visibility</span> 
+                                                            {article.views || article.viewCount || 0}
+                                                        </span>
+                                                        <span className="flex items-center gap-1">
+                                                            <span className="material-symbols-outlined text-[16px] text-rose-500">favorite</span> 
+                                                            {article.likes || article.likesCount || 0}
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-indigo-500 font-bold hover:underline">Read Article →</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -1213,29 +1267,45 @@ export default function Profile() {
                         ) : (
                             tabData.communities.map(comm => {
                                 const targetCommId = comm.communityId || comm.id;
-                                const bannerUrl = resolveMediaUrl(comm.bannerImageUrl) || (comm.banner || getCommunityImages(comm.name).banner);
+                                const imgs = getCommunityImages(comm.name, comm.categoryName || comm.category);
+                                const bannerUrl = resolveMediaUrl(comm.bannerUrl || comm.bannerImageUrl) || comm.banner || imgs.banner;
+                                const memberCount = comm.membersCount || comm.memberCount || 1;
+                                const isDefault = comm.communityType?.toLowerCase()?.includes('default') || comm.communityType?.toLowerCase()?.includes('org');
+                                const roleBadge = comm.isCurrentUserAdmin ? 'Admin' : (comm.currentUserRole || (isDefault ? 'Official Member' : 'Member'));
+
                                 return (
                                     <div 
                                         key={targetCommId} 
                                         onClick={() => navigate(`/community/view?id=${targetCommId}`)}
-                                        className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden glass card-lift cursor-pointer hover:border-indigo-500 transition-all group"
+                                        className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden glass card-lift cursor-pointer hover:border-indigo-500 transition-all group bg-white dark:bg-slate-900"
                                     >
-                                        <div className="h-28 relative overflow-hidden bg-slate-200 dark:bg-slate-800">
+                                        <div className="h-32 relative overflow-hidden bg-slate-200 dark:bg-slate-800">
                                             <img src={bannerUrl} alt={comm.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                                            <div className="absolute inset-0 bg-black/10"></div>
-                                            <span className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full border border-white/20">{comm.currentUserRole || 'Member'}</span>
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent"></div>
+                                            <span className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full border border-white/20">
+                                                {roleBadge}
+                                            </span>
+                                            {isDefault && (
+                                                <span className="absolute top-3 left-3 bg-indigo-600/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-md backdrop-blur-md flex items-center gap-1 shadow-xs">
+                                                    <span className="material-symbols-outlined text-[12px]">verified</span>
+                                                    Default Org
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="p-4 flex items-center justify-between">
-                                            <div>
-                                                <h4 className="font-bold text-slate-900 dark:text-white text-sm group-hover:text-indigo-500 transition-colors">{comm.name}</h4>
-                                                <p className="text-xs text-slate-400 font-medium mt-0.5">{comm.memberCount || comm.membersCount || 0} members</p>
+                                            <div className="min-w-0 flex-1 pr-3">
+                                                <h4 className="font-bold text-slate-900 dark:text-white text-sm group-hover:text-indigo-500 transition-colors truncate">{comm.name}</h4>
+                                                <p className="text-xs text-slate-400 font-medium mt-0.5 flex items-center gap-1">
+                                                    <span className="material-symbols-outlined text-[14px]">groups</span>
+                                                    {memberCount} {memberCount === 1 ? 'member' : 'members'}
+                                                </p>
                                             </div>
                                             <button 
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     navigate(`/community/view?id=${targetCommId}`);
                                                 }}
-                                                className="px-4 py-1.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-bold rounded-lg hover:bg-indigo-500 hover:text-white transition-all shadow-xs cursor-pointer"
+                                                className="px-4 py-1.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-bold rounded-lg hover:bg-indigo-500 hover:text-white transition-all shadow-xs cursor-pointer shrink-0"
                                             >
                                                 View
                                             </button>

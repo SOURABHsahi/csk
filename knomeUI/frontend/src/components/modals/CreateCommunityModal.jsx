@@ -676,6 +676,25 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
             newCommunity.members = `${memberList.length} ${memberList.length === 1 ? 'member' : 'members'}`;
             safeSetStorage(`knome_community_members_${communityId}`, memberList);
 
+            // Seed official welcome post in the name of the new community
+            const initialCommunityPost = {
+                id: `welcome_${communityId}`,
+                postId: `welcome_${communityId}`,
+                author: newCommunity.name,
+                role: 'Official Community Space',
+                avatar: finalAvatar || finalBanner || null,
+                time: 'Just now',
+                content: `Welcome to ${newCommunity.name}! Please feel free to introduce yourself, collaborate with fellow members, and share any technical questions, discussions, or resources here.`,
+                likes: 0,
+                likesCount: 0,
+                comments: 0,
+                commentsCount: 0,
+                shares: 0,
+                sharesCount: 0,
+                isPinned: true
+            };
+            safeSetStorage(`knome_community_posts_${communityId}`, [initialCommunityPost]);
+
             // FR-CM-04: Default (Org) community — save department assignment
             if (type === 'default') {
                 const deptAssignments = JSON.parse(localStorage.getItem('knome_default_community_assignments') || '[]');

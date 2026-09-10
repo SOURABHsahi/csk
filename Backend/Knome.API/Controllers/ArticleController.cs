@@ -99,5 +99,13 @@ public class ArticleController : KnomeControllerBase
         var category = await _articleService.CreateArticleCategoryAsync(dto, GetCurrentUserId());
         return StatusCode(StatusCodes.Status201Created, ApiResponse<CategoryDto>.SuccessResponse(201, "Category created successfully.", category));
     }
+
+    [HttpPost("{articleId:long}/view")]
+    [ProducesResponseType(typeof(ApiResponse<int>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RecordView(long articleId)
+    {
+        var newCount = await _articleService.IncrementViewCountAsync(articleId);
+        return Ok(ApiResponse<int>.SuccessResponse(200, "Article view recorded.", newCount));
+    }
 }
 

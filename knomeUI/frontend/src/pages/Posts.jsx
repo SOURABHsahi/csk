@@ -10,13 +10,27 @@ export default function Posts() {
     const location = useLocation();
     const queryParams = new URLSearchParams(location.search);
     const targetPostId = queryParams.get('id') || queryParams.get('postId') || queryParams.get('highlight');
+    const initialTag = queryParams.get('tag') || queryParams.get('hashtag') || null;
+    const initialSearch = queryParams.get('q') || '';
     
     // Core state
     const [posts, setPosts] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [selectedTag, setSelectedTag] = useState('All');
+    const [searchQuery, setSearchQuery] = useState(initialSearch);
+    const [selectedTag, setSelectedTag] = useState(initialTag ? initialTag.replace('#', '') : 'All');
     const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const tag = params.get('tag') || params.get('hashtag');
+        if (tag) {
+            setSelectedTag(tag.replace('#', ''));
+        }
+        const q = params.get('q');
+        if (q !== null && q !== undefined) {
+            setSearchQuery(q);
+        }
+    }, [location.search]);
 
     const loadPosts = async () => {
         setIsLoading(true);
@@ -130,7 +144,10 @@ export default function Posts() {
     }, []);
 
     // Get all unique tags for filter dropdown
-    const rawUniqueTags = [...new Set(posts.flatMap(post => post.tags || []))].filter(Boolean);
+    const rawUniqueTags = [...new Set([
+        ...posts.flatMap(post => post.tags || []),
+        ...(selectedTag !== 'All' && !['⏰ Scheduled', '✨ Recommended'].includes(selectedTag) ? [selectedTag] : [])
+    ])].filter(Boolean);
     const filteredAvailableTags = rawUniqueTags.filter(t => t.toLowerCase().includes(tagSearch.toLowerCase()));
 
     // Count author's upcoming scheduled posts
@@ -142,7 +159,10 @@ export default function Posts() {
                               (post.author?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
         const matchesTag = selectedTag === 'All' || 
                            (selectedTag === '⏰ Scheduled' ? (post.status === 'Scheduled' || post.isScheduledFuture) : 
-                           (selectedTag === '✨ Recommended' ? true : (post.tags && post.tags.includes(selectedTag))));
+                           (selectedTag === '✨ Recommended' ? true : (
+                               (post.tags && post.tags.some(t => t.toLowerCase() === selectedTag.toLowerCase())) ||
+                               ((post.content || '').toLowerCase().includes('#' + selectedTag.toLowerCase()))
+                           )));
         return matchesSearch && matchesTag;
     });
 

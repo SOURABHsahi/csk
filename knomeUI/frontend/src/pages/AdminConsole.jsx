@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
-import { interactionsApi, adminApi, postsApi, podcastsApi, resolveMediaUrl, getVideoThumbnail } from '../utils/apiService';
+import { interactionsApi, adminApi, postsApi, podcastsApi, articlesApi, communitiesApi, resolveMediaUrl, getVideoThumbnail } from '../utils/apiService';
 import { apiClient } from '../utils/apiClient';
 
 // Helper to provide realistic reported post content if live API call returns empty/404
@@ -217,18 +217,38 @@ export default function AdminConsole() {
 
     // System Config State
     const [configState, setConfigState] = useState(() => {
-        const saved = localStorage.getItem('knome_system_config');
-        return saved ? JSON.parse(saved) : {
+        try {
+            const saved = localStorage.getItem('knome_system_config');
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                return {
+                    maintenanceMode: false,
+                    autoModeration: true,
+                    moderationSensitivity: 'High (Strict AI)',
+                    aiToxicityThreshold: 80,
+                    aiAutoQuarantine: true,
+                    aiDeepScan: true,
+                    maxUploadMb: 100,
+                    jwtTtlHours: 24,
+                    notifyAdminsOnReport: true,
+                    ...parsed
+                };
+            }
+        } catch (e) {}
+        return {
             maintenanceMode: false,
             autoModeration: true,
             moderationSensitivity: 'High (Strict AI)',
+            aiToxicityThreshold: 80,
+            aiAutoQuarantine: true,
+            aiDeepScan: true,
             maxUploadMb: 100,
             jwtTtlHours: 24,
-            emailDigestEnabled: true,
             notifyAdminsOnReport: true,
         };
     });
     const [configToast, setConfigToast] = useState(false);
+    const [suspendSearchTerm, setSuspendSearchTerm] = useState('');
 
     // ── System Logs & Serilog Live Stream State ──
     const [systemLogs, setSystemLogs] = useState([]);
@@ -460,9 +480,41 @@ export default function AdminConsole() {
     const handleRefreshAll = async () => {
         setIsRefreshing(true);
         setLastUpdatedTime(new Date().toLocaleTimeString());
-        await Promise.all([fetchReports(), fetchUsers(), fetchAuditLogs()]);
+        await Promise.all([fetchReports(), fetchUsers(), fetchAuditLogs(), fetchRoleRequests(), fetchCommunities()]);
         setTimeout(() => setIsRefreshing(false), 500);
         showToast('Console data refreshed successfully.');
+    };
+
+    // Fetch Communities from Live API & Merge with default channels
+    const fetchCommunities = async () => {
+        try {
+            const res = await communitiesApi.getAll().catch(() => null);
+            const apiData = res?.data || res;
+            if (Array.isArray(apiData) && apiData.length > 0) {
+                setCommunityChannels(prev => {
+                    const existingMap = new Map(prev.map(c => [String(c.id), c]));
+                    apiData.forEach(item => {
+                        const cId = String(item.communityId || item.id);
+                        if (!existingMap.has(cId)) {
+                            existingMap.set(cId, {
+                                id: Number(cId) || cId,
+                                name: item.name,
+                                category: item.category || 'Enterprise Community',
+                                reportsCount: 0,
+                                mod: item.ownerFullName || item.creatorName || 'System Admin',
+                                status: 'Standard',
+                                type: item.isDefaultOrgCommunity ? 'Default (Org)' : (item.isPrivate ? 'Private' : 'Public'),
+                                filterKey: item.name,
+                                icon: item.isDefaultOrgCommunity ? 'groups' : 'forum'
+                            });
+                        }
+                    });
+                    return Array.from(existingMap.values());
+                });
+            }
+        } catch (e) {
+            console.warn("Failed to load live communities in AdminConsole:", e);
+        }
     };
 
     // 1. Fetch Moderation Reports from Backend API
@@ -800,6 +852,7 @@ export default function AdminConsole() {
         fetchReports();
         fetchRoleRequests();
         fetchAuditLogs();
+        fetchCommunities();
         if (activeTab === 'serilog') fetchSystemLogs();
     }, [isAuthorized]);
 
@@ -821,14 +874,17 @@ export default function AdminConsole() {
         return () => clearInterval(timer);
     }, [activeTab, isAutoRefreshLogs, selectedLogFile, logLevelFilter, logLinesCount, logSearchQuery]);
 
-    // Handle Moderation Action (Dismiss or Remove Content)
+    // Handle Moderation Action (Dismiss, Remove Content, or Reinstate)
     const handleResolve = async (reportId, actionType, contentId = null, contentType = null) => {
         const isDismiss = actionType === 'Dismiss';
-        const newStatus = isDismiss ? 'Reviewed' : 'Action Taken';
-        const actionTakenText = isDismiss ? 'Dismissed (No Action)' : (actionType === 'Removed Content' ? 'Removed Content' : actionType);
+        const isReinstate = actionType === 'Reinstate';
+        const newStatus = isDismiss ? 'Reviewed' : (isReinstate ? 'Reviewed' : 'Action Taken');
+        const actionTakenText = isDismiss 
+            ? 'Dismissed' 
+            : (isReinstate ? 'Reinstated Content' : (actionType === 'Removed Content' ? 'Removed Content' : actionType));
 
         try {
-            await interactionsApi.resolveReport(reportId, actionType, `Resolved by ${currentUser?.name || 'Admin'}`);
+            await interactionsApi.resolveReport(reportId, isDismiss || isReinstate ? 'Dismiss' : actionType, `Resolved by ${currentUser?.name || 'Admin'}`);
             if (actionType === 'Removed Content' && contentType === 'Post' && contentId) {
                 try {
                     await postsApi.delete(contentId);
@@ -840,21 +896,33 @@ export default function AdminConsole() {
             console.warn("Backend API notice:", err);
         }
 
+        const nowStr = new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
         setReports(prev => prev.map(r => r.reportId === reportId ? {
             ...r,
             status: newStatus,
             moderatorUserId: currentUser?.userId || 1,
             moderatorFullName: currentUser?.name || 'System Admin',
             actionTaken: actionTakenText,
-            actionDate: new Date().toLocaleString()
+            actionDate: nowStr
         } : r));
 
-        showToast(`Report #${reportId} resolved: Content ${isDismiss ? 'Dismissed' : 'Removed'} & linked to Removed Reviews.`);
+        if (previewReport && previewReport.reportId === reportId) {
+            setPreviewReport(prev => prev ? {
+                ...prev,
+                status: newStatus,
+                moderatorUserId: currentUser?.userId || 1,
+                moderatorFullName: currentUser?.name || 'System Admin',
+                actionTaken: actionTakenText,
+                actionDate: nowStr
+            } : null);
+        }
+
+        showToast(`Report #${reportId} updated: ${actionTakenText}.`);
 
         logAuditEntry(
-            isDismiss ? 'DismissReport' : 'RemoveContent',
+            isDismiss ? 'DismissReport' : (isReinstate ? 'ReinstateContent' : 'RemoveContent'),
             `Report #${reportId} (${contentType || 'Content'} #${contentId || ''}) -> ${actionTakenText}`,
-            isDismiss ? 'text-slate-500' : 'text-rose-500 font-bold'
+            isDismiss ? 'text-slate-500' : (isReinstate ? 'text-emerald-500 font-bold' : 'text-rose-500 font-bold')
         );
     };
 
@@ -885,7 +953,7 @@ export default function AdminConsole() {
         }
     };
 
-    // Open Post/Video/Podcast Preview Modal
+    // Open Post/Video/Podcast/Article Preview Modal
     const handleOpenPostPreview = async (report) => {
         setPreviewReport(report);
         setIsPreviewOpen(true);
@@ -952,6 +1020,30 @@ export default function AdminConsole() {
                     isPodcast: true,
                     createdDate: report.reportedDate
                 });
+            } else if (report.contentType === 'Article') {
+                let art = null;
+                try {
+                    const res = await articlesApi.getById(report.contentId).catch(() => null);
+                    art = res?.data || res;
+                } catch (e) {}
+
+                if (art && (art.title || art.contentHtml || art.content)) {
+                    setPreviewPost({
+                        authorName: art.authorFullName || art.authorName || report.reportedUserName || report.reporterFullName,
+                        authorFullName: art.authorFullName || art.authorName || report.reportedUserName || report.reporterFullName,
+                        authorUserId: art.authorUserId || art.authorId || report.reportedUserId || report.reporterUserId,
+                        authorDesignation: art.authorDesignation || 'Author',
+                        title: art.title || `Article #${report.contentId}`,
+                        content: art.summary || (art.contentHtml ? art.contentHtml.replace(/<[^>]*>?/gm, '') : report.postContentSnippet),
+                        contentHtml: art.contentHtml,
+                        category: art.category || 'Article',
+                        coverImageUrl: art.coverImageUrl,
+                        isArticle: true,
+                        createdDate: art.createdAt || report.reportedDate
+                    });
+                } else {
+                    setPreviewPost(getFallbackPostContent(report));
+                }
             } else {
                 const res = await postsApi.getById(report.contentId).catch(() => null);
                 if (res) {
@@ -969,51 +1061,76 @@ export default function AdminConsole() {
 
     // Handle Suspend User Submission
     const handleConfirmSuspend = async () => {
-        if (!suspendUserId) return;
+        let numericId = Number(suspendUserId);
+        if (isNaN(numericId) || numericId <= 0) {
+            const found = usersList.find(u => 
+                String(u.employeeId || '').toUpperCase() === String(suspendUserId).toUpperCase() ||
+                (u.fullName && u.fullName.toLowerCase() === String(suspendUserId).toLowerCase()) ||
+                (u.name && u.name.toLowerCase() === String(suspendUserId).toLowerCase())
+            );
+            if (found) {
+                numericId = Number(found.userId || found.id);
+            }
+        }
+
+        if (!numericId || isNaN(numericId)) {
+            showToast('Please select or enter a valid employee to suspend.');
+            return;
+        }
+
+        const targetUser = usersList.find(u => Number(u.userId || u.id) === numericId);
+        const resolvedName = suspendUserName || targetUser?.fullName || targetUser?.name || `Employee #${numericId}`;
+        const reason = suspendReason || 'Compliance Policy Violation';
+
         try {
-            await adminApi.suspendUser(suspendUserId, suspendReason, suspendDays);
+            await adminApi.suspendUser(numericId, reason, suspendDays);
         } catch (err) {
             console.warn("Backend suspend API notice:", err);
         }
 
-        if (toggleUserActiveStatus) toggleUserActiveStatus(suspendUserId, false);
-        setUsersList(prev => prev.map(u => String(u.userId) === String(suspendUserId) ? { ...u, isActive: false } : u));
+        if (toggleUserActiveStatus) toggleUserActiveStatus(numericId, false);
+        setUsersList(prev => prev.map(u => (Number(u.userId || u.id) === numericId || (targetUser?.employeeId && u.employeeId === targetUser.employeeId)) ? { ...u, isActive: false, isSuspended: true } : u));
         
         setIsSuspendModalOpen(false);
-        showToast(`User #${suspendUserId} (${suspendUserName || 'Employee'}) suspended for ${suspendDays} days.`);
+        showToast(`Employee #${numericId} (${resolvedName}) suspended for ${suspendDays} days.`);
 
         logAuditEntry(
             'UserSuspended',
-            `Suspended Employee #${suspendUserId} (${suspendUserName || 'Employee'}) - Reason: ${suspendReason || 'Compliance Policy Violation'}`,
+            `Suspended Employee #${numericId} (${resolvedName}) for ${suspendDays} days - Reason: ${reason}`,
             'text-rose-500 font-black'
         );
 
         setSuspendUserId('');
         setSuspendUserName('');
         setSuspendReason('');
+        setSuspendSearchTerm('');
     };
 
     // Handle User Activate/Reinstate
     const handleToggleUserActive = async (user) => {
         const newActiveState = !user.isActive;
+        const targetId = Number(user.userId || user.id);
         try {
             if (newActiveState) {
-                await adminApi.activateUser(user.userId);
+                if (!isNaN(targetId) && targetId > 0) {
+                    await adminApi.activateUser(targetId);
+                }
             } else {
-                await adminApi.suspendUser(user.userId, 'Admin Manual Action', 7);
+                if (!isNaN(targetId) && targetId > 0) {
+                    await adminApi.suspendUser(targetId, 'Admin Manual Action', 7);
+                }
             }
         } catch (err) {
             console.warn("Backend activation notice:", err);
         }
 
-        const targetId = user.userId || user.id;
-        if (toggleUserActiveStatus) toggleUserActiveStatus(targetId, newActiveState);
-        setUsersList(prev => prev.map(u => (u.userId === user.userId || u.id === user.id) ? { ...u, isActive: newActiveState } : u));
+        if (toggleUserActiveStatus && !isNaN(targetId)) toggleUserActiveStatus(targetId, newActiveState);
+        setUsersList(prev => prev.map(u => (Number(u.userId || u.id) === targetId || (user.employeeId && u.employeeId === user.employeeId)) ? { ...u, isActive: newActiveState, isSuspended: !newActiveState } : u));
         showToast(`User ${user.fullName || user.name} is now ${newActiveState ? 'Active' : 'Suspended'}.`);
 
         logAuditEntry(
             newActiveState ? 'UserActivated' : 'UserSuspended',
-            `${newActiveState ? 'Reactivated' : 'Suspended'} Employee #${targetId} (${user.fullName || user.name})`,
+            `${newActiveState ? 'Reactivated' : 'Suspended'} Employee #${targetId || user.employeeId} (${user.fullName || user.name})`,
             newActiveState ? 'text-emerald-500 font-bold' : 'text-rose-500 font-black'
         );
     };
@@ -1090,8 +1207,9 @@ export default function AdminConsole() {
     const filteredReports = reports.filter(r => {
         const matchesStatus = statusFilter === 'All' || 
             (statusFilter === 'Pending' && r.status === 'Pending') ||
-            (statusFilter === 'Reviewed' && (r.status === 'Reviewed' || r.status === 'Action Taken' || r.actionTaken === 'None')) ||
-            (statusFilter === 'Action Taken' && (r.status === 'Action Taken' || r.status === 'Reviewed' || (r.actionTaken && r.actionTaken !== 'None')));
+            (statusFilter === 'Reviewed' && (r.status === 'Reviewed' || r.status === 'Action Taken' || r.status === 'Resolved' || r.status === 'Dismissed' || r.actionTaken === 'None')) ||
+            (statusFilter === 'Action Taken' && (r.status === 'Action Taken' || r.status === 'Resolved' || (r.actionTaken && r.actionTaken.toLowerCase().includes('remove')))) ||
+            (statusFilter === 'Dismissed' && (r.status === 'Dismissed' || (r.actionTaken && r.actionTaken.toLowerCase().includes('dismiss'))));
 
         const matchesReason = reasonFilter === 'All' || (r.reasonCode && r.reasonCode.toLowerCase() === reasonFilter.toLowerCase());
         
@@ -1106,8 +1224,15 @@ export default function AdminConsole() {
             (moderatorFilter === 'Unassigned' && (!r.moderatorUserId && !r.moderatorFullName)) || 
             (r.moderatorFullName && r.moderatorFullName.toLowerCase().includes(moderatorFilter.toLowerCase()));
 
+        const todayStr = new Date().toLocaleDateString();
         const matchesDateRange = dateRangeFilter === 'All' ||
-            (dateRangeFilter === 'Today' && (r.reportedDate?.includes('2026-07-28') || r.reportedDate?.includes('2026-07-29') || r.reportedDate?.toLowerCase().includes('today')));
+            (dateRangeFilter === 'Today' && (
+                r.reportedDate?.includes(todayStr) ||
+                r.reportedDate?.includes('8/5/26') ||
+                r.reportedDate?.includes('2026-07-28') ||
+                r.reportedDate?.includes('2026-07-29') ||
+                r.reportedDate?.toLowerCase().includes('today')
+            ));
 
         const matchesSearch = !searchQuery || 
                               String(r.reportId).includes(searchQuery) ||
@@ -1607,8 +1732,9 @@ export default function AdminConsole() {
                             >
                                 <option value="All">Status: All</option>
                                 <option value="Pending">Pending</option>
-                                <option value="Reviewed">Reviewed</option>
+                                <option value="Reviewed">Reviewed / Resolved</option>
                                 <option value="Action Taken">Action Taken / Removed</option>
+                                <option value="Dismissed">Dismissed</option>
                             </select>
 
                             {/* Reason Filter */}
@@ -1931,11 +2057,12 @@ export default function AdminConsole() {
 
             {/* ─── TAB 2: USER GOVERNANCE ─── */}
             {activeTab === 'users' && (() => {
+                const activeSearchTerm = (userSearchTerm || searchQuery || '').trim();
                 const filteredUsers = usersList.filter(u => {
-                    if (!userSearchTerm) return true;
-                    const term = userSearchTerm.toLowerCase();
-                    if (term === 'suspended') return u.isActive === false;
-                    if (term === 'active') return u.isActive === true;
+                    if (!activeSearchTerm) return true;
+                    const term = activeSearchTerm.toLowerCase();
+                    if (term === 'suspended') return u.isActive === false || u.isSuspended === true;
+                    if (term === 'active') return u.isActive === true && !u.isSuspended;
                     if (term === 'admin') return (u.roleName || '').toLowerCase().includes('admin') || (u.role || '').toLowerCase().includes('adm');
                     return (
                         String(u.userId || u.id || '').includes(term) ||
@@ -1952,9 +2079,9 @@ export default function AdminConsole() {
                         <div className="flex items-center justify-between mb-4">
                             <div>
                                 <h2 className="text-base font-black text-slate-900 dark:text-white">User Governance & Security Management</h2>
-                                {userSearchTerm && (
+                                {activeSearchTerm && (
                                     <p className="text-xs text-indigo-600 font-semibold mt-0.5">
-                                        Filtering: <strong className="capitalize">{userSearchTerm}</strong> ({filteredUsers.length} Users found)
+                                        Filtering: <strong className="capitalize">{activeSearchTerm}</strong> ({filteredUsers.length} Users found)
                                     </p>
                                 )}
                             </div>
@@ -2130,7 +2257,9 @@ export default function AdminConsole() {
                         </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                        {communityChannels.map((c) => (
+                        {communityChannels
+                            .filter(c => !searchQuery || c.name.toLowerCase().includes(searchQuery.toLowerCase()) || c.category.toLowerCase().includes(searchQuery.toLowerCase()) || c.mod.toLowerCase().includes(searchQuery.toLowerCase()))
+                            .map((c) => (
                             <div 
                                 key={c.id} 
                                 onClick={() => {
@@ -2211,9 +2340,21 @@ export default function AdminConsole() {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                         <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                            <h3 className="font-bold text-sm text-slate-900 dark:text-white mb-2">Toxicity Sensitivity Threshold</h3>
+                            <div className="flex items-center justify-between mb-2">
+                                <h3 className="font-bold text-sm text-slate-900 dark:text-white">Toxicity Sensitivity Threshold</h3>
+                                <span className="px-2 py-0.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-md font-black text-xs">
+                                    {configState.aiToxicityThreshold || 80}%
+                                </span>
+                            </div>
                             <p className="text-slate-500 mb-3">Posts above confidence score will be auto-flagged for review</p>
-                            <input type="range" min="50" max="95" defaultValue="80" className="w-full accent-indigo-600" />
+                            <input 
+                                type="range" 
+                                min="50" 
+                                max="95" 
+                                value={configState.aiToxicityThreshold || 80}
+                                onChange={e => setConfigState({ ...configState, aiToxicityThreshold: Number(e.target.value) })}
+                                className="w-full accent-indigo-600 cursor-pointer" 
+                            />
                             <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-bold">
                                 <span>50% (Permissive)</span>
                                 <span className="text-indigo-600">80% (Recommended)</span>
@@ -2225,8 +2366,13 @@ export default function AdminConsole() {
                             <h3 className="font-bold text-sm text-slate-900 dark:text-white mb-2">Auto-Quarantine High Severity</h3>
                             <p className="text-slate-500 mb-3">Immediately hide posts with Toxicity score &gt; 95% before manual review</p>
                             <label className="flex items-center gap-2 font-bold cursor-pointer">
-                                <input type="checkbox" defaultChecked className="rounded text-indigo-600" />
-                                <span>Enable Auto-Quarantine</span>
+                                <input 
+                                    type="checkbox" 
+                                    checked={configState.aiAutoQuarantine !== false}
+                                    onChange={e => setConfigState({ ...configState, aiAutoQuarantine: e.target.checked })}
+                                    className="w-4 h-4 rounded text-indigo-600 cursor-pointer accent-indigo-600" 
+                                />
+                                <span className="text-slate-800 dark:text-slate-200">Enable Auto-Quarantine</span>
                             </label>
                         </div>
 
@@ -2234,8 +2380,13 @@ export default function AdminConsole() {
                             <h3 className="font-bold text-sm text-slate-900 dark:text-white mb-2">Copyright & PII Leak Scanner</h3>
                             <p className="text-slate-500 mb-3">Scan attachments for confidential compensation docs & API keys</p>
                             <label className="flex items-center gap-2 font-bold cursor-pointer">
-                                <input type="checkbox" defaultChecked className="rounded text-indigo-600" />
-                                <span>Enable Deep Attachment Scan</span>
+                                <input 
+                                    type="checkbox" 
+                                    checked={configState.aiDeepScan !== false}
+                                    onChange={e => setConfigState({ ...configState, aiDeepScan: e.target.checked })}
+                                    className="w-4 h-4 rounded text-indigo-600 cursor-pointer accent-indigo-600" 
+                                />
+                                <span className="text-slate-800 dark:text-slate-200">Enable Deep Attachment Scan</span>
                             </label>
                         </div>
                     </div>
@@ -2247,8 +2398,9 @@ export default function AdminConsole() {
                 <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs p-4">
                     <div className="flex items-center justify-between mb-4">
                         <h2 className="text-base font-black text-slate-900 dark:text-white">System Parameters & Platform Settings</h2>
-                        <button onClick={handleSaveConfig} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs cursor-pointer shadow-sm">
-                            Save Parameters
+                        <button onClick={handleSaveConfig} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs cursor-pointer shadow-sm flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[16px]">save</span>
+                            <span>Save Parameters</span>
                         </button>
                     </div>
 
@@ -2282,7 +2434,7 @@ export default function AdminConsole() {
                         <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between">
                             <div>
                                 <p className="font-bold text-slate-900 dark:text-white">Notify Admins on New Report</p>
-                                <p className="text-slate-400 font-normal text-[11px]">Send immediate toast & email digest to HR/System admins</p>
+                                <p className="text-slate-400 font-normal text-[11px]">Send immediate in-app toast & bell notifications to HR/System admins</p>
                             </div>
                             <input
                                 type="checkbox"
@@ -2299,10 +2451,39 @@ export default function AdminConsole() {
                             </div>
                             <input
                                 type="number"
-                                value={configState.maxUploadMb}
+                                value={configState.maxUploadMb || 100}
                                 onChange={e => setConfigState({ ...configState, maxUploadMb: Number(e.target.value) })}
-                                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 w-20 text-center text-xs"
+                                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 w-20 text-center text-xs text-slate-900 dark:text-white font-bold"
                             />
+                        </div>
+
+                        <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                            <div>
+                                <p className="font-bold text-slate-900 dark:text-white">JWT Session Token TTL (Hours)</p>
+                                <p className="text-slate-400 font-normal text-[11px]">Security session validity before requiring re-auth</p>
+                            </div>
+                            <input
+                                type="number"
+                                value={configState.jwtTtlHours || 24}
+                                onChange={e => setConfigState({ ...configState, jwtTtlHours: Number(e.target.value) })}
+                                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded px-2 py-1 w-20 text-center text-xs text-slate-900 dark:text-white font-bold"
+                            />
+                        </div>
+
+                        <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 flex items-center justify-between col-span-1 md:col-span-2">
+                            <div>
+                                <p className="font-bold text-slate-900 dark:text-white">Global Moderation Sensitivity Policy</p>
+                                <p className="text-slate-400 font-normal text-[11px]">Default safety policy applied across company discussions</p>
+                            </div>
+                            <select
+                                value={configState.moderationSensitivity || 'High (Strict AI)'}
+                                onChange={e => setConfigState({ ...configState, moderationSensitivity: e.target.value })}
+                                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-900 dark:text-white font-bold cursor-pointer"
+                            >
+                                <option value="High (Strict AI)">High (Strict AI Quarantine)</option>
+                                <option value="Standard (Flag & Hold)">Standard (Flag & Hold for Review)</option>
+                                <option value="Relaxed (Permissive)">Relaxed (Post First, Flag Later)</option>
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -2896,22 +3077,26 @@ export default function AdminConsole() {
 
                     {/* List / Table of Requests */}
                     {roleRequests.filter(r => {
-                        if (!roleRequestSearchTerm) return true;
-                        const term = roleRequestSearchTerm.toLowerCase();
+                        const term = (roleRequestSearchTerm || searchQuery || '').trim().toLowerCase();
+                        if (!term) return true;
                         return (r.fullName || '').toLowerCase().includes(term) ||
                                (r.employeeId || '').toLowerCase().includes(term) ||
                                (r.email || '').toLowerCase().includes(term) ||
-                               (r.departmentName || '').toLowerCase().includes(term);
+                               (r.departmentName || '').toLowerCase().includes(term) ||
+                               (r.requestedRoleCode || '').toLowerCase().includes(term) ||
+                               (r.assignedRoleName || '').toLowerCase().includes(term);
                     }).length > 0 ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {roleRequests
                                 .filter(r => {
-                                    if (!roleRequestSearchTerm) return true;
-                                    const term = roleRequestSearchTerm.toLowerCase();
+                                    const term = (roleRequestSearchTerm || searchQuery || '').trim().toLowerCase();
+                                    if (!term) return true;
                                     return (r.fullName || '').toLowerCase().includes(term) ||
                                            (r.employeeId || '').toLowerCase().includes(term) ||
                                            (r.email || '').toLowerCase().includes(term) ||
-                                           (r.departmentName || '').toLowerCase().includes(term);
+                                           (r.departmentName || '').toLowerCase().includes(term) ||
+                                           (r.requestedRoleCode || '').toLowerCase().includes(term) ||
+                                           (r.assignedRoleName || '').toLowerCase().includes(term);
                                 })
                                 .map((req) => {
                                     const isPending = req.status === 'Pending';
@@ -3030,67 +3215,183 @@ export default function AdminConsole() {
             {/* ─── MODAL 1: SUSPEND EMPLOYEE USER ACCOUNT ─── */}
             {isSuspendModalOpen && (
                 <div className="fixed inset-0 z-[120] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-in zoom-in-95">
-                        <div className="flex items-center justify-between mb-4">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-in zoom-in-95 max-h-[92vh] overflow-y-auto">
+                        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
                             <div className="flex items-center gap-2 text-rose-500">
                                 <span className="material-symbols-outlined text-2xl">person_off</span>
-                                <h3 className="text-base font-black text-slate-900 dark:text-white">Suspend Employee Account</h3>
+                                <div>
+                                    <h3 className="text-base font-black text-slate-900 dark:text-white">Suspend Employee Account</h3>
+                                    <p className="text-[11px] text-slate-400 font-medium">Enterprise account suspension & governance enforcement</p>
+                                </div>
                             </div>
-                            <button onClick={() => setIsSuspendModalOpen(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                            <button 
+                                onClick={() => {
+                                    setIsSuspendModalOpen(false);
+                                    setSuspendUserId('');
+                                    setSuspendUserName('');
+                                    setSuspendSearchTerm('');
+                                    setSuspendReason('');
+                                }} 
+                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-1"
+                            >
                                 <span className="material-symbols-outlined text-xl">close</span>
                             </button>
                         </div>
 
-                        <div className="space-y-3 text-xs">
-                            <div>
-                                <label className="block text-slate-500 font-bold mb-1">Target User ID or Name</label>
-                                <input
-                                    type="text"
-                                    value={suspendUserName ? `${suspendUserName} (ID #${suspendUserId})` : suspendUserId}
-                                    onChange={e => setSuspendUserId(e.target.value)}
-                                    placeholder="Enter User ID (e.g. 3, 5)..."
-                                    className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 font-bold outline-none text-slate-900 dark:text-white"
-                                />
-                            </div>
+                        <div className="space-y-4 text-xs">
+                            {/* Target User Card or Searchable Picker */}
+                            {suspendUserId ? (
+                                <div className="p-3 bg-rose-50/70 dark:bg-rose-950/30 rounded-xl border border-rose-200 dark:border-rose-900/50 flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-rose-500 text-white font-black flex items-center justify-center text-sm shadow-sm">
+                                            {(suspendUserName || 'U')[0]}
+                                        </div>
+                                        <div>
+                                            <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider block">Target User</span>
+                                            <p className="font-extrabold text-slate-900 dark:text-white text-sm">{suspendUserName || `User #${suspendUserId}`}</p>
+                                            <p className="text-[11px] text-slate-500 font-mono">User ID: #{suspendUserId}</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSuspendUserId('');
+                                            setSuspendUserName('');
+                                            setSuspendSearchTerm('');
+                                        }}
+                                        className="px-2.5 py-1 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] font-bold hover:bg-slate-50 cursor-pointer"
+                                    >
+                                        Change
+                                    </button>
+                                </div>
+                            ) : (
+                                <div>
+                                    <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">
+                                        Select Employee to Suspend <span className="text-rose-500">*</span>
+                                    </label>
+                                    <div className="relative mb-2">
+                                        <span className="material-symbols-outlined absolute left-2.5 top-2 text-slate-400 text-[16px]">search</span>
+                                        <input
+                                            type="text"
+                                            value={suspendSearchTerm}
+                                            onChange={e => setSuspendSearchTerm(e.target.value)}
+                                            placeholder="Search by name, email, or employee code..."
+                                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-8 pr-3 py-2 text-xs font-semibold outline-none focus:border-rose-500 text-slate-900 dark:text-white"
+                                        />
+                                    </div>
+                                    <div className="max-h-40 overflow-y-auto space-y-1.5 custom-scrollbar border border-slate-200 dark:border-slate-800 rounded-xl p-1 bg-slate-50/50 dark:bg-slate-900/50">
+                                        {usersList
+                                            .filter(u => {
+                                                if (!suspendSearchTerm) return true;
+                                                const term = suspendSearchTerm.toLowerCase();
+                                                return (
+                                                    (u.fullName || u.name || '').toLowerCase().includes(term) ||
+                                                    (u.email || '').toLowerCase().includes(term) ||
+                                                    String(u.employeeId || '').toLowerCase().includes(term) ||
+                                                    String(u.userId || u.id || '').includes(term)
+                                                );
+                                            })
+                                            .slice(0, 15)
+                                            .map(u => (
+                                                <div
+                                                    key={u.userId || u.id}
+                                                    onClick={() => {
+                                                        setSuspendUserId(String(u.userId || u.id));
+                                                        setSuspendUserName(u.fullName || u.name);
+                                                    }}
+                                                    className="p-2 rounded-lg hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer flex items-center justify-between transition-colors"
+                                                >
+                                                    <div className="flex items-center gap-2.5 min-w-0">
+                                                        <div className="w-7 h-7 rounded-full bg-indigo-500/20 text-indigo-600 font-bold text-xs flex items-center justify-center shrink-0">
+                                                            {(u.fullName || u.name || 'U')[0]}
+                                                        </div>
+                                                        <div className="min-w-0">
+                                                            <p className="font-bold text-slate-900 dark:text-white text-xs truncate">{u.fullName || u.name}</p>
+                                                            <p className="text-[10px] text-slate-400 truncate">{u.employeeId} • {u.department || u.departmentName || 'General'}</p>
+                                                        </div>
+                                                    </div>
+                                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${u.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'}`}>
+                                                        {u.isActive ? 'Active' : 'Suspended'}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                    </div>
+                                </div>
+                            )}
 
                             <div>
-                                <label className="block text-slate-500 font-bold mb-1">Suspension Duration</label>
+                                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">Suspension Duration</label>
                                 <select
                                     value={suspendDays}
                                     onChange={e => setSuspendDays(Number(e.target.value))}
-                                    className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 font-bold outline-none text-slate-900 dark:text-white"
+                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-bold outline-none text-slate-900 dark:text-white cursor-pointer"
                                 >
-                                    <option value={1}>1 Day (Warning)</option>
+                                    <option value={1}>1 Day (Warning / Cooldown)</option>
                                     <option value={7}>7 Days (Standard Policy Violation)</option>
                                     <option value={30}>30 Days (Severe Policy Violation)</option>
-                                    <option value={365}>Permanent Termination (365 Days)</option>
+                                    <option value={365}>Permanent Suspension (365 Days)</option>
                                 </select>
                             </div>
 
+                            {/* Preset Reason Chips */}
                             <div>
-                                <label className="block text-slate-500 font-bold mb-1">Violation Reason & Notes</label>
+                                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">Quick Reason Presets</label>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {[
+                                        'Spam / Advertising',
+                                        'Harassment & Abusive Behavior',
+                                        'Compliance Policy Violation',
+                                        'Confidentiality & PII Leak',
+                                        'Inappropriate Content'
+                                    ].map(preset => (
+                                        <button
+                                            key={preset}
+                                            type="button"
+                                            onClick={() => setSuspendReason(preset)}
+                                            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer ${
+                                                suspendReason === preset 
+                                                    ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/40 font-bold' 
+                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                                            }`}
+                                        >
+                                            {preset}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">Violation Reason & Notes</label>
                                 <textarea
                                     value={suspendReason}
                                     onChange={e => setSuspendReason(e.target.value)}
                                     placeholder="Provide detailed violation reasoning for HR audit..."
                                     rows="3"
-                                    className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 outline-none text-slate-900 dark:text-white"
+                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 outline-none text-slate-900 dark:text-white focus:border-rose-500 text-xs"
                                 ></textarea>
                             </div>
                         </div>
 
-                        <div className="mt-6 flex items-center justify-end gap-2">
+                        <div className="mt-6 flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
                             <button
-                                onClick={() => setIsSuspendModalOpen(false)}
-                                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                                onClick={() => {
+                                    setIsSuspendModalOpen(false);
+                                    setSuspendUserId('');
+                                    setSuspendUserName('');
+                                    setSuspendSearchTerm('');
+                                    setSuspendReason('');
+                                }}
+                                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl transition-all cursor-pointer"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleConfirmSuspend}
-                                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
+                                disabled={!suspendUserId}
+                                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5"
                             >
-                                Confirm Suspension
+                                <span className="material-symbols-outlined text-[16px]">person_off</span>
+                                <span>Confirm Suspension</span>
                             </button>
                         </div>
                     </div>
@@ -3222,11 +3523,11 @@ export default function AdminConsole() {
                                 </div>
                             </div>
 
-                            {/* Email notification notice */}
-                            <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2">
-                                <span className="material-symbols-outlined text-emerald-600 dark:text-emerald-400 text-[16px]">mail</span>
-                                <p className="text-[11px] text-emerald-700 dark:text-emerald-300 font-medium">
-                                    Saving changes will automatically send an email update notification to the user.
+                            {/* In-app notification notice */}
+                            <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 rounded-xl flex items-center gap-2">
+                                <span className="material-symbols-outlined text-indigo-600 dark:text-indigo-400 text-[16px]">notifications</span>
+                                <p className="text-[11px] text-indigo-700 dark:text-indigo-300 font-medium">
+                                    Saving changes will notify the user with an in-app system notification.
                                 </p>
                             </div>
                         </div>
@@ -3430,6 +3731,45 @@ export default function AdminConsole() {
                                         </div>
                                     )}
 
+                                    {/* Article Preview if Content is Article */}
+                                    {(previewPost.isArticle || previewReport.contentType === 'Article') && (
+                                        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-bold text-[10px] uppercase tracking-wider">
+                                                    {previewPost.category || 'Article'}
+                                                </span>
+                                                <button
+                                                    onClick={() => {
+                                                        setIsPreviewOpen(false);
+                                                        navigate(`/articles?id=${previewReport.contentId}`);
+                                                    }}
+                                                    className="text-xs text-indigo-600 dark:text-indigo-400 font-bold flex items-center gap-1 hover:underline cursor-pointer"
+                                                >
+                                                    <span>Open Full Article in Hub</span>
+                                                    <span className="material-symbols-outlined text-[14px]">open_in_new</span>
+                                                </button>
+                                            </div>
+                                            {previewPost.title && (
+                                                <h4 className="text-base font-black text-slate-900 dark:text-white">
+                                                    {previewPost.title}
+                                                </h4>
+                                            )}
+                                            {previewPost.coverImageUrl && (
+                                                <img
+                                                    src={resolveMediaUrl(previewPost.coverImageUrl)}
+                                                    alt={previewPost.title || 'Cover'}
+                                                    className="w-full h-44 object-cover rounded-xl border border-slate-200 dark:border-slate-800"
+                                                />
+                                            )}
+                                            {previewPost.contentHtml && (
+                                                <div 
+                                                    className="text-xs text-slate-600 dark:text-slate-300 line-clamp-4 leading-relaxed bg-white dark:bg-slate-950 p-3 rounded-xl border border-slate-200 dark:border-slate-800"
+                                                    dangerouslySetInnerHTML={{ __html: previewPost.contentHtml }}
+                                                />
+                                            )}
+                                        </div>
+                                    )}
+
                                     {/* Attachment Images */}
                                     {((previewPost.attachmentUrls && previewPost.attachmentUrls.length > 0) || (previewPost.attachments && previewPost.attachments.length > 0)) && (
                                         <div className="grid grid-cols-2 gap-2 pt-2">
@@ -3457,45 +3797,110 @@ export default function AdminConsole() {
                             )}
                         </div>
 
-                        {/* Footer — Quick Moderation Actions */}
-                        {previewReport.status === 'Pending' && (
-                            <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80 flex flex-wrap items-center justify-between gap-3 shrink-0 rounded-b-3xl">
-                                <p className="text-[11px] text-slate-400 font-semibold">Quick moderation actions:</p>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    <button
-                                        onClick={() => {
-                                            handleResolve(previewReport.reportId, 'Dismiss', previewReport.contentId, previewReport.contentType);
-                                            setIsPreviewOpen(false);
-                                        }}
-                                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 font-bold text-[11px] rounded-lg transition-all cursor-pointer shadow-xs"
-                                    >
-                                        Dismiss
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            handleResolve(previewReport.reportId, 'Removed Content', previewReport.contentId, previewReport.contentType);
-                                            setIsPreviewOpen(false);
-                                        }}
-                                        className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 font-bold text-[11px] border border-rose-500/20 rounded-lg transition-all cursor-pointer shadow-xs"
-                                    >
-                                        Remove Content
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setIsPreviewOpen(false);
-                                            const targetUserId = previewPost?.authorUserId || previewPost?.userId || previewPost?.authorId || previewReport.reportedUserId || previewReport.reporterUserId;
-                                            const targetUserName = previewPost?.authorFullName || previewPost?.authorName || previewPost?.fullName || previewReport.reportedUserName || previewReport.reporterFullName;
-                                            setSuspendUserId(String(targetUserId));
-                                            setSuspendUserName(targetUserName);
-                                            setIsSuspendModalOpen(true);
-                                        }}
-                                        className="px-3.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 font-bold text-[11px] border border-amber-500/20 rounded-lg transition-all cursor-pointer shadow-xs"
-                                    >
-                                        Suspend User
-                                    </button>
-                                </div>
-                            </div>
-                        )}
+                        {/* Footer — Quick Moderation Actions & Governance Audit Banner */}
+                        <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/80 flex flex-wrap items-center justify-between gap-3 shrink-0 rounded-b-3xl">
+                            {previewReport.status === 'Pending' ? (
+                                <>
+                                    <p className="text-[11px] text-slate-400 font-semibold">Quick moderation actions:</p>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <button
+                                            onClick={() => {
+                                                handleResolve(previewReport.reportId, 'Dismiss', previewReport.contentId, previewReport.contentType);
+                                                setIsPreviewOpen(false);
+                                            }}
+                                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 font-bold text-[11px] rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1"
+                                        >
+                                            <span className="material-symbols-outlined text-[15px]">check_circle</span>
+                                            <span>Dismiss (No Action)</span>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                handleResolve(previewReport.reportId, 'Removed Content', previewReport.contentId, previewReport.contentType);
+                                                setIsPreviewOpen(false);
+                                            }}
+                                            className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 font-bold text-[11px] border border-rose-500/20 rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1"
+                                        >
+                                            <span className="material-symbols-outlined text-[15px]">delete</span>
+                                            <span>Remove Content</span>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setIsPreviewOpen(false);
+                                                const targetUserId = previewPost?.authorUserId || previewPost?.userId || previewPost?.authorId || previewReport.reportedUserId || previewReport.reporterUserId;
+                                                const targetUserName = previewPost?.authorFullName || previewPost?.authorName || previewPost?.fullName || previewReport.reportedUserName || previewReport.reporterFullName;
+                                                setSuspendUserId(String(targetUserId));
+                                                setSuspendUserName(targetUserName);
+                                                setIsSuspendModalOpen(true);
+                                            }}
+                                            className="px-3.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 font-bold text-[11px] border border-amber-500/20 rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1"
+                                        >
+                                            <span className="material-symbols-outlined text-[15px]">person_off</span>
+                                            <span>Suspend User</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setIsPreviewOpen(false)}
+                                            className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-[11px] rounded-lg cursor-pointer"
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="flex items-center gap-2 text-xs">
+                                        <span className={`px-2.5 py-0.5 rounded-full font-black text-[10px] ${previewReport.status === 'Resolved' || (previewReport.actionTaken && previewReport.actionTaken.toLowerCase().includes('remove')) ? 'bg-rose-500/15 text-rose-600 border border-rose-500/30' : 'bg-blue-500/15 text-blue-600 border border-blue-500/30'}`}>
+                                            {previewReport.actionTaken || previewReport.status}
+                                        </span>
+                                        <span className="text-slate-500 text-[11px]">
+                                            By <strong className="text-slate-700 dark:text-slate-300">{previewReport.moderatorFullName || 'System Admin'}</strong> • {previewReport.actionDate || previewReport.reportedDate}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        {(previewReport.status === 'Resolved' || (previewReport.actionTaken && previewReport.actionTaken.toLowerCase().includes('remove'))) ? (
+                                            <button
+                                                onClick={() => {
+                                                    handleResolve(previewReport.reportId, 'Reinstate', previewReport.contentId, previewReport.contentType);
+                                                }}
+                                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1"
+                                            >
+                                                <span className="material-symbols-outlined text-[15px]">restore_from_trash</span>
+                                                <span>Reinstate Content</span>
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={() => {
+                                                    handleResolve(previewReport.reportId, 'Removed Content', previewReport.contentId, previewReport.contentType);
+                                                }}
+                                                className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 font-bold text-[11px] border border-rose-500/20 rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1"
+                                            >
+                                                <span className="material-symbols-outlined text-[15px]">delete</span>
+                                                <span>Remove Content</span>
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={() => {
+                                                setIsPreviewOpen(false);
+                                                const targetUserId = previewPost?.authorUserId || previewPost?.userId || previewPost?.authorId || previewReport.reportedUserId || previewReport.reporterUserId;
+                                                const targetUserName = previewPost?.authorFullName || previewPost?.authorName || previewPost?.fullName || previewReport.reportedUserName || previewReport.reporterFullName;
+                                                setSuspendUserId(String(targetUserId));
+                                                setSuspendUserName(targetUserName);
+                                                setIsSuspendModalOpen(true);
+                                            }}
+                                            className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 font-bold text-[11px] border border-amber-500/20 rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1"
+                                        >
+                                            <span className="material-symbols-outlined text-[15px]">person_off</span>
+                                            <span>Suspend User</span>
+                                        </button>
+                                        <button
+                                            onClick={() => setIsPreviewOpen(false)}
+                                            className="px-3.5 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-[11px] rounded-lg cursor-pointer"
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

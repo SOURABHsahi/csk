@@ -68,10 +68,10 @@ export default function RolePendingModal() {
                 <div className="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-4 mb-6 text-left space-y-3 shadow-inner">
                     <div className="flex items-start gap-3">
                         <span className="material-symbols-outlined text-amber-400 text-xl mt-0.5 shrink-0">
-                            mark_email_read
+                            mark_chat_read
                         </span>
                         <div className="text-xs text-slate-300 leading-relaxed">
-                            <span className="font-bold text-amber-300">Confirmation email dispatched:</span> A notification regarding your role request status has been sent to <span className="text-white font-mono font-bold bg-slate-700/60 px-1.5 py-0.5 rounded">{currentUser?.email || 'your registered email'}</span>.
+                            <span className="font-bold text-amber-300">Role request submitted:</span> A notification regarding your role request status has been routed for <span className="text-white font-mono font-bold bg-slate-700/60 px-1.5 py-0.5 rounded">{currentUser?.name || currentUser?.fullName || 'your account'}</span>.
                         </div>
                     </div>
 
@@ -94,7 +94,7 @@ export default function RolePendingModal() {
 
                 {/* System Admin Notice */}
                 <p className="text-xs text-slate-400 leading-relaxed mb-6">
-                    The <strong className="text-amber-300">System Administrator</strong> has been notified to assign your access role. Once approved, you will receive full permissions and another confirmation email.
+                    The <strong className="text-amber-300">System Administrator</strong> has been notified to assign your access role. Once approved, you will receive full permissions and an in-app notification alert.
                 </p>
 
                 {/* Action Buttons */}

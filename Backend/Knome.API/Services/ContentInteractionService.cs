@@ -727,6 +727,7 @@ public class ContentInteractionService : IContentInteractionService
             CommentsCount = commentsCount,
             ReactionSummary = reactionSummary,
             SharesCount = sharesCount,
+            ViewsCount = views,
             IsBookmarkedByCurrentUser = bookmark != null,
             EngagementScore = score
         };
@@ -745,33 +746,30 @@ public class ContentInteractionService : IContentInteractionService
             .Where(c => c.ContentType == contentType && idList.Contains(c.ContentId))
             .GroupBy(c => c.ContentId)
             .Select(g => new { ContentId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.ContentId, x => (long)x.Count);
+            .ToDictionaryAsync(g => g.ContentId, g => g.Count);
 
-        // 2. Bulk reactions grouped in single query
+        // 2. Bulk reactions count in single query
         var reactionsGrouped = await _db.Reactions
             .AsNoTracking()
             .Where(r => r.ContentType == contentType && idList.Contains(r.ContentId))
             .GroupBy(r => new { r.ContentId, r.ReactionType })
-            .Select(g => new { g.Key.ContentId, g.Key.ReactionType, Count = g.Count() })
+            .Select(g => new { ContentId = g.Key.ContentId, ReactionType = g.Key.ReactionType, Count = g.Count() })
             .ToListAsync();
 
-        // User's own reactions
-        var userReactions = currentUserId > 0
-            ? await _db.Reactions
-                .AsNoTracking()
-                .Where(r => r.ContentType == contentType && idList.Contains(r.ContentId) && r.UserId == currentUserId)
-                .ToDictionaryAsync(r => r.ContentId, r => r.ReactionType)
-            : new Dictionary<long, string>();
+        // 3. User's own reactions in single query
+        var userReactions = await _db.Reactions
+            .AsNoTracking()
+            .Where(r => r.ContentType == contentType && idList.Contains(r.ContentId) && r.UserId == currentUserId)
+            .ToDictionaryAsync(r => r.ContentId, r => r.ReactionType);
 
-        // 3. Bulk shares count in single query
+        // 4. Bulk shares count & bookmarks in single query
         var sharesCountDict = await _db.Shares
             .AsNoTracking()
             .Where(s => s.ContentType == contentType && idList.Contains(s.ContentId))
             .GroupBy(s => s.ContentId)
             .Select(g => new { ContentId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.ContentId, x => (long)x.Count);
+            .ToDictionaryAsync(g => g.ContentId, g => g.Count);
 
-        // 4. Bulk user bookmarks
         var userBookmarks = currentUserId > 0
             ? new HashSet<long>(await _db.Bookmarks
                 .AsNoTracking()
@@ -789,6 +787,10 @@ public class ContentInteractionService : IContentInteractionService
         else if (contentType == ContentTypes.Video)
         {
             viewsDict = await _db.Videos.AsNoTracking().Where(v => idList.Contains(v.VideoId)).ToDictionaryAsync(v => (long)v.VideoId, v => v.ViewCount);
+        }
+        else if (contentType == ContentTypes.Podcast)
+        {
+            viewsDict = await _db.Podcasts.AsNoTracking().Where(p => idList.Contains(p.PodcastId)).ToDictionaryAsync(p => p.PodcastId, p => p.ViewCount);
         }
 
         // Assemble all summaries in-memory with zero extra database calls
@@ -821,6 +823,7 @@ public class ContentInteractionService : IContentInteractionService
                 CommentsCount = cCount,
                 ReactionSummary = rSummary,
                 SharesCount = sCount,
+                ViewsCount = viewCount,
                 IsBookmarkedByCurrentUser = isBookmarked,
                 EngagementScore = score
             };

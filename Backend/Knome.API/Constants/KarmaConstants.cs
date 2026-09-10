@@ -36,7 +36,7 @@ public static class KarmaPoints
 
 public static class KarmaCaps
 {
-    public const int CreatePostDailyCap = 10;
+    public const int CreatePostDailyCap = 50;
     public const int CreateArticleDailyCap = 30;
     public const int CreateVideoDailyCap = 24;
     public const int CreatePodcastDailyCap = 24;

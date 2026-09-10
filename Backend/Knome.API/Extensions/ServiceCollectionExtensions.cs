@@ -5,6 +5,7 @@ using FluentValidation;
 using Knome.API.Configuration;
 using Knome.API.Configurations;
 using Knome.API.Constants;
+using Knome.API.Converters;
 using Knome.API.Data;
 using Knome.API.Filters;
 using Knome.API.Interfaces;
@@ -342,6 +343,11 @@ public static class ServiceCollectionExtensions
         services.AddControllers(options =>
         {
             options.Filters.Add<ValidationFilter>();
+        })
+        .AddJsonOptions(options =>
+        {
+            options.JsonSerializerOptions.Converters.Add(new UtcDateTimeJsonConverter());
+            options.JsonSerializerOptions.Converters.Add(new NullableUtcDateTimeJsonConverter());
         })
         .ConfigureApiBehaviorOptions(options =>
         {

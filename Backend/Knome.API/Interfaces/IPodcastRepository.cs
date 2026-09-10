@@ -20,4 +20,5 @@ public interface IPodcastRepository
     Task<Podcast> AddPodcastAsync(Podcast podcast);
     Task UpdatePodcastAsync(Podcast podcast);
     Task DeletePodcastAsync(Podcast podcast);
+    Task<int> IncrementViewCountAsync(long podcastId);
 }

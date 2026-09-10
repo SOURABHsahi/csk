@@ -298,5 +298,15 @@ public class ArticleService : IArticleService
             AppliesTo = category.AppliesTo
         };
     }
+
+    public async Task<int> IncrementViewCountAsync(long articleId)
+    {
+        var article = await _repo.GetArticleByIdAsync(articleId);
+        if (article == null)
+            throw new NotFoundException($"Article ID {articleId} not found.");
+
+        await _repo.IncrementViewCountAsync(articleId);
+        return article.ViewCount + 1;
+    }
 }
 

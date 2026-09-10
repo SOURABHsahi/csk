@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import { useToast } from '../components/contexts/ToastContext';
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
-import { getArticles, deleteArticle } from '../utils/articleService';
+import { getArticles, deleteArticle, recordArticleView } from '../utils/articleService';
 import { resolveMediaUrl, interactionsApi } from '../utils/apiService';
 import { checkRestrictedContent } from '../utils/restrictedWords';
 import ReportModal from '../components/modals/ReportModal';
@@ -116,6 +116,7 @@ export default function ArticleView() {
     // Local interactive states for the selected article
     const [likes, setLikes] = useState(0);
     const [userLiked, setUserLiked] = useState(false);
+    const [views, setViews] = useState(0);
     const [comments, setComments] = useState([]);
     const [newComment, setNewComment] = useState('');
 
@@ -167,6 +168,17 @@ export default function ArticleView() {
             setLikes(Number(article.likes || article.reactionsCount || 0));
             setUserLiked(false);
             setNewComment('');
+            setViews(Number(article.views || 0));
+
+            // Record article view in backend
+            recordArticleView(article.id).then(res => {
+                const count = res?.viewCount ?? res?.views ?? res?.data?.viewCount ?? res?.data?.views;
+                if (typeof count === 'number') {
+                    setViews(count);
+                } else {
+                    setViews(v => Math.max(v, Number(article.views || 0)) + 1);
+                }
+            }).catch(() => {});
             
             // Fetch live reaction status from backend API
             const cachedArticle = (() => {
@@ -457,6 +469,11 @@ export default function ArticleView() {
                         </div>
 
                         <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-cyan-600 dark:text-cyan-400 rounded-full text-xs font-bold" title="Total Views">
+                                <span className="material-symbols-outlined text-sm">visibility</span>
+                                <span>{views.toLocaleString()} views</span>
+                            </div>
+
                             <button 
                                 onClick={handleLike}
                                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
@@ -700,7 +717,7 @@ export default function ArticleView() {
                         </button>
                     </div>
                     <div className="flex items-center gap-4">
-                        <span className="text-xs text-slate-500">{likes.toLocaleString()} views • {likes} reactions • {totalComments} comments</span>
+                        <span className="text-xs text-slate-500">{views.toLocaleString()} views • {likes} reactions • {totalComments} comments</span>
                         <button 
                             onClick={() => setSharingArticleModal(article)}
                             className="px-3.5 py-1.5 bg-blue-500/10 hover:bg-blue-500 text-blue-600 dark:text-blue-400 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"

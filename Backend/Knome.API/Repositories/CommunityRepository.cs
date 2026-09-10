@@ -60,8 +60,10 @@ public class CommunityRepository : ICommunityRepository
             .Include(c => c.Category)
             .Include(c => c.CreatedByUser)
             .Include(c => c.CommunityMembers)
-            .Where(c => c.CommunityMembers.Any(m => m.UserId == userId && m.Status == "Approved") ||
-                        c.Users.Any(u => u.UserId == userId))
+            .Where(c => c.CommunityMembers.Any(m => m.UserId == userId && (m.Status == "Approved" || m.Status == "Active")) ||
+                        c.Users.Any(u => u.UserId == userId) ||
+                        c.CreatedByUserId == userId ||
+                        c.CommunityType == "Default")
             .OrderByDescending(c => c.CreatedDate)
             .ToListAsync();
     }
