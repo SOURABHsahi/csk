@@ -144,4 +144,6 @@ dotnet run --project "d:\Knome Final\Backend\Knome.API\scratch\VerifyPhase9\Veri
 - [56_Community_Welcome_Card_Cleanup_And_Rules_FAQ_Persistence.md](file:///d:/Knome%20main/Documentation/Development%20Journal/56_Community_Welcome_Card_Cleanup_And_Rules_FAQ_Persistence.md) — Community Welcome Card Action/Moderation Removal & Rules/FAQ Persistence Engine
 - [57_Connection_Deduplication_And_Sent_Requests_Workflow.md](file:///d:/Knome%20main/Documentation/Development%20Journal/57_Connection_Deduplication_And_Sent_Requests_Workflow.md) — Connection Deduplication, Self-Exclusion & Sent Requests Workflow
 - [58_Remove_Email_Digests_And_Workable_InApp_Preferences.md](file:///d:/Knome%20main/Documentation/Development%20Journal/58_Remove_Email_Digests_And_Workable_InApp_Preferences.md) — Remove Email Digests, Mails & Workable In-App Notification Preferences
+- [59_Scroll_Wise_Infinite_Loading_Across_Pages.md](file:///d:/Knome%20main/Documentation/Development%20Journal/59_Scroll_Wise_Infinite_Loading_Across_Pages.md) — Scroll-Wise Infinite Loading & Batch Rendering Across Catalog Pages
+- [60_Attractive_Modern_UI_Design_System_Upgrade.md](file:///d:/Knome%20main/Documentation/Development%20Journal/60_Attractive_Modern_UI_Design_System_Upgrade.md) — Attractive Modern UI Design System Upgrade (Zero Functional Disturbance)
 

@@ -171,14 +171,15 @@ export default function Dashboard() {
                     {/* Greeting Header */}
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="text-[12px] font-bold uppercase tracking-widest mb-0.5" style={{color: 'var(--text-muted)'}}>
+                            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-wider mb-1.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
                                 {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
-                            </p>
-                            <h1 className="text-2xl font-black tracking-tight mb-1" style={{color: 'var(--text-primary)'}}>
-                                {greeting}, <span style={{background: 'linear-gradient(135deg, #6366f1, #ec4899)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text'}}>{currentUser.name.split(' ')[0]}</span> 👋
+                            </div>
+                            <h1 className="text-2xl sm:text-3xl font-black tracking-tight mb-1 text-slate-900 dark:text-white">
+                                {greeting}, <span style={{background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #ec4899 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text'}}>{(currentUser?.name || currentUser?.fullName || 'Colleague').split(' ')[0]}</span> 👋
                             </h1>
                             <TextScramble 
-                                className="text-sm font-semibold tracking-wide text-theme-30-text bg-theme-30/10 px-2 py-0.5 rounded-md"
+                                className="text-sm font-semibold tracking-wide text-theme-30-text bg-theme-30/20 dark:bg-theme-30/40 px-2.5 py-0.5 rounded-md"
                                 phrases={[
                                     'Discover Your Knowledge Feed',
                                     'See What Your Network Is Up To',
@@ -191,12 +192,16 @@ export default function Dashboard() {
                             {!isSysAdmin && (
                                 <button 
                                     onClick={() => navigate('/karma-history')}
-                                    className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-bold cursor-pointer hover:scale-105 transition-all shadow-xs"
-                                    style={{background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)'}}
+                                    className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-extrabold cursor-pointer hover:scale-105 active:scale-95 transition-all shadow-xs group"
+                                    style={{
+                                        background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.14), rgba(217, 119, 6, 0.08))', 
+                                        border: '1px solid rgba(245, 158, 11, 0.35)', 
+                                        color: 'var(--text-primary)'
+                                    }}
                                     title="View Karma Points & History"
                                 >
-                                    <span className="material-symbols-outlined text-[16px] text-amber-500" style={{fontVariationSettings:"'FILL' 1"}}>military_tech</span>
-                                    {userKarma.toLocaleString()} Karma Points
+                                    <span className="material-symbols-outlined text-[17px] text-amber-500 transition-transform group-hover:scale-110" style={{fontVariationSettings:"'FILL' 1"}}>military_tech</span>
+                                    <span>{userKarma.toLocaleString()} <span className="text-[10px] text-amber-600 dark:text-amber-400 font-black uppercase">Karma</span></span>
                                 </button>
                             )}
                         </div>
@@ -249,19 +254,19 @@ export default function Dashboard() {
 
                     {/* Create Post Composer */}
                     {currentUser.role !== 'SYSADM' && (
-                        <div className="rounded-2xl overflow-hidden"
+                        <div className="rounded-2xl overflow-hidden transition-all duration-300 hover:border-indigo-500/30"
                             style={{
                                 background: 'var(--bg-card)',
                                 border: '1px solid var(--border-subtle)',
-                                boxShadow: '0 2px 12px rgba(0,0,0,0.04)'
+                                boxShadow: 'var(--shadow-premium)'
                             }}>
                             {/* Top row */}
                             <div
                                 onClick={() => setIsCreatePostOpen(true)}
                                 className="flex items-center gap-3 p-4 cursor-pointer group">
-                                <div className="relative shrink-0">
+                                <div className="relative shrink-0 p-[1.5px] rounded-full bg-gradient-to-tr from-indigo-500 to-pink-500 shadow-xs">
                                     <img 
-                                        className="w-10 h-10 rounded-full object-cover shadow-sm border-2 border-white dark:border-slate-800" 
+                                        className="w-10 h-10 rounded-full object-cover border-2 border-white dark:border-slate-800" 
                                         alt="Avatar" 
                                         src={resolveMediaUrl(currentUser?.profilePhotoUrl) || currentUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || currentUser?.fullName || 'User')}&background=6366f1&color=fff`} 
                                         onError={(e) => {
@@ -269,15 +274,15 @@ export default function Dashboard() {
                                             e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || currentUser?.fullName || 'User')}&background=6366f1&color=fff`;
                                         }}
                                     />
-                                    <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-white dark:border-slate-900"></div>
+                                    <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-white dark:border-slate-900 shadow-xs"></div>
                                 </div>
-                                <div className="flex-1 px-4 py-2.5 rounded-full text-sm font-medium transition-colors group-hover:ring-1 group-hover:ring-indigo-300"
+                                <div className="flex-1 px-4 py-2.5 rounded-full text-sm font-medium transition-all group-hover:border-indigo-500/40 group-hover:bg-slate-100/80 dark:group-hover:bg-slate-800/80 group-hover:ring-2 group-hover:ring-indigo-500/15"
                                     style={{
                                         background: 'var(--bg-surface)',
                                         color: 'var(--text-muted)',
                                         border: '1px solid var(--border-subtle)'
                                     }}>
-                                    What's on your mind, {currentUser.name.split(' ')[0]}?
+                                    What's on your mind, {(currentUser?.name || currentUser?.fullName || 'User').split(' ')[0]}?
                                 </div>
                             </div>
                             {/* Action Buttons */}
@@ -291,9 +296,12 @@ export default function Dashboard() {
                                         key={btn.label}
                                         type="button"
                                         onClick={btn.action}
-                                        className="flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] font-bold transition-all hover:bg-slate-100 dark:hover:bg-slate-800 flex-1 justify-center cursor-pointer group"
+                                        className="flex items-center gap-2 px-3 py-2 rounded-xl text-[13px] font-bold transition-all hover:bg-slate-100 dark:hover:bg-slate-800/80 active:scale-[0.98] flex-1 justify-center cursor-pointer group select-none"
                                         style={{color: 'var(--text-secondary)'}}>
-                                        <span className="material-symbols-outlined text-[18px] transition-transform group-hover:scale-110" style={{color: btn.color}}>{btn.icon}</span>
+                                        <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-transform group-hover:scale-110"
+                                            style={{background: `${btn.color}15`}}>
+                                            <span className="material-symbols-outlined text-[17px]" style={{color: btn.color}}>{btn.icon}</span>
+                                        </div>
                                         <span className="font-bold">{btn.label}</span>
                                     </button>
                                 ))}

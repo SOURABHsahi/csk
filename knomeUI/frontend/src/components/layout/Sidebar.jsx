@@ -124,17 +124,20 @@ export default function Sidebar() {
         <>
             {/* User Profile Card */}
             <Link to="/profile" className="block" onClick={() => isMobile && setIsMobileOpen(false)}>
-                <div className="rounded-2xl p-4 relative overflow-hidden transition-all hover:scale-[1.01] cursor-pointer bg-theme-60-surface border border-theme-30 shadow-[0_4px_20px_rgba(0,0,0,0.06)]">
+                <div className="rounded-2xl p-4 relative overflow-hidden transition-all hover:scale-[1.01] cursor-pointer bg-theme-60-surface border border-theme-30 shadow-[0_4px_20px_rgba(0,0,0,0.06)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.4)]">
+                    {/* Top decorative gradient banner */}
+                    <div className="absolute top-0 left-0 right-0 h-10 bg-gradient-to-r from-indigo-500/15 via-purple-500/15 to-pink-500/15 border-b border-indigo-500/10"></div>
+                    
                     {/* Orb decorations */}
                     <div className="absolute -top-6 -right-6 w-28 h-28 rounded-full opacity-10 pointer-events-none"
                         style={{background: 'radial-gradient(circle, #6366f1, transparent 70%)'}}></div>
                     <div className="absolute -bottom-4 -left-4 w-20 h-20 rounded-full opacity-[0.08] pointer-events-none"
                         style={{background: 'radial-gradient(circle, #ec4899, transparent 70%)'}}></div>
 
-                    <div className="relative z-10 flex items-center gap-3 mb-3">
-                        <div className="relative shrink-0">
+                    <div className="relative z-10 flex items-center gap-3 mb-2 pt-1">
+                        <div className="relative shrink-0 p-[2px] rounded-full bg-gradient-to-tr from-indigo-500 to-pink-500 shadow-md">
                             <img 
-                                className="w-12 h-12 rounded-full object-cover border-2 border-theme-60-surface shadow-md" 
+                                className="w-11 h-11 rounded-full object-cover border-2 border-theme-60-surface" 
                                 alt="Avatar" 
                                 src={userAvatar} 
                                 onError={(e) => {
@@ -142,7 +145,7 @@ export default function Sidebar() {
                                     e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=6366f1&color=fff`;
                                 }}
                             />
-                            <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-400 rounded-full border-2 border-theme-60-surface"></div>
+                            <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-400 rounded-full border-2 border-theme-60-surface shadow-xs"></div>
                         </div>
                         <div className="min-w-0">
                             <h3 className="font-black text-[14px] truncate leading-tight text-slate-900 dark:text-white">{userName.split(' ')[0]}</h3>
@@ -152,18 +155,18 @@ export default function Sidebar() {
                     </div>
 
                     {/* Stats Row */}
-                    <div className="relative z-10 grid grid-cols-3 gap-2 pt-2.5 border-t border-theme-30">
-                        <div className="text-center">
-                            <p className="text-[13px] font-black text-slate-900 dark:text-white">{liveKarma.toLocaleString()}</p>
-                            <p className="text-[9px] uppercase tracking-wider font-bold text-theme-30-text">Points</p>
+                    <div className="relative z-10 grid grid-cols-3 gap-1.5 pt-2.5 mt-1 border-t border-theme-30">
+                        <div className="text-center py-1.5 px-1 rounded-xl bg-theme-60 dark:bg-slate-800/60 border border-theme-30/60">
+                            <p className="text-[12.5px] font-black text-slate-900 dark:text-white leading-tight">{liveKarma.toLocaleString()}</p>
+                            <p className="text-[8.5px] uppercase tracking-wider font-extrabold text-theme-30-text mt-0.5">Points</p>
                         </div>
-                        <div className="text-center border-x border-theme-30">
-                            <p className="text-[13px] font-black text-slate-900 dark:text-white">{livePosts}</p>
-                            <p className="text-[9px] uppercase tracking-wider font-bold text-theme-30-text">Posts</p>
+                        <div className="text-center py-1.5 px-1 rounded-xl bg-theme-60 dark:bg-slate-800/60 border border-theme-30/60">
+                            <p className="text-[12.5px] font-black text-slate-900 dark:text-white leading-tight">{livePosts}</p>
+                            <p className="text-[8.5px] uppercase tracking-wider font-extrabold text-theme-30-text mt-0.5">Posts</p>
                         </div>
-                        <div className="text-center">
-                            <p className="text-[13px] font-black text-slate-900 dark:text-white">{userFollowers}</p>
-                            <p className="text-[9px] uppercase tracking-wider font-bold text-theme-30-text">Followers</p>
+                        <div className="text-center py-1.5 px-1 rounded-xl bg-theme-60 dark:bg-slate-800/60 border border-theme-30/60">
+                            <p className="text-[12.5px] font-black text-slate-900 dark:text-white leading-tight">{userFollowers}</p>
+                            <p className="text-[8.5px] uppercase tracking-wider font-extrabold text-theme-30-text mt-0.5">Followers</p>
                         </div>
                     </div>
                 </div>
@@ -218,12 +221,12 @@ export default function Sidebar() {
                         if (isMobile) setIsMobileOpen(false);
                         openPostModal();
                     }}
-                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-[14px] text-white transition-all hover:-translate-y-0.5 hover:shadow-lg active:scale-[0.97] cursor-pointer"
+                    className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-extrabold text-[14px] text-white transition-all hover:-translate-y-0.5 hover:shadow-xl hover:brightness-105 active:scale-[0.98] cursor-pointer group"
                     style={{
-                        background: 'linear-gradient(135deg, #6366f1, #ec4899)',
-                        boxShadow: '0 4px 16px rgba(99,102,241,0.3)',
+                        background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #ec4899 100%)',
+                        boxShadow: '0 4px 18px rgba(99, 102, 241, 0.35)',
                     }}>
-                    <span className="material-symbols-outlined text-[18px]" style={{fontVariationSettings:"'FILL' 1"}}>add_circle</span>
+                    <span className="material-symbols-outlined text-[19px] transition-transform group-hover:rotate-90 duration-300" style={{fontVariationSettings:"'FILL' 1"}}>add_circle</span>
                     Create Post
                 </button>
             )}

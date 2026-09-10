@@ -1377,15 +1377,20 @@ export default function Navbar() {
                 <div className="flex items-center gap-2.5 justify-end">
 
                     {/* Karma Badge (Visible for all logged-in members) */}
+                    {/* Karma Badge (Visible for all logged-in members) */}
                     {currentUser && (
-                        <Link to="/karma-history" className="relative hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all hover:scale-105"
+                        <Link to="/karma-history" className="relative hidden lg:flex items-center gap-1.5 px-3.5 py-1.5 rounded-full transition-all hover:scale-105 group"
                             style={{
-                                background: 'linear-gradient(135deg, rgba(251, 191, 36, 0.12), rgba(245, 158, 11, 0.08))',
-                                border: '1px solid rgba(251, 191, 36, 0.25)',
+                                background: isDark 
+                                    ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(217, 119, 6, 0.1))' 
+                                    : 'linear-gradient(135deg, rgba(254, 243, 199, 0.9), rgba(253, 230, 138, 0.6))',
+                                border: '1px solid rgba(245, 158, 11, 0.35)',
+                                boxShadow: '0 2px 8px rgba(245, 158, 11, 0.15)'
                             }}
                             title={`${userKarma.toLocaleString()} Karma Points`}>
-                            <span className="material-symbols-outlined text-amber-400 text-[15px]" style={{fontVariationSettings:"'FILL' 1"}}>military_tech</span>
-                            <span className="text-[12px] font-black text-amber-400">{userKarma.toLocaleString()}</span>
+                            <span className="material-symbols-outlined text-amber-500 text-[16px] transition-transform group-hover:scale-110" style={{fontVariationSettings:"'FILL' 1"}}>military_tech</span>
+                            <span className="text-[12px] font-black text-amber-600 dark:text-amber-400 tracking-tight">{userKarma.toLocaleString()}</span>
+                            <span className="text-[9px] font-extrabold uppercase tracking-wider text-amber-700/70 dark:text-amber-300/70">pts</span>
                         </Link>
                     )}
 
@@ -1393,17 +1398,16 @@ export default function Navbar() {
                     <button
                         onClick={toggleTheme}
                         title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-                        className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:scale-110 group"
+                        className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:scale-105 active:scale-95 group cursor-pointer"
                         style={{
-                            background: isDark
-                                ? 'rgba(14, 26, 56, 0.7)'
-                                : 'rgba(239, 246, 255, 0.85)',
+                            background: isDark ? 'rgba(15, 23, 42, 0.8)' : 'rgba(241, 245, 249, 0.9)',
                             border: '1px solid var(--border-mid)',
+                            boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.3)' : '0 1px 3px rgba(0,0,0,0.05)'
                         }}
                     >
-                        <span className="material-symbols-outlined text-[18px] transition-all duration-300"
+                        <span className="material-symbols-outlined text-[18px] transition-all duration-300 group-hover:rotate-12"
                             style={{
-                                color: isDark ? '#fbbf24' : '#2563eb',
+                                color: isDark ? '#fbbf24' : '#4f46e5',
                                 fontVariationSettings: "'FILL' 1"
                             }}>
                             {isDark ? 'light_mode' : 'dark_mode'}
@@ -1418,19 +1422,20 @@ export default function Navbar() {
                                 setIsNotifOpen(nextState);
                                 if (nextState) fetchNotifications();
                             }}
-                            className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:scale-110"
+                            className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:scale-105 active:scale-95 cursor-pointer"
                             style={{
-                                background: isDark ? 'rgba(14, 26, 56, 0.7)' : 'rgba(239, 246, 255, 0.85)',
+                                background: isDark ? 'rgba(15, 23, 42, 0.8)' : 'rgba(241, 245, 249, 0.9)',
                                 border: '1px solid var(--border-mid)',
+                                boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.3)' : '0 1px 3px rgba(0,0,0,0.05)'
                             }}
                         >
-                            <span className="material-symbols-outlined text-[20px] text-theme-30-text" style={{fontVariationSettings:"'FILL' 1"}}>notifications</span>
+                            <span className="material-symbols-outlined text-[19px] text-theme-30-text" style={{fontVariationSettings:"'FILL' 1"}}>notifications</span>
                             {unreadCount > 0 && (
-                                <span className="absolute -top-1 -right-1 w-4.5 h-4.5 rounded-full flex items-center justify-center text-[9px] font-black text-white"
+                                <span className="absolute -top-1 -right-1 rounded-full flex items-center justify-center text-[9px] font-black text-white px-1"
                                     style={{
                                         background: 'linear-gradient(135deg, #f43f5e, #fb923c)',
                                         minWidth: '18px', height: '18px',
-                                        boxShadow: '0 0 10px rgba(244,63,94,0.6)'
+                                        boxShadow: '0 0 10px rgba(244,63,94,0.7)'
                                     }}>
                                     {unreadCount}
                                 </span>
@@ -1731,24 +1736,27 @@ export default function Navbar() {
                     <div className="relative" ref={userMenuDropdownRef}>
                         <button
                             onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                            className="flex items-center gap-3 px-3 py-1.5 rounded-full transition-all hover:scale-105"
+                            className="flex items-center gap-2.5 px-3 py-1.5 rounded-full transition-all hover:scale-105 cursor-pointer select-none"
                             style={{
-                                background: isDark ? 'rgba(14, 26, 56, 0.7)' : 'rgba(239, 246, 255, 0.85)',
+                                background: isDark ? 'rgba(15, 23, 42, 0.8)' : 'rgba(241, 245, 249, 0.9)',
                                 border: '1px solid var(--border-mid)',
+                                boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.3)' : '0 1px 3px rgba(0,0,0,0.05)'
                             }}
                         >
-                            <img 
-                                className="w-8 h-8 rounded-full object-cover shadow-sm shrink-0 border border-slate-200 dark:border-slate-700" 
-                                alt="Avatar" 
-                                src={resolveMediaUrl(currentUser?.profilePhotoUrl) || currentUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || currentUser?.fullName || 'User')}&background=6366f1&color=fff`}
-                                onError={(e) => {
-                                    e.currentTarget.onerror = null;
-                                    e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || currentUser?.fullName || 'User')}&background=6366f1&color=fff`;
-                                }}
-                            />
+                            <div className="relative p-[1.5px] rounded-full bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 shrink-0">
+                                <img 
+                                    className="w-7 h-7 rounded-full object-cover shadow-xs" 
+                                    alt="Avatar" 
+                                    src={resolveMediaUrl(currentUser?.profilePhotoUrl) || currentUser?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || currentUser?.fullName || 'User')}&background=6366f1&color=fff`}
+                                    onError={(e) => {
+                                        e.currentTarget.onerror = null;
+                                        e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || currentUser?.fullName || 'User')}&background=6366f1&color=fff`;
+                                    }}
+                                />
+                            </div>
                             <div className="hidden sm:flex flex-col items-start text-left min-w-0">
-                                <span className="text-[13px] font-bold text-slate-700 dark:text-slate-200 truncate leading-tight">{(currentUser?.name || currentUser?.fullName || 'User').split(' ')[0]}</span>
-                                <span className="text-[9px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5 leading-none">{currentUser?.roleName || currentUser?.role || 'Employee'}</span>
+                                <span className="text-[13px] font-bold text-slate-800 dark:text-slate-100 truncate leading-tight">{(currentUser?.name || currentUser?.fullName || 'User').split(' ')[0]}</span>
+                                <span className="text-[9.5px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5 leading-none">{currentUser?.roleName || currentUser?.role || 'Employee'}</span>
                             </div>
                             <span className="material-symbols-outlined text-[16px] text-slate-400 shrink-0">expand_more</span>
                         </button>

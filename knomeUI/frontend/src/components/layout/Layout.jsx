@@ -7,10 +7,14 @@ import Footer from './Footer';
 export default function Layout({ children }) {
     return (
         <div className="min-h-screen relative flex flex-col justify-between bg-theme-60 text-theme-30-text">
-            {/* Static Clean Background (No moving/pulsing colors) */}
-            <div className="fixed inset-0 pointer-events-none overflow-hidden z-0 opacity-40 dark:opacity-20">
-                <div className="absolute top-[-10%] right-[-10%] w-[30vw] h-[30vw] rounded-full blur-[120px] bg-indigo-500/10"></div>
-                <div className="absolute bottom-[-10%] left-[-10%] w-[30vw] h-[30vw] rounded-full blur-[120px] bg-cyan-500/10"></div>
+            {/* Ambient High-Tech Atmospheric Background */}
+            <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+                {/* Micro tech dot grid for texture and depth */}
+                <div className="absolute inset-0 tech-dots-pattern opacity-60 dark:opacity-40"></div>
+                {/* Ambient Luminous Orbs */}
+                <div className="absolute top-[-8%] right-[-5%] w-[42vw] h-[42vw] max-w-[650px] max-h-[650px] rounded-full blur-[130px] bg-indigo-500/10 dark:bg-indigo-600/15"></div>
+                <div className="absolute bottom-[-10%] left-[-8%] w-[45vw] h-[45vw] max-w-[700px] max-h-[700px] rounded-full blur-[140px] bg-cyan-500/10 dark:bg-cyan-500/12"></div>
+                <div className="absolute top-[35%] left-[25%] w-[30vw] h-[30vw] max-w-[480px] max-h-[480px] rounded-full blur-[150px] bg-purple-500/5 dark:bg-purple-600/8"></div>
             </div>
 
             <Navbar />
