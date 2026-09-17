@@ -23,6 +23,137 @@ const getFallbackPostContent = (report) => {
     };
 };
 
+/**
+ * Auto-detects reported content score, severity, and category based on reasonCode and content heuristics.
+ * Evaluates reasons (Harassment -> 98% Toxic, Copyright -> 96% Risk, Spam -> 90% Spam, Inappropriate -> 88% Policy, etc.)
+ * plus deep keyword scanning on post snippet.
+ */
+export const detectReportScore = (reasonCode = '', snippet = '', existingScore = null) => {
+    const reason = (reasonCode || '').trim();
+    const reasonLower = reason.toLowerCase();
+    const text = (snippet || '').toLowerCase();
+
+    // 1. NLP Keyword hits from content snippet
+    const toxicWords = ['idiot', 'idiots', 'fools', 'stupid', 'fired', 'humiliated', 'trash', 'useless', 'incompetent', 'hate', 'harass', 'kill', 'shut up', 'moron', 'dumb', 'loser', 'scam', 'abuse', 'threat'];
+    const toxicHits = toxicWords.filter(w => text.includes(w)).length;
+
+    const hasPan = /[A-Z]{5}[0-9]{4}[A-Z]{1}/i.test(snippet);
+    const hasAwsKey = /AKIA[0-9A-Z]{16}/i.test(snippet);
+    const hasPassword = /password\s*=\s*[^;\s]+/i.test(snippet);
+    const hasSalary = /(salary|ctc|compensation|payroll)\s*(is|:|=)?\s*(rs\.?|inr|\$)?\s*[\d,]+/i.test(snippet);
+    const hasAadhaar = /\b\d{4}\s\d{4}\s\d{4}\b/.test(snippet);
+    const hasPii = hasPan || hasAwsKey || hasPassword || hasSalary || hasAadhaar;
+
+    const spamWords = ['crypto', 'bitcoin', 'earn free', 'claim.biz', 'giveaway', 'click this link', 'double your', 'promo', 'discount', 'telegram', 'whatsapp'];
+    const spamHits = spamWords.filter(s => text.includes(s)).length;
+
+    let scoreNum = 75;
+    let label = 'AI';
+    let severity = 'Medium';
+
+    if (reasonLower.includes('harass') || reasonLower.includes('abuse') || reasonLower.includes('hate') || reasonLower.includes('toxic') || reasonLower.includes('bully')) {
+        scoreNum = Math.min(99, 94 + (toxicHits * 2));
+        label = 'Toxic';
+        severity = 'Critical';
+    } else if (reasonLower.includes('threat') || reasonLower.includes('violen') || reasonLower.includes('danger') || reasonLower.includes('harm')) {
+        scoreNum = Math.min(99, 96 + (toxicHits * 2));
+        label = 'Threat';
+        severity = 'Critical';
+    } else if (reasonLower.includes('copyright') || reasonLower.includes('dmca') || reasonLower.includes('ip') || reasonLower.includes('plagiar')) {
+        scoreNum = 96;
+        label = 'Risk';
+        severity = 'Critical';
+    } else if (reasonLower.includes('pii') || reasonLower.includes('credential') || reasonLower.includes('secret') || reasonLower.includes('leak') || hasPii) {
+        scoreNum = 96;
+        label = 'PII Leak';
+        severity = 'Critical';
+    } else if (reasonLower.includes('inappropriate') || reasonLower.includes('profan') || reasonLower.includes('vulgar') || reasonLower.includes('nsfw') || reasonLower.includes('policy')) {
+        scoreNum = Math.min(94, 85 + (toxicHits * 3));
+        label = 'Policy';
+        severity = 'High';
+    } else if (reasonLower.includes('spam') || reasonLower.includes('scam') || reasonLower.includes('promo') || spamHits > 0) {
+        scoreNum = Math.min(96, 88 + (spamHits * 3));
+        label = 'Spam';
+        severity = 'Low';
+    } else if (reasonLower.includes('misinfo') || reasonLower.includes('fake') || reasonLower.includes('rumor')) {
+        scoreNum = 85;
+        label = 'Disputed';
+        severity = 'Medium';
+    } else {
+        // Fallback for "Other" or unspecified reason
+        if (toxicHits > 0) {
+            scoreNum = Math.min(99, 75 + (toxicHits * 8));
+            label = 'Toxic';
+            severity = scoreNum >= 95 ? 'Critical' : 'High';
+        } else if (hasPii) {
+            scoreNum = 96;
+            label = 'PII Leak';
+            severity = 'Critical';
+        } else if (spamHits > 0) {
+            scoreNum = Math.min(95, 78 + (spamHits * 6));
+            label = 'Spam';
+            severity = 'Medium';
+        } else {
+            scoreNum = 75;
+            label = 'AI';
+            severity = 'Medium';
+        }
+    }
+
+    // If existingScore was provided and has a custom number, preserve the custom number if reasonable
+    if (existingScore) {
+        const parsed = parseInt(existingScore, 10);
+        if (!isNaN(parsed) && parsed > 0 && parsed <= 100) {
+            scoreNum = parsed;
+        }
+    }
+
+    return {
+        scoreNum,
+        label,
+        formattedScore: `${scoreNum}% ${label}`,
+        severity
+    };
+};
+
+/**
+ * Visual badge renderer for AI Auto-Detection Score with icons and contextual styling
+ */
+export const renderScoreBadge = (aiScore, reasonCode, snippet) => {
+    const detected = detectReportScore(reasonCode, snippet, aiScore);
+    const { scoreNum, label, formattedScore } = detected;
+
+    let badgeClass = 'bg-indigo-500/10 text-indigo-600 border border-indigo-500/20 dark:bg-indigo-500/20 dark:text-indigo-300';
+    let icon = 'smart_toy';
+
+    if (label === 'Toxic' || label === 'Threat' || scoreNum >= 95) {
+        badgeClass = 'bg-rose-500/10 text-rose-600 border border-rose-500/25 dark:bg-rose-500/20 dark:text-rose-400';
+        icon = label === 'Threat' ? 'emergency' : 'dangerous';
+    } else if (label === 'Risk' || label === 'PII Leak') {
+        badgeClass = 'bg-purple-500/10 text-purple-600 border border-purple-500/25 dark:bg-purple-500/20 dark:text-purple-300';
+        icon = label === 'PII Leak' ? 'lock' : 'copyright';
+    } else if (label === 'Policy' || scoreNum >= 85) {
+        badgeClass = 'bg-amber-500/10 text-amber-600 border border-amber-500/25 dark:bg-amber-500/20 dark:text-amber-400';
+        icon = 'policy';
+    } else if (label === 'Spam') {
+        badgeClass = 'bg-blue-500/10 text-blue-600 border border-blue-500/25 dark:bg-blue-500/20 dark:text-blue-400';
+        icon = 'forward_to_inbox';
+    } else if (label === 'Disputed') {
+        badgeClass = 'bg-amber-500/10 text-amber-600 border border-amber-500/25 dark:bg-amber-500/20 dark:text-amber-400';
+        icon = 'fact_check';
+    }
+
+    return (
+        <span 
+            title={`AI Auto-Detection Score: ${formattedScore} (Auto-detected from reason '${reasonCode || 'General'}' and content heuristics)`}
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] font-bold whitespace-nowrap ${badgeClass}`}
+        >
+            <span className="material-symbols-outlined text-[13px] leading-none">{icon}</span>
+            <span>{formattedScore}</span>
+        </span>
+    );
+};
+
 export default function AdminConsole() {
     const { currentUser, users: contextUsers, updateUserRoleInList, toggleUserActiveStatus, addKarmaPointsToUser, awardRuleKarma } = useUser();
     const navigate = useNavigate();
@@ -580,26 +711,30 @@ export default function AdminConsole() {
             const res = await interactionsApi.getAllReports();
             const apiItems = res?.data || (Array.isArray(res) ? res : (res?.items || []));
             if (Array.isArray(apiItems) && apiItems.length > 0) {
-                const mapped = apiItems.map(r => ({
-                    reportId: r.reportId,
-                    reporterUserId: r.reporterUserId || 0,
-                    reporterFullName: r.reporterFullName || `User #${r.reporterUserId}`,
-                    reportedUserId: r.reportedUserId || r.reporterUserId,
-                    reportedUserName: r.reportedUserName || r.reporterFullName,
-                    contentType: r.contentType,
-                    contentId: r.contentId,
-                    communityName: r.communityName || 'Engineering & Tech',
-                    reasonCode: r.reasonCode,
-                    severity: r.severity || (r.reasonCode === 'Harassment' || r.reasonCode === 'Copyright' ? 'Critical' : (r.reasonCode === 'Inappropriate' ? 'High' : 'Medium')),
-                    aiScore: r.aiScore || (r.reasonCode === 'Harassment' ? '98% Toxic' : (r.reasonCode === 'Copyright' ? '96% Risk' : '75% AI')),
-                    status: r.status || 'Pending',
-                    moderatorUserId: r.moderatorUserId,
-                    moderatorFullName: r.moderatorFullName,
-                    actionTaken: r.actionTaken,
-                    postContentSnippet: r.postContentSnippet || '',
-                    reportedDate: r.reportedDate ? new Date(r.reportedDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
-                    actionDate: r.actionDate ? new Date(r.actionDate).toLocaleString() : null
-                }));
+                const mapped = apiItems.map(r => {
+                    const scoreInfo = detectReportScore(r.reasonCode, r.postContentSnippet, r.aiScore);
+                    return {
+                        reportId: r.reportId,
+                        reporterUserId: r.reporterUserId || 0,
+                        reporterFullName: r.reporterFullName || `User #${r.reporterUserId}`,
+                        reportedUserId: r.reportedUserId || r.reporterUserId,
+                        reportedUserName: r.reportedUserName || r.reporterFullName,
+                        contentType: r.contentType,
+                        contentId: r.contentId,
+                        communityName: r.communityName || 'Engineering & Tech',
+                        reasonCode: r.reasonCode,
+                        severity: r.severity || scoreInfo.severity,
+                        aiScore: scoreInfo.formattedScore,
+                        scoreNum: scoreInfo.scoreNum,
+                        status: r.status || 'Pending',
+                        moderatorUserId: r.moderatorUserId,
+                        moderatorFullName: r.moderatorFullName,
+                        actionTaken: r.actionTaken,
+                        postContentSnippet: r.postContentSnippet || '',
+                        reportedDate: r.reportedDate ? new Date(r.reportedDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
+                        actionDate: r.actionDate ? new Date(r.actionDate).toLocaleString() : null
+                    };
+                });
                 setReports(mapped);
             } else {
                 setReports([]);
@@ -2077,7 +2212,7 @@ export default function AdminConsole() {
 
             {/* TAB 1: CONTENT MODERATION FILTERS */}
             {activeTab === 'moderation' && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
                     {/* 1. All Reports */}
                     <div 
                         onClick={() => { 
@@ -2121,30 +2256,7 @@ export default function AdminConsole() {
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Pending Queue</p>
                     </div>
 
-                    {/* 3. High Risk / Critical */}
-                    <div 
-                        onClick={() => { 
-                            setActiveMetricCard('critical'); 
-                            setSeverityFilter('Critical'); 
-                            setStatusFilter('All');
-                            setDateRangeFilter('All');
-                            showToast(`Filtered: Showing ${highPriorityCount} Critical Reports`); 
-                        }}
-                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeMetricCard === 'critical'
-                                ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/50 shadow-md scale-[1.02]' 
-                                : 'bg-white dark:bg-slate-900 border-rose-500/40 hover:border-rose-500 shadow-xs'
-                        }`}
-                    >
-                        <div className="flex items-center justify-between text-rose-500 mb-1">
-                            <span className="material-symbols-outlined text-[18px]">warning</span>
-                            <span className="text-[10px] font-black text-rose-600 bg-rose-500/15 px-1.5 py-0.2 rounded-full">Critical</span>
-                        </div>
-                        <p className="text-lg font-black text-rose-500 leading-none">{highPriorityCount}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Critical Risk</p>
-                    </div>
-
-                    {/* 4. Action Taken */}
+                    {/* 3. Action Taken */}
                     <div 
                         onClick={() => { 
                             setActiveMetricCard('action_taken'); 
@@ -2167,7 +2279,7 @@ export default function AdminConsole() {
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Action Taken</p>
                     </div>
 
-                    {/* 5. Dismissed (Added directly after Action Taken) */}
+                    {/* 4. Dismissed */}
                     <div 
                         onClick={() => { 
                             setActiveMetricCard('dismissed'); 
@@ -2190,7 +2302,7 @@ export default function AdminConsole() {
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Dismissed</p>
                     </div>
 
-                    {/* 6. Today's Reports */}
+                    {/* 5. Today's Reports */}
                     <div 
                         onClick={() => { 
                             setActiveMetricCard('today'); 
@@ -3148,8 +3260,8 @@ export default function AdminConsole() {
                                                 </td>
 
                                                 {/* Score */}
-                                                <td className="px-3 py-2 font-bold text-[11px] text-slate-700 dark:text-slate-300">
-                                                    {r.aiScore || '82% Toxic'}
+                                                <td className="px-3 py-2">
+                                                    {renderScoreBadge(r.aiScore, r.reasonCode, r.postContentSnippet)}
                                                 </td>
 
                                                 {/* Status */}
@@ -5176,7 +5288,7 @@ export default function AdminConsole() {
                         {/* Modal Body */}
                         <div className="p-6 overflow-y-auto space-y-5 custom-scrollbar flex-grow">
                             {/* Report Details Card */}
-                            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                                 <div>
                                     <p className="text-slate-400 font-semibold text-[11px]">Reporter</p>
                                     <p className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">{previewReport.reporterFullName}</p>
@@ -5187,6 +5299,12 @@ export default function AdminConsole() {
                                     <span className="inline-block mt-1 px-2.5 py-0.5 rounded-md bg-rose-500/10 text-rose-600 font-black text-[11px]">
                                         {previewReport.reasonCode}
                                     </span>
+                                </div>
+                                <div>
+                                    <p className="text-slate-400 font-semibold text-[11px]">Auto-Detected Score</p>
+                                    <div className="mt-1">
+                                        {renderScoreBadge(previewReport.aiScore, previewReport.reasonCode, previewReport.postContentSnippet)}
+                                    </div>
                                 </div>
                                 <div>
                                     <p className="text-slate-400 font-semibold text-[11px]">Target Content</p>
