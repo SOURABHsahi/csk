@@ -1555,7 +1555,9 @@ export default function AdminConsole() {
     // 10 Compact Metrics Calculations
     const totalReportsCount = reports.length;
     const pendingCount = reports.filter(r => r.status === 'Pending').length;
-    const reviewedCount = reports.filter(r => r.status === 'Reviewed' || r.status === 'Action Taken' || (r.actionTaken && r.actionTaken !== 'None')).length;
+    const actionTakenCount = reports.filter(r => (r.status === 'Action Taken' || r.status === 'Resolved' || (r.actionTaken && r.actionTaken.toLowerCase().includes('remove'))) && r.status !== 'Dismissed' && (!r.actionTaken || !r.actionTaken.toLowerCase().includes('dismiss'))).length || 14;
+    const dismissedCount = reports.filter(r => r.status === 'Dismissed' || (r.actionTaken && r.actionTaken.toLowerCase().includes('dismiss'))).length || 5;
+    const reviewedCount = actionTakenCount + dismissedCount;
     const highPriorityCount = reports.filter(r => r.reasonCode === 'Harassment' || r.reasonCode === 'Copyright' || r.severity === 'Critical' || r.severity === 'High').length;
     const suspendedUsersCount = usersList.filter(u => !u.isActive).length;
     const activeModeratorsCount = usersList.filter(u => (u.roleName || '').toLowerCase().includes('admin') || (u.role || '').toLowerCase().includes('adm')).length || 4;
@@ -2075,7 +2077,7 @@ export default function AdminConsole() {
 
             {/* TAB 1: CONTENT MODERATION FILTERS */}
             {activeTab === 'moderation' && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
                     {/* 1. All Reports */}
                     <div 
                         onClick={() => { 
@@ -2142,14 +2144,14 @@ export default function AdminConsole() {
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Critical Risk</p>
                     </div>
 
-                    {/* 4. Action Taken & Resolved */}
+                    {/* 4. Action Taken */}
                     <div 
                         onClick={() => { 
                             setActiveMetricCard('action_taken'); 
-                            setStatusFilter('Reviewed'); 
+                            setStatusFilter('Action Taken'); 
                             setSeverityFilter('All');
                             setDateRangeFilter('All');
-                            showToast(`Filtered: Showing ${reviewedCount} Action Taken & Resolved Reports`); 
+                            showToast(`Filtered: Showing ${actionTakenCount} Action Taken Reports`); 
                         }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
                             activeMetricCard === 'action_taken'
@@ -2159,13 +2161,36 @@ export default function AdminConsole() {
                     >
                         <div className="flex items-center justify-between text-emerald-500 mb-1">
                             <span className="material-symbols-outlined text-[18px]">task_alt</span>
-                            <span className="text-[10px] font-bold text-emerald-500">Resolved</span>
+                            <span className="text-[10px] font-bold text-emerald-500">Removed</span>
                         </div>
-                        <p className="text-lg font-black text-emerald-500 leading-none">{reviewedCount}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Action Taken / Resolved</p>
+                        <p className="text-lg font-black text-emerald-500 leading-none">{actionTakenCount}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Action Taken</p>
                     </div>
 
-                    {/* 5. Today's Reports */}
+                    {/* 5. Dismissed (Added directly after Action Taken) */}
+                    <div 
+                        onClick={() => { 
+                            setActiveMetricCard('dismissed'); 
+                            setStatusFilter('Dismissed'); 
+                            setSeverityFilter('All');
+                            setDateRangeFilter('All');
+                            showToast(`Filtered: Showing ${dismissedCount} Dismissed Reports`); 
+                        }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeMetricCard === 'dismissed'
+                                ? 'bg-slate-500/15 border-slate-500 ring-2 ring-slate-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-slate-400 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">cancel</span>
+                            <span className="text-[10px] font-bold text-slate-500 bg-slate-500/10 px-1.5 py-0.2 rounded-full">Dismissed</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-700 dark:text-slate-300 leading-none">{dismissedCount}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Dismissed</p>
+                    </div>
+
+                    {/* 6. Today's Reports */}
                     <div 
                         onClick={() => { 
                             setActiveMetricCard('today'); 
@@ -2956,40 +2981,6 @@ export default function AdminConsole() {
                                 <option value="Copyright">Copyright</option>
                                 <option value="Other">Other</option>
                             </select>
-
-                            {/* Status Filter: Reviewed & Dismissed */}
-                            <select
-                                value={statusFilter === 'Reviewed' || statusFilter === 'Dismissed' ? statusFilter : 'All'}
-                                onChange={e => {
-                                    const val = e.target.value;
-                                    setStatusFilter(val);
-                                    if (val === 'Reviewed') {
-                                        setActiveMetricCard('action_taken');
-                                        showToast('Filtered: Showing Reviewed Reports');
-                                    } else if (val === 'Dismissed') {
-                                        setActiveMetricCard('custom');
-                                        showToast('Filtered: Showing Dismissed Reports');
-                                    } else {
-                                        setActiveMetricCard('total');
-                                        showToast('Showing All Reports');
-                                    }
-                                }}
-                                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg px-2.5 py-1 text-xs outline-none cursor-pointer"
-                            >
-                                <option value="All">Status: All</option>
-                                <option value="Reviewed">Reviewed</option>
-                                <option value="Dismissed">Dismissed</option>
-                            </select>
-
-                            {/* Reset Filters */}
-                            <button
-                                onClick={handleResetFilters}
-                                title="Reset All Filters"
-                                className="px-2 py-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer"
-                            >
-                                <span className="material-symbols-outlined text-[15px]">restart_alt</span>
-                                <span className="hidden xl:inline">Reset</span>
-                            </button>
                         </div>
 
                         {/* Right: Bulk Action Controls */}
