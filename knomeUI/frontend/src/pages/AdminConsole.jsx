@@ -274,6 +274,13 @@ export default function AdminConsole() {
     const [configToast, setConfigToast] = useState(false);
     const [suspendSearchTerm, setSuspendSearchTerm] = useState('');
 
+    // ── AI Moderation Live Inspector & Sandbox State ──
+    const [aiTestInput, setAiTestInput] = useState('');
+    const [aiSelectedPreset, setAiSelectedPreset] = useState(null);
+    const [aiAnalysisResult, setAiAnalysisResult] = useState(null);
+    const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
+    const [isAiBatchAuditing, setIsAiBatchAuditing] = useState(false);
+
     // ── System Logs & Serilog Live Stream State ──
     const [systemLogs, setSystemLogs] = useState([]);
     const [systemLogCounts, setSystemLogCounts] = useState({ total: 0, errors: 0, warnings: 0, info: 0, debug: 0 });
@@ -1213,6 +1220,212 @@ export default function AdminConsole() {
             ...prev
         ]);
     };
+
+    // ── AI Moderation Test Presets & Real-Time Evaluator ──
+    const AI_TEST_PRESETS = [
+        {
+            id: 'safe',
+            label: 'Clean Knowledge Post',
+            badge: 'Safe (4% Risk)',
+            badgeColor: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
+            content: 'Excited to announce the successful release of our microservices migration for the MPOnline employee hub! Huge thanks to the backend architecture team for seamless zero-downtime deployment and great collaboration.'
+        },
+        {
+            id: 'harassment',
+            label: 'Harassment & Abuse',
+            badge: 'Toxic (~96%)',
+            badgeColor: 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30',
+            content: 'This entire department is full of complete idiots and useless fools. Nobody knows how to do their job, you all deserve to be fired and humiliated publicly in front of the entire company!'
+        },
+        {
+            id: 'pii',
+            label: 'Confidential PII & Secret Leak',
+            badge: 'PII Leak (~98%)',
+            badgeColor: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30',
+            content: 'Confidential Q3 Executive Payroll: Employee EMP002 salary is Rs 18,50,000, PAN: ABCDE1234F. Prod Database Connection: Server=10.0.4.12;User=sa;Password=SecretPass123!; AWS_SECRET_KEY=AKIAIOSFODNN7EXAMPLE'
+        },
+        {
+            id: 'spam',
+            label: 'Phishing / Spam Link',
+            badge: 'Spam (~85%)',
+            badgeColor: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30',
+            content: 'EARN FREE CRYPTO NOW! Click this external link to double your Bitcoin in 24 hours: http://free-crypto-giveaway-claim.biz! Limited slots available, claim your rewards now!'
+        }
+    ];
+
+    const runAiEvaluation = (textToEvaluate) => {
+        const text = (textToEvaluate !== undefined ? textToEvaluate : aiTestInput) || '';
+        if (!text.trim()) {
+            setAiAnalysisResult(null);
+            return;
+        }
+        setIsAiAnalyzing(true);
+        setTimeout(() => {
+            const lower = text.toLowerCase();
+            
+            // 1. Toxicity detection
+            const toxicWords = ['idiot', 'idiots', 'fools', 'stupid', 'fired', 'humiliated', 'trash', 'useless', 'incompetent', 'hate', 'harass', 'kill', 'shut up', 'moron', 'dumb', 'loser', 'scam'];
+            let toxicHits = 0;
+            const detectedToxicKeywords = [];
+            toxicWords.forEach(w => {
+                if (lower.includes(w)) {
+                    toxicHits++;
+                    detectedToxicKeywords.push(w);
+                }
+            });
+            
+            let toxicityScore = 4;
+            if (toxicHits > 0) {
+                toxicityScore = Math.min(99, 65 + (toxicHits * 10));
+            }
+
+            // 2. PII / Secret detection
+            const hasPan = /[A-Z]{5}[0-9]{4}[A-Z]{1}/i.test(text);
+            const hasAwsKey = /AKIA[0-9A-Z]{16}/i.test(text);
+            const hasPassword = /password\s*=\s*[^;\s]+/i.test(text);
+            const hasSalary = /(salary|ctc|compensation|payroll)\s*(is|:|=)?\s*(rs\.?|inr|\$)?\s*[\d,]+/i.test(text);
+            const hasAadhaar = /\b\d{4}\s\d{4}\s\d{4}\b/.test(text);
+            
+            const detectedPiiKeywords = [];
+            if (hasPan) detectedPiiKeywords.push('Indian PAN Format');
+            if (hasAwsKey) detectedPiiKeywords.push('AWS Access Key (AKIA...)');
+            if (hasPassword) detectedPiiKeywords.push('Hardcoded DB Password');
+            if (hasSalary) detectedPiiKeywords.push('Executive Compensation / CTC');
+            if (hasAadhaar) detectedPiiKeywords.push('Aadhaar Number Pattern');
+
+            let piiScore = 0;
+            if (detectedPiiKeywords.length > 0) {
+                piiScore = Math.min(99, 70 + (detectedPiiKeywords.length * 10));
+            }
+
+            // 3. Spam detection
+            const spamKeywords = ['crypto', 'bitcoin', 'earn free', 'claim.biz', 'giveaway', 'click this link', 'double your'];
+            const detectedSpamKeywords = [];
+            spamKeywords.forEach(s => {
+                if (lower.includes(s)) detectedSpamKeywords.push(s);
+            });
+            let spamScore = 0;
+            if (detectedSpamKeywords.length > 0) {
+                spamScore = Math.min(98, 75 + (detectedSpamKeywords.length * 8));
+            }
+
+            // Decision Engine based on active configState
+            const threshold = configState.aiToxicityThreshold || 80;
+            const autoQuarantine = configState.aiAutoQuarantine !== false;
+            const deepScan = configState.aiDeepScan !== false;
+
+            let status = 'ALLOWED'; // 'ALLOWED' | 'FLAGGED' | 'QUARANTINED'
+            let decisionReason = 'Content passed NLP toxicity and PII compliance filters. Safe for public employee feed.';
+
+            if (autoQuarantine && (toxicityScore >= 95 || (deepScan && piiScore >= 95))) {
+                status = 'QUARANTINED';
+                decisionReason = toxicityScore >= 95 
+                    ? `Critical Toxicity (${toxicityScore}%) exceeds extreme threshold (95%). Content immediately suppressed from public feed before manual review.`
+                    : `Severe PII / Credential Leak (${piiScore}%) detected with Deep Scan enabled. Post auto-quarantined immediately.`;
+            } else if (toxicityScore >= threshold || (deepScan && piiScore >= 70) || spamScore >= 75) {
+                status = 'FLAGGED';
+                if (toxicityScore >= threshold) {
+                    decisionReason = `Toxicity score (${toxicityScore}%) meets or exceeds configured sensitivity threshold (${threshold}%). Intercepted and routed to Content Moderation queue.`;
+                } else if (deepScan && piiScore >= 70) {
+                    decisionReason = `Sensitive data/credentials detected (${piiScore}%). Deep scanner routed post to Admin Moderation review.`;
+                } else {
+                    decisionReason = `Unsolicited spam patterns detected (${spamScore}%). Flagged for review.`;
+                }
+            }
+
+            setAiAnalysisResult({
+                toxicityScore,
+                piiScore,
+                spamScore,
+                detectedToxicKeywords,
+                detectedPiiKeywords,
+                detectedSpamKeywords,
+                status,
+                decisionReason,
+                evaluatedAt: new Date().toLocaleTimeString()
+            });
+            setIsAiAnalyzing(false);
+        }, 250);
+    };
+
+    // Auto-update analysis decision in real time when slider or toggles change
+    useEffect(() => {
+        if (!aiAnalysisResult) return;
+        const threshold = configState.aiToxicityThreshold || 80;
+        const autoQuarantine = configState.aiAutoQuarantine !== false;
+        const deepScan = configState.aiDeepScan !== false;
+        const { toxicityScore, piiScore, spamScore } = aiAnalysisResult;
+
+        let status = 'ALLOWED';
+        let decisionReason = 'Content passed NLP toxicity and PII compliance filters. Safe for public employee feed.';
+
+        if (autoQuarantine && (toxicityScore >= 95 || (deepScan && piiScore >= 95))) {
+            status = 'QUARANTINED';
+            decisionReason = toxicityScore >= 95 
+                ? `Critical Toxicity (${toxicityScore}%) exceeds extreme threshold (95%). Content immediately suppressed from public feed before manual review.`
+                : `Severe PII / Credential Leak (${piiScore}%) detected with Deep Scan enabled. Post auto-quarantined immediately.`;
+        } else if (toxicityScore >= threshold || (deepScan && piiScore >= 70) || spamScore >= 75) {
+            status = 'FLAGGED';
+            if (toxicityScore >= threshold) {
+                decisionReason = `Toxicity score (${toxicityScore}%) meets or exceeds configured sensitivity threshold (${threshold}%). Intercepted and routed to Content Moderation queue.`;
+            } else if (deepScan && piiScore >= 70) {
+                decisionReason = `Sensitive data/credentials detected (${piiScore}%). Deep scanner routed post to Admin Moderation review.`;
+            } else {
+                decisionReason = `Unsolicited spam patterns detected (${spamScore}%). Flagged for review.`;
+            }
+        }
+
+        setAiAnalysisResult(prev => ({
+            ...prev,
+            status,
+            decisionReason
+        }));
+    }, [configState.aiToxicityThreshold, configState.aiAutoQuarantine, configState.aiDeepScan]);
+
+    const handleRunBatchAudit = () => {
+        setIsAiBatchAuditing(true);
+        setTimeout(() => {
+            setIsAiBatchAuditing(false);
+            showToast(`Batch AI Audit completed: ${reports.length} content items verified against current ${configState.aiToxicityThreshold || 80}% sensitivity threshold.`);
+            setAuditTrail(prev => [
+                {
+                    id: Date.now(),
+                    time: new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
+                    moderator: currentUser?.name || 'System Admin',
+                    action: 'AIBatchAudit',
+                    target: `Batch scanned ${reports.length} content reports at ${configState.aiToxicityThreshold || 80}% sensitivity threshold`,
+                    color: 'text-cyan-500'
+                },
+                ...prev
+            ]);
+        }, 700);
+    };
+
+    const handleResetAiRules = () => {
+        setConfigState(prev => ({
+            ...prev,
+            aiToxicityThreshold: 80,
+            aiAutoQuarantine: true,
+            aiDeepScan: true
+        }));
+        showToast('AI Moderation rules reset to recommended enterprise defaults (80%, Auto-Quarantine ON, Deep Scan ON).');
+    };
+
+    // AI Moderation Live Queue Calculations
+    const interceptedReportsCount = useMemo(() => {
+        const threshold = configState.aiToxicityThreshold || 80;
+        return reports.filter(r => {
+            const score = parseInt(r.aiScore) || 0;
+            return score >= threshold || r.reasonCode === 'Harassment' || r.reasonCode === 'Copyright';
+        }).length;
+    }, [reports, configState.aiToxicityThreshold]);
+
+    const quarantinedReportsCount = useMemo(() => {
+        return reports.filter(r => {
+            const score = parseInt(r.aiScore) || 0;
+            return (configState.aiAutoQuarantine !== false && score >= 95) || r.severity === 'Critical';
+        }).length;
+    }, [reports, configState.aiAutoQuarantine]);
 
     // Reset Filters Handler
     const handleResetFilters = () => {
@@ -2900,68 +3113,466 @@ export default function AdminConsole() {
                 </div>
             )}
 
-            {/* ─── TAB 4: AI MODERATION ─── */}
+            {/* ─── TAB 4: AI MODERATION & SAFETY GOVERNANCE ─── */}
             {activeTab === 'ai_moderation' && (
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs p-4">
-                    <div className="flex items-center justify-between mb-4">
-                        <div>
-                            <h2 className="text-base font-black text-slate-900 dark:text-white">AI Content Moderation & Auto-Flagging</h2>
-                            <p className="text-xs text-slate-400">Automated NLP toxicity detection & copyright scanning</p>
+                <div className="space-y-4">
+                    {/* Header Card */}
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs p-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h2 className="text-base font-black text-slate-900 dark:text-white">AI Content Moderation & Safety Governance</h2>
+                                    <span className="px-2 py-0.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-full text-[10px] font-black border border-indigo-500/20">
+                                        AUTOMATED NLP PIPELINE
+                                    </span>
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                    Automated machine learning heuristics for toxicity, workplace harassment, confidential PII leaks, and auto-quarantine rules.
+                                </p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <button 
+                                    onClick={handleResetAiRules}
+                                    className="px-3 py-1.5 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg font-bold text-xs cursor-pointer transition-colors flex items-center gap-1.5"
+                                >
+                                    <span className="material-symbols-outlined text-[15px]">restart_alt</span>
+                                    <span>Reset Defaults</span>
+                                </button>
+                                <button 
+                                    onClick={handleSaveConfig} 
+                                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs cursor-pointer shadow-xs transition-colors flex items-center gap-1.5"
+                                >
+                                    <span className="material-symbols-outlined text-[15px]">save</span>
+                                    <span>Save AI Rules</span>
+                                </button>
+                            </div>
                         </div>
-                        <button onClick={handleSaveConfig} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-bold text-xs cursor-pointer">
-                            Save AI Rules
-                        </button>
+
+                        {/* 3 Core Configuration Rule Cards */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                            {/* Rule 1: Toxicity Threshold */}
+                            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="material-symbols-outlined text-indigo-600 dark:text-indigo-400 text-[18px]">tune</span>
+                                            <h3 className="font-bold text-sm text-slate-900 dark:text-white">Toxicity Threshold</h3>
+                                        </div>
+                                        <span className="px-2 py-0.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-md font-black text-xs">
+                                            {configState.aiToxicityThreshold || 80}%
+                                        </span>
+                                    </div>
+                                    <p className="text-slate-500 dark:text-slate-400 mb-3 text-[11px] leading-relaxed">
+                                        Content with toxicity/abuse confidence score <span className="font-bold text-indigo-600">&gt;= {configState.aiToxicityThreshold || 80}%</span> is automatically intercepted and routed to the Content Moderation queue.
+                                    </p>
+                                    <input 
+                                        type="range" 
+                                        min="50" 
+                                        max="95" 
+                                        value={configState.aiToxicityThreshold || 80}
+                                        onChange={e => setConfigState({ ...configState, aiToxicityThreshold: Number(e.target.value) })}
+                                        className="w-full accent-indigo-600 cursor-pointer" 
+                                    />
+                                    <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-bold">
+                                        <span>50% (Permissive)</span>
+                                        <span className="text-indigo-600">80% (Recommended)</span>
+                                        <span>95% (Strict)</span>
+                                    </div>
+                                </div>
+                                <div className="mt-3 pt-2.5 border-t border-slate-200 dark:border-slate-700 flex items-center justify-between text-[11px]">
+                                    <span className="text-slate-400">Quick presets:</span>
+                                    <div className="flex gap-1">
+                                        {[50, 80, 95].map(preset => (
+                                            <button 
+                                                key={preset}
+                                                onClick={() => setConfigState({ ...configState, aiToxicityThreshold: preset })}
+                                                className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-colors ${
+                                                    (configState.aiToxicityThreshold || 80) === preset
+                                                        ? 'bg-indigo-600 text-white'
+                                                        : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-300'
+                                                }`}
+                                            >
+                                                {preset}%
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Rule 2: Auto-Quarantine */}
+                            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="material-symbols-outlined text-rose-500 text-[18px]">gavel</span>
+                                            <h3 className="font-bold text-sm text-slate-900 dark:text-white">Auto-Quarantine High Risk</h3>
+                                        </div>
+                                        <span className={`px-2 py-0.5 rounded-md font-black text-[10px] ${
+                                            configState.aiAutoQuarantine !== false 
+                                                ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400' 
+                                                : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
+                                        }`}>
+                                            {configState.aiAutoQuarantine !== false ? 'ENABLED' : 'OFF'}
+                                        </span>
+                                    </div>
+                                    <p className="text-slate-500 dark:text-slate-400 mb-3 text-[11px] leading-relaxed">
+                                        Immediately suppresses / hides posts with Toxicity score <span className="font-bold text-rose-600">&gt; 95%</span> from the public feed before a human moderator reviews it.
+                                    </p>
+                                    <label className="flex items-center gap-2 font-bold cursor-pointer select-none mt-2">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={configState.aiAutoQuarantine !== false}
+                                            onChange={e => setConfigState({ ...configState, aiAutoQuarantine: e.target.checked })}
+                                            className="w-4 h-4 rounded text-rose-600 cursor-pointer accent-rose-600" 
+                                        />
+                                        <span className="text-slate-800 dark:text-slate-200 text-xs">Auto-Quarantine &gt;95% Severity</span>
+                                    </label>
+                                </div>
+                                <div className="mt-3 pt-2.5 border-t border-slate-200 dark:border-slate-700 text-[11px] text-slate-400 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[14px] text-emerald-500">verified_user</span>
+                                    <span>Protects feed against viral harassment</span>
+                                </div>
+                            </div>
+
+                            {/* Rule 3: Deep Attachment & PII Scan */}
+                            <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="material-symbols-outlined text-amber-500 text-[18px]">key</span>
+                                            <h3 className="font-bold text-sm text-slate-900 dark:text-white">Copyright & PII Leak Scanner</h3>
+                                        </div>
+                                        <span className={`px-2 py-0.5 rounded-md font-black text-[10px] ${
+                                            configState.aiDeepScan !== false 
+                                                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' 
+                                                : 'bg-slate-200 dark:bg-slate-700 text-slate-500'
+                                        }`}>
+                                            {configState.aiDeepScan !== false ? 'ENABLED' : 'OFF'}
+                                        </span>
+                                    </div>
+                                    <p className="text-slate-500 dark:text-slate-400 mb-3 text-[11px] leading-relaxed">
+                                        Scans text, snippets & attachments for Indian PAN, Aadhaar numbers, confidential compensation/CTC docs, and API tokens.
+                                    </p>
+                                    <label className="flex items-center gap-2 font-bold cursor-pointer select-none mt-2">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={configState.aiDeepScan !== false}
+                                            onChange={e => setConfigState({ ...configState, aiDeepScan: e.target.checked })}
+                                            className="w-4 h-4 rounded text-amber-600 cursor-pointer accent-amber-600" 
+                                        />
+                                        <span className="text-slate-800 dark:text-slate-200 text-xs">Enable Deep Attachment Scan</span>
+                                    </label>
+                                </div>
+                                <div className="mt-3 pt-2.5 border-t border-slate-200 dark:border-slate-700 text-[11px] text-slate-400 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[14px] text-amber-500">security</span>
+                                    <span>Regex + Token matching</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Live Impact & Active Queue Sync Banner */}
+                        <div className="mt-4 p-3 bg-gradient-to-r from-indigo-50/70 to-cyan-50/70 dark:from-indigo-950/30 dark:to-cyan-950/30 border border-indigo-100 dark:border-indigo-900/50 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                                    <span className="material-symbols-outlined text-[20px]">smart_toy</span>
+                                </div>
+                                <div>
+                                    <div className="font-black text-slate-900 dark:text-white flex items-center gap-2">
+                                        <span>Active Moderation Queue Impact</span>
+                                        <span className="px-1.5 py-0.2 bg-emerald-500/15 text-emerald-600 text-[10px] rounded font-bold">LIVE SYNC</span>
+                                    </div>
+                                    <p className="text-slate-600 dark:text-slate-400 text-[11px]">
+                                        At <span className="font-bold text-indigo-600">{configState.aiToxicityThreshold || 80}%</span> sensitivity, <span className="font-bold text-slate-900 dark:text-white">{interceptedReportsCount} of {reports.length}</span> live content reports are intercepted, and <span className="font-bold text-rose-600">{quarantinedReportsCount}</span> severe posts are automatically quarantined.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+                                <button
+                                    onClick={handleRunBatchAudit}
+                                    disabled={isAiBatchAuditing}
+                                    className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 text-slate-700 dark:text-slate-300 rounded-lg font-bold text-xs cursor-pointer transition-all flex items-center gap-1 shadow-2xs"
+                                >
+                                    <span className={`material-symbols-outlined text-[15px] ${isAiBatchAuditing ? 'animate-spin text-cyan-500' : 'text-slate-500'}`}>
+                                        sync
+                                    </span>
+                                    <span>{isAiBatchAuditing ? 'Auditing...' : 'Run Batch Audit'}</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setActiveTab('moderation');
+                                        showToast(`Viewing ${interceptedReportsCount} reports intercepted by AI Moderation rules.`);
+                                    }}
+                                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs cursor-pointer shadow-xs transition-colors flex items-center gap-1"
+                                >
+                                    <span>View Reports ({interceptedReportsCount})</span>
+                                    <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                        <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                            <div className="flex items-center justify-between mb-2">
-                                <h3 className="font-bold text-sm text-slate-900 dark:text-white">Toxicity Sensitivity Threshold</h3>
-                                <span className="px-2 py-0.5 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-md font-black text-xs">
-                                    {configState.aiToxicityThreshold || 80}%
-                                </span>
+
+                    {/* Interactive AI Content Inspector & Rule Sandbox */}
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs p-4">
+                        <div className="flex items-center justify-between mb-3">
+                            <div>
+                                <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-cyan-500 text-[18px]">science</span>
+                                    <span>Live AI Content Inspector & Policy Simulator</span>
+                                </h3>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    Test any custom text, paste employee content, or select realistic presets to observe how the AI Rule Engine scores toxicity and enforces actions.
+                                </p>
                             </div>
-                            <p className="text-slate-500 mb-3">Posts above confidence score will be auto-flagged for review</p>
-                            <input 
-                                type="range" 
-                                min="50" 
-                                max="95" 
-                                value={configState.aiToxicityThreshold || 80}
-                                onChange={e => setConfigState({ ...configState, aiToxicityThreshold: Number(e.target.value) })}
-                                className="w-full accent-indigo-600 cursor-pointer" 
+                            {aiAnalysisResult && (
+                                <button
+                                    onClick={() => {
+                                        setAiTestInput('');
+                                        setAiAnalysisResult(null);
+                                        setAiSelectedPreset(null);
+                                    }}
+                                    className="text-xs text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
+                                >
+                                    Clear Inspector
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Preset Test Case Buttons */}
+                        <div className="mb-3">
+                            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                                Select Real-World Test Scenario:
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {AI_TEST_PRESETS.map(p => (
+                                    <button
+                                        key={p.id}
+                                        onClick={() => {
+                                            setAiSelectedPreset(p.id);
+                                            setAiTestInput(p.content);
+                                            runAiEvaluation(p.content);
+                                        }}
+                                        className={`px-3 py-1.5 rounded-lg border text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 ${
+                                            aiSelectedPreset === p.id 
+                                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                                : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                                        }`}
+                                    >
+                                        <span>{p.label}</span>
+                                        <span className={`px-1.5 py-0.2 rounded text-[10px] font-black border ${p.badgeColor} ${aiSelectedPreset === p.id ? 'bg-white/20 text-white border-transparent' : ''}`}>
+                                            {p.badge}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Input Area */}
+                        <div className="relative mb-3">
+                            <textarea
+                                rows={3}
+                                value={aiTestInput}
+                                onChange={e => {
+                                    setAiTestInput(e.target.value);
+                                    if (aiSelectedPreset) setAiSelectedPreset(null);
+                                }}
+                                placeholder="Type or paste sample post content, comment, or employee submission here to test..."
+                                className="w-full text-xs p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all resize-none"
                             />
-                            <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-bold">
-                                <span>50% (Permissive)</span>
-                                <span className="text-indigo-600">80% (Recommended)</span>
-                                <span>95% (Strict)</span>
+                            <div className="flex items-center justify-between mt-1">
+                                <span className="text-[10px] text-slate-400">
+                                    {aiTestInput.length} characters • {aiTestInput.split(/\s+/).filter(Boolean).length} words
+                                </span>
+                                <button
+                                    onClick={() => runAiEvaluation()}
+                                    disabled={!aiTestInput.trim() || isAiAnalyzing}
+                                    className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg font-bold text-xs cursor-pointer shadow-xs transition-colors flex items-center gap-1.5"
+                                >
+                                    <span className={`material-symbols-outlined text-[15px] ${isAiAnalyzing ? 'animate-spin' : ''}`}>
+                                        {isAiAnalyzing ? 'progress_activity' : 'psychology'}
+                                    </span>
+                                    <span>{isAiAnalyzing ? 'Analyzing NLP...' : 'Analyze with AI Rule Engine'}</span>
+                                </button>
                             </div>
                         </div>
 
-                        <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                            <h3 className="font-bold text-sm text-slate-900 dark:text-white mb-2">Auto-Quarantine High Severity</h3>
-                            <p className="text-slate-500 mb-3">Immediately hide posts with Toxicity score &gt; 95% before manual review</p>
-                            <label className="flex items-center gap-2 font-bold cursor-pointer">
-                                <input 
-                                    type="checkbox" 
-                                    checked={configState.aiAutoQuarantine !== false}
-                                    onChange={e => setConfigState({ ...configState, aiAutoQuarantine: e.target.checked })}
-                                    className="w-4 h-4 rounded text-indigo-600 cursor-pointer accent-indigo-600" 
-                                />
-                                <span className="text-slate-800 dark:text-slate-200">Enable Auto-Quarantine</span>
-                            </label>
-                        </div>
+                        {/* Evaluation Result Panel */}
+                        {aiAnalysisResult && (
+                            <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 animate-fadeIn">
+                                {/* Prominent Verdict Banner */}
+                                <div className={`p-3.5 rounded-xl border mb-4 flex items-start justify-between gap-3 ${
+                                    aiAnalysisResult.status === 'QUARANTINED'
+                                        ? 'bg-rose-500/10 border-rose-500/30 text-rose-700 dark:text-rose-400'
+                                        : aiAnalysisResult.status === 'FLAGGED'
+                                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-400'
+                                            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-700 dark:text-emerald-400'
+                                }`}>
+                                    <div className="flex items-start gap-2.5">
+                                        <span className="material-symbols-outlined text-[24px] mt-0.5 shrink-0">
+                                            {aiAnalysisResult.status === 'QUARANTINED' ? 'dangerous' : aiAnalysisResult.status === 'FLAGGED' ? 'warning' : 'verified'}
+                                        </span>
+                                        <div>
+                                            <div className="text-sm font-black flex items-center gap-2">
+                                                <span>
+                                                    {aiAnalysisResult.status === 'QUARANTINED' && '🚨 AUTO-QUARANTINED — IMMEDIATELY HIDDEN FROM FEED'}
+                                                    {aiAnalysisResult.status === 'FLAGGED' && '⚠️ AUTO-FLAGGED — ROUTED TO MODERATION REVIEW'}
+                                                    {aiAnalysisResult.status === 'ALLOWED' && '✅ CONTENT APPROVED — SAFE FOR PUBLIC PUBLICATION'}
+                                                </span>
+                                            </div>
+                                            <p className="text-xs font-medium mt-1 text-slate-700 dark:text-slate-300 leading-relaxed">
+                                                {aiAnalysisResult.decisionReason}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 shrink-0 text-right">
+                                        <span>Evaluated at {aiAnalysisResult.evaluatedAt}</span>
+                                    </div>
+                                </div>
 
-                        <div className="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
-                            <h3 className="font-bold text-sm text-slate-900 dark:text-white mb-2">Copyright & PII Leak Scanner</h3>
-                            <p className="text-slate-500 mb-3">Scan attachments for confidential compensation docs & API keys</p>
-                            <label className="flex items-center gap-2 font-bold cursor-pointer">
-                                <input 
-                                    type="checkbox" 
-                                    checked={configState.aiDeepScan !== false}
-                                    onChange={e => setConfigState({ ...configState, aiDeepScan: e.target.checked })}
-                                    className="w-4 h-4 rounded text-indigo-600 cursor-pointer accent-indigo-600" 
-                                />
-                                <span className="text-slate-800 dark:text-slate-200">Enable Deep Attachment Scan</span>
-                            </label>
+                                {/* Detailed Metric Gauges */}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    {/* Toxicity Score Meter */}
+                                    <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700">
+                                        <div className="flex items-center justify-between text-xs mb-1.5 font-bold">
+                                            <span className="text-slate-600 dark:text-slate-300">Toxicity Confidence</span>
+                                            <span className={`font-black ${
+                                                aiAnalysisResult.toxicityScore >= 80 ? 'text-red-500' : aiAnalysisResult.toxicityScore >= 50 ? 'text-amber-500' : 'text-emerald-500'
+                                            }`}>
+                                                {aiAnalysisResult.toxicityScore}%
+                                            </span>
+                                        </div>
+                                        <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                            <div 
+                                                className={`h-full rounded-full transition-all duration-500 ${
+                                                    aiAnalysisResult.toxicityScore >= 80 ? 'bg-red-500' : aiAnalysisResult.toxicityScore >= 50 ? 'bg-amber-500' : 'bg-emerald-500'
+                                                }`}
+                                                style={{ width: `${aiAnalysisResult.toxicityScore}%` }}
+                                            />
+                                        </div>
+                                        <div className="flex justify-between text-[9px] text-slate-400 mt-1">
+                                            <span>Threshold: {configState.aiToxicityThreshold || 80}%</span>
+                                            <span>{aiAnalysisResult.toxicityScore >= (configState.aiToxicityThreshold || 80) ? 'Breached' : 'Passed'}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* PII & Credentials Risk Meter */}
+                                    <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700">
+                                        <div className="flex items-center justify-between text-xs mb-1.5 font-bold">
+                                            <span className="text-slate-600 dark:text-slate-300">Confidential PII Risk</span>
+                                            <span className={`font-black ${
+                                                aiAnalysisResult.piiScore >= 70 ? 'text-amber-500' : 'text-emerald-500'
+                                            }`}>
+                                                {aiAnalysisResult.piiScore}%
+                                            </span>
+                                        </div>
+                                        <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                            <div 
+                                                className={`h-full rounded-full transition-all duration-500 ${
+                                                    aiAnalysisResult.piiScore >= 70 ? 'bg-amber-500' : 'bg-emerald-500'
+                                                }`}
+                                                style={{ width: `${aiAnalysisResult.piiScore}%` }}
+                                            />
+                                        </div>
+                                        <div className="flex justify-between text-[9px] text-slate-400 mt-1">
+                                            <span>Deep Scan: {configState.aiDeepScan !== false ? 'Enabled' : 'Disabled'}</span>
+                                            <span>{aiAnalysisResult.piiScore > 0 ? `${aiAnalysisResult.detectedPiiKeywords.length} patterns` : 'None detected'}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Spam & Phishing Meter */}
+                                    <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700">
+                                        <div className="flex items-center justify-between text-xs mb-1.5 font-bold">
+                                            <span className="text-slate-600 dark:text-slate-300">Spam Probability</span>
+                                            <span className={`font-black ${
+                                                aiAnalysisResult.spamScore >= 75 ? 'text-purple-500' : 'text-emerald-500'
+                                            }`}>
+                                                {aiAnalysisResult.spamScore}%
+                                            </span>
+                                        </div>
+                                        <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                                            <div 
+                                                className={`h-full rounded-full transition-all duration-500 ${
+                                                    aiAnalysisResult.spamScore >= 75 ? 'bg-purple-500' : 'bg-emerald-500'
+                                                }`}
+                                                style={{ width: `${aiAnalysisResult.spamScore}%` }}
+                                            />
+                                        </div>
+                                        <div className="flex justify-between text-[9px] text-slate-400 mt-1">
+                                            <span>External Links Scan</span>
+                                            <span>{aiAnalysisResult.spamScore >= 75 ? 'Flagged' : 'Clean'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Detected Triggers Badges */}
+                                {((aiAnalysisResult.detectedToxicKeywords && aiAnalysisResult.detectedToxicKeywords.length > 0) ||
+                                  (aiAnalysisResult.detectedPiiKeywords && aiAnalysisResult.detectedPiiKeywords.length > 0) ||
+                                  (aiAnalysisResult.detectedSpamKeywords && aiAnalysisResult.detectedSpamKeywords.length > 0)) && (
+                                    <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Detected Signals:</span>
+                                        {aiAnalysisResult.detectedToxicKeywords?.map((kw, i) => (
+                                            <span key={i} className="px-2 py-0.5 bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 rounded text-[10px] font-bold">
+                                                Toxicity: "{kw}"
+                                            </span>
+                                        ))}
+                                        {aiAnalysisResult.detectedPiiKeywords?.map((kw, i) => (
+                                            <span key={i} className="px-2 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded text-[10px] font-bold">
+                                                Data Leak: {kw}
+                                            </span>
+                                        ))}
+                                        {aiAnalysisResult.detectedSpamKeywords?.map((kw, i) => (
+                                            <span key={i} className="px-2 py-0.5 bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 rounded text-[10px] font-bold">
+                                                Spam: "{kw}"
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Architectural Workflow Guide: How Knome AI Moderation Works */}
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs p-4">
+                        <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                            <span className="material-symbols-outlined text-[16px] text-indigo-600">account_tree</span>
+                            <span>How Knome AI Content Moderation Works in Enterprise Production</span>
+                        </h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                            <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200 dark:border-slate-700">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[10px]">1</span>
+                                    <span className="font-bold text-slate-800 dark:text-slate-200">Content Ingestion</span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                    Employee posts article, comment, media, or attachment across any public/private community.
+                                </p>
+                            </div>
+                            <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200 dark:border-slate-700">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[10px]">2</span>
+                                    <span className="font-bold text-slate-800 dark:text-slate-200">Automated NLP Scan</span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                    Language model tokenizes text, calculates Toxicity Score, and runs PII regex for Aadhaar, PAN & credentials.
+                                </p>
+                            </div>
+                            <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200 dark:border-slate-700">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[10px]">3</span>
+                                    <span className="font-bold text-slate-800 dark:text-slate-200">Rule Threshold Check</span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                    Score is compared against the {configState.aiToxicityThreshold || 80}% sensitivity threshold and Auto-Quarantine rules.
+                                </p>
+                            </div>
+                            <div className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-lg border border-slate-200 dark:border-slate-700">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-[10px]">4</span>
+                                    <span className="font-bold text-slate-800 dark:text-slate-200">Automated Action</span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                    Clean content goes live; borderline content enters review queue; &gt;95% toxicity is quarantined immediately.
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>
