@@ -2096,14 +2096,14 @@ export default function AdminConsole() {
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">All Reports</p>
                     </div>
 
-                    {/* 2. Pending Review */}
+                    {/* 2. Pending Queue */}
                     <div 
                         onClick={() => { 
                             setActiveMetricCard('pending'); 
                             setStatusFilter('Pending'); 
                             setSeverityFilter('All');
                             setDateRangeFilter('All');
-                            showToast(`Filtered: Showing ${pendingCount} Pending Reports`); 
+                            showToast(`Filtered: Showing ${pendingCount} Pending Queue Reports`); 
                         }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
                             activeMetricCard === 'pending'
@@ -2113,10 +2113,10 @@ export default function AdminConsole() {
                     >
                         <div className="flex items-center justify-between text-amber-500 mb-1">
                             <span className="material-symbols-outlined text-[18px]">pending_actions</span>
-                            <span className="text-[10px] font-black text-amber-600 bg-amber-500/15 px-1.5 py-0.2 rounded-full">Action</span>
+                            <span className="text-[10px] font-black text-amber-600 bg-amber-500/15 px-1.5 py-0.2 rounded-full">Needs Action</span>
                         </div>
                         <p className="text-lg font-black text-amber-500 leading-none">{pendingCount}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Pending Review</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Pending Queue</p>
                     </div>
 
                     {/* 3. High Risk / Critical */}
@@ -2142,14 +2142,14 @@ export default function AdminConsole() {
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Critical Risk</p>
                     </div>
 
-                    {/* 4. Action Taken */}
+                    {/* 4. Action Taken & Resolved */}
                     <div 
                         onClick={() => { 
                             setActiveMetricCard('action_taken'); 
-                            setStatusFilter('Action Taken'); 
+                            setStatusFilter('Reviewed'); 
                             setSeverityFilter('All');
                             setDateRangeFilter('All');
-                            showToast(`Filtered: Showing ${reviewedCount} Action Taken Reports`); 
+                            showToast(`Filtered: Showing ${reviewedCount} Action Taken & Resolved Reports`); 
                         }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
                             activeMetricCard === 'action_taken'
@@ -2158,11 +2158,11 @@ export default function AdminConsole() {
                         }`}
                     >
                         <div className="flex items-center justify-between text-emerald-500 mb-1">
-                            <span className="material-symbols-outlined text-[18px]">check_circle</span>
-                            <span className="text-[10px] font-bold text-emerald-500">+5%</span>
+                            <span className="material-symbols-outlined text-[18px]">task_alt</span>
+                            <span className="text-[10px] font-bold text-emerald-500">Resolved</span>
                         </div>
                         <p className="text-lg font-black text-emerald-500 leading-none">{reviewedCount}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Action Taken</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Action Taken / Resolved</p>
                     </div>
 
                     {/* 5. Today's Reports */}
@@ -2939,31 +2939,6 @@ export default function AdminConsole() {
                                     className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg pl-7 pr-2.5 py-1 text-xs outline-none focus:border-indigo-500"
                                 />
                             </div>
-
-                            {/* Status Filter */}
-                            <select
-                                value={statusFilter}
-                                onChange={e => {
-                                    const val = e.target.value;
-                                    setStatusFilter(val);
-                                    if (val === 'Pending' && severityFilter === 'All' && dateRangeFilter === 'All') {
-                                        setActiveMetricCard('pending');
-                                    } else if (val === 'Action Taken' && severityFilter === 'All' && dateRangeFilter === 'All') {
-                                        setActiveMetricCard('action_taken');
-                                    } else if (val === 'All' && severityFilter === 'All' && dateRangeFilter === 'All') {
-                                        setActiveMetricCard('total');
-                                    } else {
-                                        setActiveMetricCard('custom');
-                                    }
-                                }}
-                                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1 text-xs outline-none cursor-pointer"
-                            >
-                                <option value="All">Status: All</option>
-                                <option value="Pending">Pending</option>
-                                <option value="Reviewed">Reviewed / Resolved</option>
-                                <option value="Action Taken">Action Taken / Removed</option>
-                                <option value="Dismissed">Dismissed</option>
-                            </select>
 
                             {/* Reason Filter */}
                             <select
