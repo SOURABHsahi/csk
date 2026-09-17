@@ -39,6 +39,24 @@ public class InteractionController : KnomeControllerBase
         return Ok(ApiResponse<ContentValidationResultDto>.SuccessResponse(200, "Security validation completed successfully.", result));
     }
 
+    [Authorize(Roles = $"{Roles.CommunityAdmin},{Roles.HRAdmin},{Roles.SystemAdmin}")]
+    [HttpPost("restricted-keywords")]
+    [ProducesResponseType(typeof(ApiResponse<RestrictedKeywordItemDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> AddRestrictedKeyword([FromBody] AddRestrictedKeywordDto dto)
+    {
+        var result = await _interactionService.AddRestrictedKeywordAsync(dto.Keyword);
+        return Ok(ApiResponse<RestrictedKeywordItemDto>.SuccessResponse(200, "Keyword added to restricted words database successfully.", result));
+    }
+
+    [Authorize(Roles = $"{Roles.CommunityAdmin},{Roles.HRAdmin},{Roles.SystemAdmin}")]
+    [HttpGet("restricted-keywords")]
+    [ProducesResponseType(typeof(ApiResponse<List<RestrictedKeywordItemDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetRestrictedKeywords()
+    {
+        var result = await _interactionService.GetAllRestrictedKeywordsAsync();
+        return Ok(ApiResponse<List<RestrictedKeywordItemDto>>.SuccessResponse(200, "Restricted keywords retrieved successfully.", result));
+    }
+
     [HttpGet("{contentType}/{contentId}/summary")]
     [ProducesResponseType(typeof(ApiResponse<ContentSummaryDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetSummary(string contentType, long contentId)

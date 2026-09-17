@@ -8,6 +8,8 @@ public interface IContentInteractionService
 {
     // Security & Screening
     Task<ContentValidationResultDto> ValidateContentSecurityAsync(string? text, string? url = null);
+    Task<RestrictedKeywordItemDto> AddRestrictedKeywordAsync(string keyword);
+    Task<List<RestrictedKeywordItemDto>> GetAllRestrictedKeywordsAsync();
 
     // Comments
     Task<List<CommentDto>> GetContentCommentsAsync(string contentType, long contentId, int? currentUserId = null);

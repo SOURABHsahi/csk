@@ -92,6 +92,29 @@ public class ContentInteractionService : IContentInteractionService
         return result;
     }
 
+    public async Task<RestrictedKeywordItemDto> AddRestrictedKeywordAsync(string keyword)
+    {
+        if (string.IsNullOrWhiteSpace(keyword))
+            throw new BadRequestException("Restricted keyword cannot be empty.");
+
+        var entity = await _repo.AddRestrictedKeywordAsync(keyword.Trim());
+        return new RestrictedKeywordItemDto
+        {
+            KeywordId = entity.KeywordId,
+            Keyword = entity.Keyword
+        };
+    }
+
+    public async Task<List<RestrictedKeywordItemDto>> GetAllRestrictedKeywordsAsync()
+    {
+        var list = await _repo.GetAllRestrictedKeywordsAsync();
+        return list.Select(k => new RestrictedKeywordItemDto
+        {
+            KeywordId = k.KeywordId,
+            Keyword = k.Keyword
+        }).ToList();
+    }
+
     private void ValidateContentType(string contentType)
     {
         if (!ContentTypes.IsValid(contentType))

@@ -385,6 +385,8 @@ export const interactionsApi = {
         const actionTaken = action === 'Ignore' ? 'Dismissed' : (action || 'Action Taken');
         return apiClient.put(`/interactions/reports/${reportId}/resolve`, { status, actionTaken });
     },
+    addRestrictedKeyword: (keyword) => apiClient.post('/interactions/restricted-keywords', { keyword }),
+    getRestrictedKeywords: () => apiClient.get('/interactions/restricted-keywords'),
 };
 
 

@@ -30,5 +30,7 @@ public class InteractionProfile : Profile
         CreateMap<ModerationReport, ModerationReportDto>()
             .ForMember(dest => dest.ReporterFullName, opt => opt.MapFrom(src => src.ReporterUser != null ? src.ReporterUser.FullName : "Unknown"))
             .ForMember(dest => dest.ModeratorFullName, opt => opt.MapFrom(src => src.ModeratorUser != null ? src.ModeratorUser.FullName : null));
+
+        CreateMap<RestrictedKeyword, RestrictedKeywordItemDto>();
     }
 }

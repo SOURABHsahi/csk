@@ -37,6 +37,34 @@ export const RESTRICTED_WORDS = [
     "restricted", "salary"
 ];
 
+// Load persisted custom restricted words from localStorage
+try {
+    const saved = JSON.parse(localStorage.getItem('knome_custom_restricted_words') || '[]');
+    if (Array.isArray(saved)) {
+        saved.forEach(w => {
+            const lower = (w || '').trim().toLowerCase();
+            if (lower && !RESTRICTED_WORDS.includes(lower)) {
+                RESTRICTED_WORDS.push(lower);
+            }
+        });
+    }
+} catch {}
+
+export const addRestrictedWord = (keyword) => {
+    if (!keyword) return;
+    const lower = keyword.trim().toLowerCase();
+    if (!RESTRICTED_WORDS.includes(lower)) {
+        RESTRICTED_WORDS.push(lower);
+    }
+    try {
+        const saved = JSON.parse(localStorage.getItem('knome_custom_restricted_words') || '[]');
+        if (Array.isArray(saved) && !saved.includes(lower)) {
+            saved.push(lower);
+            localStorage.setItem('knome_custom_restricted_words', JSON.stringify(saved));
+        }
+    } catch {}
+};
+
 export const checkRestrictedContent = (text) => {
     if (!text) return null;
 

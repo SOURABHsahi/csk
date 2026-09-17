@@ -461,6 +461,22 @@ public class ContentInteractionRepository : IContentInteractionRepository
         return await _db.RestrictedKeywords.AsNoTracking().ToListAsync();
     }
 
+    public async Task<RestrictedKeyword> AddRestrictedKeywordAsync(string keyword)
+    {
+        var trimmed = keyword.Trim().ToLowerInvariant();
+        var existing = await _db.RestrictedKeywords
+            .FirstOrDefaultAsync(k => k.Keyword.ToLower() == trimmed);
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        var entity = new RestrictedKeyword { Keyword = trimmed };
+        await _db.RestrictedKeywords.AddAsync(entity);
+        await _db.SaveChangesAsync();
+        return entity;
+    }
+
     // Author resolution (for notification targeting)
     public async Task<int?> GetContentAuthorUserIdAsync(string contentType, long contentId)
     {

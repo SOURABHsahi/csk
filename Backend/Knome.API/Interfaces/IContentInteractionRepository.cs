@@ -46,6 +46,7 @@ public interface IContentInteractionRepository
     // Security Screening
     Task<List<BlockedUrl>> GetAllBlockedUrlsAsync();
     Task<List<RestrictedKeyword>> GetAllRestrictedKeywordsAsync();
+    Task<RestrictedKeyword> AddRestrictedKeywordAsync(string keyword);
 
     // Author resolution (for notification targeting)
     Task<int?> GetContentAuthorUserIdAsync(string contentType, long contentId);

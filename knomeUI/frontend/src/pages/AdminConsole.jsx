@@ -6,6 +6,7 @@ import { apiClient } from '../utils/apiClient';
 import useScrollLoading from '../hooks/useScrollLoading';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 import SuspendUserModal from '../components/modals/SuspendUserModal';
+import { addRestrictedWord } from '../utils/restrictedWords';
 
 // Helper to provide realistic reported post content if live API call returns empty/404
 const getFallbackPostContent = (report) => {
@@ -436,6 +437,9 @@ export default function AdminConsole() {
     const [previewReport, setPreviewReport] = useState(null);
     const [previewPost, setPreviewPost] = useState(null);
     const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+    const [restrictedKeywordInput, setRestrictedKeywordInput] = useState('');
+    const [isAddingRestrictedKeyword, setIsAddingRestrictedKeyword] = useState(false);
+    const [recentAddedKeywords, setRecentAddedKeywords] = useState([]);
 
     // Toast Notification helper
     const showToast = (msg) => {
@@ -1134,12 +1138,40 @@ export default function AdminConsole() {
         }
     };
 
+    // Directly add keyword to restricted words database (SQL Server + Client scanner)
+    const handleAddRestrictedKeyword = async () => {
+        const kw = (restrictedKeywordInput || '').trim();
+        if (!kw) {
+            showToast('Please enter a restricted keyword to add', 'warning');
+            return;
+        }
+        setIsAddingRestrictedKeyword(true);
+        try {
+            // 1. Directly insert into SQL Server database table RestrictedKeywords via Backend API
+            await interactionsApi.addRestrictedKeyword(kw).catch(err => {
+                console.warn("Backend addRestrictedKeyword API note:", err);
+            });
+            // 2. Add to frontend in-memory & localStorage restricted words scanner
+            addRestrictedWord(kw);
+            setRecentAddedKeywords(prev => prev.includes(kw.toLowerCase()) ? prev : [...prev, kw.toLowerCase()]);
+            setRestrictedKeywordInput('');
+            showToast(`Restricted keyword "${kw}" added directly to restricted words database!`, 'success');
+        } catch (err) {
+            console.error("Failed to add restricted keyword:", err);
+            showToast(`Failed to add keyword: ${err.message || 'Error'}`, 'error');
+        } finally {
+            setIsAddingRestrictedKeyword(false);
+        }
+    };
+
     // Open Post/Video/Podcast/Article Preview Modal
     const handleOpenPostPreview = async (report) => {
         setPreviewReport(report);
         setIsPreviewOpen(true);
         setIsPreviewLoading(true);
         setPreviewPost(null);
+        setRestrictedKeywordInput('');
+        setRecentAddedKeywords([]);
 
         try {
             const isVideo = report.contentType === 'Video' ||
@@ -3135,9 +3167,8 @@ export default function AdminConsole() {
                                     <th className="px-3 py-2">Community</th>
                                     <th className="px-3 py-2">Reason</th>
                                     <th className="px-3 py-2">Severity</th>
-                                    <th className="px-3 py-2 whitespace-nowrap">Score</th>
                                     <th className="px-3 py-2">Status</th>
-                                    <th className="px-3 py-2">Moderator</th>
+                                    <th className="px-3 py-2">System Admin</th>
                                     <th className="px-3 py-2 whitespace-nowrap">Reported Date</th>
                                     <th className="px-3 py-2 text-right">Actions</th>
                                 </tr>
@@ -3145,7 +3176,7 @@ export default function AdminConsole() {
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs font-medium">
                                 {isLoadingReports ? (
                                     <tr>
-                                        <td colSpan="13" className="text-center py-8 text-slate-500">
+                                        <td colSpan="12" className="text-center py-8 text-slate-500">
                                             <div className="flex items-center justify-center gap-2">
                                                 <span className="material-symbols-outlined animate-spin text-indigo-600">sync</span>
                                                 <span>Loading Moderation Reports...</span>
@@ -3154,7 +3185,7 @@ export default function AdminConsole() {
                                     </tr>
                                 ) : filteredReports.length === 0 ? (
                                     <tr>
-                                        <td colSpan="13" className="text-center py-10 text-slate-500 bg-slate-50/50 dark:bg-slate-900/50">
+                                        <td colSpan="12" className="text-center py-10 text-slate-500 bg-slate-50/50 dark:bg-slate-900/50">
                                             <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
                                                 <span className="material-symbols-outlined text-4xl text-slate-400">filter_alt_off</span>
                                                 <p className="font-bold text-slate-700 dark:text-slate-200">No moderation reports match the filter criteria</p>
@@ -3259,11 +3290,6 @@ export default function AdminConsole() {
                                                     </span>
                                                 </td>
 
-                                                {/* Score */}
-                                                <td className="px-3 py-2">
-                                                    {renderScoreBadge(r.aiScore, r.reasonCode, r.postContentSnippet)}
-                                                </td>
-
                                                 {/* Status */}
                                                 <td className="px-3 py-2">
                                                     <span className={`px-2 py-0.5 rounded text-[10px] font-black whitespace-nowrap ${statusBadgeStyle}`}>
@@ -3271,11 +3297,11 @@ export default function AdminConsole() {
                                                     </span>
                                                 </td>
 
-                                                {/* Moderator */}
+                                                {/* System Admin */}
                                                 <td className="px-3 py-2">
                                                     {r.moderatorUserId ? (
                                                         <div>
-                                                            <div className="font-bold text-slate-700 dark:text-slate-300 text-[11px]">{r.moderatorFullName || `Mod #${r.moderatorUserId}`}</div>
+                                                            <div className="font-bold text-slate-700 dark:text-slate-300 text-[11px]">{r.moderatorFullName || 'System Admin'}</div>
                                                             <div className="text-[10px] text-slate-400">{r.actionTaken || 'None'}</div>
                                                         </div>
                                                     ) : (
@@ -5288,7 +5314,7 @@ export default function AdminConsole() {
                         {/* Modal Body */}
                         <div className="p-6 overflow-y-auto space-y-5 custom-scrollbar flex-grow">
                             {/* Report Details Card */}
-                            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
                                 <div>
                                     <p className="text-slate-400 font-semibold text-[11px]">Reporter</p>
                                     <p className="font-bold text-slate-800 dark:text-slate-200 mt-0.5">{previewReport.reporterFullName}</p>
@@ -5299,12 +5325,6 @@ export default function AdminConsole() {
                                     <span className="inline-block mt-1 px-2.5 py-0.5 rounded-md bg-rose-500/10 text-rose-600 font-black text-[11px]">
                                         {previewReport.reasonCode}
                                     </span>
-                                </div>
-                                <div>
-                                    <p className="text-slate-400 font-semibold text-[11px]">Auto-Detected Score</p>
-                                    <div className="mt-1">
-                                        {renderScoreBadge(previewReport.aiScore, previewReport.reasonCode, previewReport.postContentSnippet)}
-                                    </div>
                                 </div>
                                 <div>
                                     <p className="text-slate-400 font-semibold text-[11px]">Target Content</p>
@@ -5641,6 +5661,73 @@ export default function AdminConsole() {
                                     <p className="text-xs text-slate-400">
                                         Content snippet: "{previewReport.postContentSnippet || getFallbackPostContent(previewReport).content}"
                                     </p>
+                                </div>
+                            )}
+
+                            {/* Optional Restricted Keyword input field + button for Harassment & Inappropriate reported content */}
+                            {(previewReport.reasonCode === 'Harassment' || previewReport.reasonCode === 'Inappropriate' || (previewReport.reasonCode && (previewReport.reasonCode.toLowerCase().includes('harass') || previewReport.reasonCode.toLowerCase().includes('inappropriate')))) && (
+                                <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/25 dark:bg-amber-950/30 dark:border-amber-700/40 space-y-2.5">
+                                    <div className="flex items-center justify-between flex-wrap gap-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className="material-symbols-outlined text-amber-600 dark:text-amber-400 text-lg">shield_lock</span>
+                                            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                                Restricted Keyword <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400">(Optional)</span>
+                                            </h4>
+                                        </div>
+                                        <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 dark:bg-amber-900/50 px-2 py-0.5 rounded-md border border-amber-500/30">
+                                            Directly adds to Restricted Words database
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-tight">
+                                        Enter any abusive, offensive, or inappropriate keyword from this content to immediately add it to the restricted words database and block future posts across the platform.
+                                    </p>
+                                    <div className="flex items-center gap-2">
+                                        <div className="relative flex-grow">
+                                            <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-base">block</span>
+                                            <input
+                                                type="text"
+                                                value={restrictedKeywordInput}
+                                                onChange={(e) => setRestrictedKeywordInput(e.target.value)}
+                                                placeholder="Enter restricted keyword from this content (e.g. offensive word, slur)..."
+                                                className="w-full pl-8 pr-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all"
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        e.preventDefault();
+                                                        handleAddRestrictedKeyword();
+                                                    }
+                                                }}
+                                            />
+                                        </div>
+                                        <button
+                                            type="button"
+                                            disabled={isAddingRestrictedKeyword || !restrictedKeywordInput.trim()}
+                                            onClick={handleAddRestrictedKeyword}
+                                            className="px-4 py-2 bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-700 hover:to-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs hover:shadow shrink-0"
+                                        >
+                                            {isAddingRestrictedKeyword ? (
+                                                <>
+                                                    <span className="material-symbols-outlined text-sm animate-spin">sync</span>
+                                                    <span>Adding...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="material-symbols-outlined text-sm">add_moderator</span>
+                                                    <span>Restricted Keyword</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                    {recentAddedKeywords.length > 0 && (
+                                        <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                                            <span className="text-[10px] font-bold text-slate-400">Recently added to database:</span>
+                                            {recentAddedKeywords.map((kw, idx) => (
+                                                <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-600 border border-rose-500/20">
+                                                    <span className="material-symbols-outlined text-[10px]">done</span>
+                                                    {kw}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
