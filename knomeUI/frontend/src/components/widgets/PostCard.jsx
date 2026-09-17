@@ -134,6 +134,7 @@ export function ImageLightbox({ images, startIndex, onClose }) {
 const FALLBACK_GRID_SVG = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500"><defs><linearGradient id="bgG" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%231e293b"/><stop offset="100%" stop-color="%230f172a"/></linearGradient></defs><rect width="800" height="500" fill="url(%23bgG)"/><circle cx="400" cy="210" r="52" fill="%236366f1" fill-opacity="0.15"/><path d="M380 195l16-20 14 18 12-14 18 24H360z" fill="%23818cf8"/><circle cx="375" cy="180" r="6" fill="%23a5b4fc"/><text x="400" y="295" font-family="system-ui,-apple-system,sans-serif" font-size="16" font-weight="700" fill="%23f1f5f9" text-anchor="middle">Knome Enterprise Media</text><text x="400" y="322" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="500" fill="%2394a3b8" text-anchor="middle">Attachment</text></svg>`;
 
 export function ImageGrid({ images, onImageClick }) {
+    const [isImagesExpanded, setIsImagesExpanded] = useState(false);
     const validImages = (images || []).filter(img => {
         if (!img) return false;
         const u = typeof img === 'string' ? img : (img.url || img.fileUrl);
@@ -217,33 +218,107 @@ export function ImageGrid({ images, onImageClick }) {
         );
     }
 
-    // Four or more — 2x2 grid, last cell shows +N more
+    // Four or more images — show 4 with Read More button after 4 images
     const showImages = validImages.slice(0, 4);
     const extraCount = validImages.length - 4;
-    return (
-        <div className="w-full grid grid-cols-2 gap-0.5" style={{ height: '380px' }}>
-            {showImages.map((img, i) => (
-                <div
-                    key={i}
-                    className="overflow-hidden cursor-zoom-in group relative"
-                    onClick={() => onImageClick(i)}
-                >
-                    <img 
-                        src={getImgUrl(img)} 
-                        onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_GRID_SVG; }} 
-                        alt="Post media" 
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
-                    />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
-                    {/* +N overlay on last cell */}
-                    {i === 3 && extraCount > 0 && (
-                        <div className="absolute inset-0 flex items-center justify-center"
-                            style={{ background: 'rgba(0,0,0,0.55)' }}>
-                            <span className="text-white text-2xl font-black">+{extraCount}</span>
+
+    if (extraCount > 0 && isImagesExpanded) {
+        return (
+            <div className="w-full flex flex-col">
+                <div className="w-full grid grid-cols-2 sm:grid-cols-3 gap-1 p-1 bg-slate-100/60 dark:bg-slate-900/60">
+                    {validImages.map((img, i) => (
+                        <div
+                            key={i}
+                            className="overflow-hidden cursor-zoom-in group relative rounded-lg"
+                            style={{ height: '200px' }}
+                            onClick={() => onImageClick(i)}
+                        >
+                            <img 
+                                src={getImgUrl(img)} 
+                                onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_GRID_SVG; }} 
+                                alt={`Post media ${i + 1}`} 
+                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
+                            />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
                         </div>
-                    )}
+                    ))}
                 </div>
-            ))}
+                <div className="px-4 py-2 bg-slate-50/80 dark:bg-slate-900/60 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
+                    <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                        Showing all {validImages.length} images
+                    </span>
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsImagesExpanded(false);
+                        }}
+                        className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                        <span>Show less</span>
+                        <span className="material-symbols-outlined text-[15px]">expand_less</span>
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="w-full flex flex-col">
+            <div className="w-full grid grid-cols-2 gap-0.5" style={{ height: '380px' }}>
+                {showImages.map((img, i) => (
+                    <div
+                        key={i}
+                        className="overflow-hidden cursor-zoom-in group relative"
+                        onClick={() => {
+                            if (i === 3 && extraCount > 0) {
+                                setIsImagesExpanded(true);
+                            } else {
+                                onImageClick(i);
+                            }
+                        }}
+                    >
+                        <img 
+                            src={getImgUrl(img)} 
+                            onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_GRID_SVG; }} 
+                            alt="Post media" 
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" 
+                        />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
+                        {/* Read more overlay on 4th cell when extraCount > 0 */}
+                        {i === 3 && extraCount > 0 && (
+                            <div 
+                                className="absolute inset-0 flex flex-col items-center justify-center gap-1 cursor-pointer"
+                                style={{ background: 'rgba(0,0,0,0.6)' }}
+                            >
+                                <span className="text-white text-2xl font-black">+{extraCount}</span>
+                                <span className="text-white text-[11px] font-bold bg-white/20 hover:bg-white/30 px-2.5 py-0.5 rounded-full backdrop-blur-sm flex items-center gap-1 transition-colors">
+                                    <span className="material-symbols-outlined text-[13px]">collections</span>
+                                    Read more
+                                </span>
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </div>
+            {extraCount > 0 && (
+                <div className="px-4 py-2 bg-slate-50/80 dark:bg-slate-900/60 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
+                    <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                        Showing 4 of {validImages.length} images
+                    </span>
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsImagesExpanded(true);
+                        }}
+                        className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                        <span>Read more ({extraCount} more photos)</span>
+                        <span className="material-symbols-outlined text-[15px]">expand_more</span>
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
@@ -355,6 +430,7 @@ export default function PostCard({ post, onPostDeleted }) {
     const [isReactionsModalOpen, setIsReactionsModalOpen] = useState(false);
     const [isPublishingNow, setIsPublishingNow] = useState(false);
     const isScheduled = Boolean(post.isScheduledFuture || post.status === 'Scheduled');
+    const [isContentExpanded, setIsContentExpanded] = useState(false);
 
     // Distinct reaction types currently active on this post
     const activeReactionTypes = React.useMemo(() => {
@@ -1500,6 +1576,31 @@ export default function PostCard({ post, onPostDeleted }) {
 
                     const sharedAuthor = post.sharedContent?.author || null;
 
+                    const commentaryLines = userCommentary ? userCommentary.split('\n') : [];
+                    const hasMultipleLines = commentaryLines.length > 2;
+                    const isLongText = (userCommentary || '').length > 140;
+                    const needsReadMore = hasMultipleLines || isLongText;
+
+                    let truncatedCommentary = userCommentary;
+                    if (needsReadMore && !isContentExpanded) {
+                        if (hasMultipleLines) {
+                            const firstTwo = commentaryLines.slice(0, 2).join('\n');
+                            if (firstTwo.length > 140) {
+                                let slice = firstTwo.slice(0, 140);
+                                const lastSpace = slice.lastIndexOf(' ');
+                                if (lastSpace > 90) slice = slice.slice(0, lastSpace);
+                                truncatedCommentary = slice.trim();
+                            } else {
+                                truncatedCommentary = firstTwo.trim();
+                            }
+                        } else {
+                            let slice = userCommentary.slice(0, 140);
+                            const lastSpace = slice.lastIndexOf(' ');
+                            if (lastSpace > 90) slice = slice.slice(0, lastSpace);
+                            truncatedCommentary = slice.trim();
+                        }
+                    }
+
                     return (
                         <>
                             {/* Render post title only if not a repetitive "Shared Post:" prefix */}
@@ -1519,11 +1620,39 @@ export default function PostCard({ post, onPostDeleted }) {
                                 </h3>
                             )}
 
-                            {/* Render user commentary (or normal content) in Source Sans */}
+                            {/* Render user commentary (or normal content) with Read more after 2 lines */}
                             {userCommentary ? (
-                                <p className="font-source-sans text-[14.5px] text-slate-800 dark:text-slate-200 mb-3 whitespace-pre-wrap leading-relaxed font-normal">
-                                    {renderFormattedText(userCommentary)}
-                                </p>
+                                <div className="font-source-sans text-[14.5px] text-slate-800 dark:text-slate-200 mb-3 leading-relaxed font-normal">
+                                    <p className={`whitespace-pre-wrap ${!isContentExpanded && needsReadMore ? 'line-clamp-2' : ''}`}>
+                                        {renderFormattedText(isContentExpanded ? userCommentary : truncatedCommentary)}
+                                    </p>
+                                    {needsReadMore && !isContentExpanded && (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setIsContentExpanded(true);
+                                            }}
+                                            className="font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 text-[13.5px] mt-1 inline-flex items-center gap-0.5 cursor-pointer transition-colors bg-transparent border-0 p-0 hover:underline select-none"
+                                        >
+                                            <span>Read more</span>
+                                            <span className="material-symbols-outlined text-[16px]">expand_more</span>
+                                        </button>
+                                    )}
+                                    {needsReadMore && isContentExpanded && (
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setIsContentExpanded(false);
+                                            }}
+                                            className="font-bold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-[13px] mt-1 inline-flex items-center gap-0.5 cursor-pointer transition-colors bg-transparent border-0 p-0 hover:underline select-none"
+                                        >
+                                            <span>Show less</span>
+                                            <span className="material-symbols-outlined text-[16px]">expand_less</span>
+                                        </button>
+                                    )}
+                                </div>
                             ) : null}
 
                             {/* Shared Post Modern Quote Card (LinkedIn / Twitter Style) */}

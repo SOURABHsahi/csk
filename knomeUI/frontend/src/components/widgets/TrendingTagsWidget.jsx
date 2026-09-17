@@ -19,7 +19,7 @@ const PALETTE = [
     '#3b82f6', '#14b8a6'
 ];
 
-export default function TrendingTagsWidget() {
+export default function TrendingTagsWidget({ onTagClick }) {
     const navigate = useNavigate();
     const [tags, setTags] = useState(DEFAULT_PROJECT_TAGS);
     const [isLoading, setIsLoading] = useState(true);
@@ -124,6 +124,10 @@ export default function TrendingTagsWidget() {
     }, []);
 
     const handleTagClick = (tag) => {
+        if (onTagClick) {
+            onTagClick(tag);
+            return;
+        }
         // Navigates directly to search with matching hashtag query
         navigate(`/search?q=${encodeURIComponent('#' + tag)}`);
     };

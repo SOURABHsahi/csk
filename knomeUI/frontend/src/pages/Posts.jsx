@@ -5,6 +5,8 @@ import PostCard from '../components/widgets/PostCard';
 import CreatePostModal from '../components/modals/CreatePostModal';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 import { useScrollLoading } from '../hooks/useScrollLoading';
+import HotPostsWidget from '../components/widgets/HotPostsWidget';
+import TrendingTagsWidget from '../components/widgets/TrendingTagsWidget';
 import { postsApi, mapPost, getPersonalizedRecommendations } from '../utils/apiService';
 
 export default function Posts() {
@@ -161,6 +163,7 @@ export default function Posts() {
         const matchesSearch = !searchQuery || (post.content || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                               (post.author?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
         const matchesTag = selectedTag === 'All' || 
+                           selectedTag === '🔥 Hot Posts' ||
                            (selectedTag === '⏰ Scheduled' ? (post.status === 'Scheduled' || post.isScheduledFuture) : 
                            (selectedTag === '✨ Recommended' ? true : (
                                (post.tags && post.tags.some(t => t.toLowerCase() === selectedTag.toLowerCase())) ||
@@ -171,6 +174,12 @@ export default function Posts() {
 
     const filteredPosts = (selectedTag === '✨ Recommended'
         ? getPersonalizedRecommendations(rawPosts, currentUser)
+        : selectedTag === '🔥 Hot Posts'
+        ? [...rawPosts].sort((a, b) => {
+            const scoreA = Number(a.likesCount || a.likes || 0) * 2 + Number(a.commentsCount || a.comments || 0) * 3 + Number(a.sharesCount || a.shares || 0) * 4;
+            const scoreB = Number(b.likesCount || b.likes || 0) * 2 + Number(b.commentsCount || b.comments || 0) * 3 + Number(b.sharesCount || b.shares || 0) * 4;
+            return scoreB - scoreA;
+        })
         : rawPosts
     ).sort((a, b) => {
         if (a.isHighlighted) return -1;
@@ -376,6 +385,17 @@ export default function Posts() {
                         All Posts
                     </button>
                     <button
+                        onClick={() => setSelectedTag('🔥 Hot Posts')}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer ${
+                            selectedTag === '🔥 Hot Posts'
+                                ? 'bg-orange-500/15 border-orange-500/40 text-orange-600 dark:text-orange-400 shadow-xs font-black'
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                        }`}
+                    >
+                        <span>🔥</span>
+                        <span>Hot Posts</span>
+                    </button>
+                    <button
                         onClick={() => setSelectedTag('✨ Recommended')}
                         className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer ${
                             selectedTag === '✨ Recommended'
@@ -407,7 +427,7 @@ export default function Posts() {
                 </div>
 
                 {/* Active Selected Filter Badge */}
-                {selectedTag !== 'All' && selectedTag !== '✨ Recommended' && selectedTag !== '⏰ Scheduled' && (
+                {selectedTag !== 'All' && selectedTag !== '✨ Recommended' && selectedTag !== '⏰ Scheduled' && selectedTag !== '🔥 Hot Posts' && (
                     <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-xl animate-in fade-in duration-150">
                         <span>Topic: #{selectedTag}</span>
                         <button 
@@ -421,49 +441,58 @@ export default function Posts() {
                 )}
             </div>
 
-            {/* Feed display — Full screen width */}
-            <div className="flex flex-col gap-6 w-full min-w-0">
-                {isLoading ? (
-                    <div className="glass bg-white dark:bg-slate-950 p-12 rounded-2xl border border-slate-200 dark:border-slate-800 text-center flex flex-col items-center justify-center gap-3">
-                        <span className="material-symbols-outlined text-4xl text-slate-300 dark:text-slate-700 animate-spin">progress_activity</span>
-                        <h3 className="font-bold text-slate-700 dark:text-slate-350 text-sm">Loading posts...</h3>
-                    </div>
-                ) : filteredPosts.length > 0 ? (
-                    <>
-                        {filteredPosts.slice(0, visibleCount).map(post => (
-                            <PostCard key={post.id} post={post} onPostDeleted={(deletedId) => {
-                                if (deletedId) setPosts(prev => prev.filter(p => p.id !== deletedId && p.postId !== deletedId));
-                                loadPosts();
-                            }} />
-                        ))}
+            {/* Main Content Layout with Feed and Right Sidebar Widgets */}
+            <div className="flex flex-col xl:flex-row gap-8 items-start w-full min-w-0">
+                {/* Feed display */}
+                <main className="flex-1 min-w-0 flex flex-col gap-6 w-full">
+                    {isLoading ? (
+                        <div className="glass bg-white dark:bg-slate-950 p-12 rounded-2xl border border-slate-200 dark:border-slate-800 text-center flex flex-col items-center justify-center gap-3">
+                            <span className="material-symbols-outlined text-4xl text-slate-300 dark:text-slate-700 animate-spin">progress_activity</span>
+                            <h3 className="font-bold text-slate-700 dark:text-slate-350 text-sm">Loading posts...</h3>
+                        </div>
+                    ) : filteredPosts.length > 0 ? (
+                        <>
+                            {filteredPosts.slice(0, visibleCount).map(post => (
+                                <PostCard key={post.id} post={post} onPostDeleted={(deletedId) => {
+                                    if (deletedId) setPosts(prev => prev.filter(p => p.id !== deletedId && p.postId !== deletedId));
+                                    loadPosts();
+                                }} />
+                            ))}
 
-                        {/* Infinite Scroll Progress Indicator */}
-                        <ScrollLoadingIndicator isVisible={visibleCount < filteredPosts.length} text="Loading more posts on scroll..." />
-                    </>
-                ) : (
-                    <div className="glass bg-white dark:bg-slate-950 p-12 rounded-2xl border border-slate-200 dark:border-slate-800 text-center flex flex-col items-center justify-center gap-3">
-                        <span className="material-symbols-outlined text-4xl text-slate-300 dark:text-slate-700 animate-bounce">
-                            {selectedTag === '⏰ Scheduled' ? 'schedule' : 'feed'}
-                        </span>
-                        <h3 className="font-bold text-slate-700 dark:text-slate-350 text-sm">
-                            {selectedTag === '⏰ Scheduled' ? 'No Scheduled Posts' : 'No Posts Found'}
-                        </h3>
-                        <p className="text-xs text-slate-500">
-                            {selectedTag === '⏰ Scheduled' 
-                                ? 'You do not have any posts waiting to be published.'
-                                : 'Try adjusting your search criteria or tags filter.'}
-                        </p>
-                        {currentUser.role !== 'SYSADM' && (
-                            <button
-                                onClick={() => setIsCreatePostOpen(true)}
-                                className="mt-2 px-5 py-2 font-bold text-xs rounded-xl bg-indigo-500 text-white hover:bg-indigo-600 transition-all shadow-sm flex items-center gap-2"
-                            >
-                                <span className="material-symbols-outlined text-[16px]">add</span>
-                                {selectedTag === '⏰ Scheduled' ? 'Schedule a Post' : 'Create First Post'}
-                            </button>
-                        )}
-                    </div>
-                )}
+                            {/* Infinite Scroll Progress Indicator */}
+                            <ScrollLoadingIndicator isVisible={visibleCount < filteredPosts.length} text="Loading more posts on scroll..." />
+                        </>
+                    ) : (
+                        <div className="glass bg-white dark:bg-slate-950 p-12 rounded-2xl border border-slate-200 dark:border-slate-800 text-center flex flex-col items-center justify-center gap-3">
+                            <span className="material-symbols-outlined text-4xl text-slate-300 dark:text-slate-700 animate-bounce">
+                                {selectedTag === '⏰ Scheduled' ? 'schedule' : 'feed'}
+                            </span>
+                            <h3 className="font-bold text-slate-700 dark:text-slate-350 text-sm">
+                                {selectedTag === '⏰ Scheduled' ? 'No Scheduled Posts' : 'No Posts Found'}
+                            </h3>
+                            <p className="text-xs text-slate-500">
+                                {selectedTag === '⏰ Scheduled' 
+                                    ? 'You do not have any posts waiting to be published.'
+                                    : 'Try adjusting your search criteria or tags filter.'}
+                            </p>
+                            {currentUser.role !== 'SYSADM' && (
+                                <button
+                                    onClick={() => setIsCreatePostOpen(true)}
+                                    className="mt-2 px-5 py-2 font-bold text-xs rounded-xl bg-indigo-500 text-white hover:bg-indigo-600 transition-all shadow-sm flex items-center gap-2"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">add</span>
+                                    {selectedTag === '⏰ Scheduled' ? 'Schedule a Post' : 'Create First Post'}
+                                </button>
+                            )}
+                        </div>
+                    )}
+                </main>
+
+                {/* Right Sidebar Widgets: Hot Posts & Trending Tags */}
+                <aside className="w-full xl:w-[340px] shrink-0 flex flex-col gap-5">
+                    <HotPostsWidget />
+                    <TrendingTagsWidget onTagClick={(tag) => setSelectedTag(tag)} />
+                </aside>
             </div>
 
             {/* Create Post Modal — supports image, video, audio, document upload */}
