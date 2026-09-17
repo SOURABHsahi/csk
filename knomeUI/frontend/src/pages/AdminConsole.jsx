@@ -1482,18 +1482,6 @@ export default function AdminConsole() {
                             </div>
                         )}
                     </div>
-
-                    {/* Suspend User Button */}
-                    <button
-                        onClick={() => {
-                            setSelectedUserToSuspend(null);
-                            setIsSuspendModalOpen(true);
-                        }}
-                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg shadow-sm transition-all flex items-center gap-1 cursor-pointer shrink-0"
-                    >
-                        <span className="material-symbols-outlined text-[16px]">person_off</span>
-                        <span>Suspend User</span>
-                    </button>
                 </div>
             </div>
 
