@@ -48,7 +48,7 @@ public class InteractionController : KnomeControllerBase
         return Ok(ApiResponse<RestrictedKeywordItemDto>.SuccessResponse(200, "Keyword added to restricted words database successfully.", result));
     }
 
-    [Authorize(Roles = $"{Roles.CommunityAdmin},{Roles.HRAdmin},{Roles.SystemAdmin}")]
+    [AllowAnonymous]
     [HttpGet("restricted-keywords")]
     [ProducesResponseType(typeof(ApiResponse<List<RestrictedKeywordItemDto>>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetRestrictedKeywords()

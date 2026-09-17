@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
 import { postsApi, mediaApi, communitiesApi, profileApi, notificationsApi, formatToDDMMYYYY } from '../../utils/apiService';
-import { checkRestrictedContent } from '../../utils/restrictedWords';
+import { apiClient } from '../../utils/apiClient';
+import { checkRestrictedContent, syncRestrictedWordsFromBackend, addRestrictedWord } from '../../utils/restrictedWords';
 import ImageCropModal from './ImageCropModal';
 import CustomDateTimePicker from '../widgets/CustomDateTimePicker';
 
@@ -282,6 +283,16 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
     useEffect(() => {
         if (!isOpen) {
             resetForm();
+        } else {
+            // Live sync restricted keywords directly from SQL Server database table RestrictedKeywords
+            syncRestrictedWordsFromBackend().then(() => {
+                if (text) {
+                    const found = checkRestrictedContent(text);
+                    if (found) {
+                        setSecurityWarning(`Security Alert: Please don't use this word - "${found}". It is restricted and cannot be published.`);
+                    }
+                }
+            });
         }
     }, [isOpen, currentUser?.userId, currentUser?.id]);
 
@@ -313,7 +324,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
             setShowHashtagDropdown(false);
         }
 
-        // Real-time Immediate Validation for Restricted Keywords
+        // Real-time Immediate Validation for Restricted Keywords (Synchronous + Database synced)
         const immediateRestricted = checkRestrictedContent(val);
         if (immediateRestricted) {
             setSecurityWarning(`Security Alert: Please don't use this word - "${immediateRestricted}". It is restricted and cannot be published.`);
@@ -321,6 +332,24 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
             setSecurityWarning('Security Alert: This URL is flagged as potentially malicious and cannot be published.');
         } else {
             setSecurityWarning(null);
+
+            // Debounced Live Backend Validation Check against SQL Server Database
+            if (val.trim().length >= 3) {
+                clearTimeout(window.__knome_security_debounce);
+                window.__knome_security_debounce = setTimeout(async () => {
+                    try {
+                        const secRes = await apiClient.post('/interactions/validate-security', { text: val });
+                        const secData = secRes?.data || secRes;
+                        if (secData && secData.isValid === false) {
+                            const term = (secData.restrictedKeywordsFound && secData.restrictedKeywordsFound[0]) || (secData.blockedUrlsFound && secData.blockedUrlsFound[0]) || 'restricted term';
+                            setSecurityWarning(`Security Alert: Please don't use this word - "${term}". It is restricted and cannot be published.`);
+                            addRestrictedWord(term);
+                        }
+                    } catch (e) {
+                        // ignore background check network errors
+                    }
+                }, 300);
+            }
         }
     };
 
@@ -443,10 +472,27 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
     };
 
     const handleSubmit = async (status = 'Published') => {
+        // 1. Check synchronous restricted words
         const foundKeyword = checkRestrictedContent(text);
         if (foundKeyword) {
-            setSecurityWarning(`Security Alert: Please don't use this word - "${foundKeyword}". It is restricted.`);
+            setSecurityWarning(`Security Alert: Please don't use this word - "${foundKeyword}". It is restricted and cannot be published.`);
+            addToast(`Security Alert: Content contains restricted word "${foundKeyword}". Post cannot be published.`, 'warning');
             return;
+        }
+
+        // 2. Perform live security check against SQL Server database before starting upload/publish
+        try {
+            const secRes = await apiClient.post('/interactions/validate-security', { text: text });
+            const secData = secRes?.data || secRes;
+            if (secData && secData.isValid === false) {
+                const badTerm = (secData.restrictedKeywordsFound && secData.restrictedKeywordsFound[0]) || (secData.blockedUrlsFound && secData.blockedUrlsFound[0]) || 'restricted term';
+                setSecurityWarning(`Security Alert: Please don't use this word - "${badTerm}". It is restricted and cannot be published.`);
+                addToast(`Security Alert: Content contains restricted word "${badTerm}". Post cannot be published.`, 'warning');
+                addRestrictedWord(badTerm);
+                return;
+            }
+        } catch (secErr) {
+            console.warn('Pre-publish security scan warning:', secErr);
         }
 
         if (securityWarning || isPublishing) return;
@@ -524,6 +570,13 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                 const createdPost = apiRes?.data || apiRes;
                 createdPostId = createdPost?.postId || createdPost?.id;
             } catch (err) {
+                const errMsg = err?.response?.data?.message || err?.message || '';
+                if (errMsg.toLowerCase().includes('restricted') || errMsg.toLowerCase().includes('blocked') || (err?.response?.status === 400 && errMsg)) {
+                    setSecurityWarning(`Security Alert: ${errMsg}`);
+                    addToast(`Security Alert: ${errMsg}`, 'error');
+                    setIsPublishing(false);
+                    return;
+                }
                 console.warn('API post creation notice, using local post fallback:', err);
                 createdPostId = `post_local_${Date.now()}`;
                 const localPost = {

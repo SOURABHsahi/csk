@@ -1,3 +1,5 @@
+import { apiClient } from './apiClient';
+
 export const RESTRICTED_WORDS = [
     // PII & Sensitive Credentials
     "aadhaar", "access token", "api key", "apikey", "bank account", "client secret",
@@ -9,7 +11,7 @@ export const RESTRICTED_WORDS = [
     "abuse", "abusive", "asshole", "bastard", "bc", "behenchod", "bhenchod",
     "bhosadike", "bhosdike", "bitch", "bkl", "bsdk", "choot", "chutiya",
     "chutiye", "cunt", "damn", "dick", "fool", "fuck", "fucking", "gaali",
-    "gaand", "gandu", "haraami", "harami", "harassment", "hate", "hell",
+    "gaand", "gando", "gandu", "haraami", "harami", "harassment", "hate", "hell",
     "idiot", "kameena", "kamina", "kaminey", "lauda", "laude", "lodu",
     "loser", "lund", "madarchod", "madharchod", "mc", "mkc", "moron",
     "motherfucker", "offensive", "piss", "pussy", "raand", "randi", "saala",
@@ -49,6 +51,40 @@ try {
         });
     }
 } catch {}
+
+/**
+ * Synchronize all live restricted keywords directly from SQL Server database table RestrictedKeywords.
+ */
+export const syncRestrictedWordsFromBackend = async () => {
+    try {
+        const res = await apiClient.get('/interactions/restricted-keywords');
+        const items = res?.data || (Array.isArray(res) ? res : []);
+        if (Array.isArray(items) && items.length > 0) {
+            const added = [];
+            items.forEach(item => {
+                const kw = (typeof item === 'string' ? item : item?.keyword || '').trim().toLowerCase();
+                if (kw && !RESTRICTED_WORDS.includes(kw)) {
+                    RESTRICTED_WORDS.push(kw);
+                    added.push(kw);
+                }
+            });
+            if (added.length > 0) {
+                try {
+                    const saved = JSON.parse(localStorage.getItem('knome_custom_restricted_words') || '[]');
+                    const merged = Array.from(new Set([...saved, ...added]));
+                    localStorage.setItem('knome_custom_restricted_words', JSON.stringify(merged));
+                } catch {}
+            }
+        }
+        return RESTRICTED_WORDS;
+    } catch (err) {
+        console.warn("Could not sync restricted keywords from backend:", err?.message || err);
+        return RESTRICTED_WORDS;
+    }
+};
+
+// Immediate background fetch from SQL Server
+syncRestrictedWordsFromBackend();
 
 export const addRestrictedWord = (keyword) => {
     if (!keyword) return;
