@@ -1461,6 +1461,7 @@ export default function AdminConsole() {
         setCommunityFilter('All');
         setDateRangeFilter('All');
         setModeratorFilter('All');
+        setActiveMetricCard('total');
         showToast('All moderation filters reset to default.');
     };
 
@@ -1495,9 +1496,6 @@ export default function AdminConsole() {
                 r.reportedDate?.toLowerCase().includes('today')
             ));
 
-        const matchesAiFlagged = activeMetricCard !== 'ai_flagged' || 
-            (r.reasonCode === 'Spam' || r.reasonCode === 'Inappropriate' || (r.aiScore && parseInt(r.aiScore) > 70));
-
         const matchesSearch = !searchQuery || 
                               String(r.reportId).includes(searchQuery) ||
                               String(r.contentId).includes(searchQuery) ||
@@ -1507,7 +1505,7 @@ export default function AdminConsole() {
                               (r.communityName && r.communityName.toLowerCase().includes(searchQuery.toLowerCase())) ||
                               (r.postContentSnippet && r.postContentSnippet.toLowerCase().includes(searchQuery.toLowerCase()));
 
-        return matchesStatus && matchesReason && matchesSeverity && matchesCommunity && matchesModerator && matchesDateRange && matchesAiFlagged && matchesSearch;
+        return matchesStatus && matchesReason && matchesSeverity && matchesCommunity && matchesModerator && matchesDateRange && matchesSearch;
     });
 
     const activeUserSearchTerm = (userSearchTerm || searchQuery || '').trim().toLowerCase();
@@ -2077,12 +2075,15 @@ export default function AdminConsole() {
 
             {/* TAB 1: CONTENT MODERATION FILTERS */}
             {activeTab === 'moderation' && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
                     {/* 1. All Reports */}
                     <div 
-                        onClick={() => { setActiveMetricCard('total'); handleResetFilters(); }}
+                        onClick={() => { 
+                            setActiveMetricCard('total'); 
+                            handleResetFilters(); 
+                        }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeMetricCard === 'total' && statusFilter === 'All' && severityFilter === 'All' && dateRangeFilter === 'All'
+                            activeMetricCard === 'total'
                                 ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
                         }`}
@@ -2097,9 +2098,15 @@ export default function AdminConsole() {
 
                     {/* 2. Pending Review */}
                     <div 
-                        onClick={() => { setActiveMetricCard('pending'); setStatusFilter('Pending'); showToast(`Filtered: Showing ${pendingCount} Pending Reports`); }}
+                        onClick={() => { 
+                            setActiveMetricCard('pending'); 
+                            setStatusFilter('Pending'); 
+                            setSeverityFilter('All');
+                            setDateRangeFilter('All');
+                            showToast(`Filtered: Showing ${pendingCount} Pending Reports`); 
+                        }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            statusFilter === 'Pending'
+                            activeMetricCard === 'pending'
                                 ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-amber-500/40 hover:border-amber-500 shadow-xs'
                         }`}
@@ -2114,9 +2121,15 @@ export default function AdminConsole() {
 
                     {/* 3. High Risk / Critical */}
                     <div 
-                        onClick={() => { setActiveMetricCard('high_priority'); setSeverityFilter('Critical'); showToast(`Filtered: Showing ${highPriorityCount} Critical Reports`); }}
+                        onClick={() => { 
+                            setActiveMetricCard('critical'); 
+                            setSeverityFilter('Critical'); 
+                            setStatusFilter('All');
+                            setDateRangeFilter('All');
+                            showToast(`Filtered: Showing ${highPriorityCount} Critical Reports`); 
+                        }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            severityFilter === 'Critical'
+                            activeMetricCard === 'critical'
                                 ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-rose-500/40 hover:border-rose-500 shadow-xs'
                         }`}
@@ -2131,9 +2144,15 @@ export default function AdminConsole() {
 
                     {/* 4. Action Taken */}
                     <div 
-                        onClick={() => { setActiveMetricCard('reviewed'); setStatusFilter('Action Taken'); showToast(`Filtered: Showing ${reviewedCount} Action Taken Reports`); }}
+                        onClick={() => { 
+                            setActiveMetricCard('action_taken'); 
+                            setStatusFilter('Action Taken'); 
+                            setSeverityFilter('All');
+                            setDateRangeFilter('All');
+                            showToast(`Filtered: Showing ${reviewedCount} Action Taken Reports`); 
+                        }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            statusFilter === 'Action Taken'
+                            activeMetricCard === 'action_taken'
                                 ? 'bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 shadow-xs'
                         }`}
@@ -2146,32 +2165,17 @@ export default function AdminConsole() {
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Action Taken</p>
                     </div>
 
-                    {/* 5. AI Flagged (In-Place Filter) */}
+                    {/* 5. Today's Reports */}
                     <div 
-                        onClick={() => {
-                            const nextCard = activeMetricCard === 'ai_flagged' ? 'total' : 'ai_flagged';
-                            setActiveMetricCard(nextCard);
-                            showToast(nextCard === 'ai_flagged' ? `Filtered: Showing ${aiFlaggedCount} AI-Flagged Reports` : 'Showing All Reports');
+                        onClick={() => { 
+                            setActiveMetricCard('today'); 
+                            setDateRangeFilter('Today'); 
+                            setStatusFilter('All');
+                            setSeverityFilter('All');
+                            showToast(`Filtered: Showing ${todayReportsCount} Today's Reports`); 
                         }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeMetricCard === 'ai_flagged'
-                                ? 'bg-cyan-500/10 border-cyan-500 ring-2 ring-cyan-500/50 shadow-md scale-[1.02]' 
-                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-cyan-500/40 shadow-xs'
-                        }`}
-                    >
-                        <div className="flex items-center justify-between text-cyan-500 mb-1">
-                            <span className="material-symbols-outlined text-[18px]">smart_toy</span>
-                            <span className="text-[10px] font-black text-cyan-600 bg-cyan-500/15 px-1.5 py-0.2 rounded-full">NLP</span>
-                        </div>
-                        <p className="text-lg font-black text-cyan-500 leading-none">{aiFlaggedCount}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">AI Flagged</p>
-                    </div>
-
-                    {/* 6. Today's Reports */}
-                    <div 
-                        onClick={() => { setActiveMetricCard('todays'); setDateRangeFilter(dateRangeFilter === 'Today' ? 'All' : 'Today'); showToast(dateRangeFilter === 'Today' ? 'Showing All Reports' : `Filtered: Showing ${todayReportsCount} Today's Reports`); }}
-                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            dateRangeFilter === 'Today'
+                            activeMetricCard === 'today'
                                 ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
                         }`}
@@ -2939,7 +2943,19 @@ export default function AdminConsole() {
                             {/* Status Filter */}
                             <select
                                 value={statusFilter}
-                                onChange={e => setStatusFilter(e.target.value)}
+                                onChange={e => {
+                                    const val = e.target.value;
+                                    setStatusFilter(val);
+                                    if (val === 'Pending' && severityFilter === 'All' && dateRangeFilter === 'All') {
+                                        setActiveMetricCard('pending');
+                                    } else if (val === 'Action Taken' && severityFilter === 'All' && dateRangeFilter === 'All') {
+                                        setActiveMetricCard('action_taken');
+                                    } else if (val === 'All' && severityFilter === 'All' && dateRangeFilter === 'All') {
+                                        setActiveMetricCard('total');
+                                    } else {
+                                        setActiveMetricCard('custom');
+                                    }
+                                }}
                                 className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1 text-xs outline-none cursor-pointer"
                             >
                                 <option value="All">Status: All</option>
@@ -2952,7 +2968,10 @@ export default function AdminConsole() {
                             {/* Reason Filter */}
                             <select
                                 value={reasonFilter}
-                                onChange={e => setReasonFilter(e.target.value)}
+                                onChange={e => {
+                                    setReasonFilter(e.target.value);
+                                    if (e.target.value !== 'All') setActiveMetricCard('custom');
+                                }}
                                 className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1 text-xs outline-none cursor-pointer"
                             >
                                 <option value="All">Reason: All</option>
@@ -2966,7 +2985,17 @@ export default function AdminConsole() {
                             {/* Severity Filter */}
                             <select
                                 value={severityFilter}
-                                onChange={e => setSeverityFilter(e.target.value)}
+                                onChange={e => {
+                                    const val = e.target.value;
+                                    setSeverityFilter(val);
+                                    if (val === 'Critical' && statusFilter === 'All' && dateRangeFilter === 'All') {
+                                        setActiveMetricCard('critical');
+                                    } else if (val === 'All' && statusFilter === 'All' && dateRangeFilter === 'All') {
+                                        setActiveMetricCard('total');
+                                    } else {
+                                        setActiveMetricCard('custom');
+                                    }
+                                }}
                                 className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1 text-xs outline-none cursor-pointer"
                             >
                                 <option value="All">Severity: All</option>
