@@ -717,6 +717,8 @@ export default function AdminConsole() {
             if (Array.isArray(apiItems) && apiItems.length > 0) {
                 const mapped = apiItems.map(r => {
                     const scoreInfo = detectReportScore(r.reasonCode, r.postContentSnippet, r.aiScore);
+                    const rawReportDate = r.reportedDate ? new Date(r.reportedDate).getTime() : 0;
+                    const rawActDate = r.actionDate ? new Date(r.actionDate).getTime() : 0;
                     return {
                         reportId: r.reportId,
                         reporterUserId: r.reporterUserId || 0,
@@ -735,10 +737,14 @@ export default function AdminConsole() {
                         moderatorFullName: r.moderatorFullName,
                         actionTaken: r.actionTaken,
                         postContentSnippet: r.postContentSnippet || '',
+                        rawReportedDate: rawReportDate,
+                        rawActionDate: rawActDate,
                         reportedDate: r.reportedDate ? new Date(r.reportedDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
-                        actionDate: r.actionDate ? new Date(r.actionDate).toLocaleString() : null
+                        actionDate: r.actionDate ? new Date(r.actionDate).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : null
                     };
                 });
+                // Ensure recent reported content is strictly at the top
+                mapped.sort((a, b) => (b.rawReportedDate - a.rawReportedDate) || (b.reportId - a.reportId));
                 setReports(mapped);
             } else {
                 setReports([]);
@@ -1092,8 +1098,26 @@ export default function AdminConsole() {
             console.warn("Backend API notice:", err);
         }
 
-        // Immediately remove the report from the active reported posts list
-        setReports(prev => prev.filter(r => r.reportId !== reportId));
+        // Update the report in state so it appears in Action Taken / Dismissed with recent reported content at top
+        const nowFormatted = new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+        setReports(prev => {
+            const updated = prev.map(r => {
+                if (r.reportId === reportId) {
+                    return {
+                        ...r,
+                        status: newStatus,
+                        actionTaken: actionTakenText,
+                        actionDate: nowFormatted,
+                        rawActionDate: Date.now(),
+                        moderatorFullName: currentUser?.name || currentUser?.fullName || 'System Admin',
+                        moderatorUserId: currentUser?.userId || currentUser?.id || 1
+                    };
+                }
+                return r;
+            });
+            // Keep recent reported content at the top
+            return updated.sort((a, b) => (b.rawReportedDate - a.rawReportedDate) || (b.reportId - a.reportId));
+        });
         setSelectedReportIds(prev => prev.filter(id => id !== reportId));
 
         if (previewReport && previewReport.reportId === reportId) {
@@ -1102,7 +1126,7 @@ export default function AdminConsole() {
             setPreviewPost(null);
         }
 
-        showToast(`Report #${reportId} ${isDismiss ? 'dismissed' : 'deleted'} and removed from list.`);
+        showToast(`Report #${reportId} marked as ${isDismiss ? 'Dismissed' : 'Action Taken (Removed)'}.`);
 
         logAuditEntry(
             isDismiss ? 'DismissReport' : (isReinstate ? 'ReinstateContent' : 'RemoveContent'),
@@ -1675,6 +1699,16 @@ export default function AdminConsole() {
         return matchesStatus && matchesReason && matchesSeverity && matchesCommunity && matchesModerator && matchesDateRange && matchesSearch;
     });
 
+    // Ensure Action Report and all moderation views have recent reported content strictly at the top
+    const sortedReports = useMemo(() => {
+        return [...filteredReports].sort((a, b) => {
+            const timeB = b.rawReportedDate || (b.reportedDate ? new Date(b.reportedDate).getTime() : 0) || (b.reportId ? b.reportId * 1000 : 0);
+            const timeA = a.rawReportedDate || (a.reportedDate ? new Date(a.reportedDate).getTime() : 0) || (a.reportId ? a.reportId * 1000 : 0);
+            if (timeB !== timeA) return timeB - timeA;
+            return (b.reportId || 0) - (a.reportId || 0);
+        });
+    }, [filteredReports]);
+
     const activeUserSearchTerm = (userSearchTerm || searchQuery || '').trim().toLowerCase();
     const filteredUsers = usersList.filter(u => {
         if (!activeUserSearchTerm) return true;
@@ -1703,7 +1737,7 @@ export default function AdminConsole() {
     });
 
     const moderationTableRef = useRef(null);
-    const { visibleCount: visibleReportCount, resetVisibleCount: resetReportCount } = useScrollLoading(filteredReports.length, 15, 15, 200, moderationTableRef);
+    const { visibleCount: visibleReportCount, resetVisibleCount: resetReportCount } = useScrollLoading(sortedReports.length, 25, 25, 200, moderationTableRef);
     const { visibleCount: visibleUserCount, resetVisibleCount: resetUserCount } = useScrollLoading(filteredUsers.length, 15, 15);
     const { visibleCount: visibleAuditCount, resetVisibleCount: resetAuditCount } = useScrollLoading(filteredAuditTrail.length, 20, 20);
 
@@ -1722,8 +1756,8 @@ export default function AdminConsole() {
     // 10 Compact Metrics Calculations
     const totalReportsCount = reports.length;
     const pendingCount = reports.filter(r => r.status === 'Pending').length;
-    const actionTakenCount = reports.filter(r => (r.status === 'Action Taken' || r.status === 'Resolved' || (r.actionTaken && r.actionTaken.toLowerCase().includes('remove'))) && r.status !== 'Dismissed' && (!r.actionTaken || !r.actionTaken.toLowerCase().includes('dismiss'))).length || 14;
-    const dismissedCount = reports.filter(r => r.status === 'Dismissed' || (r.actionTaken && r.actionTaken.toLowerCase().includes('dismiss'))).length || 5;
+    const actionTakenCount = reports.filter(r => (r.status === 'Action Taken' || r.status === 'Resolved' || (r.actionTaken && r.actionTaken.toLowerCase().includes('remove'))) && r.status !== 'Dismissed' && (!r.actionTaken || !r.actionTaken.toLowerCase().includes('dismiss'))).length;
+    const dismissedCount = reports.filter(r => r.status === 'Dismissed' || (r.actionTaken && r.actionTaken.toLowerCase().includes('dismiss'))).length;
     const reviewedCount = actionTakenCount + dismissedCount;
     const highPriorityCount = reports.filter(r => r.reasonCode === 'Harassment' || r.reasonCode === 'Copyright' || r.severity === 'Critical' || r.severity === 'High').length;
     const suspendedUsersCount = usersList.filter(u => !u.isActive).length;
@@ -1731,7 +1765,10 @@ export default function AdminConsole() {
     const aiFlaggedCount = reports.filter(r => r.reasonCode === 'Spam' || r.reasonCode === 'Inappropriate' || (r.aiScore && parseInt(r.aiScore) > 70)).length;
     const communitiesCount = communityChannels.length;
     const activeUsersCount = usersList.filter(u => u.isActive).length || usersList.length;
-    const todayReportsCount = reports.filter(r => r.reportedDate?.includes('2026-07-28') || r.reportedDate?.includes('2026-07-29') || r.reportedDate?.toLowerCase().includes('today')).length || 2;
+    const todayReportsCount = reports.filter(r => {
+        const todayStr = new Date().toLocaleDateString();
+        return r.reportedDate?.includes(todayStr) || (r.rawReportedDate && Date.now() - r.rawReportedDate < 86400000);
+    }).length;
 
     // Filtered Community Channels based on Search and Policy Filter (Strict, Standard, Relaxed)
     const filteredCommunities = useMemo(() => {
@@ -1843,7 +1880,16 @@ export default function AdminConsole() {
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 mb-3 shadow-xs flex flex-wrap items-center justify-between gap-3">
                 {/* Left: Hierarchical Breadcrumbs & Title */}
                 <div>
-                    <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-0.5 flex-wrap">
+                    <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-400 mb-1 flex-wrap">
+                        <Link 
+                            to="/"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-600 dark:text-indigo-400 text-xs font-bold transition-all border border-indigo-200 dark:border-indigo-800/60 group"
+                            title="Return to Hub / Feed"
+                        >
+                            <span className="material-symbols-outlined text-[15px] group-hover:-translate-x-0.5 transition-transform">arrow_back</span>
+                            <span>Back to Hub</span>
+                        </Link>
+                        <span className="text-slate-300 dark:text-slate-700">|</span>
                         <Link to="/" className="hover:text-indigo-600 transition-colors">Home</Link>
                         <span>/</span>
                         <span 
@@ -3092,7 +3138,7 @@ export default function AdminConsole() {
 
             {/* ─── TAB 1: CONTENT MODERATION ─── */}
             {activeTab === 'moderation' && (
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden flex flex-col max-h-[calc(100vh-230px)]">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden flex flex-col">
                     {/* ─── 4. SINGLE COMPACT FILTERS & BULK ACTIONS TOOLBAR ─── */}
                     <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/70 flex flex-wrap items-center justify-between gap-2 shrink-0">
                         {/* Search & Select Filters */}
@@ -3147,30 +3193,30 @@ export default function AdminConsole() {
                         )}
                     </div>
 
-                    {/* ─── 5. HIGH-DENSITY 13-COLUMN TABLE VIEW ─── */}
-                    <div ref={moderationTableRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-310px)] custom-scrollbar">
-                        <table className="w-full text-left border-collapse">
-                            <thead className="bg-slate-100/90 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 font-bold text-[11px] uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10 backdrop-blur-xs">
+                    {/* ─── 5. HIGH-DENSITY 13-COLUMN TABLE VIEW WITHOUT DOWNBAR OR SIDEBAR ─── */}
+                    <div ref={moderationTableRef} className="w-full overflow-x-auto overflow-y-auto max-h-[calc(100vh-250px)] no-scrollbar">
+                        <table className="w-full text-left border-collapse table-auto text-xs">
+                            <thead className="bg-slate-100/90 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 font-bold text-[10.5px] uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10 backdrop-blur-xs">
                                 <tr>
-                                    <th className="px-3 py-2 text-center w-8">
+                                    <th className="px-2.5 py-2 text-center w-8">
                                         <input
                                             type="checkbox"
-                                            checked={selectedReportIds.length > 0 && selectedReportIds.length === filteredReports.length}
+                                            checked={selectedReportIds.length > 0 && selectedReportIds.length === sortedReports.length}
                                             onChange={handleSelectAllRows}
                                             className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                                         />
                                     </th>
-                                    <th className="px-3 py-2">ID</th>
-                                    <th className="px-3 py-2">Reporter</th>
-                                    <th className="px-3 py-2">Reported User</th>
-                                    <th className="px-3 py-2">Type</th>
-                                    <th className="px-3 py-2">Community</th>
-                                    <th className="px-3 py-2">Reason</th>
-                                    <th className="px-3 py-2">Severity</th>
-                                    <th className="px-3 py-2">Status</th>
-                                    <th className="px-3 py-2">System Admin</th>
-                                    <th className="px-3 py-2 whitespace-nowrap">Reported Date</th>
-                                    <th className="px-3 py-2 text-right">Actions</th>
+                                    <th className="px-2 py-2 text-center w-12">ID</th>
+                                    <th className="px-2.5 py-2">Reporter</th>
+                                    <th className="px-2.5 py-2">Reported User</th>
+                                    <th className="px-2 py-2">Type</th>
+                                    <th className="px-2 py-2">Community</th>
+                                    <th className="px-2 py-2">Reason</th>
+                                    <th className="px-2 py-2 text-center">Severity</th>
+                                    <th className="px-2 py-2 text-center">Status</th>
+                                    <th className="px-2.5 py-2">System Admin</th>
+                                    <th className="px-2.5 py-2 text-center whitespace-nowrap">Reported Date</th>
+                                    <th className="px-2.5 py-2 text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs font-medium">
@@ -3183,7 +3229,7 @@ export default function AdminConsole() {
                                             </div>
                                         </td>
                                     </tr>
-                                ) : filteredReports.length === 0 ? (
+                                ) : sortedReports.length === 0 ? (
                                     <tr>
                                         <td colSpan="12" className="text-center py-10 text-slate-500 bg-slate-50/50 dark:bg-slate-900/50">
                                             <div className="flex flex-col items-center justify-center gap-2 max-w-sm mx-auto">
@@ -3201,7 +3247,7 @@ export default function AdminConsole() {
                                         </td>
                                     </tr>
                                 ) : (
-                                    filteredReports.slice(0, visibleReportCount).map(r => {
+                                    sortedReports.slice(0, visibleReportCount).map(r => {
                                         const isPending = r.status === 'Pending';
                                         const isSelected = selectedReportIds.includes(r.reportId);
                                         
@@ -3233,7 +3279,7 @@ export default function AdminConsole() {
                                         return (
                                             <tr key={r.reportId} className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${isSelected ? 'bg-indigo-500/5 dark:bg-indigo-500/10' : ''}`}>
                                                 {/* Checkbox */}
-                                                <td className="px-3 py-2 text-center">
+                                                <td className="px-2.5 py-2 text-center">
                                                     <input
                                                         type="checkbox"
                                                         checked={isSelected}
@@ -3243,24 +3289,24 @@ export default function AdminConsole() {
                                                 </td>
 
                                                 {/* Report ID */}
-                                                <td className="px-3 py-2 font-black text-slate-900 dark:text-white">
+                                                <td className="px-2 py-2 text-center font-black text-slate-900 dark:text-white text-[11px]">
                                                     #{r.reportId}
                                                 </td>
 
                                                 {/* Reporter */}
-                                                <td className="px-3 py-2">
-                                                    <div className="font-bold text-slate-800 dark:text-slate-200">{r.reporterFullName}</div>
+                                                <td className="px-2.5 py-2">
+                                                    <div className="font-bold text-slate-800 dark:text-slate-200 truncate max-w-[120px]" title={r.reporterFullName}>{r.reporterFullName}</div>
                                                     <div className="text-[10px] text-slate-400">ID: #{r.reporterUserId}</div>
                                                 </td>
 
                                                 {/* Reported User */}
-                                                <td className="px-3 py-2">
-                                                    <div className="font-bold text-slate-800 dark:text-slate-200">{r.reportedUserName || r.reporterFullName}</div>
+                                                <td className="px-2.5 py-2">
+                                                    <div className="font-bold text-slate-800 dark:text-slate-200 truncate max-w-[120px]" title={r.reportedUserName || r.reporterFullName}>{r.reportedUserName || r.reporterFullName}</div>
                                                     <div className="text-[10px] text-slate-400">ID: #{r.reportedUserId || r.reporterUserId}</div>
                                                 </td>
 
                                                 {/* Content Type */}
-                                                <td className="px-3 py-2">
+                                                <td className="px-2 py-2">
                                                     <button
                                                         onClick={() => handleOpenPostPreview(r)}
                                                         className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1 hover:underline cursor-pointer"
@@ -3272,36 +3318,36 @@ export default function AdminConsole() {
                                                 </td>
 
                                                 {/* Community */}
-                                                <td className="px-3 py-2 text-slate-600 dark:text-slate-300 font-semibold text-[11px]">
+                                                <td className="px-2 py-2 text-slate-600 dark:text-slate-300 font-semibold text-[11px] truncate max-w-[110px]" title={r.communityName || 'General'}>
                                                     {r.communityName || 'General'}
                                                 </td>
 
                                                 {/* Reason */}
-                                                <td className="px-3 py-2">
+                                                <td className="px-2 py-2">
                                                     <span className={`px-2 py-0.5 rounded text-[10px] font-black ${reasonBadgeStyle}`}>
                                                         {r.reasonCode}
                                                     </span>
                                                 </td>
 
                                                 {/* Severity */}
-                                                <td className="px-3 py-2">
+                                                <td className="px-2 py-2 text-center">
                                                     <span className={`px-2 py-0.5 rounded text-[10px] font-black ${severityBadgeStyle}`}>
                                                         {r.severity || 'Medium'}
                                                     </span>
                                                 </td>
 
                                                 {/* Status */}
-                                                <td className="px-3 py-2">
+                                                <td className="px-2 py-2 text-center">
                                                     <span className={`px-2 py-0.5 rounded text-[10px] font-black whitespace-nowrap ${statusBadgeStyle}`}>
                                                         {statusBadgeLabel}
                                                     </span>
                                                 </td>
 
                                                 {/* System Admin */}
-                                                <td className="px-3 py-2">
+                                                <td className="px-2.5 py-2">
                                                     {r.moderatorUserId ? (
                                                         <div>
-                                                            <div className="font-bold text-slate-700 dark:text-slate-300 text-[11px]">{r.moderatorFullName || 'System Admin'}</div>
+                                                            <div className="font-bold text-slate-700 dark:text-slate-300 text-[11px] truncate max-w-[120px]">{r.moderatorFullName || 'System Admin'}</div>
                                                             <div className="text-[10px] text-slate-400">{r.actionTaken || 'None'}</div>
                                                         </div>
                                                     ) : (
@@ -3310,12 +3356,12 @@ export default function AdminConsole() {
                                                 </td>
 
                                                 {/* Date */}
-                                                <td className="px-3 py-2 text-slate-500 dark:text-slate-400 text-[11px] whitespace-nowrap">
+                                                <td className="px-2.5 py-2 text-center text-slate-500 dark:text-slate-400 text-[10.5px] whitespace-nowrap">
                                                     {r.reportedDate}
                                                 </td>
 
                                                 {/* Actions Column (Compact Icon Buttons) */}
-                                                <td className="px-3 py-2 text-right">
+                                                <td className="px-2.5 py-2 text-right">
                                                     <div className="flex items-center justify-end gap-1">
                                                         {/* View Post Icon */}
                                                         <button
@@ -3375,7 +3421,7 @@ export default function AdminConsole() {
                                 )}
                             </tbody>
                         </table>
-                        <ScrollLoadingIndicator isVisible={visibleReportCount < filteredReports.length} text="Loading more moderation reports on scroll..." />
+                        <ScrollLoadingIndicator isVisible={visibleReportCount < sortedReports.length} text="Loading more moderation reports on scroll..." />
                     </div>
                 </div>
             )}
