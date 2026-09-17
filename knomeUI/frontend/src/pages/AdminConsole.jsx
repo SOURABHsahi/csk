@@ -1469,9 +1469,9 @@ export default function AdminConsole() {
     const filteredReports = reports.filter(r => {
         const matchesStatus = statusFilter === 'All' || 
             (statusFilter === 'Pending' && r.status === 'Pending') ||
-            (statusFilter === 'Reviewed' && (r.status === 'Reviewed' || r.status === 'Action Taken' || r.status === 'Resolved' || r.status === 'Dismissed' || r.actionTaken === 'None')) ||
-            (statusFilter === 'Action Taken' && (r.status === 'Action Taken' || r.status === 'Resolved' || (r.actionTaken && r.actionTaken.toLowerCase().includes('remove')))) ||
-            (statusFilter === 'Dismissed' && (r.status === 'Dismissed' || (r.actionTaken && r.actionTaken.toLowerCase().includes('dismiss'))));
+            (statusFilter === 'Reviewed' && (r.status === 'Reviewed' || r.status === 'Action Taken' || r.status === 'Resolved') && r.status !== 'Dismissed' && (!r.actionTaken || !r.actionTaken.toLowerCase().includes('dismiss'))) ||
+            (statusFilter === 'Dismissed' && (r.status === 'Dismissed' || (r.actionTaken && r.actionTaken.toLowerCase().includes('dismiss')))) ||
+            (statusFilter === 'Action Taken' && (r.status === 'Action Taken' || r.status === 'Resolved' || (r.actionTaken && r.actionTaken.toLowerCase().includes('remove'))));
 
         const matchesReason = reasonFilter === 'All' || (r.reasonCode && r.reasonCode.toLowerCase() === reasonFilter.toLowerCase());
         
@@ -2957,56 +2957,28 @@ export default function AdminConsole() {
                                 <option value="Other">Other</option>
                             </select>
 
-                            {/* Severity Filter */}
+                            {/* Status Filter: Reviewed & Dismissed */}
                             <select
-                                value={severityFilter}
+                                value={statusFilter === 'Reviewed' || statusFilter === 'Dismissed' ? statusFilter : 'All'}
                                 onChange={e => {
                                     const val = e.target.value;
-                                    setSeverityFilter(val);
-                                    if (val === 'Critical' && statusFilter === 'All' && dateRangeFilter === 'All') {
-                                        setActiveMetricCard('critical');
-                                    } else if (val === 'All' && statusFilter === 'All' && dateRangeFilter === 'All') {
-                                        setActiveMetricCard('total');
-                                    } else {
+                                    setStatusFilter(val);
+                                    if (val === 'Reviewed') {
+                                        setActiveMetricCard('action_taken');
+                                        showToast('Filtered: Showing Reviewed Reports');
+                                    } else if (val === 'Dismissed') {
                                         setActiveMetricCard('custom');
+                                        showToast('Filtered: Showing Dismissed Reports');
+                                    } else {
+                                        setActiveMetricCard('total');
+                                        showToast('Showing All Reports');
                                     }
                                 }}
-                                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1 text-xs outline-none cursor-pointer"
+                                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg px-2.5 py-1 text-xs outline-none cursor-pointer"
                             >
-                                <option value="All">Severity: All</option>
-                                <option value="Critical">Critical</option>
-                                <option value="High">High</option>
-                                <option value="Medium">Medium</option>
-                                <option value="Low">Low</option>
-                            </select>
-
-                            {/* Community Filter */}
-                            <select
-                                value={communityFilter}
-                                onChange={e => setCommunityFilter(e.target.value)}
-                                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1 text-xs outline-none cursor-pointer hidden md:block"
-                            >
-                                <option value="All">Community: All</option>
-                                <option value="Engineering">Engineering & Tech</option>
-                                <option value="HR">HR & People Ops</option>
-                                <option value="Product">Product Design & UX</option>
-                                <option value="AI">AI & Data Science Lab</option>
-                                <option value="Finance">Finance & Accounting</option>
-                                <option value="Marketing">Marketing & Strategy</option>
-                                <option value="CTO">CTO Leadership</option>
-                                <option value="General">General Discussion</option>
-                            </select>
-
-                            {/* Moderator Filter */}
-                            <select
-                                value={moderatorFilter}
-                                onChange={e => setModeratorFilter(e.target.value)}
-                                className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1 text-xs outline-none cursor-pointer hidden lg:block"
-                            >
-                                <option value="All">Moderator: All</option>
-                                <option value="Unassigned">Unassigned</option>
-                                <option value="System Admin">System Admin</option>
-                                <option value="HR Admin">HR Admin</option>
+                                <option value="All">Status: All</option>
+                                <option value="Reviewed">Reviewed</option>
+                                <option value="Dismissed">Dismissed</option>
                             </select>
 
                             {/* Reset Filters */}
