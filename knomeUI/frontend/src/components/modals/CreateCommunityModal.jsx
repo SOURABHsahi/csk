@@ -1223,7 +1223,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                             <div className="flex items-center gap-2">
                                                 <span className="material-symbols-outlined text-indigo-500">group_add</span>
                                                 <h3 className="font-bold text-[15px] text-slate-900 dark:text-white">
-                                                    {type === 'default' ? '🏢 Organization Employees' : 'Auto-Add / Invite Employees'}
+                                                    {type === 'default' ? '🏢 Organization Employees' : 'Add / Invite Employees'}
                                                 </h3>
                                                 {invitedUserIds.length > 0 && (
                                                     <span className="bg-indigo-500 text-white text-[11px] px-2.5 py-0.5 rounded-full font-bold">
@@ -1493,7 +1493,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                     </span>
                                     {!isHRorAdmin 
                                         ? (isSubmitting ? 'Sending for Approval...' : 'Send for Approval') 
-                                        : (isSubmitting ? 'Creating...' : (invitedUserIds.length === candidateUsers.length && candidateUsers.length > 0 ? '⚡ Create & Auto-Add All Members' : (invitedUserIds.length > 0 ? `Create & Add ${invitedUserIds.length} Members` : 'Create Community')))
+                                        : (isSubmitting ? 'Creating...' : (invitedUserIds.length === candidateUsers.length && candidateUsers.length > 0 ? '⚡ Create & Add All Members' : (invitedUserIds.length > 0 ? `Create & Add ${invitedUserIds.length} Members` : 'Create Community')))
                                     }
                                 </button>
                             )}
