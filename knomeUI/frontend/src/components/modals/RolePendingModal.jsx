@@ -78,8 +78,8 @@ export default function RolePendingModal() {
                     {/* Employee Profile Preview Grid */}
                     <div className="pt-2 border-t border-slate-700/60 grid grid-cols-2 gap-2 text-xs">
                         <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/40">
-                            <span className="text-[11px] text-slate-400 font-semibold block">Employee ID</span>
-                            <span className="text-white font-bold font-mono">{currentUser?.employeeId || 'N/A'}</span>
+                            <span className="text-[11px] text-slate-400 font-semibold block">Employee Name</span>
+                            <span className="text-white font-bold truncate block">{currentUser?.name || currentUser?.fullName || 'Employee'}</span>
                         </div>
                         <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/40">
                             <span className="text-[11px] text-slate-400 font-semibold block">Department</span>

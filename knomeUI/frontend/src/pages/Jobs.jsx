@@ -113,7 +113,7 @@ export default function Jobs() {
                     
                     <div className="relative z-10 flex flex-col items-start max-w-3xl">
                         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-teal-500/30 bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 text-[11px] font-bold mb-3 backdrop-blur-md uppercase tracking-wider">
-                            ✨ Empowering MPOnline Teams (MS SQL Database Wired)
+                            ✨ Empowering MPOnline Teams
                         </div>
                         
                         <h1 className="text-3xl md:text-4xl lg:text-[40px] font-black tracking-tight mb-3 text-slate-900 dark:text-white" style={{ lineHeight: '1.2' }}>
@@ -123,7 +123,7 @@ export default function Jobs() {
                         </h1>
                         
                         <p className="text-slate-600 dark:text-slate-400 text-sm font-normal max-w-xl">
-                            Explore cross-department openings, internal transfers, and career advancement roles. All job postings are persisted live in the SQL Server database.
+                            Explore cross-department openings, internal transfers, and career advancement roles across MPOnline.
                         </p>
                     </div>
 
@@ -160,7 +160,7 @@ export default function Jobs() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {isLoading ? (
                         <div className="col-span-full py-12 text-center text-slate-400 font-medium text-sm">
-                            Loading postings from database...
+                            Loading opportunities...
                         </div>
                     ) : displayedJobs.length === 0 ? (
                         <div className="col-span-full py-12 text-center text-slate-400 font-medium text-sm">

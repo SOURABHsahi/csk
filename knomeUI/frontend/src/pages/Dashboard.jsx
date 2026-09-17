@@ -188,23 +188,6 @@ export default function Dashboard() {
                                 ]} 
                             />
                         </div>
-                        <div className="flex items-center gap-2">
-                            {!isSysAdmin && (
-                                <button 
-                                    onClick={() => navigate('/karma-history')}
-                                    className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-extrabold cursor-pointer hover:scale-105 active:scale-95 transition-all shadow-xs group"
-                                    style={{
-                                        background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.14), rgba(217, 119, 6, 0.08))', 
-                                        border: '1px solid rgba(245, 158, 11, 0.35)', 
-                                        color: 'var(--text-primary)'
-                                    }}
-                                    title="View Karma Points & History"
-                                >
-                                    <span className="material-symbols-outlined text-[17px] text-amber-500 transition-transform group-hover:scale-110" style={{fontVariationSettings:"'FILL' 1"}}>military_tech</span>
-                                    <span>{userKarma.toLocaleString()} <span className="text-[10px] text-amber-600 dark:text-amber-400 font-black uppercase">Karma</span></span>
-                                </button>
-                            )}
-                        </div>
                     </div>
 
                     {/* HR Organization Announcement Banner (FR-DB-05) */}

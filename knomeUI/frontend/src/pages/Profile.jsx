@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { useUser, users } from '../components/contexts/UserContext';
+import { useUser, users, getUserStatusConfig } from '../components/contexts/UserContext';
 import { useToast } from '../components/contexts/ToastContext';
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import { getKarmaBadge } from '../utils/karmaEngine';
@@ -20,6 +20,8 @@ import {
 } from '../utils/apiService';
 import ShareProfileModal from '../components/modals/ShareProfileModal';
 import PostCard from '../components/widgets/PostCard';
+import useScrollLoading from '../hooks/useScrollLoading';
+import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 
 const PRESET_BANNERS = [
     {
@@ -486,6 +488,27 @@ export default function Profile() {
     const realKarmaPoints = Number(displayUser.karmaPoints ?? displayUser.karma ?? 0);
     const karmaBadge = getKarmaBadge(realKarmaPoints);
 
+    // Filtered network connections
+    const activeNetworkList = networkFilter === 'Followers' 
+        ? tabData.followers 
+        : networkFilter === 'Following' 
+        ? tabData.following 
+        : [...tabData.followers, ...tabData.following].filter((v, i, a) => a.findIndex(t => (t.id || t.userId) === (v.id || v.userId)) === i);
+
+    const activeTabCount = 
+        activeTab === 'Posts' ? tabData.posts.length :
+        activeTab === 'Articles' ? tabData.articles.length :
+        activeTab === 'Videos' ? tabData.videos.length :
+        activeTab === 'Podcasts' ? tabData.podcasts.length :
+        activeTab === 'Communities' ? tabData.communities.length :
+        activeTab === 'Network' ? activeNetworkList.length : 0;
+
+    const { visibleCount, resetVisibleCount } = useScrollLoading(activeTabCount, 6, 6);
+
+    useEffect(() => {
+        resetVisibleCount();
+    }, [activeTab, networkFilter]);
+
     const stats = {
         posts: Number(tabData.posts.length > 0 ? tabData.posts.length : (displayUser.postsCount ?? 0)),
         followers: followersCount,
@@ -504,22 +527,10 @@ export default function Profile() {
     };
 
     const isSysAdmin = Boolean(
-        displayUser?.role === 'SYSADM' || 
-        displayUser?.roleName === 'System Administrator' || 
-        (Array.isArray(displayUser?.roles) && (displayUser.roles.includes('SYSADM') || displayUser.roles.includes('System Administrator') || displayUser.roles.includes('SystemAdmin'))) ||
-        displayUser?.employeeId === 'MP0108' ||
-        displayUser?.employeeId === 'MPO101' ||
-        displayUser?.employeeId === 'MPO107' ||
-        displayUser?.employeeId === 'MPO089' ||
-        (isOwnProfile && (
-            currentUser?.role === 'SYSADM' || 
-            currentUser?.roleName === 'System Administrator' || 
-            (Array.isArray(currentUser?.roles) && (currentUser.roles.includes('SYSADM') || currentUser.roles.includes('System Administrator') || currentUser.roles.includes('SystemAdmin'))) ||
-            currentUser?.employeeId === 'MP0108' ||
-            currentUser?.employeeId === 'MPO101' ||
-            currentUser?.employeeId === 'MPO107' ||
-            currentUser?.employeeId === 'MPO089'
-        ))
+        (displayUser?.role === 'SYSADM' || 
+         displayUser?.roleName === 'System Administrator' || 
+         (Array.isArray(displayUser?.roles) && (displayUser.roles.includes('SYSADM') || displayUser.roles.includes('System Administrator') || displayUser.roles.includes('SystemAdmin')))) &&
+        !['HR Administrator', 'Community Administrator', 'Community Admin', 'Employee'].includes(displayUser?.roleName)
     );
 
     const tabs = isSysAdmin 
@@ -667,12 +678,22 @@ export default function Profile() {
                                 <span className="text-slate-500 dark:text-slate-400 text-sm font-normal">
                                     ({displayUser?.pronouns || 'He/Him'})
                                 </span>
-                                {/* Employee ID tag */}
-                                {displayUser?.employeeId && (
-                                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-                                        {displayUser.employeeId}
+                                {/* Role / Designation tag */}
+                                {(displayUser?.roleName || displayUser?.role || displayUser?.designation) && (
+                                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                                        {displayUser?.roleName || displayUser?.role || displayUser?.designation || 'Member'}
                                     </span>
                                 )}
+                                {/* Status Badge */}
+                                {(() => {
+                                    const statusCfg = getUserStatusConfig(displayUser || currentUser);
+                                    return (
+                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border transition-colors ${statusCfg.badgeClass}`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dotClass}`}></span>
+                                            {statusCfg.label}
+                                        </span>
+                                    );
+                                })()}
                             </div>
 
                             {/* Headline */}
@@ -1087,18 +1108,21 @@ export default function Profile() {
                                 <p className="text-xs text-slate-400 mt-1">Updates and posts by this user will appear here.</p>
                             </div>
                         ) : (
-                            tabData.posts.map(post => (
-                                <PostCard
-                                    key={post.id || post.postId}
-                                    post={post}
-                                    onPostDeleted={(deletedId) => {
-                                        setTabData(prev => ({
-                                            ...prev,
-                                            posts: prev.posts.filter(p => (p.id || p.postId) !== deletedId)
-                                        }));
-                                    }}
-                                />
-                            ))
+                            <>
+                                {tabData.posts.slice(0, visibleCount).map(post => (
+                                    <PostCard
+                                        key={post.id || post.postId}
+                                        post={post}
+                                        onPostDeleted={(deletedId) => {
+                                            setTabData(prev => ({
+                                                ...prev,
+                                                posts: prev.posts.filter(p => (p.id || p.postId) !== deletedId)
+                                            }));
+                                        }}
+                                    />
+                                ))}
+                                <ScrollLoadingIndicator isVisible={visibleCount < tabData.posts.length} text="Loading more posts on scroll..." />
+                            </>
                         )}
                     </div>
                 )}
@@ -1114,73 +1138,76 @@ export default function Profile() {
                                 <p className="text-xs text-slate-400 mt-1">Deep-dive articles and publications by this user will appear here.</p>
                             </div>
                         ) : (
-                            tabData.articles.map(article => {
-                                const artId = article.articleId || article.id;
-                                const isScheduled = article.status === 'Scheduled';
-                                const coverImg = article.image || article.coverImageUrl;
-                                return (
-                                    <div 
-                                        key={artId} 
-                                        onClick={() => navigate(`/article-view?id=${artId}`)}
-                                        className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden glass card-lift flex flex-col cursor-pointer group hover:border-indigo-500 transition-all bg-white dark:bg-slate-900"
-                                    >
-                                        <div className="h-44 w-full relative overflow-hidden bg-slate-100 dark:bg-slate-950">
-                                            <img 
-                                                src={coverImg} 
-                                                alt={article.title} 
-                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
-                                            />
-                                            <div className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-sm text-white px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
-                                                {article.categoryName || article.category || 'General'}
-                                            </div>
-                                            {isScheduled && (
-                                                <div className="absolute top-3 right-3 bg-amber-500 text-slate-950 font-black px-2.5 py-1 rounded-full text-[10px] flex items-center gap-1 shadow-md">
-                                                    <span className="material-symbols-outlined text-[12px]">schedule</span>
-                                                    Scheduled
+                            <>
+                                {tabData.articles.slice(0, visibleCount).map(article => {
+                                    const artId = article.articleId || article.id;
+                                    const isScheduled = article.status === 'Scheduled';
+                                    const coverImg = article.image || article.coverImageUrl;
+                                    return (
+                                        <div 
+                                            key={artId} 
+                                            onClick={() => navigate(`/article-view?id=${artId}`)}
+                                            className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden glass card-lift flex flex-col cursor-pointer group hover:border-indigo-500 transition-all bg-white dark:bg-slate-900"
+                                        >
+                                            <div className="h-44 w-full relative overflow-hidden bg-slate-100 dark:bg-slate-950">
+                                                <img 
+                                                    src={coverImg} 
+                                                    alt={article.title} 
+                                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                                                />
+                                                <div className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-sm text-white px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
+                                                    {article.categoryName || article.category || 'General'}
                                                 </div>
-                                            )}
-                                        </div>
-                                        <div className="p-5 flex-1 flex flex-col justify-between">
-                                            <div>
-                                                <div className="flex items-center justify-between text-[11px] font-bold text-indigo-500 mb-2">
-                                                    <span>{article.readTime || `${article.readTimeMinutes || 5} min read`}</span>
-                                                    <span className="text-slate-400">{article.time || (article.createdDate ? new Date(article.createdDate).toLocaleDateString() : 'Recent')}</span>
-                                                </div>
-                                                <h4 className="font-bold text-slate-900 dark:text-white text-base mb-2 leading-snug group-hover:text-indigo-500 transition-colors line-clamp-2">
-                                                    {article.title}
-                                                </h4>
-                                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-4 line-clamp-2">
-                                                    {article.subtitle || article.description || article.summary || 'Read this article on Knome.'}
-                                                </p>
-                                            </div>
-                                            <div>
-                                                {article.tags && article.tags.length > 0 && (
-                                                    <div className="flex flex-wrap gap-1 mb-3">
-                                                        {article.tags.slice(0, 3).map((tag, idx) => (
-                                                            <span key={idx} className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400">
-                                                                #{tag.replace('#', '')}
-                                                            </span>
-                                                        ))}
+                                                {isScheduled && (
+                                                    <div className="absolute top-3 right-3 bg-amber-500 text-slate-950 font-black px-2.5 py-1 rounded-full text-[10px] flex items-center gap-1 shadow-md">
+                                                        <span className="material-symbols-outlined text-[12px]">schedule</span>
+                                                        Scheduled
                                                     </div>
                                                 )}
-                                                <div className="flex items-center justify-between text-xs font-semibold text-slate-400 pt-3 border-t border-slate-100 dark:border-slate-800">
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="flex items-center gap-1">
-                                                            <span className="material-symbols-outlined text-[16px]">visibility</span> 
-                                                            {article.views || article.viewCount || 0}
-                                                        </span>
-                                                        <span className="flex items-center gap-1">
-                                                            <span className="material-symbols-outlined text-[16px] text-rose-500">favorite</span> 
-                                                            {article.likes || article.likesCount || 0}
-                                                        </span>
+                                            </div>
+                                            <div className="p-5 flex-1 flex flex-col justify-between">
+                                                <div>
+                                                    <div className="flex items-center justify-between text-[11px] font-bold text-indigo-500 mb-2">
+                                                        <span>{article.readTime || `${article.readTimeMinutes || 5} min read`}</span>
+                                                        <span className="text-slate-400">{article.time || (article.createdDate ? new Date(article.createdDate).toLocaleDateString() : 'Recent')}</span>
                                                     </div>
-                                                    <span className="text-indigo-500 font-bold hover:underline">Read Article →</span>
+                                                    <h4 className="font-bold text-slate-900 dark:text-white text-base mb-2 leading-snug group-hover:text-indigo-500 transition-colors line-clamp-2">
+                                                        {article.title}
+                                                    </h4>
+                                                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-4 line-clamp-2">
+                                                        {article.subtitle || article.description || article.summary || 'Read this article on Knome.'}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    {article.tags && article.tags.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1 mb-3">
+                                                            {article.tags.slice(0, 3).map((tag, idx) => (
+                                                                <span key={idx} className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400">
+                                                                    #{tag.replace('#', '')}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    <div className="flex items-center justify-between text-xs font-semibold text-slate-400 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                                        <div className="flex items-center gap-3">
+                                                            <span className="flex items-center gap-1">
+                                                                <span className="material-symbols-outlined text-[16px]">visibility</span> 
+                                                                {article.views || article.viewCount || 0}
+                                                            </span>
+                                                            <span className="flex items-center gap-1">
+                                                                <span className="material-symbols-outlined text-[16px] text-rose-500">favorite</span> 
+                                                                {article.likes || article.likesCount || 0}
+                                                            </span>
+                                                        </div>
+                                                        <span className="text-indigo-500 font-bold hover:underline">Read Article →</span>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-                                );
-                            })
+                                    );
+                                })}
+                                <ScrollLoadingIndicator isVisible={visibleCount < tabData.articles.length} text="Loading more articles on scroll..." />
+                            </>
                         )}
                     </div>
                 )}
@@ -1195,29 +1222,32 @@ export default function Profile() {
                                 <p className="text-slate-600 dark:text-slate-400 font-bold">No videos uploaded yet</p>
                             </div>
                         ) : (
-                            tabData.videos.map(video => (
-                                <div 
-                                    key={video.videoId || video.id} 
-                                    onClick={() => navigate('/videos')}
-                                    className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden glass card-lift cursor-pointer group hover:border-indigo-500 transition-all"
-                                >
-                                    <div className="relative h-44 group cursor-pointer">
-                                        <img src={resolveMediaUrl(video.thumbnailUrl) || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80'} alt={video.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                                        <div className="absolute inset-0 bg-black/30 group-hover:bg-black/40 transition-colors flex items-center justify-center">
-                                            <div className="w-12 h-12 rounded-full bg-white/90 text-indigo-600 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                                                <span className="material-symbols-outlined text-[28px] pl-1" style={{fontVariationSettings:"'FILL' 1"}}>play_arrow</span>
+                            <>
+                                {tabData.videos.slice(0, visibleCount).map(video => (
+                                    <div 
+                                        key={video.videoId || video.id} 
+                                        onClick={() => navigate('/videos')}
+                                        className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden glass card-lift cursor-pointer group hover:border-indigo-500 transition-all"
+                                    >
+                                        <div className="relative h-44 group cursor-pointer">
+                                            <img src={resolveMediaUrl(video.thumbnailUrl) || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=600&q=80'} alt={video.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                            <div className="absolute inset-0 bg-black/30 group-hover:bg-black/40 transition-colors flex items-center justify-center">
+                                                <div className="w-12 h-12 rounded-full bg-white/90 text-indigo-600 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                                    <span className="material-symbols-outlined text-[28px] pl-1" style={{fontVariationSettings:"'FILL' 1"}}>play_arrow</span>
+                                                </div>
                                             </div>
+                                            <span className="absolute bottom-3 right-3 bg-black/80 text-white text-[10px] font-black px-2 py-1 rounded-md">
+                                                {video.durationSeconds ? Math.floor(video.durationSeconds / 60) + ':' + (video.durationSeconds % 60).toString().padStart(2, '0') : '0:00'}
+                                            </span>
                                         </div>
-                                        <span className="absolute bottom-3 right-3 bg-black/80 text-white text-[10px] font-black px-2 py-1 rounded-md">
-                                            {video.durationSeconds ? Math.floor(video.durationSeconds / 60) + ':' + (video.durationSeconds % 60).toString().padStart(2, '0') : '0:00'}
-                                        </span>
+                                        <div className="p-4">
+                                            <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-1 line-clamp-1 group-hover:text-indigo-500 transition-colors">{video.title}</h4>
+                                            <p className="text-xs text-slate-400 font-medium">{video.viewCount || 0} views • {new Date(video.uploadedDate || video.createdDate || Date.now()).toLocaleDateString()}</p>
+                                        </div>
                                     </div>
-                                    <div className="p-4">
-                                        <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-1 line-clamp-1 group-hover:text-indigo-500 transition-colors">{video.title}</h4>
-                                        <p className="text-xs text-slate-400 font-medium">{video.viewCount || 0} views • {new Date(video.uploadedDate || video.createdDate || Date.now()).toLocaleDateString()}</p>
-                                    </div>
-                                </div>
-                            ))
+                                ))}
+                                <ScrollLoadingIndicator isVisible={visibleCount < tabData.videos.length} text="Loading more videos on scroll..." />
+                            </>
                         )}
                     </div>
                 )}
@@ -1232,25 +1262,28 @@ export default function Profile() {
                                 <p className="text-slate-600 dark:text-slate-400 font-bold">No podcasts uploaded yet</p>
                             </div>
                         ) : (
-                            tabData.podcasts.map(podcast => (
-                                <div 
-                                    key={podcast.podcastId || podcast.id} 
-                                    onClick={() => navigate('/podcasts')}
-                                    className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 glass card-lift flex items-center gap-5 cursor-pointer group hover:border-indigo-500 transition-all"
-                                >
-                                    <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
-                                        <span className="material-symbols-outlined text-[32px]">podcasts</span>
+                            <>
+                                {tabData.podcasts.slice(0, visibleCount).map(podcast => (
+                                    <div 
+                                        key={podcast.podcastId || podcast.id} 
+                                        onClick={() => navigate('/podcasts')}
+                                        className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 glass card-lift flex items-center gap-5 cursor-pointer group hover:border-indigo-500 transition-all"
+                                    >
+                                        <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md group-hover:scale-105 transition-transform">
+                                            <span className="material-symbols-outlined text-[32px]">podcasts</span>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <h4 className="font-bold text-slate-900 dark:text-white text-sm truncate group-hover:text-indigo-500 transition-colors">{podcast.title}</h4>
+                                            <p className="text-xs text-slate-400 font-medium mt-1">{podcast.hostName || displayUser.name} • {podcast.durationSeconds ? Math.floor(podcast.durationSeconds / 60) + ' min' : '0 min'}</p>
+                                            <p className="text-[11px] text-slate-400 mt-0.5">{new Date(podcast.publishedDate || podcast.createdDate || Date.now()).toLocaleDateString()}</p>
+                                        </div>
+                                        <button className="w-10 h-10 rounded-full bg-indigo-500 text-white flex items-center justify-center shadow-md hover:bg-indigo-600 transition-colors shrink-0 cursor-pointer">
+                                            <span className="material-symbols-outlined text-[20px] pl-0.5" style={{fontVariationSettings:"'FILL' 1"}}>play_arrow</span>
+                                        </button>
                                     </div>
-                                    <div className="flex-1 min-w-0">
-                                        <h4 className="font-bold text-slate-900 dark:text-white text-sm truncate group-hover:text-indigo-500 transition-colors">{podcast.title}</h4>
-                                        <p className="text-xs text-slate-400 font-medium mt-1">{podcast.hostName || displayUser.name} • {podcast.durationSeconds ? Math.floor(podcast.durationSeconds / 60) + ' min' : '0 min'}</p>
-                                        <p className="text-[11px] text-slate-400 mt-0.5">{new Date(podcast.publishedDate || podcast.createdDate || Date.now()).toLocaleDateString()}</p>
-                                    </div>
-                                    <button className="w-10 h-10 rounded-full bg-indigo-500 text-white flex items-center justify-center shadow-md hover:bg-indigo-600 transition-colors shrink-0 cursor-pointer">
-                                        <span className="material-symbols-outlined text-[20px] pl-0.5" style={{fontVariationSettings:"'FILL' 1"}}>play_arrow</span>
-                                    </button>
-                                </div>
-                            ))
+                                ))}
+                                <ScrollLoadingIndicator isVisible={visibleCount < tabData.podcasts.length} text="Loading more podcasts on scroll..." />
+                            </>
                         )}
                     </div>
                 )}
@@ -1265,54 +1298,57 @@ export default function Profile() {
                                 <p className="text-slate-600 dark:text-slate-400 font-bold">No communities joined yet</p>
                             </div>
                         ) : (
-                            tabData.communities.map(comm => {
-                                const targetCommId = comm.communityId || comm.id;
-                                const imgs = getCommunityImages(comm.name, comm.categoryName || comm.category);
-                                const bannerUrl = resolveMediaUrl(comm.bannerUrl || comm.bannerImageUrl) || comm.banner || imgs.banner;
-                                const memberCount = comm.membersCount || comm.memberCount || 1;
-                                const isDefault = comm.communityType?.toLowerCase()?.includes('default') || comm.communityType?.toLowerCase()?.includes('org');
-                                const roleBadge = comm.isCurrentUserAdmin ? 'Admin' : (comm.currentUserRole || (isDefault ? 'Official Member' : 'Member'));
+                            <>
+                                {tabData.communities.slice(0, visibleCount).map(comm => {
+                                    const targetCommId = comm.communityId || comm.id;
+                                    const imgs = getCommunityImages(comm.name, comm.categoryName || comm.category);
+                                    const bannerUrl = resolveMediaUrl(comm.bannerUrl || comm.bannerImageUrl) || comm.banner || imgs.banner;
+                                    const memberCount = comm.membersCount || comm.memberCount || 1;
+                                    const isDefault = comm.communityType?.toLowerCase()?.includes('default') || comm.communityType?.toLowerCase()?.includes('org');
+                                    const roleBadge = comm.isCurrentUserAdmin ? 'Admin' : (comm.currentUserRole || (isDefault ? 'Official Member' : 'Member'));
 
-                                return (
-                                    <div 
-                                        key={targetCommId} 
-                                        onClick={() => navigate(`/community/view?id=${targetCommId}`)}
-                                        className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden glass card-lift cursor-pointer hover:border-indigo-500 transition-all group bg-white dark:bg-slate-900"
-                                    >
-                                        <div className="h-32 relative overflow-hidden bg-slate-200 dark:bg-slate-800">
-                                            <img src={bannerUrl} alt={comm.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent"></div>
-                                            <span className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full border border-white/20">
-                                                {roleBadge}
-                                            </span>
-                                            {isDefault && (
-                                                <span className="absolute top-3 left-3 bg-indigo-600/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-md backdrop-blur-md flex items-center gap-1 shadow-xs">
-                                                    <span className="material-symbols-outlined text-[12px]">verified</span>
-                                                    Default Org
+                                    return (
+                                        <div 
+                                            key={targetCommId} 
+                                            onClick={() => navigate(`/community/view?id=${targetCommId}`)}
+                                            className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden glass card-lift cursor-pointer hover:border-indigo-500 transition-all group bg-white dark:bg-slate-900"
+                                        >
+                                            <div className="h-32 relative overflow-hidden bg-slate-200 dark:bg-slate-800">
+                                                <img src={bannerUrl} alt={comm.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent"></div>
+                                                <span className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-2.5 py-1 rounded-full border border-white/20">
+                                                    {roleBadge}
                                                 </span>
-                                            )}
-                                        </div>
-                                        <div className="p-4 flex items-center justify-between">
-                                            <div className="min-w-0 flex-1 pr-3">
-                                                <h4 className="font-bold text-slate-900 dark:text-white text-sm group-hover:text-indigo-500 transition-colors truncate">{comm.name}</h4>
-                                                <p className="text-xs text-slate-400 font-medium mt-0.5 flex items-center gap-1">
-                                                    <span className="material-symbols-outlined text-[14px]">groups</span>
-                                                    {memberCount} {memberCount === 1 ? 'member' : 'members'}
-                                                </p>
+                                                {isDefault && (
+                                                    <span className="absolute top-3 left-3 bg-indigo-600/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-md backdrop-blur-md flex items-center gap-1 shadow-xs">
+                                                        <span className="material-symbols-outlined text-[12px]">verified</span>
+                                                        Org
+                                                    </span>
+                                                )}
                                             </div>
-                                            <button 
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    navigate(`/community/view?id=${targetCommId}`);
-                                                }}
-                                                className="px-4 py-1.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-bold rounded-lg hover:bg-indigo-500 hover:text-white transition-all shadow-xs cursor-pointer shrink-0"
-                                            >
-                                                View
-                                            </button>
+                                            <div className="p-4 flex items-center justify-between">
+                                                <div className="min-w-0 flex-1 pr-3">
+                                                    <h4 className="font-bold text-slate-900 dark:text-white text-sm group-hover:text-indigo-500 transition-colors truncate">{comm.name}</h4>
+                                                    <p className="text-xs text-slate-400 font-medium mt-0.5 flex items-center gap-1">
+                                                        <span className="material-symbols-outlined text-[14px]">groups</span>
+                                                        {memberCount} {memberCount === 1 ? 'member' : 'members'}
+                                                    </p>
+                                                </div>
+                                                <button 
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        navigate(`/community/view?id=${targetCommId}`);
+                                                    }}
+                                                    className="px-4 py-1.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-bold rounded-lg hover:bg-indigo-500 hover:text-white transition-all shadow-xs cursor-pointer shrink-0"
+                                                >
+                                                    View
+                                                </button>
+                                            </div>
                                         </div>
-                                    </div>
-                                );
-                            })
+                                    );
+                                })}
+                                <ScrollLoadingIndicator isVisible={visibleCount < tabData.communities.length} text="Loading more communities on scroll..." />
+                            </>
                         )}
                     </div>
                 )}
@@ -1339,72 +1375,56 @@ export default function Profile() {
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {isTabLoading ? (
                                 <p className="text-slate-500 font-medium col-span-3 text-center py-8">Loading network...</p>
-                            ) : (
-                                (networkFilter === 'Followers' 
+                            ) : (() => {
+                                const activeNetworkList = networkFilter === 'Followers' 
                                     ? tabData.followers 
                                     : networkFilter === 'Following' 
                                     ? tabData.following 
-                                    : [...tabData.followers, ...tabData.following].filter((v, i, a) => a.findIndex(t => (t.id || t.userId) === (v.id || v.userId)) === i)
-                                ).length === 0 ? (
+                                    : [...tabData.followers, ...tabData.following].filter((v, i, a) => a.findIndex(t => (t.id || t.userId) === (v.id || v.userId)) === i);
+                                
+                                return activeNetworkList.length === 0 ? (
                                     <div className="col-span-3 text-center py-12 glass rounded-2xl border border-slate-200 dark:border-slate-800">
                                         <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">group</span>
                                         <p className="text-slate-600 dark:text-slate-400 font-bold">No {networkFilter.toLowerCase()} found</p>
                                     </div>
                                 ) : (
-                                    (networkFilter === 'Followers' 
-                                        ? tabData.followers 
-                                        : networkFilter === 'Following' 
-                                        ? tabData.following 
-                                        : [...tabData.followers, ...tabData.following].filter((v, i, a) => a.findIndex(t => (t.id || t.userId) === (v.id || v.userId)) === i)
-                                    ).map(person => {
-                                        const personId = person.id || person.userId;
-                                        const personName = person.fullName || person.name || 'User';
-                                        const personRole = person.roleName || person.designation || person.role || 'Employee';
-                                        const personDept = person.departmentName || person.department || 'General';
-                                        const personAvatar = resolveImageUrl(person.avatar || person.profilePhotoUrl, personName);
+                                    <>
+                                        {activeNetworkList.slice(0, visibleCount).map(person => {
+                                            const personId = person.userId || person.id;
+                                            const personAvatar = resolveMediaUrl(person.avatar || person.profilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(person.name || person.fullName || 'User')}&background=6366f1&color=fff`;
+                                            const personName = person.name || person.fullName || 'User';
 
-                                        return (
-                                            <div key={personId} className="rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5 glass card-lift flex items-center gap-4">
-                                                {personAvatar ? (
-                                                    <img 
-                                                        src={personAvatar} 
-                                                        alt={personName} 
-                                                        className="w-12 h-12 rounded-full object-cover border-2 border-indigo-500/20 shrink-0" 
-                                                        onError={(e) => {
-                                                            const fallback = users.find(u => u.name === personName)?.avatar;
-                                                            if (fallback && e.currentTarget.src !== fallback) {
-                                                                e.currentTarget.src = fallback;
-                                                            } else {
-                                                                e.currentTarget.style.display = 'none';
-                                                                if (e.currentTarget.nextElementSibling) {
-                                                                    e.currentTarget.nextElementSibling.style.display = 'flex';
-                                                                }
-                                                            }
-                                                        }}
-                                                    />
-                                                ) : null}
-                                                <div 
-                                                    className="w-12 h-12 rounded-full border-2 border-indigo-500/20 shrink-0 flex items-center justify-center bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-black text-lg"
-                                                    style={{ display: personAvatar ? 'none' : 'flex' }}
-                                                >
-                                                    {personName.charAt(0).toUpperCase()}
+                                            return (
+                                                <div key={personId} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 glass card-lift flex items-center justify-between gap-4">
+                                                    <div className="flex items-center gap-3 min-w-0">
+                                                        <img 
+                                                            src={personAvatar} 
+                                                            alt={personName} 
+                                                            className="w-12 h-12 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700" 
+                                                            onError={(e) => {
+                                                                e.target.onerror = null;
+                                                                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(personName)}&background=6366f1&color=fff`;
+                                                            }}
+                                                        />
+                                                        <div className="min-w-0">
+                                                            <h4 className="font-bold text-slate-900 dark:text-white text-sm truncate">{personName}</h4>
+                                                            <p className="text-xs text-slate-400 truncate">{person.designation || 'MPOnline Colleague'}</p>
+                                                            <p className="text-[11px] text-slate-400 mt-0.5 truncate">{person.department || 'Department'}</p>
+                                                        </div>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => navigate(`/profile?id=${personId}`)}
+                                                        className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg hover:bg-indigo-500 hover:text-white transition-colors shrink-0 cursor-pointer"
+                                                    >
+                                                        View Profile
+                                                    </button>
                                                 </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <h4 className="font-bold text-slate-900 dark:text-white text-sm truncate">{personName}</h4>
-                                                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate font-medium">{personRole}</p>
-                                                    <p className="text-[11px] text-slate-400 truncate">{personDept}</p>
-                                                </div>
-                                                <button 
-                                                    onClick={() => navigate(`/profile?id=${personId}`)}
-                                                    className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg hover:bg-indigo-500 hover:text-white transition-colors shrink-0 cursor-pointer"
-                                                >
-                                                    View Profile
-                                                </button>
-                                            </div>
-                                        );
-                                    })
-                                )
-                            )}
+                                            );
+                                        })}
+                                        <ScrollLoadingIndicator isVisible={visibleCount < activeNetworkList.length} text="Loading more connections on scroll..." />
+                                    </>
+                                );
+                            })()}
                         </div>
                     </div>
                 )}
@@ -1754,10 +1774,10 @@ export default function Profile() {
                                 <div className="flex-1">
                                     <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Official Email</p>
                                     <a 
-                                        href={`mailto:${displayUser?.email || `${displayUser?.employeeId?.toLowerCase() || 'emp'}@mponline.gov.in`}`}
+                                        href={`mailto:${displayUser?.email || `${(displayUser?.fullName || displayUser?.name || 'employee').toLowerCase().replace(/\s+/g, '.')}@mponline.gov.in`}`}
                                         className="text-sm font-semibold text-blue-600 dark:text-blue-400 hover:underline block mt-0.5"
                                     >
-                                        {displayUser?.email || `${displayUser?.employeeId?.toLowerCase() || 'employee'}@mponline.gov.in`}
+                                        {displayUser?.email || `${(displayUser?.fullName || displayUser?.name || 'employee').toLowerCase().replace(/\s+/g, '.')}@mponline.gov.in`}
                                     </a>
                                 </div>
                             </div>
@@ -1788,20 +1808,18 @@ export default function Profile() {
                                 </div>
                             </div>
 
-                            {/* Employee ID */}
-                            {displayUser?.employeeId && (
-                                <div className="flex items-start gap-3.5">
-                                    <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center shrink-0 mt-0.5">
-                                        <span className="material-symbols-outlined text-[20px]">badge</span>
-                                    </div>
-                                    <div className="flex-1">
-                                        <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Employee ID</p>
-                                        <p className="text-sm font-bold text-slate-800 dark:text-slate-200 mt-0.5">
-                                            {displayUser.employeeId}
-                                        </p>
-                                    </div>
+                            {/* Designation & Role */}
+                            <div className="flex items-start gap-3.5">
+                                <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center shrink-0 mt-0.5">
+                                    <span className="material-symbols-outlined text-[20px]">badge</span>
                                 </div>
-                            )}
+                                <div className="flex-1">
+                                    <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Designation & Role</p>
+                                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200 mt-0.5">
+                                        {displayUser?.designation || 'Staff Member'} • {displayUser?.roleName || displayUser?.role || 'Employee'}
+                                    </p>
+                                </div>
+                            </div>
                         </div>
 
                         <div className="p-4 sm:p-6 border-t border-slate-100 dark:border-slate-800 flex justify-end bg-slate-50 dark:bg-slate-800/50">

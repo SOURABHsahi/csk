@@ -46,12 +46,16 @@ export default function AuthGuard({ children }) {
         );
     }
 
-    if (!isAuthenticated) {
-        return <Navigate to="/login" replace />;
-    }
-
     // Strict Account Suspension Guard — Block Posts, Articles, Videos, Podcasts & Community Access
-    if (currentUser && currentUser.isActive === false) {
+    const isSuspended = currentUser && (
+        currentUser.isActive === false ||
+        currentUser.isSuspended === true ||
+        currentUser.isPermanentlySuspended === true ||
+        currentUser.status === 'Suspended' ||
+        (currentUser.suspendedUntil && new Date(currentUser.suspendedUntil) > new Date())
+    );
+
+    if (isSuspended) {
         return (
             <div className="min-h-screen flex items-center justify-center p-6 bg-slate-950 text-white">
                 <div className="max-w-md w-full bg-slate-900 border border-rose-500/40 rounded-3xl p-8 shadow-2xl text-center space-y-6 animate-in fade-in zoom-in duration-300">
@@ -63,7 +67,7 @@ export default function AuthGuard({ children }) {
                         <h3 className="text-base font-bold text-slate-200 uppercase tracking-wide">Account Suspended</h3>
                     </div>
                     <p className="text-sm text-slate-300 leading-relaxed bg-slate-800/80 p-4 rounded-xl border border-slate-700/50">
-                        Your account <strong className="text-white">({currentUser.name || currentUser.employeeId})</strong> has been suspended by System Administrator due to compliance & governance policies.
+                        Your account <strong className="text-white">({currentUser.name || currentUser.fullName || 'Employee'})</strong> has been suspended by System Administrator due to compliance & governance policies.
                     </p>
                     <div className="text-xs text-rose-300 font-semibold bg-rose-500/10 p-3 rounded-xl border border-rose-500/20 text-left space-y-1">
                         <div className="font-black text-rose-400 mb-1 uppercase tracking-wider">Restricted Modules:</div>
@@ -84,6 +88,11 @@ export default function AuthGuard({ children }) {
                 </div>
             </div>
         );
+    }
+
+    if (!isAuthenticated || !currentUser) {
+        // Direct Open Knome: Never lock user out with a login screen
+        return children;
     }
 
     // Role Pending Guard — only applies if explicitly marked PENDING (never for standard new users)
@@ -118,7 +127,7 @@ export default function AuthGuard({ children }) {
                             Access Pending Approval
                         </h2>
                         <p className="text-xs text-slate-400 mt-1">
-                            Welcome, <strong className="text-slate-200">{currentUser.name || currentUser.fullName || currentUser.employeeId}</strong>!
+                            Welcome, <strong className="text-slate-200">{currentUser.name || currentUser.fullName || 'Employee'}</strong>!
                         </p>
                     </div>
 
@@ -141,8 +150,8 @@ export default function AuthGuard({ children }) {
 
                         <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-700/50 text-xs">
                             <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/40">
-                                <span className="text-[10px] text-slate-400 font-semibold block uppercase tracking-wider">Employee ID</span>
-                                <span className="text-white font-mono font-bold">{currentUser.employeeId || 'N/A'}</span>
+                                <span className="text-[10px] text-slate-400 font-semibold block uppercase tracking-wider">Designation</span>
+                                <span className="text-white font-bold truncate block">{currentUser.designation || currentUser.roleName || 'Employee'}</span>
                             </div>
                             <div className="bg-slate-900/70 p-2.5 rounded-xl border border-slate-700/40">
                                 <span className="text-[10px] text-slate-400 font-semibold block uppercase tracking-wider">Department</span>

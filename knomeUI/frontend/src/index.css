@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:ital,wght@0,300..900;1,300..900&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 @config "../tailwind.config.js";
@@ -25,7 +25,7 @@
     margin: 0;
     padding: 0;
     min-height: 100vh;
-    font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+    font-family: 'Source Sans 3', 'Source Sans Pro', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
     background-color: var(--theme-60);
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased;
@@ -150,10 +150,27 @@
    TYPOGRAPHY
    ═══════════════════════ */
 h1, h2, h3, h4, h5, h6 {
-  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  font-family: 'Source Sans 3', 'Source Sans Pro', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
   color: var(--text-primary);
   font-weight: 700;
   line-height: 1.2;
+}
+
+/* ═══════════════════════════════════════════════════════
+   LINKEDIN TYPOGRAPHIC SYSTEM
+   - Source Sans: Main clean readable text & headlines
+   - Arial: Secondary font for standard documents & specs
+   - Georgia Italic: Voice & accent font for quotes & testimonials
+   ═══════════════════════════════════════════════════════ */
+.font-source-sans {
+  font-family: 'Source Sans 3', 'Source Sans Pro', -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+}
+.font-arial {
+  font-family: Arial, Helvetica, sans-serif;
+}
+.font-georgia-italic {
+  font-family: Georgia, Cambria, 'Times New Roman', Times, serif;
+  font-style: italic;
 }
 
 /* ═══════════════════════

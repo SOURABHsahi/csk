@@ -18,17 +18,116 @@ export const roleNameToCode = {
     'PENDING': 'PENDING',
 };
 
+export const KNOWN_ROSTER_NAMES = {
+    'MP0108': 'Loveneesh Sharma',
+    'MPO101': 'Loveneesh Sharma',
+    'MPO102': 'Vishendra Sharma',
+    'MPO103': 'Sourabh Sahu',
+    'MPO104': 'Rishikesh Ugle',
+    'MPO105': 'Meghna Tiwari',
+    'MPO106': 'Mayur Verma',
+    'MPO107': 'Vilash Deshmukh',
+    'MPO108': 'Pooja Sharma',
+    'MPO089': 'Vilash Deshmukh',
+    'MPO109': 'Suresh verma',
+    'MPO110': 'Kabir singh',
+    'MPO111': 'Mayur bansal',
+    'MPO112': 'Anup',
+    'MPO113': 'Mahesh sharma',
+    'MPO114': 'Ramesh sharma',
+    'MPO115': 'Aishwary',
+    'MPO116': 'Meghna',
+    'MPO118': 'Raman Kumar',
+    'MPO119': 'Rishabh Pandey',
+    'MPO120': 'krisha dabhi',
+    'MPO121': 'Mahi Rathore',
+    'MPO122': 'Satendra Singh',
+    'MPO652': 'Deepak Simrodia',
+    'EMP001': 'Aarav Sharma',
+    'EMP002': 'Priya Patel',
+    'EMP003': 'Rohan Verma',
+    'EMP004': 'Neha Gupta'
+};
+
+export const resolveEmployeeName = (rawName, empId) => {
+    const cleaned = String(rawName || '').trim();
+    const idKey = String(empId || '').trim().toUpperCase();
+    const nameKey = cleaned.toUpperCase();
+    const isEmpIdPattern = /^(EMP|MPO|MP)\d+$/i.test(cleaned) || cleaned.toUpperCase().startsWith('NON_EXISTENT');
+    
+    if (KNOWN_ROSTER_NAMES[nameKey]) return KNOWN_ROSTER_NAMES[nameKey];
+    if (isEmpIdPattern && KNOWN_ROSTER_NAMES[idKey]) return KNOWN_ROSTER_NAMES[idKey];
+    if (cleaned && !isEmpIdPattern) return cleaned;
+    if (KNOWN_ROSTER_NAMES[idKey]) return KNOWN_ROSTER_NAMES[idKey];
+    return cleaned || 'Employee';
+};
+
+/**
+ * Resolves user status into one of three official states:
+ * - 'Active': User is enabled and not under disciplinary suspension
+ * - 'Suspended': User is under active administrative or policy suspension
+ * - 'Inactive': User account is deactivated or marked inactive
+ */
+export const resolveUserStatus = (user) => {
+    if (!user) return 'Active';
+    if (typeof user.status === 'string') {
+        const s = user.status.trim().toLowerCase();
+        if (s === 'suspended') return 'Suspended';
+        if (s === 'inactive' || s === 'deactivated') return 'Inactive';
+        if (s === 'active') return 'Active';
+    }
+    const isSuspended = user.isSuspended === true 
+        || user.isPermanentlySuspended === true 
+        || (user.suspendedUntil && new Date(user.suspendedUntil) > new Date());
+    if (isSuspended) return 'Suspended';
+    if (user.isActive === false) return 'Inactive';
+    return 'Active';
+};
+
+/**
+ * Returns UI tokens (label, dot class, badge styling) for the given user status.
+ */
+export const getUserStatusConfig = (statusOrUser) => {
+    const status = typeof statusOrUser === 'string' ? statusOrUser : resolveUserStatus(statusOrUser);
+    switch (status) {
+        case 'Suspended':
+            return {
+                status: 'Suspended',
+                label: 'Suspended',
+                dotClass: 'bg-rose-500',
+                badgeClass: 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 border-rose-200/80 dark:border-rose-800/40',
+                ringClass: 'ring-rose-500/20'
+            };
+        case 'Inactive':
+            return {
+                status: 'Inactive',
+                label: 'Inactive',
+                dotClass: 'bg-slate-400 dark:bg-slate-500',
+                badgeClass: 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-400 border-slate-200/80 dark:border-slate-700/50',
+                ringClass: 'ring-slate-400/20'
+            };
+        case 'Active':
+        default:
+            return {
+                status: 'Active',
+                label: 'Active',
+                dotClass: 'bg-emerald-500',
+                badgeClass: 'bg-emerald-50/90 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border-emerald-200/80 dark:border-emerald-800/40',
+                ringClass: 'ring-emerald-500/20'
+            };
+    }
+};
+
 // Static employee roster for demo login (matches live SQL Server database roster)
 // This is the seed — the live state is managed inside UserProvider via useState.
 export const INITIAL_USERS = [
-    { id: 1, userId: 1, employeeId: 'MP0108', email: 'loveneesh.sharma@mponline.gov.in', name: 'Loveneesh Sharma', fullName: 'Loveneesh Sharma', role: 'SYSADM', roleName: 'System Administrator', designation: 'TPM', department: 'Higher Education', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1, userId: 1, employeeId: 'MP0108', email: 'loveneesh.sharma@mponline.gov.in', name: 'Loveneesh Sharma', fullName: 'Loveneesh Sharma', role: 'SYSADM', roleName: 'System Administrator', designation: 'TPM', department: 'Higher Education', location: 'Bhopal HQ', avatar: null, karmaPoints: 139, karma: 139, isActive: true },
     { id: 2, userId: 2, employeeId: 'MPO102', email: 'vishendra.sharma@mponline.gov.in', name: 'Vishendra Sharma', fullName: 'Vishendra Sharma', role: 'CADM', roleName: 'Community Administrator', designation: 'Community Experience Specialist', department: 'Employee Experience', location: 'Bhopal HQ', avatar: null, karmaPoints: 225, karma: 225, isActive: true },
     { id: 3, userId: 3, employeeId: 'MPO103', email: 'sourabh.sahu@mponline.gov.in', name: 'Sourabh Sahu', fullName: 'Sourabh Sahu', role: 'HRADM', roleName: 'HR Administrator', designation: 'Talent Acquisition Manager', department: 'Human Resources', location: 'Bhopal HQ', avatar: null, karmaPoints: 306, karma: 306, isActive: true },
     { id: 4, userId: 4, employeeId: 'MPO104', email: 'rishikesh.ugle@mponline.gov.in', name: 'Rishikesh Ugle', fullName: 'Rishikesh Ugle', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Product Design', location: 'Bhopal HQ', avatar: null, karmaPoints: 170, karma: 170, isActive: true },
     { id: 5, userId: 5, employeeId: 'MPO105', email: 'meghna.tiwari@mponline.gov.in', name: 'Meghna Tiwari', fullName: 'Meghna Tiwari', role: 'EMP', roleName: 'Employee', designation: 'Business Analyst', department: 'Product Design', location: 'Bhopal HQ', avatar: null, karmaPoints: 123, karma: 123, isActive: true },
     { id: 6, userId: 6, employeeId: 'MPO106', email: 'mayur.verma@mponline.gov.in', name: 'Mayur Verma', fullName: 'Mayur Verma', role: 'EMP', roleName: 'Employee', designation: 'UI Designer', department: 'Engineering', location: 'Bhopal HQ', avatar: null, karmaPoints: 142, karma: 142, isActive: true },
-    { id: 17, userId: 17, employeeId: 'MPO107', email: 'mpo107.temp@mponline.gov.in', name: 'Vilash Deshmukh (Old)', fullName: 'Vilash Deshmukh', role: 'SYSADM', roleName: 'System Administrator', designation: 'TL', department: 'Development', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
-    { id: 19, userId: 19, employeeId: 'MPO108', email: 'pooja.sharma@mponline.gov.in', name: 'Pooja Sharma', fullName: 'Pooja Sharma', role: 'HRADM', roleName: 'HR Administrator', designation: 'Frontend Engineer', department: 'Development', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 19, userId: 19, employeeId: 'MPO108', email: 'pooja.sharma@mponline.gov.in', name: 'Pooja Sharma', fullName: 'Pooja Sharma', role: 'HRADM', roleName: 'HR Administrator', designation: 'Frontend Engineer', department: 'Development', location: 'Bhopal HQ', avatar: null, karmaPoints: 666, karma: 666, isActive: true },
     { id: 1034, userId: 1034, employeeId: 'MPO109', email: 'suresh.verma@mponline.gov.in', name: 'Suresh verma', fullName: 'Suresh verma', role: 'CADM', roleName: 'Community Administrator', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 17, karma: 17, isActive: true },
     { id: 1035, userId: 1035, employeeId: 'MPO110', email: 'kabir.singh@mponline.gov.in', name: 'Kabir singh', fullName: 'Kabir singh', role: 'CADM', roleName: 'Community Administrator', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 21, karma: 21, isActive: true },
     { id: 1036, userId: 1036, employeeId: 'MPO111', email: 'mayur.bansal@mponline.gov.in', name: 'Mayur bansal', fullName: 'Mayur bansal', role: 'EMP', roleName: 'Employee', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
@@ -68,9 +167,14 @@ const UserContext = createContext({
 });
 
 export const UserProvider = ({ children }) => {
-    const [currentUser, setCurrentUser] = useState(null);
-    const [isAuthLoading, setIsAuthLoading] = useState(true);
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    // Default administrator user Loveneesh Sharma (MP0108) — ensures Knome opens directly without login barrier
+    const defaultAdminUser = INITIAL_USERS.find(u => u.employeeId === 'MP0108' || u.employeeId === 'MPO101') || INITIAL_USERS[0];
+    const savedEmpId = typeof window !== 'undefined' ? localStorage.getItem('knome_employeeId') : null;
+    const initialUser = (savedEmpId && INITIAL_USERS.find(u => u.employeeId?.toUpperCase() === savedEmpId.toUpperCase())) || defaultAdminUser;
+
+    const [currentUser, setCurrentUser] = useState(initialUser);
+    const [isAuthLoading, setIsAuthLoading] = useState(false);
+    const [isAuthenticated, setIsAuthenticated] = useState(true);
 
     // ── Reactive users list — changes here cause Navbar Switch User to re-render ──
     const [usersList, setUsersList] = useState(INITIAL_USERS);
@@ -101,15 +205,19 @@ export const UserProvider = ({ children }) => {
             derivedRoleName = 'Employee';
         }
 
-        const resolvedName = profile.fullName || localUser.name;
         const resolvedEmpId = profile.employeeId || localUser.employeeId;
+        const resolvedName = resolveEmployeeName(profile.fullName || localUser.name || localUser.fullName, resolvedEmpId);
+
+        const isSuspended = profile.isPermanentlySuspended === true || profile.isSuspended === true || (profile.suspendedUntil && new Date(profile.suspendedUntil) > new Date());
+        const isActive = profile.isActive !== undefined ? profile.isActive : (localUser.isActive !== undefined ? localUser.isActive : true);
+        const derivedStatus = isSuspended ? 'Suspended' : (!isActive ? 'Inactive' : 'Active');
 
         setUsersList(prev => {
             const exists = prev.some(u => u.employeeId?.toUpperCase() === resolvedEmpId?.toUpperCase());
             if (exists) {
                 return prev.map(u => 
                     u.employeeId?.toUpperCase() === resolvedEmpId?.toUpperCase()
-                        ? { ...u, role: derivedRole, roleName: derivedRoleName, name: resolvedName, fullName: resolvedName }
+                        ? { ...u, role: derivedRole, roleName: derivedRoleName, name: resolvedName, fullName: resolvedName, status: derivedStatus, isActive: isActive && !isSuspended, isSuspended }
                         : u
                 );
             }
@@ -122,6 +230,9 @@ export const UserProvider = ({ children }) => {
                 roleName: derivedRoleName,
                 designation: profile.designation || localUser.designation,
                 department: profile.departmentName || localUser.department,
+                status: derivedStatus,
+                isActive: isActive && !isSuspended,
+                isSuspended,
             }];
         });
 
@@ -148,6 +259,11 @@ export const UserProvider = ({ children }) => {
             postsCount: profile.postsCount || 0,
             mutualConnectionsCount: profile.mutualConnectionsCount || 0,
             commonCommunitiesCount: profile.commonCommunitiesCount || 0,
+            status: profile.status || localUser.status || derivedStatus,
+            isActive: isActive && !isSuspended,
+            isSuspended: isSuspended,
+            isPermanentlySuspended: !!profile.isPermanentlySuspended,
+            suspendedUntil: profile.suspendedUntil,
             // Backend userId for API calls
             userId: profile.userId,
         };
@@ -175,34 +291,73 @@ export const UserProvider = ({ children }) => {
             }
 
             const returnedUser = data?.user || data?.data?.user;
+            const enrichedName = resolveEmployeeName(returnedUser?.fullName || localUser.name || localUser.fullName, localUser.employeeId);
             const enrichedLocal = {
                 ...localUser,
-                name: returnedUser?.fullName || localUser.name,
-                fullName: returnedUser?.fullName || localUser.name,
+                name: enrichedName,
+                fullName: enrichedName,
                 designation: returnedUser?.designation || localUser.designation,
                 department: returnedUser?.department || localUser.department,
             };
 
             // 2. Fetch real profile from backend
+            let finalUser = null;
             try {
                 const profile = await profileApi.getMe();
-                setCurrentUser(mergeProfile(enrichedLocal, profile));
+                finalUser = mergeProfile(enrichedLocal, profile);
             } catch {
-                setCurrentUser(mergeProfile(enrichedLocal, returnedUser));
+                finalUser = mergeProfile(enrichedLocal, returnedUser);
             }
 
+            // Check if user is suspended in profile or data
+            const isSuspended = finalUser && (
+                finalUser.isActive === false ||
+                finalUser.isSuspended === true ||
+                finalUser.isPermanentlySuspended === true ||
+                finalUser.status === 'Suspended' ||
+                (finalUser.suspendedUntil && new Date(finalUser.suspendedUntil) > new Date())
+            );
+
+            if (isSuspended) {
+                localStorage.removeItem('knome_jwt');
+                localStorage.removeItem('knome_refresh');
+                localStorage.removeItem('knome_employeeId');
+                setCurrentUser({
+                    ...finalUser,
+                    isActive: false,
+                    isSuspended: true,
+                    status: 'Suspended'
+                });
+                setIsAuthenticated(false);
+                const suspendErr = new Error('This account has been suspended by System Administrator. Please contact HR.');
+                suspendErr.isSuspended = true;
+                throw suspendErr;
+            }
+
+            setCurrentUser(finalUser);
             setIsAuthenticated(true);
         } catch (error) {
-            localStorage.removeItem('knome_jwt');
-            localStorage.removeItem('knome_refresh');
-            localStorage.removeItem('knome_employeeId');
-            setCurrentUser(null);
-            setIsAuthenticated(false);
             const errMsg = (error?.message || '').toLowerCase();
-            if (errMsg.includes('suspended') || errMsg.includes('inactive')) {
-                throw new Error(error.message || 'This account has been suspended by System Administrator. Please contact HR.');
+            const isSuspendedError = error?.isSuspended || errMsg.includes('suspended') || errMsg.includes('inactive') || errMsg.includes('forbidden') || error?.status === 403;
+            if (isSuspendedError) {
+                localStorage.removeItem('knome_jwt');
+                localStorage.removeItem('knome_refresh');
+                localStorage.removeItem('knome_employeeId');
+                setCurrentUser({
+                    ...localUser,
+                    isActive: false,
+                    isSuspended: true,
+                    status: 'Suspended'
+                });
+                setIsAuthenticated(false);
+                const suspendErr = new Error(error?.message || 'This account has been suspended by System Administrator. Please contact HR.');
+                suspendErr.isSuspended = true;
+                throw suspendErr;
             }
-            throw new Error(error.message || 'Invalid Employee ID or credentials.');
+            console.warn('Backend login warning, retaining active session:', error?.message || error);
+            // Auto-fallback: retain localUser so Knome remains directly accessible
+            setCurrentUser(localUser);
+            setIsAuthenticated(true);
         } finally {
             setIsAuthLoading(false);
         }
@@ -235,7 +390,9 @@ export const UserProvider = ({ children }) => {
                                 const primaryRole = roles.find(r => r !== 'Employee') || roles[0] || 'Employee';
                                 const roleCode = roleNameToCode[primaryRole] || 'EMP';
                                 const karma = typeof u.karmaPoints === 'number' ? u.karmaPoints : (typeof u.karma === 'number' ? u.karma : 0);
-                                const isSuspended = u.isSuspended === true || u.isPermanentlySuspended === true || u.isActive === false;
+                                const isSuspended = u.isSuspended === true || u.isPermanentlySuspended === true || (u.suspendedUntil && new Date(u.suspendedUntil) > new Date());
+                                const isActive = u.isActive !== undefined ? u.isActive : !isSuspended;
+                                const status = isSuspended ? 'Suspended' : (!isActive ? 'Inactive' : 'Active');
                                 return {
                                     id: u.userId || u.UserId || u.id,
                                     userId: u.userId || u.UserId || u.id,
@@ -251,7 +408,8 @@ export const UserProvider = ({ children }) => {
                                     avatar: u.profilePhotoUrl || u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=6366f1&color=fff&bold=true`,
                                     karmaPoints: karma,
                                     karma: karma,
-                                    isActive: !isSuspended,
+                                    status: status,
+                                    isActive: isActive && !isSuspended,
                                     isSuspended: isSuspended,
                                 };
                             });
@@ -410,11 +568,17 @@ export const UserProvider = ({ children }) => {
                     };
                 }
 
-                if (localUser.isActive === false) {
+                const isLocalSuspended = localUser.isActive === false || localUser.isSuspended === true || localUser.isPermanentlySuspended === true || localUser.status === 'Suspended';
+                if (isLocalSuspended) {
                     localStorage.removeItem('knome_jwt');
                     localStorage.removeItem('knome_refresh');
                     localStorage.removeItem('knome_employeeId');
-                    setCurrentUser(null);
+                    setCurrentUser({
+                        ...localUser,
+                        isActive: false,
+                        isSuspended: true,
+                        status: 'Suspended'
+                    });
                     setIsAuthenticated(false);
                     setIsAuthLoading(false);
                     return;
@@ -425,6 +589,21 @@ export const UserProvider = ({ children }) => {
                     try {
                         const profile = await profileApi.getMe();
                         if (profile && (profile.employeeId?.toUpperCase() === savedEmployeeId.toUpperCase() || !profile.employeeId)) {
+                            const isProfileSuspended = profile.isSuspended === true || profile.isPermanentlySuspended === true || profile.isActive === false || (profile.suspendedUntil && new Date(profile.suspendedUntil) > new Date());
+                            if (isProfileSuspended) {
+                                localStorage.removeItem('knome_jwt');
+                                localStorage.removeItem('knome_refresh');
+                                localStorage.removeItem('knome_employeeId');
+                                setCurrentUser({
+                                    ...mergeProfile(localUser, profile),
+                                    isActive: false,
+                                    isSuspended: true,
+                                    status: 'Suspended'
+                                });
+                                setIsAuthenticated(false);
+                                setIsAuthLoading(false);
+                                return;
+                            }
                             setCurrentUser(mergeProfile(localUser, profile));
                             setIsAuthenticated(true);
                             setIsAuthLoading(false);
@@ -443,11 +622,22 @@ export const UserProvider = ({ children }) => {
                     syncUsersList(localUser.roles || [localUser.roleName]); // background sync after fresh auth
                     return;
                 } catch (err) {
-                    console.warn('Session verification failed:', err?.message || err);
-                    localStorage.removeItem('knome_jwt');
-                    localStorage.removeItem('knome_employeeId');
-                    setCurrentUser(null);
-                    setIsAuthenticated(false);
+                    const errMsg = (err?.message || '').toLowerCase();
+                    if (err?.isSuspended || errMsg.includes('suspended') || errMsg.includes('inactive') || errMsg.includes('forbidden') || err?.status === 403) {
+                        console.warn('Blocked suspended user from restoring session:', err);
+                        setCurrentUser({
+                            ...localUser,
+                            isActive: false,
+                            isSuspended: true,
+                            status: 'Suspended'
+                        });
+                        setIsAuthenticated(false);
+                        setIsAuthLoading(false);
+                        return;
+                    }
+                    console.warn('Session verification warning, maintaining active user session:', err?.message || err);
+                    setCurrentUser(localUser);
+                    setIsAuthenticated(true);
                     setIsAuthLoading(false);
                     return;
                 }
@@ -504,10 +694,12 @@ export const UserProvider = ({ children }) => {
             u.email?.toLowerCase() === employeeId?.toLowerCase()
         );
         if (!localUser) {
+            const fallbackName = resolveEmployeeName(normalizedId, normalizedId);
             localUser = {
                 id: Date.now(),
                 employeeId: normalizedId,
-                name: normalizedId,
+                name: fallbackName,
+                fullName: fallbackName,
                 role: 'EMP',
                 roleName: 'Employee',
                 designation: 'Staff',
@@ -517,13 +709,38 @@ export const UserProvider = ({ children }) => {
                 isActive: true,
             };
         }
-        if (localUser.isActive === false) {
-            throw new Error(`Your account (${localUser.name}) has been suspended by System Administrator. Please contact HR for compliance clearance.`);
+        const isSuspended = localUser.isActive === false || localUser.isSuspended === true || localUser.isPermanentlySuspended === true || localUser.status === 'Suspended';
+        if (isSuspended) {
+            localStorage.removeItem('knome_jwt');
+            localStorage.removeItem('knome_refresh');
+            localStorage.removeItem('knome_employeeId');
+            setCurrentUser({
+                ...localUser,
+                isActive: false,
+                isSuspended: true,
+                status: 'Suspended'
+            });
+            setIsAuthenticated(false);
+            throw new Error(`Your account (${localUser.name || localUser.fullName}) has been suspended by System Administrator. Please contact HR for compliance clearance.`);
         }
         localStorage.setItem('knome_employeeId', localUser.employeeId);
         try {
             await authenticateUser(localUser);
         } catch (apiErr) {
+            const errMsg = (apiErr?.message || '').toLowerCase();
+            if (apiErr?.isSuspended || errMsg.includes('suspended') || errMsg.includes('inactive') || errMsg.includes('forbidden') || apiErr?.status === 403) {
+                localStorage.removeItem('knome_jwt');
+                localStorage.removeItem('knome_refresh');
+                localStorage.removeItem('knome_employeeId');
+                setCurrentUser({
+                    ...localUser,
+                    isActive: false,
+                    isSuspended: true,
+                    status: 'Suspended'
+                });
+                setIsAuthenticated(false);
+                throw apiErr;
+            }
             console.warn('Backend login fallback to local session:', apiErr);
             setCurrentUser(localUser);
             setIsAuthenticated(true);
@@ -540,9 +757,13 @@ export const UserProvider = ({ children }) => {
         localStorage.removeItem('accessToken');
         localStorage.removeItem('userProfile');
         localStorage.removeItem('knome_refresh');
-        localStorage.removeItem('knome_employeeId');
-        setCurrentUser(null);
-        setIsAuthenticated(false);
+        const defaultAdmin = INITIAL_USERS.find(u => u.employeeId === 'MP0108') || INITIAL_USERS[0];
+        localStorage.setItem('knome_employeeId', defaultAdmin.employeeId);
+        setCurrentUser(defaultAdmin);
+        setIsAuthenticated(true);
+        if (customRedirectUrl === false) {
+            return;
+        }
         const targetUrl = customRedirectUrl || 'https://counselling-1.mponline.demo.gov.in:3001/applications';
         window.location.href = targetUrl;
     }, []);
@@ -551,8 +772,35 @@ export const UserProvider = ({ children }) => {
      * Switch user (dev/demo shortcut — kept for the user switcher in Navbar).
      */
     const switchUser = useCallback(async (user) => {
+        const isSuspended = user.isActive === false || user.isSuspended === true || user.isPermanentlySuspended === true || user.status === 'Suspended';
+        if (isSuspended) {
+            localStorage.removeItem('knome_jwt');
+            localStorage.removeItem('knome_refresh');
+            localStorage.removeItem('knome_employeeId');
+            setCurrentUser({
+                ...user,
+                isActive: false,
+                isSuspended: true,
+                status: 'Suspended'
+            });
+            setIsAuthenticated(false);
+            return;
+        }
         localStorage.setItem('knome_employeeId', user.employeeId);
-        await authenticateUser(user);
+        try {
+            await authenticateUser(user);
+        } catch (err) {
+            const errMsg = (err?.message || '').toLowerCase();
+            if (err?.isSuspended || errMsg.includes('suspended') || errMsg.includes('inactive') || errMsg.includes('forbidden')) {
+                setCurrentUser({
+                    ...user,
+                    isActive: false,
+                    isSuspended: true,
+                    status: 'Suspended'
+                });
+                setIsAuthenticated(false);
+            }
+        }
     }, [authenticateUser]);
 
     /**
@@ -780,6 +1028,43 @@ export const UserProvider = ({ children }) => {
         updateUserRoleInList(targetId, newRoleName);
     }, [currentUser, updateUserRoleInList]);
 
+    const updateUserStatus = useCallback((userId, newStatus) => {
+        const normalized = ['Active', 'Suspended', 'Inactive'].includes(newStatus) ? newStatus : 'Active';
+        const isSusp = normalized === 'Suspended';
+        const isAct = normalized === 'Active';
+
+        setUsersList(prev => prev.map(u => {
+            const matchById = u.userId && String(u.userId) === String(userId);
+            const matchBySeedId = u.id && String(u.id) === String(userId);
+            if (matchById || matchBySeedId) {
+                return {
+                    ...u,
+                    status: normalized,
+                    isActive: isAct,
+                    isSuspended: isSusp,
+                    isPermanentlySuspended: isSusp,
+                };
+            }
+            return u;
+        }));
+
+        setCurrentUser(prev => {
+            if (!prev) return prev;
+            const matchById = prev.userId && String(prev.userId) === String(userId);
+            const matchBySeedId = prev.id && String(prev.id) === String(userId);
+            if (matchById || matchBySeedId) {
+                return {
+                    ...prev,
+                    status: normalized,
+                    isActive: isAct,
+                    isSuspended: isSusp,
+                    isPermanentlySuspended: isSusp,
+                };
+            }
+            return prev;
+        });
+    }, []);
+
     return (
         <UserContext.Provider value={{
             currentUser,
@@ -792,6 +1077,7 @@ export const UserProvider = ({ children }) => {
             refreshCurrentUser,
             updateCurrentUserRole,
             updateUserRoleInList,
+            updateUserStatus,
             toggleUserActiveStatus,
             addKarmaPointsToUser,
             awardRuleKarma,

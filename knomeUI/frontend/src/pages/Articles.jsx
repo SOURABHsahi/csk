@@ -12,6 +12,7 @@ import { useToast } from '../components/contexts/ToastContext';
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import { useScrollLoading } from '../hooks/useScrollLoading';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
+import CustomDateTimePicker from '../components/widgets/CustomDateTimePicker';
 
 export default function Articles() {
     const { currentUser } = useUser();
@@ -70,6 +71,7 @@ export default function Articles() {
     // List Filtering States
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
+    const [showFilterBar, setShowFilterBar] = useState(false);
     
     const isSysAdmin = currentUser?.role === 'SYSADM' || 
                        currentUser?.roleName === 'System Administrator' || 
@@ -146,7 +148,23 @@ export default function Articles() {
     // Scheduling State & Helpers for Editor
     const [isScheduling, setIsScheduling] = useState(false);
     const [scheduledTime, setScheduledTime] = useState('');
+    const [tempScheduleTime, setTempScheduleTime] = useState('');
     const schedulePopoverRef = useRef(null);
+
+    // Format display string cleanly
+    const formatScheduleDisplay = (isoStr) => {
+        if (!isoStr) return '';
+        const d = new Date(isoStr);
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+    };
 
     const getRelativeScheduleText = (dateInput) => {
         if (!dateInput) return '';
@@ -634,108 +652,105 @@ export default function Articles() {
                 /* LIST MODE UI */
                 <main className="flex-1 min-w-0 flex flex-col gap-6 pb-20">
                     
-                    {/* Header - Custom Hero Typography Design */}
-                    <div className="relative flex flex-col items-center text-center pb-8 pt-6">
+                    {/* Hero Header */}
+                    <div className="relative rounded-2xl overflow-hidden mb-6 shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col md:flex-row items-start md:items-center justify-between text-left px-6 py-8 md:px-10 md:py-8 gap-6">
+                        {/* Background effects */}
+                        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_left,_var(--tw-gradient-stops))] from-teal-100/60 dark:from-teal-950/30 via-transparent to-transparent pointer-events-none"></div>
+                        <div className="absolute top-1/2 left-0 -translate-y-1/2 w-[500px] h-32 bg-teal-400/10 dark:bg-teal-500/10 blur-[80px] pointer-events-none"></div>
                         
-                        {/* Background Glow */}
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-slate-300/30 dark:bg-slate-700/20 rounded-full blur-[80px] pointer-events-none -z-10"></div>
+                        {/* Light Streaks behind text */}
+                        <div className="absolute top-[35%] left-0 w-[60%] h-[1px] bg-gradient-to-r from-teal-300/40 dark:from-teal-400/20 to-transparent"></div>
+                        <div className="absolute top-[50%] left-0 w-[40%] h-[2px] bg-gradient-to-r from-emerald-300/40 dark:from-emerald-400/20 to-transparent blur-[1px]"></div>
+                        <div className="absolute top-[65%] left-0 w-[50%] h-[1px] bg-gradient-to-r from-cyan-300/40 dark:from-cyan-400/20 to-transparent"></div>
 
-                        {/* Top Right Action Button */}
-                        <div className="absolute right-0 top-0 hidden sm:block">
+                        {/* Content Left */}
+                        <div className="relative z-10 flex flex-col items-start max-w-3xl">
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-teal-500/30 bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 text-[11px] font-bold mb-3 backdrop-blur-md uppercase tracking-wider">
+                                📖 Knowledge Base & Publications
+                            </div>
+                            
+                            <h1 className="text-3xl md:text-4xl lg:text-[40px] font-black tracking-tight mb-3 text-slate-900 dark:text-white" style={{ lineHeight: '1.2' }}>
+                                <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-600 via-emerald-600 to-cyan-600 dark:from-teal-400 dark:via-emerald-400 dark:to-cyan-400">
+                                    Explore In-Depth Publications
+                                </span>
+                            </h1>
+
+                            <p className="text-slate-600 dark:text-slate-400 text-sm md:text-[15px] font-medium leading-relaxed max-w-2xl">
+                                Discover comprehensive technical guides, engineering research, and leadership perspectives curated by MPOnline teams.
+                            </p>
+                        </div>
+
+                        {/* Action Right */}
+                        <div className="relative z-10 shrink-0 flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto mt-4 md:mt-0">
                             <button 
-                                onClick={() => setViewMode('create')}
-                                className="px-6 py-2.5 text-xs font-black text-white rounded-xl transition-all hover:-translate-y-0.5 flex items-center gap-2"
-                                style={{
-                                    background: 'linear-gradient(135deg, #4f46e5 0%, #2563eb 100%)',
-                                }}
+                                onClick={() => setShowFilterBar(!showFilterBar)}
+                                className={`w-full sm:w-auto px-5 py-3 font-bold rounded-xl transition-all flex items-center justify-center gap-2 border cursor-pointer ${
+                                    showFilterBar || searchQuery || selectedCategory !== 'All'
+                                        ? 'bg-teal-600 text-white border-teal-600 shadow-md shadow-teal-600/20'
+                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                }`}
                             >
-                                <span className="material-symbols-outlined text-[16px]">edit_document</span>
-                                Write Article
+                                <span className="material-symbols-outlined text-[18px]">filter_list</span>
+                                Filter { (searchQuery || selectedCategory !== 'All') && '• Active' }
                             </button>
-                        </div>
-
-                        {/* Refined Category Badge */}
-                        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200/80 dark:border-indigo-800/80 text-indigo-600 dark:text-indigo-400 text-xs font-extrabold uppercase tracking-wider mb-3 shadow-xs">
-                            <span className="material-symbols-outlined text-[14px]">auto_stories</span>
-                            Knowledge Hub & Publications
-                        </div>
-
-                        {/* Title: Formal & Catchy (No Underline) */}
-                        <h1 className="text-4xl sm:text-5xl md:text-6xl font-black tracking-tight text-slate-900 dark:text-white flex flex-wrap items-center justify-center gap-2 sm:gap-3.5 mb-3 leading-tight">
-                            <span className="text-slate-800 dark:text-slate-200 font-extrabold">Share</span>
-                            <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 bg-clip-text text-transparent drop-shadow-xs">
-                                Knowledge
-                            </span>
-                        </h1>
-
-                        {/* Subtitle with Integrated Text Flow */}
-                        <p className="text-base sm:text-lg text-slate-600 dark:text-slate-300 font-medium max-w-2xl leading-relaxed mb-1">
-                            Experience collaborative learning with our <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-blue-600 to-cyan-600 dark:from-indigo-400 dark:via-blue-400 dark:to-cyan-400">expert community platform</span>
-                        </p>
-
-                        {/* Small Description */}
-                        <p className="text-xs sm:text-sm text-slate-400 dark:text-slate-500 font-normal max-w-xl">
-                            Discover deep insights, track trending topics, and scale your expertise across the organization with unprecedented reliability.
-                        </p>
-
-                        {/* Mobile Write Button */}
-                        <button 
-                            onClick={() => setViewMode('create')}
-                            className="mt-6 sm:hidden px-6 py-2.5 text-xs font-black text-white rounded-xl transition-all flex items-center gap-2 w-full justify-center"
-                            style={{
-                                background: 'linear-gradient(135deg, var(--theme-10), #1D4ED8)',
-                            }}
-                        >
-                            <span className="material-symbols-outlined text-[16px]">edit_document</span>
-                            Write Article
-                        </button>
-                    </div>
-
-                    {/* Filter and Search Bar */}
-                    <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-                        {/* Categories List */}
-                        <div className="flex flex-wrap gap-1.5 w-full md:w-auto">
-                            {categories.map(cat => (
-                                <button
-                                    key={cat}
-                                    onClick={() => setSelectedCategory(cat)}
-                                    className="px-4 py-2 rounded-xl text-[12px] font-bold transition-all border shrink-0"
-                                    style={selectedCategory === cat ? {
-                                        background: 'linear-gradient(135deg, rgba(37,99,235,0.15), rgba(14,165,233,0.1))',
-                                        border: '1px solid var(--border-mid)',
-                                        color: '#2563EB',
-                                        boxShadow: '0 2px 8px rgba(37,99,235,0.1)'
-                                    } : {
-                                        background: 'var(--bg-card)',
-                                        borderColor: 'var(--border-subtle)',
-                                        color: 'var(--text-secondary)'
-                                    }}
+                            {currentUser?.role !== 'SYSADM' && (
+                                <button 
+                                    onClick={() => setViewMode('create')}
+                                    className="w-full sm:w-auto px-6 py-3 bg-teal-600 text-white font-bold rounded-xl hover:bg-teal-700 transition-colors shadow-lg shadow-teal-600/30 flex items-center justify-center gap-2 cursor-pointer"
                                 >
-                                    {cat}
-                                </button>
-                            ))}
-                        </div>
-
-                        {/* Search Input */}
-                        <div className="relative w-full md:w-80">
-                            <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
-                            <input 
-                                type="text"
-                                placeholder="Search articles..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 text-[13.5px] font-medium rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 border border-slate-200 dark:border-slate-800"
-                                style={{
-                                    background: 'var(--bg-card)',
-                                    color: 'var(--text-primary)'
-                                }}
-                            />
-                            {searchQuery && (
-                                <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
-                                    <span className="material-symbols-outlined text-[16px]">close</span>
+                                    <span className="material-symbols-outlined text-[20px]">edit_document</span>
+                                    Write Article
                                 </button>
                             )}
                         </div>
+                    </div>
+
+                    {/* Interactive Filter Control Bar */}
+                    {showFilterBar && (
+                        <div className="p-5 rounded-2xl border border-teal-500/30 bg-white dark:bg-slate-900 shadow-xl mb-6 animate-in fade-in slide-in-from-top-4 duration-300 flex flex-col md:flex-row items-center gap-4">
+                            {/* Search Input */}
+                            <div className="relative flex-1 w-full">
+                                <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+                                <input 
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Search articles by title, content, or author..."
+                                    className="w-full pl-10 pr-8 py-2.5 text-xs font-bold rounded-xl outline-none border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-teal-500/30"
+                                />
+                                {searchQuery && (
+                                    <button onClick={() => setSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700">
+                                        <span className="material-symbols-outlined text-[16px]">close</span>
+                                    </button>
+                                )}
+                            </div>
+                            {/* Reset Filters button if active */}
+                            {(searchQuery || selectedCategory !== 'All') && (
+                                <button 
+                                    onClick={() => { setSearchQuery(''); setSelectedCategory('All'); }}
+                                    className="text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline shrink-0 cursor-pointer"
+                                >
+                                    Reset Filters
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Categories Chips */}
+                    <div className="flex flex-wrap gap-1.5 w-full items-center mb-2">
+                        {categories.map(cat => (
+                            <button
+                                key={cat}
+                                onClick={() => setSelectedCategory(cat)}
+                                className={`px-4 py-2 rounded-xl text-[12px] font-bold transition-all border shrink-0 cursor-pointer ${
+                                    selectedCategory === cat
+                                        ? 'bg-teal-500/15 border-teal-500/40 text-teal-700 dark:text-teal-400 shadow-xs'
+                                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                {cat}
+                            </button>
+                        ))}
                     </div>
 
                     {/* Articles Grid */}
@@ -991,12 +1006,8 @@ export default function Articles() {
                                     data-schedule-trigger="true"
                                     type="button"
                                     onClick={() => {
-                                        if (!isScheduling) {
-                                            setIsScheduling(true);
-                                            if (!scheduledTime) setScheduledTime(getLocalDatetimeInputValue(1));
-                                        } else {
-                                            setIsScheduling(false);
-                                        }
+                                        setTempScheduleTime(scheduledTime || '');
+                                        setIsScheduling(!isScheduling);
                                     }}
                                     disabled={isPublishing}
                                     className={`px-4 py-2 text-[13px] font-bold rounded-xl transition-all border flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
@@ -1060,169 +1071,107 @@ export default function Articles() {
                                     );
                                 })()}
 
-                                {/* Scheduling Popover */}
+                                {/* Centered Scheduling Modal with Custom Date & Time Picker */}
                                 {isScheduling && (
-                                    <div 
-                                        ref={schedulePopoverRef}
-                                        className="absolute top-14 right-0 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl z-50 w-88 max-w-[92vw] animate-in fade-in zoom-in-95 duration-150 text-slate-800 dark:text-slate-100"
-                                    >
-                                        {/* Popover Header */}
-                                        <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 dark:border-slate-700/60">
-                                            <div className="flex items-center gap-2.5">
-                                                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-sm">
-                                                    <span className="material-symbols-outlined text-[18px]">event_upcoming</span>
+                                    <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+                                        <div 
+                                            ref={schedulePopoverRef}
+                                            className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-md max-h-[94vh] overflow-y-auto p-4 text-slate-800 dark:text-slate-100 space-y-3.5 custom-scrollbar"
+                                        >
+                                            {/* Popover Header */}
+                                            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700/60">
+                                                <div className="flex items-center gap-2.5">
+                                                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-sm">
+                                                        <span className="material-symbols-outlined text-[18px]">event_upcoming</span>
+                                                    </div>
+                                                    <div>
+                                                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
+                                                            Schedule Article Publication
+                                                        </h4>
+                                                        <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                                                            Automated Knome platform delivery
+                                                        </p>
+                                                    </div>
                                                 </div>
-                                                <div>
-                                                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
-                                                        Schedule Article Publication
-                                                    </h4>
-                                                    <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
-                                                        Automated Knome platform delivery
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <button 
-                                                type="button"
-                                                onClick={() => setIsScheduling(false)}
-                                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer transition-colors"
-                                                title="Close"
-                                            >
-                                                <span className="material-symbols-outlined text-[18px]">close</span>
-                                            </button>
-                                        </div>
-
-                                        {/* Timezone / Enterprise Notice Banner */}
-                                        <div className="mb-3 px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-700/60 flex items-center justify-between text-[10.5px] text-slate-600 dark:text-slate-300">
-                                            <span className="flex items-center gap-1 font-medium">
-                                                <span className="material-symbols-outlined text-[14px] text-indigo-500">public</span>
-                                                IST (UTC+05:30)
-                                            </span>
-                                            <span className="font-mono text-[10px] text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded">
-                                                Format: DD/MM/YYYY
-                                            </span>
-                                        </div>
-
-                                        {/* Date & Time Picker */}
-                                        <div className="mb-3">
-                                            <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                                                Select Date & Time (DD/MM/YYYY):
-                                            </label>
-                                            <div className="relative">
-                                                <input 
-                                                    type="datetime-local" 
-                                                    value={scheduledTime}
-                                                    min={getLocalDatetimeInputValue(1)}
-                                                    onChange={(e) => setScheduledTime(e.target.value)}
-                                                    disabled={isPublishing}
-                                                    className="w-full text-xs font-semibold p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer" 
-                                                />
-                                            </div>
-                                        </div>
-
-                                        {/* Quick Presets */}
-                                        <div className="mb-3">
-                                            <span className="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">
-                                                Quick Options:
-                                            </span>
-                                            <div className="grid grid-cols-3 gap-1.5">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setScheduledTime(getLocalDatetimeInputValue(1))}
-                                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                                    title="Schedule 1 minute from now"
-                                                >
-                                                    +1 Min
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setScheduledTime(getLocalDatetimeInputValue(5))}
-                                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                                    title="Schedule 5 minutes from now"
-                                                >
-                                                    +5 Mins
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setScheduledTime(getLocalDatetimeInputValue(15))}
-                                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                                    title="Schedule 15 minutes from now"
-                                                >
-                                                    +15 Mins
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setScheduledTime(getLocalDatetimeInputValue(30))}
-                                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                                    title="Schedule 30 minutes from now"
-                                                >
-                                                    +30 Mins
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setScheduledTime(getLocalDatetimeInputValue(60))}
-                                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                                    title="Schedule 1 hour from now"
-                                                >
-                                                    +1 Hour
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setScheduledTime(getTomorrowTime(9))}
-                                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                                    title="Schedule for Tomorrow at 9:00 AM"
-                                                >
-                                                    Tomorrow 9 AM
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        {/* Live Preview Card with DD/MM/YYYY Format */}
-                                        {scheduledTime && (
-                                            <div className="p-2.5 mb-3 rounded-xl bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-blue-500/10 border border-amber-500/20 text-[11.5px] text-slate-800 dark:text-slate-200 space-y-1">
-                                                <div className="flex items-center justify-between">
-                                                    <span className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1">
-                                                        <span className="material-symbols-outlined text-[15px]">event</span>
-                                                        Scheduled Date (DD/MM/YYYY):
-                                                    </span>
-                                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-extrabold">
-                                                        {getRelativeScheduleText(scheduledTime)}
-                                                    </span>
-                                                </div>
-                                                <div className="text-xs font-extrabold text-slate-900 dark:text-white font-mono pl-5">
-                                                    {formatToDDMMYYYY(scheduledTime)}
-                                                </div>
-                                                <div className="text-[10px] text-slate-500 dark:text-slate-400 pl-5">
-                                                    Article will remain private in your Scheduled queue until this time, then automatically publish across the Knome knowledge hub.
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Action Controls */}
-                                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-700/60">
-                                            {scheduledTime ? (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setScheduledTime('');
-                                                        setIsScheduling(false);
-                                                    }}
-                                                    className="px-2.5 py-1.5 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1"
-                                                >
-                                                    <span className="material-symbols-outlined text-[14px]">delete</span>
-                                                    Clear Schedule
-                                                </button>
-                                            ) : (
-                                                <div />
-                                            )}
-                                            <div className="flex items-center gap-2">
-                                                <button
+                                                <button 
                                                     type="button"
                                                     onClick={() => setIsScheduling(false)}
-                                                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] transition-colors cursor-pointer shadow-xs flex items-center gap-1"
+                                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+                                                    title="Close"
                                                 >
-                                                    <span className="material-symbols-outlined text-[14px]">check</span>
-                                                    {scheduledTime ? 'Apply Schedule' : 'Done'}
+                                                    <span className="material-symbols-outlined text-[18px]">close</span>
                                                 </button>
+                                            </div>
+
+                                            {/* Quick Options */}
+                                            <div>
+                                                <span className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">
+                                                    Quick Options:
+                                                </span>
+                                                <div className="grid grid-cols-4 gap-1.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setTempScheduleTime(getLocalDatetimeInputValue(15))}
+                                                        className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer text-center"
+                                                    >
+                                                        +15 Mins
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setTempScheduleTime(getLocalDatetimeInputValue(30))}
+                                                        className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer text-center"
+                                                    >
+                                                        +30 Mins
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setTempScheduleTime(getLocalDatetimeInputValue(60))}
+                                                        className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer text-center"
+                                                    >
+                                                        +1 Hour
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setTempScheduleTime(getTomorrowTime(9))}
+                                                        className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer text-center"
+                                                    >
+                                                        Tomorrow 9 AM
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Integrated Interactive Custom Date & Time Picker with OK button */}
+                                            <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-xs">
+                                                <CustomDateTimePicker
+                                                    value={tempScheduleTime}
+                                                    onChange={(newVal) => setTempScheduleTime(newVal)}
+                                                    onConfirm={(newVal) => {
+                                                        const chosenVal = newVal || tempScheduleTime;
+                                                        if (!chosenVal) {
+                                                            addToast('Please select a date and time to schedule.', 'error');
+                                                            return;
+                                                        }
+                                                        const chosen = new Date(chosenVal);
+                                                        if (isNaN(chosen.getTime())) {
+                                                            addToast('Invalid schedule date/time.', 'error');
+                                                            return;
+                                                        }
+                                                        if (chosen.getTime() <= Date.now()) {
+                                                            addToast('Scheduled time must be in the future.', 'error');
+                                                            return;
+                                                        }
+                                                        setScheduledTime(chosenVal);
+                                                        setIsScheduling(false);
+                                                        addToast(`Article scheduled for ${formatScheduleDisplay(chosenVal)}`, 'success');
+                                                    }}
+                                                    onCancel={() => setIsScheduling(false)}
+                                                    onClear={() => {
+                                                        setScheduledTime('');
+                                                        setTempScheduleTime('');
+                                                        setIsScheduling(false);
+                                                        addToast('Schedule cleared. Article will publish immediately.', 'info');
+                                                    }}
+                                                />
                                             </div>
                                         </div>
                                     </div>

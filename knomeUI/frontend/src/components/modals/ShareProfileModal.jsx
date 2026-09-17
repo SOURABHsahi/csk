@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useToast } from '../contexts/ToastContext';
-import { interactionsApi, searchApi, communitiesApi, notificationsApi, adminApi, resolveMediaUrl, getCommunityImages } from '../../utils/apiService';
+import { interactionsApi, searchApi, communitiesApi, notificationsApi, adminApi, postsApi, resolveMediaUrl, getCommunityImages } from '../../utils/apiService';
 import { useUser } from '../contexts/UserContext';
 
 export default function ShareProfileModal({ isOpen, onClose, user }) {
@@ -263,40 +263,99 @@ export default function ShareProfileModal({ isOpen, onClose, user }) {
             return;
         }
         setIsSharingToComm(true);
-        const commId = parseInt(selectedCommunityId);
+        const commId = String(selectedCommunityId);
+        const commIdNum = parseInt(selectedCommunityId);
         const sharedProfileObj = {
             id: user.userId || user.id || 1,
             userId: user.userId || user.id || 1,
             name: userName,
             fullName: userName,
             avatar: user.avatar || user.profilePhotoUrl,
-            designation: user.designation || user.roleName || 'Employee',
+            profilePhotoUrl: user.avatar || user.profilePhotoUrl,
+            designation: user.designation || user.roleName || user.role || 'Employee',
+            role: user.role || user.roleName || 'Employee',
+            roleName: user.roleName || user.role || 'Employee',
             department: user.department || user.departmentName || 'General',
-            karma: user.karma || 0,
+            departmentName: user.department || user.departmentName || 'General',
+            karma: user.karma || user.karmaPoints || 0,
             location: user.location || 'Main Office'
         };
 
+        const targetComm = communities.find(c => String(c.communityId || c.id) === commId);
+        const commName = targetComm?.name || `Community #${commId}`;
+        const profileUrl = `${window.location.origin}/profile?id=${sharedProfileObj.id}`;
+
         try {
-            await interactionsApi.shareContent('Profile', user.userId || user.id || 1, 'Community', commId);
+            await interactionsApi.shareContent('Profile', user.userId || user.id || 1, 'Community', isNaN(commIdNum) ? 1 : commIdNum);
         } catch (_) {}
+
+        // Persist to backend database as well
+        try {
+            await postsApi.create({
+                contentText: `Shared Profile: "${userName}"\n${profileUrl}`,
+                audienceType: 'Community',
+                audienceCommunityIds: !isNaN(commIdNum) ? [commIdNum] : []
+            });
+        } catch (err) {
+            console.warn('Backend post creation notice:', err);
+        }
+
+        const newCommSharePost = {
+            id: `profile_share_comm_${Date.now()}`,
+            author: currentUser?.fullName || currentUser?.name || 'Employee',
+            authorName: currentUser?.fullName || currentUser?.name || 'Employee',
+            authorRole: currentUser?.roleName || 'Community Member',
+            role: currentUser?.roleName || 'Community Member',
+            authorAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
+            avatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
+            time: 'Just now',
+            timeAgo: 'Just now',
+            createdDate: new Date().toISOString(),
+            content: `Shared ${userName}'s profile with the community! 🚀`,
+            title: `Shared Profile: ${userName}`,
+            type: 'profile_share',
+            isProfileShare: true,
+            sharedProfile: sharedProfileObj,
+            likes: 0,
+            likesCount: 0,
+            comments: 0,
+            commentsCount: 0,
+            isPinned: false
+        };
 
         // Save to community posts for immediate feed visibility inside CommunityView
         const savedPostsKey = `knome_community_posts_${commId}`;
         const existingCommPosts = JSON.parse(localStorage.getItem(savedPostsKey) || '[]');
-        const newCommSharePost = {
-            id: `profile_share_comm_${Date.now()}`,
-            author: 'Current User',
-            role: 'Community Member',
-            time: 'Just now',
-            content: `Shared ${userName}'s profile with the community! 🚀`,
-            isProfileShare: true,
-            sharedProfile: sharedProfileObj,
-            likes: 0,
-            comments: 0
-        };
         localStorage.setItem(savedPostsKey, JSON.stringify([newCommSharePost, ...existingCommPosts]));
 
-        addToast(`Shared ${userName}'s profile to community!`, 'success');
+        if (!isNaN(commIdNum) && String(commIdNum) !== commId) {
+            const numKey = `knome_community_posts_${commIdNum}`;
+            const existingNumPosts = JSON.parse(localStorage.getItem(numKey) || '[]');
+            localStorage.setItem(numKey, JSON.stringify([newCommSharePost, ...existingNumPosts]));
+        }
+
+        // Also add to global posts cache so any feed listener or aggregator gets it
+        try {
+            const globalPosts = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
+            localStorage.setItem('knome_local_posts', JSON.stringify([
+                {
+                    ...newCommSharePost,
+                    communityId: commId,
+                    communityName: commName,
+                    audienceType: 'Community',
+                    audienceCommunityIds: !isNaN(commIdNum) ? [commIdNum] : [commId]
+                },
+                ...globalPosts
+            ]));
+        } catch (_) {}
+
+        // Dispatch storage & custom events for instant reactivity in CommunityView
+        window.dispatchEvent(new StorageEvent('storage', { key: savedPostsKey }));
+        window.dispatchEvent(new CustomEvent('community-posts-updated', { detail: { communityId: commId } }));
+        window.dispatchEvent(new CustomEvent('community-post-created', { detail: { communityId: commId } }));
+        window.dispatchEvent(new CustomEvent('post-created'));
+
+        addToast(`Shared ${userName}'s profile to ${commName}!`, 'success');
         onClose();
         setIsSharingToComm(false);
     };
@@ -619,11 +678,6 @@ export default function ShareProfileModal({ isOpen, onClose, user }) {
                                                     <div className="min-w-0 flex-1">
                                                         <div className="flex items-center gap-1.5">
                                                             <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{targetName}</p>
-                                                            {targetEmpId && (
-                                                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-semibold shrink-0">
-                                                                    {targetEmpId}
-                                                                </span>
-                                                            )}
                                                         </div>
                                                         <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">{targetRole} • {targetDept}</p>
                                                     </div>

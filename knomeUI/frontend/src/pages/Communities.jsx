@@ -12,6 +12,13 @@ const defaultSeeds = [];
 
 const getInitialCommunities = () => [];
 
+export const formatCommunityType = (type) => {
+    const t = String(type || '').trim().toLowerCase();
+    if (t.includes('default') || t.includes('org')) return 'Org';
+    if (t.includes('private')) return 'Private';
+    return 'Public';
+};
+
 export default function Communities() {
     const { currentUser, users } = useUser();
     const { addToast } = useToast();
@@ -79,7 +86,7 @@ export default function Communities() {
                         return {
                             id: c.communityId,
                             name: c.name,
-                            type: c.communityType || 'Public',
+                            type: formatCommunityType(c.communityType),
                             category: c.categoryName || 'General',
                             members: `${count} ${count === 1 ? 'member' : 'members'}`,
                             activity: `${c.postsCount || 0} posts`,
@@ -130,7 +137,7 @@ export default function Communities() {
                     combinedList.unshift({
                         id: c.id,
                         name: c.name,
-                        type: c.type || 'Public',
+                        type: formatCommunityType(c.type),
                         category: c.category || 'General',
                         members: `${count} ${count === 1 ? 'member' : 'members'}`,
                         activity: 'New',
@@ -522,13 +529,12 @@ export default function Communities() {
             if (!(s === 'approved' || s === 'joined' || s === 'subscribed' || s === 'pending')) return false;
         }
         if (activeTab === 'Knome (Org)') {
-            if (!(c.type?.includes('Default') || c.type?.includes('Org'))) return false;
+            if (formatCommunityType(c.type) !== 'Org') return false;
         }
         // Type filter
         if (filterType !== 'All') {
-            if (filterType === 'Default (Org)') {
-                if (!(c.type?.includes('Default') || c.type?.includes('Org'))) return false;
-            } else if (!c.type?.toLowerCase().startsWith(filterType.toLowerCase())) return false;
+            const normalizedFilter = formatCommunityType(filterType);
+            if (formatCommunityType(c.type) !== normalizedFilter) return false;
         }
         // Category filter
         if (filterCategory !== 'All' && c.category && c.category !== filterCategory) return false;
@@ -685,7 +691,7 @@ export default function Communities() {
                                             </div>
                                             <div className="absolute top-3 right-3">
                                                 <span className="px-2.5 py-1 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-wider bg-white/90 text-slate-800 shadow-sm">
-                                                    {comm.type}
+                                                    {formatCommunityType(comm.type)}
                                                 </span>
                                             </div>
                                         </div>
@@ -718,7 +724,7 @@ export default function Communities() {
                                                         {comm.creatorName}
                                                     </p>
                                                     <p className="text-[10px] text-slate-500 truncate">
-                                                        {comm.creatorEmployeeId} • {comm.creatorDepartment || 'MPOnline'}
+                                                        {comm.creatorDesignation || 'Community Creator'} • {comm.creatorDepartment || 'MPOnline'}
                                                     </p>
                                                 </div>
                                             </div>
@@ -773,7 +779,7 @@ export default function Communities() {
 
                             {/* Type Pills */}
                             <div className="flex items-center gap-1.5 shrink-0">
-                                {['All', 'Public', 'Private', 'Default (Org)'].map(t => (
+                                {['All', 'Public', 'Private', 'Org'].map(t => (
                                     <button
                                         key={t}
                                         onClick={() => setFilterType(t)}
@@ -783,7 +789,7 @@ export default function Communities() {
                                                 : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:border-indigo-300'
                                         }`}
                                     >
-                                        {t === 'Default (Org)' ? '🏢 Org' : t === 'Public' ? '🌐 Public' : t === 'Private' ? '🔒 Private' : '✨ All'}
+                                        {t === 'Org' ? '🏢 Org' : t === 'Public' ? '🌐 Public' : t === 'Private' ? '🔒 Private' : '✨ All'}
                                     </button>
                                 ))}
                             </div>
@@ -844,8 +850,7 @@ export default function Communities() {
                                                 />
                                                 <div className="absolute inset-0 bg-slate-900/40"></div>
                                                 <div className="absolute top-3 left-3">
-                                                    <span className="px-2.5 py-1 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white shadow-sm flex items-center gap-1">
-                                                        <span className="material-symbols-outlined text-[12px] animate-spin">sync</span>
+                                                    <span className="px-2.5 py-1 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white shadow-sm">
                                                         Under HR Review
                                                     </span>
                                                 </div>
@@ -914,11 +919,11 @@ export default function Communities() {
                                         )}
                                         <div className="absolute top-3 right-3">
                                             <span className={`px-2.5 py-1 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-wider border shadow-sm ${
-                                                community.type === 'Private' ? 'bg-amber-500/90 text-white border-amber-400' :
-                                                community.type === 'Public' ? 'bg-white/90 text-indigo-600 border-white/50' :
+                                                formatCommunityType(community.type) === 'Private' ? 'bg-amber-500/90 text-white border-amber-400' :
+                                                formatCommunityType(community.type) === 'Public' ? 'bg-white/90 text-indigo-600 border-white/50' :
                                                 'bg-purple-500/90 text-white border-purple-400'
                                             }`}>
-                                                {community.type}
+                                                {formatCommunityType(community.type)}
                                             </span>
                                         </div>
                                     </div>

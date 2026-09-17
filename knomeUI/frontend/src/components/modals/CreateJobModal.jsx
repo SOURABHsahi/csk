@@ -81,7 +81,7 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
                             <span className="material-symbols-outlined text-teal-500">work</span>
                             Post Internal Job
                         </h2>
-                        <p className="text-xs sm:text-sm font-medium text-slate-500 mt-0.5 sm:mt-1">Create a new opportunity in MS SQL Database.</p>
+                        <p className="text-xs sm:text-sm font-medium text-slate-500 mt-0.5 sm:mt-1">Create a new opportunity across MPOnline.</p>
                     </div>
                     <button onClick={onClose} className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white transition-colors">
                         <span className="material-symbols-outlined">close</span>
@@ -211,10 +211,10 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
                         disabled={isSubmitting}
                         className="px-8 py-2.5 bg-teal-500 text-white text-[13px] font-bold rounded-xl hover:bg-teal-600 transition-colors shadow-md shadow-teal-500/20 disabled:opacity-50 flex items-center gap-2">
                         {isSubmitting ? (
-                            <>Saving to Database...</>
+                            <>Publishing Job...</>
                         ) : (
                             <>
-                                <span className="material-symbols-outlined text-[18px]">database</span>
+                                <span className="material-symbols-outlined text-[18px]">publish</span>
                                 Save & Publish Job
                             </>
                         )}

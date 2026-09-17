@@ -111,7 +111,7 @@ function App() {
               <Suspense fallback={<PageLoader />}>
                 <Routes>
                   {/* Public & SSO Routes */}
-                  <Route path="/login" element={<Login />} />
+                  <Route path="/login" element={<Navigate to="/" replace />} />
                   <Route path="/sso" element={<SsoPage />} />
                   <Route path="/sso-logout" element={<SsoLogoutPage />} />
 

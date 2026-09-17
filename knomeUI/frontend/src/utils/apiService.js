@@ -548,15 +548,21 @@ export const adminApi = {
     },
 
     /** PUT /users/{id}/suspend */
-    suspendUser: (userId, reason, durationDays = 7) => {
-        const isPermanent = Number(durationDays) >= 365;
-        const suspendedUntil = isPermanent 
-            ? null 
-            : new Date(Date.now() + Number(durationDays) * 24 * 60 * 60 * 1000).toISOString();
+    suspendUser: (userId, reason, durationDays = 7, customDate = null, isPermanent = false) => {
+        const permanent = isPermanent || durationDays === 'indefinite' || Number(durationDays) >= 365;
+        let suspendedUntil = null;
+        if (!permanent) {
+            if (customDate) {
+                suspendedUntil = new Date(customDate).toISOString();
+            } else {
+                const days = typeof durationDays === 'number' ? durationDays : (parseInt(durationDays, 10) || 7);
+                suspendedUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+            }
+        }
 
         return apiClient.put(`/users/${userId}/suspend`, {
             reason: reason || 'Violation of Guidelines',
-            isPermanent,
+            isPermanent: permanent,
             suspendedUntil
         });
     },

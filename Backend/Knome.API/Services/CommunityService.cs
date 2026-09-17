@@ -194,14 +194,14 @@ public class CommunityService : ICommunityService
 
         await _repo.AddCommunityAsync(community);
 
-        // Add creator to CommunityAdmins and as an Approved Moderator member
+        // Add creator to CommunityAdmins and as an Approved Admin member
         await _repo.AddCommunityAdminAsync(community.CommunityId, currentUserId);
 
         var member = new CommunityMember
         {
             CommunityId = community.CommunityId,
             UserId = currentUserId,
-            MemberType = CommunityMemberTypes.Moderator,
+            MemberType = CommunityMemberTypes.Admin,
             Status = CommunityMemberStatuses.Approved,
             RequestedDate = DateTime.UtcNow,
             DecidedDate = DateTime.UtcNow
@@ -386,6 +386,14 @@ public class CommunityService : ICommunityService
 
         if (dto.Status == CommunityMemberStatuses.Banned || dto.Status == CommunityMemberStatuses.Rejected)
         {
+            var isTargetAdmin = await _repo.IsCommunityAdminAsync(communityId, targetUserId);
+            if (isTargetAdmin)
+            {
+                var adminsCount = await _repo.GetCommunityAdminsCountAsync(communityId);
+                if (adminsCount <= 1)
+                    throw new BadRequestException("Cannot remove or suspend the sole remaining Community Admin. Promote another member to Community Administrator first.");
+            }
+
             await _repo.RemoveCommunityAdminAsync(communityId, targetUserId);
             member.MemberType = CommunityMemberTypes.Subscriber;
         }
@@ -417,14 +425,14 @@ public class CommunityService : ICommunityService
 
         await _repo.AddCommunityAdminAsync(communityId, targetUserId);
 
-        member.MemberType = CommunityMemberTypes.Moderator;
+        member.MemberType = CommunityMemberTypes.Admin;
         await _repo.UpdateMemberAsync(member);
 
         var community = await _repo.GetCommunityByIdAsync(communityId);
         await _notificationService.PublishAsync(
             targetUserId,
             NotificationTypes.CommunityInvite,
-            $"You have been promoted to Community Admin for {(community?.Name ?? "the community")}.",
+            $"You have been promoted to Community Administrator for {(community?.Name ?? "the community")}.",
             relatedContentType: NotificationContentTypes.Community,
             relatedContentId: communityId);
     }

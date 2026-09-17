@@ -87,14 +87,19 @@ export default {
         "container-max": "1280px"
       },
       "fontFamily": {
-        "body-lg": ["Inter", "sans-serif"],
-        "meta-sm": ["Inter", "sans-serif"],
-        "headline-lg-mobile": ["Inter", "sans-serif"],
-        "label-md": ["Inter", "sans-serif"],
-        "body-md": ["Inter", "sans-serif"],
-        "headline-sm": ["Inter", "sans-serif"],
-        "headline-md": ["Inter", "sans-serif"],
-        "headline-lg": ["Inter", "sans-serif"]
+        "sans": ["'Source Sans 3'", "'Source Sans Pro'", "Arial", "sans-serif"],
+        "source-sans": ["'Source Sans 3'", "'Source Sans Pro'", "sans-serif"],
+        "arial": ["Arial", "Helvetica", "sans-serif"],
+        "georgia": ["Georgia", "Cambria", "'Times New Roman'", "Times", "serif"],
+        "quote": ["Georgia", "serif"],
+        "body-lg": ["'Source Sans 3'", "Arial", "sans-serif"],
+        "meta-sm": ["Arial", "sans-serif"],
+        "headline-lg-mobile": ["'Source Sans 3'", "sans-serif"],
+        "label-md": ["Arial", "sans-serif"],
+        "body-md": ["'Source Sans 3'", "Arial", "sans-serif"],
+        "headline-sm": ["'Source Sans 3'", "sans-serif"],
+        "headline-md": ["'Source Sans 3'", "sans-serif"],
+        "headline-lg": ["'Source Sans 3'", "sans-serif"]
       },
       "fontSize": {
         "body-lg": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],

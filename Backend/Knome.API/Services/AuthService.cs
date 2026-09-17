@@ -264,11 +264,14 @@ public class AuthService : IAuthService
         var user = await _db.Users
             .Include(u => u.Department)
             .Include(u => u.Roles)
-            .Where(u => u.UserId == userId && u.IsActive)
+            .Where(u => u.UserId == userId)
             .FirstOrDefaultAsync();
 
         if (user is null)
             throw new NotFoundException("User not found.");
+
+        if (user.IsPermanentlySuspended || (user.SuspendedUntil.HasValue && user.SuspendedUntil > DateTime.UtcNow) || !user.IsActive)
+            throw new ForbiddenException("This account has been suspended. Please contact HR.");
 
         var roles = user.Roles.Select(r => r.RoleName).ToList();
         return MapToCurrentUser(user, roles);
@@ -281,7 +284,7 @@ public class AuthService : IAuthService
         var user = await _db.Users
             .Include(u => u.Department)
             .Include(u => u.Roles)
-            .Where(u => u.IsActive && (u.EmployeeId.ToLower() == searchLower || (u.Email != null && u.Email.ToLower() == searchLower)))
+            .Where(u => (u.EmployeeId.ToLower() == searchLower || (u.Email != null && u.Email.ToLower() == searchLower)))
             .FirstOrDefaultAsync();
 
         if (user is null)
@@ -290,12 +293,15 @@ public class AuthService : IAuthService
             user = await _db.Users
                 .Include(u => u.Department)
                 .Include(u => u.Roles)
-                .Where(u => u.IsActive && (u.EmployeeId.ToLower() == searchLower || (u.Email != null && u.Email.ToLower() == searchLower)))
+                .Where(u => (u.EmployeeId.ToLower() == searchLower || (u.Email != null && u.Email.ToLower() == searchLower)))
                 .FirstOrDefaultAsync();
         }
 
         if (user is null)
             throw new NotFoundException("User not found.");
+
+        if (user.IsPermanentlySuspended || (user.SuspendedUntil.HasValue && user.SuspendedUntil > DateTime.UtcNow) || !user.IsActive)
+            throw new ForbiddenException("This account has been suspended. Please contact HR.");
 
         var roles = user.Roles.Select(r => r.RoleName).ToList();
         if (roles.Count == 0)

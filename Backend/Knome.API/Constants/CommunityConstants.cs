@@ -19,9 +19,10 @@ public static class CommunityMemberTypes
 {
     public const string Subscriber = "Subscriber";
     public const string Contributor = "Contributor";
-    public const string Moderator = "Moderator";
+    public const string Moderator = "Admin";
+    public const string Admin = "Admin";
 
-    public static readonly string[] All = { Subscriber, Contributor, Moderator };
+    public static readonly string[] All = { Subscriber, Contributor, Moderator, Admin };
 }
 
 public static class CommunityMemberStatuses

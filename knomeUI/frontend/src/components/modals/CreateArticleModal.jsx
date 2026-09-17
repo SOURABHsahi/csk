@@ -5,6 +5,7 @@ import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
 import { checkRestrictedContent } from '../../utils/restrictedWords';
 import { formatToDDMMYYYY } from '../../utils/apiService';
+import CustomDateTimePicker from '../widgets/CustomDateTimePicker';
 
 export default function CreateArticleModal({ isOpen, onClose, onArticleCreated }) {
     const { currentUser, awardRuleKarma } = useUser();
@@ -72,7 +73,23 @@ export default function CreateArticleModal({ isOpen, onClose, onArticleCreated }
     // Scheduling states & helpers
     const [isScheduling, setIsScheduling] = useState(false);
     const [scheduledTime, setScheduledTime] = useState('');
+    const [tempScheduleTime, setTempScheduleTime] = useState('');
     const schedulePopoverRef = useRef(null);
+
+    // Format display string cleanly
+    const formatScheduleDisplay = (isoStr) => {
+        if (!isoStr) return '';
+        const d = new Date(isoStr);
+        if (isNaN(d.getTime())) return '';
+        return d.toLocaleString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+    };
 
     // Calculate relative schedule text (e.g., "in 1 min", "in 15 mins", "Tomorrow at 09:00 AM")
     const getRelativeScheduleText = (dateInput) => {
@@ -93,7 +110,7 @@ export default function CreateArticleModal({ isOpen, onClose, onArticleCreated }
         return `in ~${days} ${days === 1 ? 'day' : 'days'}`;
     };
 
-    // Format local system time for datetime-local input (offset in minutes, defaults to 1 minute ahead)
+    // Format local system time for datetime calculation
     const getLocalDatetimeInputValue = (offsetMinutes = 1) => {
         const d = new Date(Date.now() + offsetMinutes * 60000);
         const pad = (n) => String(n).padStart(2, '0');
@@ -538,12 +555,8 @@ export default function CreateArticleModal({ isOpen, onClose, onArticleCreated }
                                         data-schedule-trigger="true"
                                         type="button"
                                         onClick={() => {
-                                            if (!isScheduling) {
-                                                setIsScheduling(true);
-                                                if (!scheduledTime) setScheduledTime(getLocalDatetimeInputValue(1));
-                                            } else {
-                                                setIsScheduling(false);
-                                            }
+                                            setTempScheduleTime(scheduledTime || '');
+                                            setIsScheduling(!isScheduling);
                                         }}
                                         disabled={isPublishing}
                                         className={`px-3 py-2 border rounded-lg font-label-md transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
@@ -597,169 +610,107 @@ export default function CreateArticleModal({ isOpen, onClose, onArticleCreated }
                     </div>
                 </div>
 
-                {/* Scheduling Popover */}
+                {/* Centered Scheduling Modal with Custom Date & Time Picker */}
                 {isScheduling && (
-                    <div 
-                        ref={schedulePopoverRef}
-                        className="absolute bottom-16 right-4 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl z-50 w-88 max-w-[92vw] animate-in fade-in zoom-in-95 duration-150 text-slate-800 dark:text-slate-100"
-                    >
-                        {/* Popover Header */}
-                        <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 dark:border-slate-700/60">
-                            <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-sm">
-                                    <span className="material-symbols-outlined text-[18px]">event_upcoming</span>
+                    <div className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
+                        <div 
+                            ref={schedulePopoverRef}
+                            className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-md max-h-[94vh] overflow-y-auto p-4 text-slate-800 dark:text-slate-100 space-y-3.5 custom-scrollbar"
+                        >
+                            {/* Popover Header */}
+                            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700/60">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-sm">
+                                        <span className="material-symbols-outlined text-[18px]">event_upcoming</span>
+                                    </div>
+                                    <div>
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
+                                            Schedule Article Publication
+                                        </h4>
+                                        <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                                            Automated Knome platform delivery
+                                        </p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
-                                        Schedule Article Publication
-                                    </h4>
-                                    <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
-                                        Automated Knome platform delivery
-                                    </p>
-                                </div>
-                            </div>
-                            <button 
-                                type="button"
-                                onClick={() => setIsScheduling(false)}
-                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer transition-colors"
-                                title="Close"
-                            >
-                                <span className="material-symbols-outlined text-[18px]">close</span>
-                            </button>
-                        </div>
-
-                        {/* Timezone / Enterprise Notice Banner */}
-                        <div className="mb-3 px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-700/60 flex items-center justify-between text-[10.5px] text-slate-600 dark:text-slate-300">
-                            <span className="flex items-center gap-1 font-medium">
-                                <span className="material-symbols-outlined text-[14px] text-indigo-500">public</span>
-                                IST (UTC+05:30)
-                            </span>
-                            <span className="font-mono text-[10px] text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded">
-                                Format: DD/MM/YYYY
-                            </span>
-                        </div>
-
-                        {/* Date & Time Picker */}
-                        <div className="mb-3">
-                            <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                                Select Date & Time (DD/MM/YYYY):
-                            </label>
-                            <div className="relative">
-                                <input 
-                                    type="datetime-local" 
-                                    value={scheduledTime}
-                                    min={getLocalDatetimeInputValue(1)}
-                                    onChange={(e) => setScheduledTime(e.target.value)}
-                                    disabled={isPublishing}
-                                    className="w-full text-xs font-semibold p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer" 
-                                />
-                            </div>
-                        </div>
-
-                        {/* Quick Presets */}
-                        <div className="mb-3">
-                            <span className="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">
-                                Quick Options:
-                            </span>
-                            <div className="grid grid-cols-3 gap-1.5">
-                                <button
-                                    type="button"
-                                    onClick={() => setScheduledTime(getLocalDatetimeInputValue(1))}
-                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                    title="Schedule 1 minute from now"
-                                >
-                                    +1 Min
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setScheduledTime(getLocalDatetimeInputValue(5))}
-                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                    title="Schedule 5 minutes from now"
-                                >
-                                    +5 Mins
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setScheduledTime(getLocalDatetimeInputValue(15))}
-                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                    title="Schedule 15 minutes from now"
-                                >
-                                    +15 Mins
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setScheduledTime(getLocalDatetimeInputValue(30))}
-                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                    title="Schedule 30 minutes from now"
-                                >
-                                    +30 Mins
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setScheduledTime(getLocalDatetimeInputValue(60))}
-                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                    title="Schedule 1 hour from now"
-                                >
-                                    +1 Hour
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setScheduledTime(getTomorrowTime(9))}
-                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                    title="Schedule for Tomorrow at 9:00 AM"
-                                >
-                                    Tomorrow 9 AM
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Live Preview Card with DD/MM/YYYY Format */}
-                        {scheduledTime && (
-                            <div className="p-2.5 mb-3 rounded-xl bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-blue-500/10 border border-amber-500/20 text-[11.5px] text-slate-800 dark:text-slate-200 space-y-1">
-                                <div className="flex items-center justify-between">
-                                    <span className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1">
-                                        <span className="material-symbols-outlined text-[15px]">event</span>
-                                        Scheduled Date (DD/MM/YYYY):
-                                    </span>
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-extrabold">
-                                        {getRelativeScheduleText(scheduledTime)}
-                                    </span>
-                                </div>
-                                <div className="text-xs font-extrabold text-slate-900 dark:text-white font-mono pl-5">
-                                    {formatToDDMMYYYY(scheduledTime)}
-                                </div>
-                                <div className="text-[10px] text-slate-500 dark:text-slate-400 pl-5">
-                                    Article will remain private in your Scheduled queue until this time, then automatically publish across the Knome knowledge hub.
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Action Controls */}
-                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-700/60">
-                            {scheduledTime ? (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setScheduledTime('');
-                                        setIsScheduling(false);
-                                    }}
-                                    className="px-2.5 py-1.5 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1"
-                                >
-                                    <span className="material-symbols-outlined text-[14px]">delete</span>
-                                    Clear Schedule
-                                </button>
-                            ) : (
-                                <div />
-                            )}
-                            <div className="flex items-center gap-2">
-                                <button
+                                <button 
                                     type="button"
                                     onClick={() => setIsScheduling(false)}
-                                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] transition-colors cursor-pointer shadow-xs flex items-center gap-1"
+                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+                                    title="Close"
                                 >
-                                    <span className="material-symbols-outlined text-[14px]">check</span>
-                                    {scheduledTime ? 'Apply Schedule' : 'Done'}
+                                    <span className="material-symbols-outlined text-[18px]">close</span>
                                 </button>
+                            </div>
+
+                            {/* Quick Options */}
+                            <div>
+                                <span className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">
+                                    Quick Options:
+                                </span>
+                                <div className="grid grid-cols-4 gap-1.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setTempScheduleTime(getLocalDatetimeInputValue(15))}
+                                        className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer text-center"
+                                    >
+                                        +15 Mins
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTempScheduleTime(getLocalDatetimeInputValue(30))}
+                                        className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer text-center"
+                                    >
+                                        +30 Mins
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTempScheduleTime(getLocalDatetimeInputValue(60))}
+                                        className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer text-center"
+                                    >
+                                        +1 Hour
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTempScheduleTime(getTomorrowTime(9))}
+                                        className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer text-center"
+                                    >
+                                        Tomorrow 9 AM
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Integrated Interactive Custom Date & Time Picker with OK button */}
+                            <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-xs">
+                                <CustomDateTimePicker
+                                    value={tempScheduleTime}
+                                    onChange={(newVal) => setTempScheduleTime(newVal)}
+                                    onConfirm={(newVal) => {
+                                        const chosenVal = newVal || tempScheduleTime;
+                                        if (!chosenVal) {
+                                            addToast('Please select a date and time to schedule.', 'error');
+                                            return;
+                                        }
+                                        const chosen = new Date(chosenVal);
+                                        if (isNaN(chosen.getTime())) {
+                                            addToast('Invalid schedule date/time.', 'error');
+                                            return;
+                                        }
+                                        if (chosen.getTime() <= Date.now()) {
+                                            addToast('Scheduled time must be in the future.', 'error');
+                                            return;
+                                        }
+                                        setScheduledTime(chosenVal);
+                                        setIsScheduling(false);
+                                        addToast(`Article scheduled for ${formatScheduleDisplay(chosenVal)}`, 'success');
+                                    }}
+                                    onCancel={() => setIsScheduling(false)}
+                                    onClear={() => {
+                                        setScheduledTime('');
+                                        setTempScheduleTime('');
+                                        setIsScheduling(false);
+                                        addToast('Schedule cleared. Article will publish immediately.', 'info');
+                                    }}
+                                />
                             </div>
                         </div>
                     </div>

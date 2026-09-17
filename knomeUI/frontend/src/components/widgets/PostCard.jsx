@@ -22,7 +22,7 @@ const REACTION_TYPES = {
 };
 
 // ─── Fullscreen Image Lightbox ───────────────────────────────
-function ImageLightbox({ images, startIndex, onClose }) {
+export function ImageLightbox({ images, startIndex, onClose }) {
     const [current, setCurrent] = useState(startIndex);
 
     const prev = useCallback(() => setCurrent(i => (i - 1 + images.length) % images.length), [images.length]);
@@ -80,7 +80,11 @@ function ImageLightbox({ images, startIndex, onClose }) {
 
             {/* Image */}
             <img
-                src={resolveMediaUrl(images[current]?.url || images[current]?.fileUrl) || images[current]?.url || images[current]?.fileUrl}
+                src={(() => {
+                    const itm = images[current];
+                    const u = typeof itm === 'string' ? itm : (itm?.url || itm?.fileUrl || '');
+                    return resolveMediaUrl(u) || u;
+                })()}
                 onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_MEDIA_SVG; }}
                 alt="Full view"
                 className="max-w-[90vw] max-h-[90vh] object-contain rounded-xl shadow-2xl"
@@ -109,7 +113,10 @@ function ImageLightbox({ images, startIndex, onClose }) {
                             style={{ borderColor: i === current ? 'white' : 'rgba(255,255,255,0.3)' }}
                         >
                             <img 
-                                src={resolveMediaUrl(img.url || img.fileUrl) || img.url || img.fileUrl} 
+                                src={(() => {
+                                    const u = typeof img === 'string' ? img : (img?.url || img?.fileUrl || '');
+                                    return resolveMediaUrl(u) || u;
+                                })()} 
                                 onError={(e) => { e.target.onerror = null; e.target.src = FALLBACK_MEDIA_SVG; }} 
                                 alt="thumb" 
                                 className="w-full h-full object-cover" 
@@ -126,11 +133,18 @@ function ImageLightbox({ images, startIndex, onClose }) {
 // ─── Image Grid (full-width cover layout) ────────────────────
 const FALLBACK_GRID_SVG = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500" viewBox="0 0 800 500"><defs><linearGradient id="bgG" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%231e293b"/><stop offset="100%" stop-color="%230f172a"/></linearGradient></defs><rect width="800" height="500" fill="url(%23bgG)"/><circle cx="400" cy="210" r="52" fill="%236366f1" fill-opacity="0.15"/><path d="M380 195l16-20 14 18 12-14 18 24H360z" fill="%23818cf8"/><circle cx="375" cy="180" r="6" fill="%23a5b4fc"/><text x="400" y="295" font-family="system-ui,-apple-system,sans-serif" font-size="16" font-weight="700" fill="%23f1f5f9" text-anchor="middle">Knome Enterprise Media</text><text x="400" y="322" font-family="system-ui,-apple-system,sans-serif" font-size="13" font-weight="500" fill="%2394a3b8" text-anchor="middle">Attachment</text></svg>`;
 
-function ImageGrid({ images, onImageClick }) {
-    const validImages = (images || []).filter(img => img && typeof (img.url || img.fileUrl) === 'string' && (img.url || img.fileUrl).trim().length > 0);
+export function ImageGrid({ images, onImageClick }) {
+    const validImages = (images || []).filter(img => {
+        if (!img) return false;
+        const u = typeof img === 'string' ? img : (img.url || img.fileUrl);
+        return typeof u === 'string' && u.trim().length > 0;
+    });
     if (validImages.length === 0) return null;
 
-    const getImgUrl = (img) => resolveMediaUrl(img.url || img.fileUrl) || img.url || img.fileUrl;
+    const getImgUrl = (img) => {
+        const u = typeof img === 'string' ? img : (img.url || img.fileUrl);
+        return resolveMediaUrl(u) || u;
+    };
 
     // Single image — full width, tall cover
     if (validImages.length === 1) {
@@ -694,6 +708,9 @@ export default function PostCard({ post, onPostDeleted }) {
                 likes: 0,
                 comments: 0,
                 shares: 0,
+                attachments: post.attachments || [],
+                images: imageAttachments || [],
+                attachmentUrls: (post.attachments || []).map(a => a.url || a.fileUrl || a),
                 isPinned: false
             };
 
@@ -1257,10 +1274,10 @@ export default function PostCard({ post, onPostDeleted }) {
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
                         <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5">
-                            <button onClick={() => navigate('/profile', { state: { user: post.author } })} className="font-extrabold text-[14px] text-[#0F172A] dark:text-white leading-tight hover:underline cursor-pointer">{post.author.name}</button>
-                            {post.author.isVerified && <span className="material-symbols-outlined text-[13px] text-blue-500" style={{fontVariationSettings: "'FILL' 1"}}>verified</span>}
+                            <button onClick={() => navigate('/profile', { state: { user: post.author } })} className="font-source-sans font-bold text-[15px] text-[#0F172A] dark:text-white leading-tight hover:underline cursor-pointer">{post.author?.name || post.authorName || 'Employee'}</button>
+                            {post.author?.isVerified && <span className="material-symbols-outlined text-[13px] text-blue-500" style={{fontVariationSettings: "'FILL' 1"}}>verified</span>}
                             <span className="text-slate-300 dark:text-slate-700 text-[11px]">•</span>
-                            <span className="text-slate-500 dark:text-slate-400 text-[11.5px] font-bold uppercase tracking-wider">{post.author.role}</span>
+                            <span className="font-arial text-slate-500 dark:text-slate-400 text-[12px] font-semibold uppercase tracking-wider">{post.author?.role || post.authorRole || 'Contributor'}</span>
                         </div>
                         <div className="flex items-center gap-1.5">
                             {/* Save & Categorize Button (FR-CI-04) */}
@@ -1308,19 +1325,19 @@ export default function PostCard({ post, onPostDeleted }) {
                                     <div className="absolute right-0 mt-1 w-48 bg-theme-60-surface border border-theme-30 rounded-xl shadow-lg py-1 z-10 animate-in fade-in zoom-in-95 duration-100">
                                         <button 
                                             onClick={() => { setIsMenuOpen(false); navigate('/posts?id=' + (post.id || post.postId)); }}
-                                            className="w-full text-left px-4 py-2 text-[13px] font-bold text-blue-600 dark:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
+                                            className="w-full text-left px-4 py-2 font-source-sans text-[13px] font-bold text-blue-600 dark:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
                                         >
                                             <span className="material-symbols-outlined text-[16px]">open_in_new</span> Open Post
                                         </button>
                                         <button 
                                             onClick={() => { setIsMenuOpen(false); navigate('/profile', { state: { user: post.author } }); }}
-                                            className="w-full text-left px-4 py-2 text-[13px] font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
+                                            className="w-full text-left px-4 py-2 font-source-sans text-[13px] font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
                                         >
                                             <span className="material-symbols-outlined text-[16px]">person</span> View Profile
                                         </button>
                                         <button 
                                             onClick={() => { setIsMenuOpen(false); setIsReportModalOpen(true); }}
-                                            className="w-full text-left px-4 py-2 text-[13px] font-bold text-red-600 dark:text-red-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
+                                            className="w-full text-left px-4 py-2 font-source-sans text-[13px] font-bold text-red-600 dark:text-red-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
                                         >
                                             <span className="material-symbols-outlined text-[16px]">report</span> Report Post
                                         </button>
@@ -1328,13 +1345,13 @@ export default function PostCard({ post, onPostDeleted }) {
                                             <>
                                                 <button 
                                                     onClick={() => { setIsMenuOpen(false); handlePublishNow(); }}
-                                                    className="w-full text-left px-4 py-2 text-[13px] font-bold text-indigo-600 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 border-t border-slate-100 dark:border-slate-800 mt-1"
+                                                    className="w-full text-left px-4 py-2 font-source-sans text-[13px] font-bold text-indigo-600 dark:text-indigo-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 border-t border-slate-100 dark:border-slate-800 mt-1"
                                                 >
                                                     <span className="material-symbols-outlined text-[16px]">send</span> Publish Now
                                                 </button>
                                                 <button 
                                                     onClick={() => { setIsMenuOpen(false); handleCancelSchedule(); }}
-                                                    className="w-full text-left px-4 py-2 text-[13px] font-bold text-amber-600 dark:text-amber-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
+                                                    className="w-full text-left px-4 py-2 font-source-sans text-[13px] font-bold text-amber-600 dark:text-amber-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
                                                 >
                                                     <span className="material-symbols-outlined text-[16px]">event_busy</span> Cancel Schedule
                                                 </button>
@@ -1343,7 +1360,7 @@ export default function PostCard({ post, onPostDeleted }) {
                                         {canDeletePost && (
                                             <button 
                                                 onClick={handleDeletePost}
-                                                className="w-full text-left px-4 py-2 text-[13px] font-bold text-red-600 dark:text-red-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 border-t border-slate-100 dark:border-slate-800 mt-1"
+                                                className="w-full text-left px-4 py-2 font-source-sans text-[13px] font-bold text-red-600 dark:text-red-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2 border-t border-slate-100 dark:border-slate-800 mt-1"
                                             >
                                                 <span className="material-symbols-outlined text-[16px]">delete</span> Delete Post
                                             </button>
@@ -1354,27 +1371,27 @@ export default function PostCard({ post, onPostDeleted }) {
                         </div>
                     </div>
                     <div className="flex items-center flex-wrap gap-2 mt-0.5">
-                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                        <p className="font-arial text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1">
                             {post.time}
                         </p>
                         {post.isScheduledFuture && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-bold border border-amber-500/20 shadow-xs animate-pulse">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 font-arial text-[10px] font-bold border border-amber-500/20 shadow-xs animate-pulse">
                                 <span className="material-symbols-outlined text-[12px]">schedule</span>
                                 Scheduled (Pending)
                             </span>
                         )}
                         {post.sharedCommunityName || post.sharedCommunity?.name || post.communityName ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-bold border border-blue-500/20">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 font-arial text-[10.5px] font-bold border border-blue-500/20">
                                 <span className="material-symbols-outlined text-[12px]">groups</span>
                                 {post.sharedCommunityName || post.sharedCommunity?.name || post.communityName}
                             </span>
                         ) : (post.sharedWithName || post.sharedUser?.name || post.recipientName) ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400 text-[10px] font-bold border border-purple-500/20">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400 font-arial text-[10.5px] font-bold border border-purple-500/20">
                                 <span className="material-symbols-outlined text-[12px]">person</span>
                                 To: {post.sharedWithName || post.sharedUser?.name || post.recipientName}
                             </span>
                         ) : (
-                            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 flex items-center gap-0.5" title="Public to Everyone">
+                            <span className="font-arial text-[11px] font-medium text-slate-400 dark:text-slate-500 flex items-center gap-0.5" title="Public to Everyone">
                                 <span className="material-symbols-outlined text-[11px]">public</span>
                                 Everyone
                             </span>
@@ -1392,11 +1409,39 @@ export default function PostCard({ post, onPostDeleted }) {
                     </div>
                 )}
                 {(() => {
-                    const postUrlMatch = (post.content || '').match(/(?:https?:\/\/[^\s]+)?\/posts\?id=(\d+)/i);
-                    const extractedPostId = postUrlMatch ? postUrlMatch[1] : (post.sharedPostId || null);
-                    const sharedPostTitleMatch = (post.content || '').match(/Shared Post:\s*"([^"]+)"/i);
-                    const sharedPostTitle = sharedPostTitleMatch ? sharedPostTitleMatch[1] : (post.title || 'Shared Post');
-                    const isSharedPost = Boolean(extractedPostId || (post.content && post.content.includes('Shared Post:')));
+                    // Match any internal post share url (/posts?id=...) with numeric or alphanumeric id
+                    const postUrlMatch = (post.content || '').match(/(?:https?:\/\/[^\s]+)?\/posts\?id=([a-zA-Z0-9_-]+)/i);
+                    const extractedPostId = post.sharedPostId || (postUrlMatch ? postUrlMatch[1] : null) || post.sharedContent?.id || null;
+
+                    // Match shared post quoted title from content or post.title
+                    const sharedPostTitleMatch = (post.content || '').match(/Shared Post:\s*"([^"]+)"/i) 
+                        || (post.title || '').match(/Shared Post:\s*"([^"]+)"/i);
+                    let sharedPostTitle = post.sharedContent?.title 
+                        || (sharedPostTitleMatch ? sharedPostTitleMatch[1] : null);
+                    if (!sharedPostTitle && post.title && !post.title.startsWith('Shared Post:')) {
+                        sharedPostTitle = post.title;
+                    }
+                    if (!sharedPostTitle && extractedPostId) {
+                        sharedPostTitle = `Post #${extractedPostId}`;
+                    }
+
+                    const isSharedPost = Boolean(
+                        extractedPostId || 
+                        (post.content && post.content.includes('Shared Post:')) ||
+                        (post.title && post.title.startsWith('Shared Post:')) ||
+                        post.type === 'post_share' ||
+                        post.sharedContent
+                    );
+
+                    // Clean user commentary if this is a shared post, article, or video:
+                    // Strip the automated template strings and internal URLs from rendered body
+                    let userCommentary = post.content || '';
+                    if (isSharedPost || (post.content && (post.content.includes('Shared Article:') || post.content.includes('Shared Video:')))) {
+                        userCommentary = userCommentary
+                            .replace(/Shared\s+(?:Post|Article|Video):\s*"[^"]*"/gi, '')
+                            .replace(/(?:https?:\/\/[^\s]+)?\/(?:posts|article-view|videos)\?[^\s]+/gi, '')
+                            .trim();
+                    }
 
                     const renderFormattedText = (text) => {
                         if (!text) return null;
@@ -1453,9 +1498,12 @@ export default function PostCard({ post, onPostDeleted }) {
                         });
                     };
 
+                    const sharedAuthor = post.sharedContent?.author || null;
+
                     return (
                         <>
-                            {post.title && (
+                            {/* Render post title only if not a repetitive "Shared Post:" prefix */}
+                            {post.title && !post.title.startsWith('Shared Post:') && (
                                 <h3 
                                     onClick={() => {
                                         if (post.type === 'article') {
@@ -1465,58 +1513,65 @@ export default function PostCard({ post, onPostDeleted }) {
                                             if (targetId) navigate(`/posts?id=${targetId}`);
                                         }
                                     }}
-                                    className="text-base font-extrabold text-slate-900 dark:text-white mb-1.5 leading-snug hover:text-blue-500 cursor-pointer transition-colors"
+                                    className="font-source-sans text-[16px] font-bold text-slate-900 dark:text-white mb-2 leading-snug hover:text-blue-500 cursor-pointer transition-colors"
                                 >
                                     {post.title}
                                 </h3>
                             )}
-                            <p className="text-[13.5px] text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
-                                {renderFormattedText(post.content)}
-                            </p>
 
-                            {/* Shared Post Interactive Preview Card with Open Post Button */}
-                            {(isSharedPost || extractedPostId) && (
+                            {/* Render user commentary (or normal content) in Source Sans */}
+                            {userCommentary ? (
+                                <p className="font-source-sans text-[14.5px] text-slate-800 dark:text-slate-200 mb-3 whitespace-pre-wrap leading-relaxed font-normal">
+                                    {renderFormattedText(userCommentary)}
+                                </p>
+                            ) : null}
+
+                            {/* Shared Post Modern Quote Card (LinkedIn / Twitter Style) */}
+                            {isSharedPost && (
                                 <div 
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                        e.stopPropagation();
                                         const targetId = extractedPostId || post.id || post.postId;
                                         if (targetId) navigate(`/posts?id=${targetId}`);
                                     }}
-                                    className="mt-3.5 p-4 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-sky-500/10 border border-blue-500/30 hover:border-blue-500 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 cursor-pointer group shadow-sm hover:shadow-md"
+                                    className="mt-2 mb-2 p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/60 hover:bg-slate-100/90 dark:hover:bg-slate-850 border border-slate-200/90 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-500/60 transition-all cursor-pointer group shadow-xs hover:shadow-md"
                                 >
-                                    <div className="flex items-center gap-3.5 min-w-0">
-                                        <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xl shrink-0 shadow-md shadow-blue-500/30 group-hover:scale-105 transition-transform">
-                                            <span className="material-symbols-outlined text-[24px]">dynamic_feed</span>
-                                        </div>
-                                        <div className="min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-[10px] bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
-                                                    <span className="material-symbols-outlined text-[12px]">share</span>
-                                                    Shared Post
+                                    <div className="flex items-center justify-between gap-3 mb-2.5">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-arial text-[11px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60">
+                                                <span className="material-symbols-outlined text-[13px]">repeat</span>
+                                                Shared Post
+                                            </span>
+                                            {extractedPostId && (
+                                                <span className="font-arial text-[11px] text-slate-400 dark:text-slate-500 font-mono font-medium">
+                                                    #{extractedPostId}
                                                 </span>
-                                                {extractedPostId && (
-                                                    <span className="text-[11px] text-slate-400 font-mono font-bold">#{extractedPostId}</span>
-                                                )}
-                                            </div>
-                                            <h6 className="font-bold text-slate-900 dark:text-white text-sm group-hover:text-blue-500 transition-colors truncate mt-1">
-                                                {sharedPostTitle}
-                                            </h6>
-                                            <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                                                Click to open post details, discussions & full comments
-                                            </p>
+                                            )}
+                                            {sharedAuthor && (
+                                                <span className="font-arial text-[11.5px] text-slate-500 dark:text-slate-400">
+                                                    by <strong className="font-source-sans text-slate-700 dark:text-slate-200 font-semibold">{sharedAuthor}</strong>
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-1 font-source-sans text-[12px] font-bold text-blue-600 dark:text-blue-400 group-hover:text-blue-700 dark:group-hover:text-blue-300 group-hover:translate-x-0.5 transition-all shrink-0">
+                                            <span>Open Post</span>
+                                            <span className="material-symbols-outlined text-[15px]">arrow_outward</span>
                                         </div>
                                     </div>
-                                    <button 
-                                        type="button"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            const targetId = extractedPostId || post.id || post.postId;
-                                            if (targetId) navigate(`/posts?id=${targetId}`);
-                                        }}
-                                        className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-600/20 transition-all flex items-center justify-center gap-1.5 shrink-0 group-hover:translate-x-0.5 cursor-pointer"
-                                    >
-                                        <span>Open Post</span>
-                                        <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                                    </button>
+
+                                    {/* Quote Box Body with Georgia Italic voice/accent font */}
+                                    <div className="border-l-3 border-blue-500/70 dark:border-blue-400/70 pl-3.5 py-1.5 bg-white/70 dark:bg-slate-950/40 rounded-r-xl">
+                                        <p 
+                                            className="font-georgia-italic text-[16px] text-slate-800 dark:text-slate-100 leading-relaxed group-hover:text-blue-950 dark:group-hover:text-white transition-colors line-clamp-3" 
+                                            style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif', fontStyle: 'italic' }}
+                                        >
+                                            "{sharedPostTitle || 'Original Post'}"
+                                        </p>
+                                        <p className="font-arial text-[11px] text-slate-500 dark:text-slate-400 mt-2 flex items-center gap-1.5">
+                                            <span className="material-symbols-outlined text-[14px] text-blue-500/70">chat_bubble</span>
+                                            Click to open post details, discussions & full comments
+                                        </p>
+                                    </div>
                                 </div>
                             )}
                         </>
@@ -1524,39 +1579,71 @@ export default function PostCard({ post, onPostDeleted }) {
                 })()}
 
                 {/* Shared Profile Card */}
-                {post.sharedProfile && (
-                    <div className="mt-3.5 p-4 rounded-2xl bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 border border-indigo-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
-                        <div className="flex items-center gap-3.5 min-w-0">
-                            <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-black text-lg flex items-center justify-center shrink-0 shadow-md overflow-hidden">
-                                {post.sharedProfile.avatar ? (
-                                    <img src={post.sharedProfile.avatar} alt={post.sharedProfile.name} className="w-full h-full object-cover" />
-                                ) : (
-                                    (post.sharedProfile.name || 'U').charAt(0).toUpperCase()
-                                )}
-                            </div>
-                            <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                    <span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-extrabold uppercase tracking-wider">
-                                        SHARED PROFILE
-                                    </span>
-                                </div>
-                                <h4 className="font-extrabold text-slate-900 dark:text-white text-sm truncate mt-0.5">
-                                    {post.sharedProfile.name || post.sharedProfile.fullName}
-                                </h4>
-                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                    {post.sharedProfile.designation || 'Contributor'} • {post.sharedProfile.department || 'General'}
-                                </p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => navigate('/profile', { state: { user: post.sharedProfile } })}
-                            className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-indigo-500/20 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                {(post.sharedProfile || post.isProfileShare || (post.content && post.content.includes('Shared Profile:'))) && (() => {
+                    const prof = post.sharedProfile || {
+                        name: (post.content?.match(/Shared Profile:\s*"([^"]+)"/i) || [])[1] || 'Colleague',
+                        fullName: (post.content?.match(/Shared Profile:\s*"([^"]+)"/i) || [])[1] || 'Colleague',
+                        designation: 'MPOnline Team Member',
+                        department: 'MPOnline',
+                        id: (post.content?.match(/\/profile\?id=([a-zA-Z0-9_-]+)/i) || [])[1] || 1
+                    };
+                    const profId = prof.userId || prof.id;
+                    const profName = prof.fullName || prof.name || 'User';
+                    const profAvatar = prof.avatar || prof.profilePhotoUrl;
+                    const profDesignation = prof.designation || prof.roleName || prof.role || 'Contributor';
+                    const profDept = prof.department || prof.departmentName || 'General';
+
+                    const handleOpenProfile = (e) => {
+                        e.stopPropagation();
+                        navigate(profId ? `/profile?id=${profId}` : '/profile', { state: { user: prof } });
+                    };
+
+                    return (
+                        <div 
+                            onClick={handleOpenProfile}
+                            className="mt-3.5 p-4 rounded-2xl bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 border border-indigo-500/25 hover:border-indigo-500/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm hover:shadow-md transition-all cursor-pointer group"
                         >
-                            <span className="material-symbols-outlined text-[16px]">visibility</span>
-                            View Profile
-                        </button>
-                    </div>
-                )}
+                            <div className="flex items-center gap-3.5 min-w-0">
+                                <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-black text-lg flex items-center justify-center shrink-0 shadow-md overflow-hidden group-hover:scale-105 transition-transform">
+                                    {profAvatar ? (
+                                        <img 
+                                            src={resolveMediaUrl(profAvatar) || profAvatar} 
+                                            alt={profName} 
+                                            className="w-full h-full object-cover" 
+                                            onError={(e) => {
+                                                e.target.onerror = null;
+                                                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(profName)}&background=6366f1&color=fff&bold=true`;
+                                            }}
+                                        />
+                                    ) : (
+                                        profName.charAt(0).toUpperCase()
+                                    )}
+                                </div>
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-extrabold uppercase tracking-wider">
+                                            SHARED PROFILE
+                                        </span>
+                                    </div>
+                                    <h4 className="font-extrabold text-slate-900 dark:text-white text-sm truncate mt-0.5 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                                        {profName}
+                                    </h4>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                        {profDesignation} • {profDept}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleOpenProfile}
+                                className="w-full sm:w-auto px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-indigo-500/25 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer group-hover:translate-x-0.5"
+                            >
+                                <span className="material-symbols-outlined text-[17px]">visibility</span>
+                                View Profile
+                            </button>
+                        </div>
+                    );
+                })()}
                 {/* Shared Video Player / Card inside PostCard */}
                 {(post.sharedVideo || post.type === 'video_share' || post.videoUrl || (post.content && (post.content.includes('Shared Video:') || post.content.includes('📹')))) && (
                     <div className="mt-3.5 rounded-2xl overflow-hidden bg-slate-950 border border-slate-800 shadow-xl">

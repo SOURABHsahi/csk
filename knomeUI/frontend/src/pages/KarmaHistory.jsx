@@ -8,15 +8,7 @@ export default function KarmaHistory() {
     const { currentUser } = useUser();
     const navigate = useNavigate();
 
-    const isSysAdmin = currentUser?.role === 'SYSADM' || 
-                       currentUser?.roleName === 'System Administrator' || 
-                       (Array.isArray(currentUser?.roles) && (currentUser.roles.includes('SYSADM') || currentUser.roles.includes('System Administrator') || currentUser.roles.includes('SystemAdmin')));
 
-    useEffect(() => {
-        if (isSysAdmin) {
-            navigate('/', { replace: true });
-        }
-    }, [isSysAdmin, navigate]);
 
     const [balance, setBalance] = useState({ 
         totalPoints: currentUser?.karmaPoints ?? currentUser?.karma ?? 0, 
@@ -32,7 +24,8 @@ export default function KarmaHistory() {
             try {
                 const [balData, lbData] = await Promise.all([
                     karmaApi.getMyBalance().catch(() => null),
-                    karmaApi.getLeaderboard(10).catch(() => null)
+                    karmaApi.getLeaderboard(10).catch(() => null),
+                    new Promise(resolve => setTimeout(resolve, 350))
                 ]);
 
                 if (isMounted) {
@@ -60,8 +53,6 @@ export default function KarmaHistory() {
         fetchKarmaData();
         return () => { isMounted = false; };
     }, []);
-
-    if (isSysAdmin) return null;
 
     const realKarmaPoints = Number(balance.totalPoints ?? currentUser?.karmaPoints ?? currentUser?.karma ?? 0);
     const karmaBadge = getKarmaBadge(realKarmaPoints);
@@ -102,7 +93,73 @@ export default function KarmaHistory() {
         { activity: 'Active Community Participation', points: '5 pts/day', cap: 'Once per community per day' },
     ];
 
+    const karmaTierLevels = [
+        {
+            name: 'Platinum',
+            title: 'Enterprise Legend',
+            points: '5,000+ pts',
+            icon: 'workspace_premium',
+            iconColor: 'text-cyan-500 dark:text-cyan-400',
+            badgeClass: 'bg-cyan-50 dark:bg-cyan-950/40 text-cyan-600 dark:text-cyan-300 border-cyan-300/40 dark:border-cyan-700/50'
+        },
+        {
+            name: 'Gold',
+            title: 'Domain Expert',
+            points: '1,000 – 4,999 pts',
+            icon: 'stars',
+            iconColor: 'text-amber-500',
+            badgeClass: 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-300/40 dark:border-amber-700/50'
+        },
+        {
+            name: 'Silver',
+            title: 'Active Contributor',
+            points: '500 – 999 pts',
+            icon: 'military_tech',
+            iconColor: 'text-slate-400 dark:text-slate-300',
+            badgeClass: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300/50 dark:border-slate-700'
+        },
+        {
+            name: 'Bronze',
+            title: 'Community Explorer',
+            points: '100 – 499 pts',
+            icon: 'military_tech',
+            iconColor: 'text-amber-700 dark:text-amber-500',
+            badgeClass: 'bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-400 border-orange-300/40 dark:border-orange-700/50'
+        },
+        {
+            name: 'Starter',
+            title: 'New Member',
+            points: '0 – 99 pts',
+            icon: 'flag',
+            iconColor: 'text-indigo-500',
+            badgeClass: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800/50'
+        },
+    ];
+
     const displayLeaderboard = leaderboard;
+
+    if (isLoading) {
+        return (
+            <main className="flex-1 min-w-0 flex flex-col items-center justify-center min-h-[60vh] py-16">
+                <div className="flex flex-col items-center justify-center gap-4 p-8 glass bg-white/70 dark:bg-slate-900/70 backdrop-blur-md rounded-3xl border border-slate-200/80 dark:border-slate-800/80 shadow-sm max-w-sm w-full mx-auto text-center">
+                    <div className="relative flex items-center justify-center">
+                        <div className="w-14 h-14 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin"></div>
+                        <span className="material-symbols-outlined text-amber-500 text-[26px] absolute" style={{ fontVariationSettings: "'FILL' 1" }}>
+                            military_tech
+                        </span>
+                    </div>
+                    <div>
+                        <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-1.5">
+                            Loading Karma Points
+                        </h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            Fetching contribution rewards, level status, and leaderboard...
+                        </p>
+                    </div>
+                </div>
+            </main>
+        );
+    }
 
     return (
         <main className="flex-1 min-w-0 flex flex-col gap-6 pb-6">
@@ -129,7 +186,7 @@ export default function KarmaHistory() {
                             </span>
                         </div>
                         <p className="text-[13px] font-medium text-slate-500 max-w-md leading-relaxed mb-8">
-                            Karma is awarded automatically from SQL Server for sharing knowledge and engaging with the community. Your points unlock premium badges and organizational visibility.
+                            Karma is awarded automatically for sharing knowledge and engaging with the community. Your points unlock premium badges and organizational visibility.
                         </p>
                         
                         <div className="grid grid-cols-3 gap-6">
@@ -255,10 +312,10 @@ export default function KarmaHistory() {
             </div>
 
             {/* How to Earn & Activity Feed */}
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
                 
                 {/* Left Column: Activity Feed */}
-                <div className="xl:col-span-2 glass card-lift bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col">
+                <div className="xl:col-span-7 glass card-lift bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col">
                     <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
                         <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
                             <span className="material-symbols-outlined text-indigo-500">history</span>
@@ -305,35 +362,126 @@ export default function KarmaHistory() {
                     </div>
                 </div>
 
-                {/* Right Column: How to Earn Points */}
-                <div className="glass card-lift bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col">
-                    <div className="p-6 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-amber-500/10 to-transparent">
-                        <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
-                            <span className="material-symbols-outlined text-amber-500" style={{fontVariationSettings:"'FILL' 1"}}>help_center</span>
-                            How to Earn Karma
-                        </h3>
-                        <p className="text-[12px] font-medium text-slate-500 mt-1">
-                            Gamify your knowledge contribution.
-                        </p>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-                        <div className="flex flex-col gap-4">
-                            {rules.map((rule, idx) => (
-                                <div key={idx} className="flex flex-col gap-1 pb-4 border-b border-slate-100 dark:border-slate-800/50 last:border-0 last:pb-0">
-                                    <div className="flex justify-between items-start">
-                                        <span className="text-[13px] font-bold text-slate-700 dark:text-slate-200 leading-tight pr-4">
-                                            {rule.activity}
-                                        </span>
-                                        <span className="text-[13px] font-black text-amber-500 shrink-0 bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 rounded border border-amber-100 dark:border-amber-500/20">
-                                            {rule.points}
+                {/* Right Column: How to Earn Points & Karma Level Table */}
+                <div className="xl:col-span-5 flex flex-col gap-6">
+                    {/* How to Earn Karma */}
+                    <div className="glass card-lift bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col">
+                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-amber-500/10 to-transparent">
+                            <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                                <span className="material-symbols-outlined text-amber-500" style={{fontVariationSettings:"'FILL' 1"}}>help_center</span>
+                                How to Earn Karma
+                            </h3>
+                            <p className="text-[12px] font-medium text-slate-500 mt-1">
+                                Gamify your knowledge contribution.
+                            </p>
+                        </div>
+                        
+                        <div className="p-6">
+                            <div className="flex flex-col gap-4">
+                                {rules.map((rule, idx) => (
+                                    <div key={idx} className="flex flex-col gap-1 pb-4 border-b border-slate-100 dark:border-slate-800/50 last:border-0 last:pb-0">
+                                        <div className="flex justify-between items-start">
+                                            <span className="text-[13px] font-bold text-slate-700 dark:text-slate-200 leading-tight pr-4">
+                                                {rule.activity}
+                                            </span>
+                                            <span className="text-[13px] font-black text-amber-500 shrink-0 bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 rounded border border-amber-100 dark:border-amber-500/20">
+                                                {rule.points}
+                                            </span>
+                                        </div>
+                                        <span className="text-[11px] font-medium text-slate-400">
+                                            {rule.cap}
                                         </span>
                                     </div>
-                                    <span className="text-[11px] font-medium text-slate-400">
-                                        {rule.cap}
-                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Karma Points Level Table (Directly beneath How to Earn Karma) */}
+                    <div className="glass card-lift bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col">
+                        <div className="p-4 sm:p-5 border-b border-slate-200 dark:border-slate-800 bg-gradient-to-r from-amber-500/10 via-yellow-500/5 to-transparent flex items-center justify-between">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <span className="material-symbols-outlined text-amber-500 text-[20px] shrink-0" style={{fontVariationSettings:"'FILL' 1"}}>military_tech</span>
+                                <div className="min-w-0">
+                                    <h3 className="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-tight truncate">
+                                        Karma Points Level Table
+                                    </h3>
+                                    <p className="text-[11px] font-medium text-slate-500 leading-tight mt-0.5 truncate">
+                                        Points thresholds & recognition badges
+                                    </p>
                                 </div>
-                            ))}
+                            </div>
+                            <span className="text-[10px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200/60 dark:border-amber-700/40 shrink-0 ml-2">
+                                5 Levels
+                            </span>
+                        </div>
+                        
+                        <div className="w-full overflow-hidden">
+                            <table className="w-full text-left border-collapse table-fixed">
+                                <colgroup>
+                                    <col style={{ width: '38%' }} />
+                                    <col style={{ width: '32%' }} />
+                                    <col style={{ width: '30%' }} />
+                                </colgroup>
+                                <thead>
+                                    <tr className="bg-slate-50/90 dark:bg-slate-800/70 text-[10px] sm:text-[11px] font-black text-slate-500 uppercase tracking-wider border-b border-slate-200 dark:border-slate-800">
+                                        <th className="py-2.5 pl-3.5 pr-1">Tier</th>
+                                        <th className="py-2.5 px-1 text-center">Points</th>
+                                        <th className="py-2.5 pl-1 pr-3.5 text-right">Badge</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                                    {karmaTierLevels.map((lvl) => {
+                                        const isCurrentTier = karmaBadge.name.toLowerCase() === lvl.name.toLowerCase();
+                                        return (
+                                            <tr 
+                                                key={lvl.name} 
+                                                className={`transition-colors ${
+                                                    isCurrentTier 
+                                                        ? 'bg-amber-50/80 dark:bg-amber-950/30 font-bold' 
+                                                        : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/30'
+                                                }`}
+                                            >
+                                                <td className="py-2.5 pl-3.5 pr-1">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <span className={`material-symbols-outlined text-[17px] shrink-0 ${lvl.iconColor}`} style={{fontVariationSettings: "'FILL' 1"}}>
+                                                            {lvl.icon}
+                                                        </span>
+                                                        <div className="min-w-0">
+                                                            <div className="flex items-center gap-1 leading-tight">
+                                                                <span className="font-extrabold text-slate-900 dark:text-white text-xs truncate">
+                                                                    {lvl.name}
+                                                                </span>
+                                                                {isCurrentTier && (
+                                                                    <span className="text-[8px] font-black uppercase text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/80 px-1 py-0.2 rounded border border-emerald-300/60 shrink-0">
+                                                                        You
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <p className="text-[10px] font-medium text-slate-400 truncate leading-tight mt-0.5">
+                                                                {lvl.title}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="py-2.5 px-1 text-center">
+                                                    <span className="text-[10px] sm:text-xs font-black text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                                                        {lvl.points}
+                                                    </span>
+                                                </td>
+                                                <td className="py-2.5 pl-1 pr-3.5 text-right">
+                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold border shrink-0 ${lvl.badgeClass}`}>
+                                                        <span className="material-symbols-outlined text-[11px]" style={{fontVariationSettings: "'FILL' 1"}}>
+                                                            {lvl.icon}
+                                                        </span>
+                                                        <span>{lvl.name}</span>
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>

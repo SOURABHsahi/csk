@@ -3,6 +3,8 @@ import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
 import { postsApi, mediaApi, communitiesApi, profileApi, notificationsApi, formatToDDMMYYYY } from '../../utils/apiService';
 import { checkRestrictedContent } from '../../utils/restrictedWords';
+import ImageCropModal from './ImageCropModal';
+import CustomDateTimePicker from '../widgets/CustomDateTimePicker';
 
 const PREDEFINED_HASHTAGS = ['Announcement', 'Development', 'Design', 'Marketing', 'Help', 'Kudos', 'Team', 'Project'];
 
@@ -17,6 +19,24 @@ const formatSize = (bytes) => {
     if (!bytes) return '';
     const mb = bytes / (1024 * 1024);
     return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
+};
+
+// Clean format helper for schedule display without dd/mm/yyyy labels
+export const formatScheduleDisplay = (dateInput) => {
+    if (!dateInput) return '';
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return '';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const pad = (n) => String(n).padStart(2, '0');
+    const day = d.getDate();
+    const month = months[d.getMonth()];
+    const year = d.getFullYear();
+    let hours = d.getHours();
+    const minutes = pad(d.getMinutes());
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${day} ${month} ${year}, ${pad(hours)}:${minutes} ${ampm}`;
 };
 
 export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
@@ -52,7 +72,30 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
 
     const [isScheduling, setIsScheduling] = useState(false);
     const [scheduledTime, setScheduledTime] = useState('');
+    const [tempScheduleTime, setTempScheduleTime] = useState('');
+    const [cropModalTarget, setCropModalTarget] = useState(null);
     const schedulePopoverRef = useRef(null);
+
+    const handleCropSave = (newBlob, newUrl, newFile) => {
+        if (!cropModalTarget) return;
+        setAttachments(prev => prev.map(a => {
+            if (a.id === cropModalTarget.id) {
+                if (a.url && a.url.startsWith('blob:') && a.url !== newUrl) {
+                    try { URL.revokeObjectURL(a.url); } catch (e) {}
+                }
+                return {
+                    ...a,
+                    url: newUrl,
+                    file: newFile,
+                    size: newBlob.size,
+                    backendUrl: null
+                };
+            }
+            return a;
+        }));
+        setCropModalTarget(null);
+        addToast('Image cropped and rotated successfully!', 'success');
+    };
 
     // Calculate relative schedule text (e.g., "in 1 min", "in 15 mins", "Tomorrow at 09:00 AM")
     const getRelativeScheduleText = (dateInput) => {
@@ -315,8 +358,8 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
             const acceptMap = {
                 image: 'image/jpeg,image/png,image/gif,image/webp',
                 video: 'video/mp4,video/quicktime,video/x-msvideo',
-                audio: 'audio/mpeg,audio/wav,audio/aac',
-                doc: 'application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain'
+                audio: 'audio/mpeg,audio/wav,audio/aac,audio/ogg',
+                doc: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,application/zip,application/x-zip-compressed'
             };
             fileInputRef.current.accept = acceptMap[type] || '*/*';
             fileInputRef.current.click();
@@ -334,9 +377,19 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
         if (!files || files.length === 0) return;
         const newAttachments = [];
         let remainingSlots = 4 - attachments.length;
+        const MAX_DOC_SIZE = 400 * 1024 * 1024; // 400 MB for documents
+        const MAX_MEDIA_SIZE = 500 * 1024 * 1024; // 500 MB general limit
 
         Array.from(files).slice(0, remainingSlots).forEach(file => {
             const type = overrideType || determineFileType(file);
+            if (type === 'doc' && file.size > MAX_DOC_SIZE) {
+                addToast(`Document "${file.name}" exceeds the 400 MB upload limit.`, 'error');
+                return;
+            }
+            if (file.size > MAX_MEDIA_SIZE) {
+                addToast(`File "${file.name}" exceeds the 500 MB upload limit.`, 'error');
+                return;
+            }
             const localPreviewUrl = URL.createObjectURL(file);
             newAttachments.push({
                 id: Date.now() + Math.random(),
@@ -664,9 +717,10 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
             }
             
             // Success
+            const savedScheduleTime = scheduledTime;
             resetForm();
-            if (status === 'Scheduled' && scheduledTime) {
-                const formattedTimeStr = formatToDDMMYYYY(scheduledTime);
+            if (status === 'Scheduled' && savedScheduleTime) {
+                const formattedTimeStr = formatScheduleDisplay(savedScheduleTime) || (typeof formatToDDMMYYYY === 'function' ? formatToDDMMYYYY(savedScheduleTime) : savedScheduleTime);
                 addToast(`Post scheduled for publication on ${formattedTimeStr}!`, 'success');
             } else {
                 addToast('Post published successfully!', 'success');
@@ -697,7 +751,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
         >
             <div 
                 onClick={(e) => e.stopPropagation()}
-                className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[88vh] my-auto animate-in fade-in zoom-in-95 duration-150"
+                className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[88vh] my-auto animate-in fade-in zoom-in-95 duration-150"
             >
                 
                 {/* Header */}
@@ -1114,8 +1168,21 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                                                 <p className="text-white/70 text-[8px]">{sizeStr}</p>
                                             </div>
 
+                                            {/* Crop & Rotate Button Overlay */}
+                                            {!att.isUploading && !isPublishing && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setCropModalTarget(att)}
+                                                    className="absolute bottom-2 right-2 bg-slate-900/85 hover:bg-indigo-600 text-white rounded-lg px-2 py-1 text-[10px] font-bold flex items-center gap-1 shadow-md transition-all z-10 cursor-pointer backdrop-blur-xs hover:scale-105 border border-white/20"
+                                                    title="Crop & Rotate Image"
+                                                >
+                                                    <span className="material-symbols-outlined text-[13px]">crop_rotate</span>
+                                                    <span>Crop</span>
+                                                </button>
+                                            )}
+
                                             {att.isUploading && (
-                                                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 z-20">
                                                     <span className="text-white text-[10px] font-bold mb-1">{att.progress || 0}%</span>
                                                     <div className="w-16 h-1 bg-white/30 rounded-full overflow-hidden">
                                                         <div className="h-full bg-white rounded-full transition-all duration-300" style={{ width: `${att.progress || 0}%` }}></div>
@@ -1123,7 +1190,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                                                 </div>
                                             )}
                                             {!att.isUploading && !isPublishing && (
-                                                <button onClick={() => removeAttachment(att.id)} className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500 shadow-sm">
+                                                <button onClick={() => removeAttachment(att.id)} className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500 shadow-sm z-20 cursor-pointer">
                                                     <span className="material-symbols-outlined text-[14px]">close</span>
                                                 </button>
                                             )}
@@ -1164,7 +1231,12 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                                 return (
                                     <div key={att.id} className="relative flex flex-col items-center justify-center gap-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 w-32 h-32 rounded-xl border border-slate-200 dark:border-slate-700 group shadow-sm overflow-hidden">
                                         <span className={`material-symbols-outlined text-3xl ${att.type === 'doc' ? 'text-emerald-500' : 'text-purple-500'} ${att.isUploading ? 'opacity-50' : 'opacity-100'}`}>
-                                            {att.type === 'doc' ? (att.name?.toLowerCase().endsWith('.pdf') ? 'picture_as_pdf' : 'description') : 'mic'}
+                                            {att.type === 'doc' 
+                                                ? (att.name?.toLowerCase().endsWith('.pdf') ? 'picture_as_pdf' 
+                                                    : (att.name?.toLowerCase().endsWith('.xls') || att.name?.toLowerCase().endsWith('.xlsx') ? 'table_chart'
+                                                    : (att.name?.toLowerCase().endsWith('.ppt') || att.name?.toLowerCase().endsWith('.pptx') ? 'slideshow'
+                                                    : (att.name?.toLowerCase().endsWith('.zip') ? 'folder_zip' : 'description')))) 
+                                                : 'headphones'}
                                         </span>
                                         <span className={`text-[10px] font-semibold max-w-[100px] truncate px-2 text-center ${att.isUploading ? 'opacity-50' : 'opacity-100'}`}>{att.name}</span>
                                         <span className="text-[9px] text-slate-500">{sizeStr}</span>
@@ -1189,72 +1261,81 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                     )}
                 </div>
 
+                {/* Active Scheduled Notification Bar */}
+                {scheduledTime && (
+                    <div className="px-4 py-2 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/40 dark:to-orange-950/30 border-t border-amber-200/80 dark:border-amber-800/60 flex items-center justify-between gap-2 shrink-0 animate-in fade-in duration-150">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <span className="material-symbols-outlined text-[18px] text-amber-600 dark:text-amber-400 animate-pulse shrink-0">schedule</span>
+                            <span className="text-xs font-semibold text-amber-900 dark:text-amber-200 truncate">
+                                Scheduled for <span className="font-mono font-bold">{formatScheduleDisplay(scheduledTime)}</span>
+                            </span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-200/80 dark:bg-amber-800/80 text-amber-950 dark:text-amber-100 font-extrabold shrink-0">
+                                {getRelativeScheduleText(scheduledTime)}
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setTempScheduleTime(scheduledTime);
+                                    setIsScheduling(true);
+                                }}
+                                className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline px-2 py-1 rounded cursor-pointer transition-colors"
+                            >
+                                Edit
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => { setScheduledTime(''); setIsScheduling(false); }}
+                                className="text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/50 p-1 rounded-full cursor-pointer transition-colors flex items-center justify-center"
+                                title="Remove schedule (publish immediately)"
+                            >
+                                <span className="material-symbols-outlined text-[16px]">close</span>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Footer Tools & Actions */}
-                <div className="p-3 sm:p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0 rounded-b-2xl">
-                    <div className="flex items-center gap-1">
+                <div className="p-3 sm:p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0 rounded-b-2xl">
+                    <div className="flex items-center gap-1 shrink-0">
                         <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
-                        <button onClick={() => triggerFileInput('image')} disabled={isPublishing} className="p-2 text-indigo-500 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg transition-colors group relative disabled:opacity-50">
+                        <button onClick={() => triggerFileInput('image')} disabled={isPublishing} className="p-2 text-indigo-500 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg transition-colors group relative disabled:opacity-50 cursor-pointer">
                             <span className="material-symbols-outlined text-[22px]">image</span>
                             <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap">Image (JPG/PNG)</span>
                         </button>
-                        <button onClick={() => triggerFileInput('doc')} disabled={isPublishing} className="p-2 text-emerald-500 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg transition-colors group relative disabled:opacity-50">
+                        <button onClick={() => triggerFileInput('doc')} disabled={isPublishing} className="p-2 text-emerald-500 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg transition-colors group relative disabled:opacity-50 cursor-pointer">
                             <span className="material-symbols-outlined text-[22px]">description</span>
-                            <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap">Document (PDF/DOC)</span>
+                            <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap">Document (PDF/DOC/XLS/PPT/ZIP - Max 400 MB)</span>
                         </button>
-                        <button onClick={() => triggerFileInput('video')} disabled={isPublishing} className="p-2 text-cyan-500 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 rounded-lg transition-colors group relative disabled:opacity-50">
+                        <button onClick={() => triggerFileInput('video')} disabled={isPublishing} className="p-2 text-cyan-500 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 rounded-lg transition-colors group relative disabled:opacity-50 cursor-pointer">
                             <span className="material-symbols-outlined text-[22px]">videocam</span>
                             <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap">Video (MP4/MOV)</span>
                         </button>
-                        <button onClick={() => triggerFileInput('audio')} disabled={isPublishing} className="p-2 text-purple-500 hover:bg-purple-100 dark:hover:bg-purple-900/50 rounded-lg transition-colors group relative disabled:opacity-50">
-                            <span className="material-symbols-outlined text-[22px]">mic</span>
+                        <button onClick={() => triggerFileInput('audio')} disabled={isPublishing} className="p-2 text-purple-500 hover:bg-purple-100 dark:hover:bg-purple-900/50 rounded-lg transition-colors group relative disabled:opacity-50 cursor-pointer">
+                            <span className="material-symbols-outlined text-[22px]">headphones</span>
                             <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap">Audio (MP3/WAV)</span>
                         </button>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 ml-auto shrink-0">
                         {(() => {
                             const restrictedInPost = checkRestrictedContent(text);
                             if (restrictedInPost) {
                                 return (
-                                    <div className="flex items-center gap-2 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 px-4 py-2 rounded-xl text-xs font-bold">
-                                        <span className="material-symbols-outlined text-[18px]">warning</span>
-                                        <span>Restricted word ("{restrictedInPost}") detected! Remove it to publish.</span>
+                                    <div className="flex items-center gap-1.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 text-rose-600 dark:text-rose-400 px-3 py-1.5 rounded-xl text-xs font-bold">
+                                        <span className="material-symbols-outlined text-[16px]">warning</span>
+                                        <span>Restricted word ("{restrictedInPost}")</span>
                                     </div>
                                 );
                             }
                             return (
                                 <>
-                                    {/* Active Scheduled Pill Chip */}
-                                    {scheduledTime && (
-                                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 dark:bg-amber-950/50 border border-amber-300/80 dark:border-amber-700/60 rounded-xl text-amber-900 dark:text-amber-200 text-xs font-semibold shadow-xs">
-                                            <span className="material-symbols-outlined text-[16px] text-amber-600 dark:text-amber-400 animate-pulse">schedule</span>
-                                            <button
-                                                type="button"
-                                                onClick={() => setIsScheduling(true)}
-                                                className="hover:underline flex items-center gap-1.5 cursor-pointer text-left"
-                                                title="Click to edit schedule"
-                                            >
-                                                <span className="font-mono font-bold">{formatToDDMMYYYY(scheduledTime)}</span>
-                                                <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-amber-200/80 dark:bg-amber-800/80 text-amber-950 dark:text-amber-100 font-extrabold">
-                                                    {getRelativeScheduleText(scheduledTime)}
-                                                </span>
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => { setScheduledTime(''); setIsScheduling(false); }}
-                                                className="ml-0.5 text-amber-600 hover:text-amber-950 dark:hover:text-amber-100 hover:bg-amber-200/60 dark:hover:bg-amber-800/60 p-0.5 rounded-full cursor-pointer transition-colors"
-                                                title="Remove schedule (publish immediately)"
-                                            >
-                                                <span className="material-symbols-outlined text-[15px]">close</span>
-                                            </button>
-                                        </div>
-                                    )}
-
                                     <button 
                                         type="button"
                                         onClick={handleClose}
                                         disabled={isPublishing}
-                                        className="px-4 py-2 rounded-xl text-[13px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50">
+                                        className="px-3.5 py-2 rounded-xl text-[13px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 cursor-pointer shrink-0">
                                         Cancel
                                     </button>
                                     <button 
@@ -1262,14 +1343,14 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                                         type="button"
                                         onClick={() => {
                                             if (!isScheduling) {
+                                                setTempScheduleTime(scheduledTime || getLocalDatetimeInputValue(15));
                                                 setIsScheduling(true);
-                                                if (!scheduledTime) setScheduledTime(getLocalDatetimeInputValue(1));
                                             } else {
                                                 setIsScheduling(false);
                                             }
                                         }}
                                         disabled={isPublishing}
-                                        className={`p-2 rounded-xl border transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer relative ${
+                                        className={`p-2 rounded-xl border transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer relative shrink-0 ${
                                             scheduledTime 
                                                 ? 'bg-amber-100 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-bold' 
                                                 : (isScheduling 
@@ -1287,9 +1368,10 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                                         )}
                                     </button>
                                     <button
+                                        type="button"
                                         onClick={() => handleSubmit(scheduledTime ? 'Scheduled' : 'Published')}
                                         disabled={!text.trim() || securityWarning || isPublishing}
-                                        className={`px-5 py-2 rounded-xl text-[13px] font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer
+                                        className={`px-5 py-2 rounded-xl text-[13px] font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer shrink-0 whitespace-nowrap
                                             ${(!text.trim() || securityWarning || isPublishing)
                                                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed dark:bg-slate-800 dark:text-slate-500' 
                                                 : (scheduledTime 
@@ -1324,172 +1406,125 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                     </div>
                 </div>
 
-                {/* Scheduling Rich Popover */}
+                {/* Scheduling Modal Overlay - Centered & Never Cut Off */}
                 {isScheduling && (
                     <div 
-                        ref={schedulePopoverRef}
-                        className="absolute bottom-20 right-4 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl z-30 w-88 max-w-[92vw] animate-in fade-in zoom-in-95 duration-150 text-slate-800 dark:text-slate-100"
+                        className="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-4 bg-slate-950/40 backdrop-blur-xs animate-in fade-in duration-150"
+                        onClick={() => setIsScheduling(false)}
                     >
-                        {/* Header */}
-                        <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 dark:border-slate-700/60">
-                            <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-sm">
-                                    <span className="material-symbols-outlined text-[18px]">event_upcoming</span>
+                        <div 
+                            ref={schedulePopoverRef}
+                            onClick={(e) => e.stopPropagation()}
+                            className="p-4 sm:p-5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-lg max-h-[94vh] overflow-y-auto custom-scrollbar animate-in fade-in zoom-in-95 duration-150 text-slate-800 dark:text-slate-100"
+                        >
+                            {/* Header */}
+                            <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100 dark:border-slate-700/60">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center text-white shadow-sm">
+                                        <span className="material-symbols-outlined text-[18px]">event_upcoming</span>
+                                    </div>
+                                    <div>
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
+                                            Schedule Publication
+                                        </h4>
+                                        <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                                            Automated Knome platform delivery
+                                        </p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
-                                        Schedule Publication
-                                    </h4>
-                                    <p className="text-[10.5px] text-slate-500 dark:text-slate-400">
-                                        Automated Knome platform delivery
-                                    </p>
+                                <button 
+                                    type="button"
+                                    onClick={() => setIsScheduling(false)}
+                                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer transition-colors"
+                                    title="Close"
+                                >
+                                    <span className="material-symbols-outlined text-[18px]">close</span>
+                                </button>
+                            </div>
+
+                            {/* Quick Options */}
+                            <div className="mb-3">
+                                <span className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">
+                                    Quick Options:
+                                </span>
+                                <div className="grid grid-cols-4 gap-1.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setTempScheduleTime(getLocalDatetimeInputValue(15))}
+                                        className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer text-center"
+                                    >
+                                        +15 Mins
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTempScheduleTime(getLocalDatetimeInputValue(30))}
+                                        className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer text-center"
+                                    >
+                                        +30 Mins
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTempScheduleTime(getLocalDatetimeInputValue(60))}
+                                        className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer text-center"
+                                    >
+                                        +1 Hour
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTempScheduleTime(getTomorrowTime(9))}
+                                        className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer text-center"
+                                    >
+                                        Tomorrow 9 AM
+                                    </button>
                                 </div>
                             </div>
-                            <button 
-                                type="button"
-                                onClick={() => setIsScheduling(false)}
-                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer transition-colors"
-                                title="Close"
-                            >
-                                <span className="material-symbols-outlined text-[18px]">close</span>
-                            </button>
-                        </div>
 
-                        {/* Timezone / Enterprise Notice Banner */}
-                        <div className="mb-3 px-2.5 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-700/60 flex items-center justify-between text-[10.5px] text-slate-600 dark:text-slate-300">
-                            <span className="flex items-center gap-1 font-medium">
-                                <span className="material-symbols-outlined text-[14px] text-indigo-500">public</span>
-                                IST (UTC+05:30)
-                            </span>
-                            <span className="font-mono text-[10px] text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded">
-                                Format: DD/MM/YYYY
-                            </span>
-                        </div>
-
-                        {/* Date & Time Picker */}
-                        <div className="mb-3">
-                            <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
-                                Select Date & Time (DD/MM/YYYY):
-                            </label>
-                            <div className="relative">
-                                <input 
-                                    type="datetime-local" 
-                                    value={scheduledTime}
-                                    min={getLocalDatetimeInputValue(1)}
-                                    onChange={(e) => setScheduledTime(e.target.value)}
-                                    disabled={isPublishing}
-                                    className="w-full text-xs font-semibold p-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer" 
+                            {/* Integrated Interactive Custom Date & Time Picker with OK button */}
+                            <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-xs">
+                                <CustomDateTimePicker
+                                    value={tempScheduleTime}
+                                    onChange={(newVal) => setTempScheduleTime(newVal)}
+                                    onConfirm={(newVal) => {
+                                        const chosenVal = newVal || tempScheduleTime;
+                                        if (!chosenVal) {
+                                            addToast('Please select a date and time to schedule.', 'error');
+                                            return;
+                                        }
+                                        const chosen = new Date(chosenVal);
+                                        if (isNaN(chosen.getTime())) {
+                                            addToast('Invalid schedule date/time.', 'error');
+                                            return;
+                                        }
+                                        if (chosen.getTime() <= Date.now()) {
+                                            addToast('Scheduled time must be in the future.', 'error');
+                                            return;
+                                        }
+                                        setScheduledTime(chosenVal);
+                                        setIsScheduling(false);
+                                        addToast(`Post scheduled for ${formatScheduleDisplay(chosenVal)}`, 'success');
+                                    }}
+                                    onCancel={() => setIsScheduling(false)}
+                                    onClear={() => {
+                                        setScheduledTime('');
+                                        setTempScheduleTime('');
+                                        setIsScheduling(false);
+                                        addToast('Schedule cleared. Post will publish immediately.', 'info');
+                                    }}
                                 />
                             </div>
                         </div>
-
-                        {/* Quick Presets */}
-                        <div className="mb-3">
-                            <span className="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 mb-1.5 uppercase tracking-wider">
-                                Quick Options:
-                            </span>
-                            <div className="grid grid-cols-3 gap-1.5">
-                                <button
-                                    type="button"
-                                    onClick={() => setScheduledTime(getLocalDatetimeInputValue(1))}
-                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                    title="Schedule 1 minute from now"
-                                >
-                                    +1 Min
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setScheduledTime(getLocalDatetimeInputValue(5))}
-                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                    title="Schedule 5 minutes from now"
-                                >
-                                    +5 Mins
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setScheduledTime(getLocalDatetimeInputValue(15))}
-                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                    title="Schedule 15 minutes from now"
-                                >
-                                    +15 Mins
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setScheduledTime(getLocalDatetimeInputValue(30))}
-                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                    title="Schedule 30 minutes from now"
-                                >
-                                    +30 Mins
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setScheduledTime(getLocalDatetimeInputValue(60))}
-                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                    title="Schedule 1 hour from now"
-                                >
-                                    +1 Hour
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setScheduledTime(getTomorrowTime(9))}
-                                    className="px-2 py-1.5 bg-slate-100 dark:bg-slate-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 text-slate-700 dark:text-slate-200 rounded-lg text-[10.5px] font-bold transition-colors cursor-pointer border border-transparent hover:border-indigo-200 text-center"
-                                    title="Schedule for Tomorrow at 9:00 AM"
-                                >
-                                    Tomorrow 9 AM
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Live Preview Card with DD/MM/YYYY Format */}
-                        {scheduledTime && (
-                            <div className="p-2.5 mb-3 rounded-xl bg-gradient-to-r from-amber-500/10 via-indigo-500/10 to-blue-500/10 border border-amber-500/20 text-[11.5px] text-slate-800 dark:text-slate-200 space-y-1">
-                                <div className="flex items-center justify-between">
-                                    <span className="font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1">
-                                        <span className="material-symbols-outlined text-[15px]">event</span>
-                                        Scheduled Date (DD/MM/YYYY):
-                                    </span>
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-extrabold">
-                                        {getRelativeScheduleText(scheduledTime)}
-                                    </span>
-                                </div>
-                                <div className="text-xs font-extrabold text-slate-900 dark:text-white font-mono pl-5">
-                                    {formatToDDMMYYYY(scheduledTime)}
-                                </div>
-                                <div className="text-[10px] text-slate-500 dark:text-slate-400 pl-5">
-                                    Post will remain private in your Scheduled queue until this time, then automatically broadcast to {selectedCommunity?.name ? `community "${selectedCommunity.name}"` : 'your audience'}.
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Action Controls */}
-                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-700/60">
-                            {scheduledTime ? (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setScheduledTime('');
-                                        setIsScheduling(false);
-                                    }}
-                                    className="px-2.5 py-1.5 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1"
-                                >
-                                    <span className="material-symbols-outlined text-[14px]">delete</span>
-                                    Clear Schedule
-                                </button>
-                            ) : (
-                                <div />
-                            )}
-                            <div className="flex items-center gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setIsScheduling(false)}
-                                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] transition-colors cursor-pointer shadow-xs flex items-center gap-1"
-                                >
-                                    <span className="material-symbols-outlined text-[14px]">check</span>
-                                    {scheduledTime ? 'Apply Schedule' : 'Done'}
-                                </button>
-                            </div>
-                        </div>
                     </div>
+                )}
+
+                {/* Image Cropper & Rotator Modal */}
+                {cropModalTarget && (
+                    <ImageCropModal
+                        isOpen={Boolean(cropModalTarget)}
+                        onClose={() => setCropModalTarget(null)}
+                        imageSrc={cropModalTarget.url}
+                        fileName={cropModalTarget.name}
+                        onSave={handleCropSave}
+                    />
                 )}
             </div>
         </div>

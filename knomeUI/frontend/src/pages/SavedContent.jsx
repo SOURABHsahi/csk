@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { savedContentApi, resolveMediaUrl } from '../utils/apiService';
+import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
+import { useScrollLoading } from '../hooks/useScrollLoading';
 import * as signalR from '@microsoft/signalr';
 
 const DEFAULT_CATEGORIES = [
@@ -80,10 +82,6 @@ export default function SavedContent() {
     const [newCategoryName, setNewCategoryName] = useState('');
     const [newCategoryIcon, setNewCategoryIcon] = useState('folder');
     const [assigningItem, setAssigningItem] = useState(null);
-
-    // 📜 Infinite Scroll State
-    const [visibleItemCount, setVisibleItemCount] = useState(8);
-    const [isFetchingMoreSaved, setIsFetchingMoreSaved] = useState(false);
 
     const tabs = [
         { id: 'All', label: 'All Types', countKey: 'totalCount' },
@@ -357,21 +355,12 @@ export default function SavedContent() {
         return itemCatId === selectedCategory;
     });
 
+    // Infinite Scroll Hook
+    const { visibleCount: visibleItemCount, reset: resetScrollLoading } = useScrollLoading(categoryFilteredItems.length, 8, 8);
+
     useEffect(() => {
-        const handleScroll = () => {
-            if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 350) {
-                if (!isFetchingMoreSaved && visibleItemCount < categoryFilteredItems.length) {
-                    setIsFetchingMoreSaved(true);
-                    setTimeout(() => {
-                        setVisibleItemCount(prev => prev + 6);
-                        setIsFetchingMoreSaved(false);
-                    }, 300);
-                }
-            }
-        };
-        window.addEventListener('scroll', handleScroll);
-        return () => window.removeEventListener('scroll', handleScroll);
-    }, [isFetchingMoreSaved, visibleItemCount, categoryFilteredItems.length]);
+        resetScrollLoading();
+    }, [selectedCategory, activeTab, resetScrollLoading]);
 
     return (
         <main className="flex-1 flex flex-col gap-5 pb-6 min-w-0 text-slate-800 dark:text-slate-100 font-sans">
@@ -394,48 +383,6 @@ export default function SavedContent() {
                     <p className="text-slate-600 dark:text-slate-400 text-xs md:text-sm font-medium leading-relaxed max-w-2xl">
                         Organize your bookmarked posts, technical articles, videos, and podcasts into custom category folders.
                     </p>
-                </div>
-            </div>
-
-            {/* 📁 CATEGORIES BAR & CREATION BUTTON */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 shadow-xs">
-                <div className="flex items-center justify-between mb-2 px-1">
-                    <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-amber-500 text-[18px]">folder_special</span>
-                        <h2 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                            Category Folders ({categories.length - 1})
-                        </h2>
-                    </div>
-                </div>
-
-                {/* Categories Pills */}
-                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
-                    {categories.map((cat) => {
-                        const isSelected = selectedCategory === cat.id;
-                        const catItemCount = cat.id === 'all' 
-                            ? savedItems.length 
-                            : savedItems.filter(item => getItemCategoryId(item) === cat.id).length;
-
-                        return (
-                            <button
-                                key={cat.id}
-                                onClick={() => setSelectedCategory(cat.id)}
-                                className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer shrink-0 border ${
-                                    isSelected
-                                        ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm scale-[1.02]'
-                                        : 'bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750'
-                                }`}
-                            >
-                                <span className="material-symbols-outlined text-[16px]">{cat.icon}</span>
-                                <span>{cat.name}</span>
-                                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
-                                    isSelected ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
-                                }`}>
-                                    {catItemCount}
-                                </span>
-                            </button>
-                        );
-                    })}
                 </div>
             </div>
 
@@ -498,6 +445,48 @@ export default function SavedContent() {
                         <option value="OldestSaved">Oldest Saved</option>
                         <option value="RecentlyUpdated">Recently Updated</option>
                     </select>
+                </div>
+            </div>
+
+            {/* 📁 CATEGORIES BAR & CREATION BUTTON */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3 shadow-xs">
+                <div className="flex items-center justify-between mb-2 px-1">
+                    <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-amber-500 text-[18px]">folder_special</span>
+                        <h2 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                            Category Folders ({categories.length - 1})
+                        </h2>
+                    </div>
+                </div>
+
+                {/* Categories Pills */}
+                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
+                    {categories.map((cat) => {
+                        const isSelected = selectedCategory === cat.id;
+                        const catItemCount = cat.id === 'all' 
+                            ? savedItems.length 
+                            : savedItems.filter(item => getItemCategoryId(item) === cat.id).length;
+
+                        return (
+                            <button
+                                key={cat.id}
+                                onClick={() => setSelectedCategory(cat.id)}
+                                className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-all flex items-center gap-2 cursor-pointer shrink-0 border ${
+                                    isSelected
+                                        ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm scale-[1.02]'
+                                        : 'bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-750'
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-[16px]">{cat.icon}</span>
+                                <span>{cat.name}</span>
+                                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                                    isSelected ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                }`}>
+                                    {catItemCount}
+                                </span>
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 

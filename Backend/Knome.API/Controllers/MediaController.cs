@@ -28,6 +28,8 @@ public class MediaController : KnomeControllerBase
 
     [HttpPost("upload")]
     [Consumes("multipart/form-data")]
+    [RequestSizeLimit(500L * 1024L * 1024L)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 500L * 1024L * 1024L)]
     [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
     public async Task<IActionResult> UploadMedia([FromForm] UploadMediaDto dto)
     {

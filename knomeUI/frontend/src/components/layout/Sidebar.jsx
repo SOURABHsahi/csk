@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useModal } from '../contexts/ModalContext';
-import { useUser } from '../contexts/UserContext';
+import { useUser, getUserStatusConfig } from '../contexts/UserContext';
 import { resolveMediaUrl } from '../../utils/apiService';
 
 export default function Sidebar() {
@@ -86,6 +86,7 @@ export default function Sidebar() {
     const userName = currentUser?.fullName || currentUser?.name || 'Employee';
     const userRole = currentUser?.roleName || currentUser?.role || 'Member';
     const userDept = currentUser?.department || currentUser?.departmentName || 'MPOnline';
+    const statusConfig = getUserStatusConfig(currentUser);
     const [liveKarma, setLiveKarma] = useState(currentUser?.karmaPoints ?? currentUser?.karma ?? 0);
     const [livePosts, setLivePosts] = useState(currentUser?.postsCount ?? 0);
     const userFollowers = currentUser?.followersCount ?? 0;
@@ -135,7 +136,7 @@ export default function Sidebar() {
                         style={{background: 'radial-gradient(circle, #ec4899, transparent 70%)'}}></div>
 
                     <div className="relative z-10 flex items-center gap-3 mb-2 pt-1">
-                        <div className="relative shrink-0 p-[2px] rounded-full bg-gradient-to-tr from-indigo-500 to-pink-500 shadow-md">
+                        <div className="relative shrink-0 p-[2px] rounded-full bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 shadow-md">
                             <img 
                                 className="w-11 h-11 rounded-full object-cover border-2 border-theme-60-surface" 
                                 alt="Avatar" 
@@ -145,12 +146,31 @@ export default function Sidebar() {
                                     e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=6366f1&color=fff`;
                                 }}
                             />
-                            <div className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-400 rounded-full border-2 border-theme-60-surface shadow-xs"></div>
+                            <div 
+                                className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-theme-60-surface shadow-xs transition-colors ${statusConfig.dotClass}`}
+                                title={`Status: ${statusConfig.label}`}
+                            ></div>
                         </div>
-                        <div className="min-w-0">
-                            <h3 className="font-black text-[14px] truncate leading-tight text-slate-900 dark:text-white">{userName.split(' ')[0]}</h3>
-                            <p className="text-[11px] truncate font-medium text-theme-30-text">{userRole}</p>
-                            <p className="text-[10px] font-semibold mt-0.5 truncate text-theme-30-text opacity-70">{userDept}</p>
+                        <div className="min-w-0 flex-1">
+                            <h3 
+                                className="font-black text-[15.5px] sm:text-[16px] leading-tight tracking-tight text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors break-words"
+                                title={userName}
+                            >
+                                {userName}
+                            </h3>
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                <span className="text-[10.5px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50/80 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded-md border border-indigo-100/80 dark:border-indigo-800/40 leading-none truncate">
+                                    {userRole}
+                                </span>
+                                <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md border leading-none transition-colors ${statusConfig.badgeClass}`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dotClass}`}></span>
+                                    {statusConfig.label}
+                                </span>
+                            </div>
+                            <p className="text-[10.5px] font-semibold mt-1 truncate text-slate-500 dark:text-slate-400 flex items-center gap-1" title={userDept}>
+                                <span className="w-1 h-1 rounded-full bg-slate-400 shrink-0"></span>
+                                <span className="truncate">{userDept}</span>
+                            </p>
                         </div>
                     </div>
 
@@ -173,8 +193,7 @@ export default function Sidebar() {
             </Link>
 
             {/* Navigation */}
-            <nav className="flex flex-col gap-0.5">
-                <p className="text-[10px] font-black uppercase tracking-widest px-3 mb-1" style={{color: 'var(--text-muted)'}}>Menu</p>
+            <nav className="flex flex-col gap-1">
                 {navItems.map(item => {
                     const isActive = isItemActive(item);
                     return (
@@ -182,32 +201,42 @@ export default function Sidebar() {
                             key={item.to}
                             to={item.to}
                             onClick={() => isMobile && setIsMobileOpen(false)}
-                            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 group relative ${isActive ? '' : 'hover:translate-x-0.5'}`}
-                            style={isActive ? {
-                                background: `${item.color}18`,
-                                border: `1px solid ${item.color}35`,
-                            } : {
-                                border: '1px solid transparent',
-                            }}
+                            className={`flex items-center gap-3 px-3 py-2 rounded-xl transition-all duration-200 group relative ${
+                                isActive 
+                                    ? 'bg-indigo-50/90 dark:bg-indigo-950/50 border border-indigo-200/80 dark:border-indigo-800/60 shadow-xs' 
+                                    : 'border border-transparent hover:bg-slate-100/80 dark:hover:bg-slate-800/60 hover:border-slate-200/60 dark:hover:border-slate-700/60'
+                            }`}
                         >
                             {isActive && (
-                                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r-full" style={{background: item.color}}></div>
+                                <div className="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-5 rounded-full bg-indigo-600 dark:bg-indigo-400 shadow-xs shadow-indigo-500/50"></div>
                             )}
-                            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all"
-                                style={{
-                                    background: isActive ? `${item.color}20` : 'var(--bg-surface)',
-                                }}>
-                                <span className="material-symbols-outlined text-[17px]"
+                            <div 
+                                className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all ${
+                                    isActive
+                                        ? 'bg-indigo-600 dark:bg-indigo-500 text-white shadow-xs shadow-indigo-500/30'
+                                        : 'bg-slate-100 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 group-hover:bg-white dark:group-hover:bg-slate-700 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 border border-slate-200/60 dark:border-slate-700/50 group-hover:shadow-xs'
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-[18px]"
                                     style={{
-                                        color: isActive ? item.color : 'var(--text-secondary)',
                                         fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0",
                                     }}>
                                     {item.icon}
                                 </span>
                             </div>
-                            <span className="text-[13px] font-bold transition-colors duration-200 truncate"
-                                style={{color: isActive ? item.color : 'var(--text-secondary)'}}>
+                            <span className={`text-[13.5px] tracking-tight transition-colors duration-200 truncate ${
+                                isActive 
+                                    ? 'font-black text-slate-900 dark:text-white' 
+                                    : 'font-bold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white'
+                            }`}>
                                 {item.label}
+                            </span>
+                            <span className={`material-symbols-outlined text-[16px] transition-all ml-auto ${
+                                isActive
+                                    ? 'text-indigo-600 dark:text-indigo-400 opacity-80'
+                                    : 'opacity-0 -translate-x-1 group-hover:opacity-40 group-hover:translate-x-0 text-slate-400'
+                            }`}>
+                                chevron_right
                             </span>
                         </Link>
                     );
@@ -221,60 +250,61 @@ export default function Sidebar() {
                         if (isMobile) setIsMobileOpen(false);
                         openPostModal();
                     }}
-                    className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-extrabold text-[14px] text-white transition-all hover:-translate-y-0.5 hover:shadow-xl hover:brightness-105 active:scale-[0.98] cursor-pointer group"
-                    style={{
-                        background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #ec4899 100%)',
-                        boxShadow: '0 4px 18px rgba(99, 102, 241, 0.35)',
-                    }}>
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-extrabold text-[13.5px] text-white tracking-wide transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-500/25 active:translate-y-0 active:scale-[0.99] cursor-pointer group bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 border border-white/10"
+                >
                     <span className="material-symbols-outlined text-[19px] transition-transform group-hover:rotate-90 duration-300" style={{fontVariationSettings:"'FILL' 1"}}>add_circle</span>
-                    Create Post
+                    <span>Create Post</span>
                 </button>
             )}
 
             {/* Quick Links */}
-            <div className="rounded-xl p-3"
-                style={{
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-subtle)'
-                }}>
-                <p className="text-[10px] font-black uppercase tracking-widest mb-2.5 px-1" style={{color: 'var(--text-muted)'}}>Quick Access</p>
+            <div className="rounded-2xl p-2.5 bg-theme-60-surface border border-theme-30 shadow-[0_2px_12px_rgba(0,0,0,0.03)] dark:shadow-[0_4px_20px_rgba(0,0,0,0.25)] flex flex-col gap-1">
                 <div className="flex flex-col gap-1">
                     {quickLinks.map(link => {
                         const isActive = isItemActive(link);
                         return (
                             <Link key={link.to} to={link.to}
                                 onClick={() => isMobile && setIsMobileOpen(false)}
-                                className={`flex flex-row items-center gap-3 px-2 py-2 rounded-xl transition-all duration-200 group relative ${
-                                    isActive ? 'shadow-xs' : 'hover:translate-x-0.5 hover:bg-theme-30-hover'
+                                className={`flex flex-row items-center gap-2.5 px-2.5 py-2 rounded-xl transition-all duration-200 group relative ${
+                                    isActive 
+                                        ? 'bg-indigo-50/80 dark:bg-indigo-950/50 border border-indigo-200/80 dark:border-indigo-800/60 shadow-xs' 
+                                        : 'border border-transparent hover:bg-slate-100/80 dark:hover:bg-slate-800/60 hover:border-slate-200/50 dark:hover:border-slate-700/50'
                                 }`}
-                                style={isActive ? {
-                                    background: `${link.color}18`,
-                                    border: `1px solid ${link.color}35`,
-                                } : {
-                                    border: '1px solid transparent',
-                                }}
                                 title={link.label}>
                                 {isActive && (
-                                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-5 rounded-r-full" style={{background: link.color}}></div>
+                                    <div className="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-4 rounded-full bg-indigo-600 dark:bg-indigo-400 shadow-xs"></div>
                                 )}
-                                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-all"
+                                <div 
+                                    className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-all ${
+                                        isActive 
+                                            ? 'shadow-xs text-white' 
+                                            : 'bg-slate-100 dark:bg-slate-800/80 border border-slate-200/50 dark:border-slate-700/50 group-hover:bg-white dark:group-hover:bg-slate-700 group-hover:shadow-xs'
+                                    }`}
                                     style={{
-                                        background: isActive ? `${link.color}28` : `${link.color}15`,
-                                        boxShadow: isActive ? `0 2px 8px ${link.color}25` : 'none'
-                                    }}>
-                                    <span className="material-symbols-outlined text-[17px] transition-all"
+                                        backgroundColor: isActive ? link.color : undefined,
+                                    }}
+                                >
+                                    <span className="material-symbols-outlined text-[16px] transition-all"
                                         style={{
-                                            color: link.color,
+                                            color: isActive ? '#ffffff' : link.color,
                                             fontVariationSettings: isActive ? "'FILL' 1" : "'FILL' 0"
                                         }}>
                                         {link.icon}
                                     </span>
                                 </div>
-                                <span className="text-[12px] font-bold transition-colors truncate"
-                                    style={{
-                                        color: isActive ? link.color : 'var(--text-secondary)'
-                                    }}>
+                                <span className={`text-[12.5px] tracking-tight transition-colors truncate ${
+                                    isActive
+                                        ? 'font-bold text-slate-900 dark:text-white'
+                                        : 'font-semibold text-slate-600 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white'
+                                }`}>
                                     {link.label}
+                                </span>
+                                <span className={`material-symbols-outlined text-[14px] transition-all ml-auto ${
+                                    isActive
+                                        ? 'text-indigo-600 dark:text-indigo-400 opacity-70'
+                                        : 'opacity-0 -translate-x-1 group-hover:opacity-40 group-hover:translate-x-0 text-slate-400'
+                                }`}>
+                                    chevron_right
                                 </span>
                             </Link>
                         );
@@ -287,7 +317,7 @@ export default function Sidebar() {
     return (
         <>
             {/* 1. Desktop Sticky Sidebar */}
-            <aside className="w-58 sticky top-24 hidden md:flex flex-col gap-3 shrink-0" style={{width: '228px'}}>
+            <aside className="w-64 sticky top-24 hidden md:flex flex-col gap-3 shrink-0" style={{width: '260px'}}>
                 {renderSidebarContent(false)}
             </aside>
 

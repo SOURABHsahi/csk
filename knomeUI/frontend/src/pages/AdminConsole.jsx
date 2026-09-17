@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useUser } from '../components/contexts/UserContext';
+import { useUser, getUserStatusConfig } from '../components/contexts/UserContext';
 import { interactionsApi, adminApi, postsApi, podcastsApi, articlesApi, communitiesApi, resolveMediaUrl, getVideoThumbnail } from '../utils/apiService';
 import { apiClient } from '../utils/apiClient';
+import useScrollLoading from '../hooks/useScrollLoading';
+import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
+import SuspendUserModal from '../components/modals/SuspendUserModal';
 
 // Helper to provide realistic reported post content if live API call returns empty/404
 const getFallbackPostContent = (report) => {
@@ -67,6 +70,7 @@ export default function AdminConsole() {
 
     // Suspend Modal Form State
     const [isSuspendModalOpen, setIsSuspendModalOpen] = useState(false);
+    const [selectedUserToSuspend, setSelectedUserToSuspend] = useState(null);
     const [suspendUserId, setSuspendUserId] = useState('');
     const [suspendUserName, setSuspendUserName] = useState('');
     const [suspendReason, setSuspendReason] = useState('');
@@ -106,10 +110,10 @@ export default function AdminConsole() {
     // Community Channels Moderation State
     const [communityChannels, setCommunityChannels] = useState([
         { id: 1, name: 'Engineering & Tech', category: 'Technology & Architecture', reportsCount: 5, mod: 'Loveneesh Sharma', status: 'Strict', type: 'Public', filterKey: 'Engineering', icon: 'developer_board' },
-        { id: 2, name: 'HR & People Ops', category: 'Human Resources & Governance', reportsCount: 3, mod: 'Sourabh Sahu', status: 'Standard', type: 'Default (Org)', filterKey: 'HR', icon: 'groups' },
+        { id: 2, name: 'HR & People Ops', category: 'Human Resources & Governance', reportsCount: 3, mod: 'Sourabh Sahu', status: 'Standard', type: 'Org', filterKey: 'HR', icon: 'groups' },
         { id: 3, name: 'Product Design & UX', category: 'UI/UX & Design Systems', reportsCount: 2, mod: 'Mayur Verma', status: 'Standard', type: 'Public', filterKey: 'Product', icon: 'palette' },
         { id: 4, name: 'AI & Data Science Lab', category: 'AI Research & Data Science', reportsCount: 4, mod: 'Vishendra Sharma', status: 'Strict', type: 'Private', filterKey: 'AI', icon: 'psychology' },
-        { id: 5, name: 'Finance & Accounting', category: 'Finance, Audit & Payroll', reportsCount: 1, mod: 'Sourabh Sahu', status: 'Standard', type: 'Default (Org)', filterKey: 'Finance', icon: 'account_balance' },
+        { id: 5, name: 'Finance & Accounting', category: 'Finance, Audit & Payroll', reportsCount: 1, mod: 'Sourabh Sahu', status: 'Standard', type: 'Org', filterKey: 'Finance', icon: 'account_balance' },
         { id: 6, name: 'Marketing & Brand Strategy', category: 'Marketing, PR & Events', reportsCount: 1, mod: 'Meghna Tiwari', status: 'Standard', type: 'Public', filterKey: 'Marketing', icon: 'campaign' },
         { id: 7, name: 'CTO Leadership Circle', category: 'Executive Leadership & Strategy', reportsCount: 0, mod: 'Loveneesh Sharma', status: 'Strict', type: 'Private', filterKey: 'CTO', icon: 'military_tech' },
         { id: 8, name: 'General Discussion', category: 'Company Open Lounge', reportsCount: 2, mod: 'System Admin', status: 'Relaxed', type: 'Public', filterKey: 'General', icon: 'forum' }
@@ -503,7 +507,7 @@ export default function AdminConsole() {
                                 reportsCount: 0,
                                 mod: item.ownerFullName || item.creatorName || 'System Admin',
                                 status: 'Standard',
-                                type: item.isDefaultOrgCommunity ? 'Default (Org)' : (item.isPrivate ? 'Private' : 'Public'),
+                                type: item.isDefaultOrgCommunity ? 'Org' : (item.isPrivate ? 'Private' : 'Public'),
                                 filterKey: item.name,
                                 icon: item.isDefaultOrgCommunity ? 'groups' : 'forum'
                             });
@@ -670,9 +674,9 @@ export default function AdminConsole() {
                     
                     if (!detailsText) {
                         if (log.action === 'ActivateUser' || log.action === 'UserActivated') {
-                            detailsText = `Reactivated Employee ID #${log.targetId || log.entityId || 'User'}`;
+                            detailsText = `Reactivated Employee ${log.entityName || log.target || 'User'}`;
                         } else if (log.action === 'SuspendUser' || log.action === 'UserSuspended') {
-                            detailsText = `Suspended Employee ID #${log.targetId || log.entityId || 'User'}${log.reason ? ` - ${log.reason}` : ''}`;
+                            detailsText = `Suspended Employee ${log.entityName || log.target || 'User'}${log.reason ? ` - ${log.reason}` : ''}`;
                         } else if (log.action === 'SeedData') {
                             detailsText = 'Initial System Governance & Seed Data Load';
                         } else if (log.reason) {
@@ -1059,17 +1063,24 @@ export default function AdminConsole() {
         }
     };
 
-    // Handle Suspend User Submission
-    const handleConfirmSuspend = async () => {
-        let numericId = Number(suspendUserId);
+    // Handle Suspend User Submission from Universal SuspendUserModal
+    const handleConfirmSuspend = async (payload) => {
+        let userObj = payload?.user || selectedUserToSuspend;
+        let days = payload?.days || suspendDays || 7;
+        let customDate = payload?.customDate || null;
+        let isPermanent = payload?.isPermanent || false;
+        let reason = payload?.fullReason || suspendReason || 'Compliance Policy Violation';
+
+        let numericId = userObj ? Number(userObj.userId || userObj.id) : Number(suspendUserId);
         if (isNaN(numericId) || numericId <= 0) {
             const found = usersList.find(u => 
-                String(u.employeeId || '').toUpperCase() === String(suspendUserId).toUpperCase() ||
-                (u.fullName && u.fullName.toLowerCase() === String(suspendUserId).toLowerCase()) ||
-                (u.name && u.name.toLowerCase() === String(suspendUserId).toLowerCase())
+                String(u.employeeId || '').toUpperCase() === String(suspendUserId || userObj?.employeeId).toUpperCase() ||
+                (u.fullName && u.fullName.toLowerCase() === String(suspendUserId || userObj?.fullName).toLowerCase()) ||
+                (u.name && u.name.toLowerCase() === String(suspendUserId || userObj?.name).toLowerCase())
             );
             if (found) {
                 numericId = Number(found.userId || found.id);
+                userObj = found;
             }
         }
 
@@ -1078,25 +1089,25 @@ export default function AdminConsole() {
             return;
         }
 
-        const targetUser = usersList.find(u => Number(u.userId || u.id) === numericId);
-        const resolvedName = suspendUserName || targetUser?.fullName || targetUser?.name || `Employee #${numericId}`;
-        const reason = suspendReason || 'Compliance Policy Violation';
+        const targetUser = usersList.find(u => Number(u.userId || u.id) === numericId) || userObj;
+        const resolvedName = targetUser?.fullName || targetUser?.name || userObj?.fullName || userObj?.name || `Employee #${numericId}`;
 
         try {
-            await adminApi.suspendUser(numericId, reason, suspendDays);
+            await adminApi.suspendUser(numericId, reason, days, customDate, isPermanent);
         } catch (err) {
             console.warn("Backend suspend API notice:", err);
         }
 
         if (toggleUserActiveStatus) toggleUserActiveStatus(numericId, false);
-        setUsersList(prev => prev.map(u => (Number(u.userId || u.id) === numericId || (targetUser?.employeeId && u.employeeId === targetUser.employeeId)) ? { ...u, isActive: false, isSuspended: true } : u));
+        setUsersList(prev => prev.map(u => (Number(u.userId || u.id) === numericId || (targetUser?.employeeId && u.employeeId === targetUser.employeeId)) ? { ...u, isActive: false, isSuspended: true, status: 'Suspended' } : u));
         
         setIsSuspendModalOpen(false);
-        showToast(`Employee #${numericId} (${resolvedName}) suspended for ${suspendDays} days.`);
+        setSelectedUserToSuspend(null);
+        showToast(`Employee #${numericId} (${resolvedName}) suspended.`);
 
         logAuditEntry(
             'UserSuspended',
-            `Suspended Employee #${numericId} (${resolvedName}) for ${suspendDays} days - Reason: ${reason}`,
+            `Suspended Employee #${numericId} (${resolvedName}) - Reason: ${reason}`,
             'text-rose-500 font-black'
         );
 
@@ -1108,30 +1119,32 @@ export default function AdminConsole() {
 
     // Handle User Activate/Reinstate
     const handleToggleUserActive = async (user) => {
-        const newActiveState = !user.isActive;
+        if (!user) return;
+        // If user is currently active, clicking suspend triggers the standard SuspendUserModal
+        if (user.isActive) {
+            setSelectedUserToSuspend(user);
+            setIsSuspendModalOpen(true);
+            return;
+        }
+
+        // If user is suspended/inactive, reactivate them
         const targetId = Number(user.userId || user.id);
         try {
-            if (newActiveState) {
-                if (!isNaN(targetId) && targetId > 0) {
-                    await adminApi.activateUser(targetId);
-                }
-            } else {
-                if (!isNaN(targetId) && targetId > 0) {
-                    await adminApi.suspendUser(targetId, 'Admin Manual Action', 7);
-                }
+            if (!isNaN(targetId) && targetId > 0) {
+                await adminApi.activateUser(targetId);
             }
         } catch (err) {
             console.warn("Backend activation notice:", err);
         }
 
-        if (toggleUserActiveStatus && !isNaN(targetId)) toggleUserActiveStatus(targetId, newActiveState);
-        setUsersList(prev => prev.map(u => (Number(u.userId || u.id) === targetId || (user.employeeId && u.employeeId === user.employeeId)) ? { ...u, isActive: newActiveState, isSuspended: !newActiveState } : u));
-        showToast(`User ${user.fullName || user.name} is now ${newActiveState ? 'Active' : 'Suspended'}.`);
+        if (toggleUserActiveStatus && !isNaN(targetId)) toggleUserActiveStatus(targetId, true);
+        setUsersList(prev => prev.map(u => (Number(u.userId || u.id) === targetId || (user.employeeId && u.employeeId === user.employeeId)) ? { ...u, isActive: true, isSuspended: false, status: 'Active' } : u));
+        showToast(`User ${user.fullName || user.name} is now Active.`);
 
         logAuditEntry(
-            newActiveState ? 'UserActivated' : 'UserSuspended',
-            `${newActiveState ? 'Reactivated' : 'Suspended'} Employee #${targetId || user.employeeId} (${user.fullName || user.name})`,
-            newActiveState ? 'text-emerald-500 font-bold' : 'text-rose-500 font-black'
+            'UserActivated',
+            `Reactivated Employee ${user.fullName || user.name}`,
+            'text-emerald-500 font-bold'
         );
     };
 
@@ -1245,6 +1258,42 @@ export default function AdminConsole() {
 
         return matchesStatus && matchesReason && matchesSeverity && matchesCommunity && matchesModerator && matchesDateRange && matchesSearch;
     });
+
+    const activeUserSearchTerm = (userSearchTerm || searchQuery || '').trim().toLowerCase();
+    const filteredUsers = usersList.filter(u => {
+        if (!activeUserSearchTerm) return true;
+        if (activeUserSearchTerm === 'suspended') return u.isSuspended === true || u.isPermanentlySuspended === true || (u.status || '').toLowerCase() === 'suspended';
+        if (activeUserSearchTerm === 'inactive') return (u.isActive === false && !u.isSuspended && !u.isPermanentlySuspended) || (u.status || '').toLowerCase() === 'inactive';
+        if (activeUserSearchTerm === 'active') return (u.isActive === true && !u.isSuspended && !u.isPermanentlySuspended) || (u.status || '').toLowerCase() === 'active';
+        if (activeUserSearchTerm === 'admin') return (u.roleName || '').toLowerCase().includes('admin') || (u.role || '').toLowerCase().includes('adm');
+        return (
+            String(u.userId || u.id || '').includes(activeUserSearchTerm) ||
+            (u.fullName || u.name || '').toLowerCase().includes(activeUserSearchTerm) ||
+            (u.email || u.employeeId || '').toLowerCase().includes(activeUserSearchTerm) ||
+            (u.designation || '').toLowerCase().includes(activeUserSearchTerm) ||
+            (u.department || u.departmentName || '').toLowerCase().includes(activeUserSearchTerm) ||
+            (u.roleName || '').toLowerCase().includes(activeUserSearchTerm)
+        );
+    });
+
+    const filteredAuditTrail = auditTrail.filter(a => !auditSearch || a.action.toLowerCase().includes(auditSearch.toLowerCase()) || a.target.toLowerCase().includes(auditSearch.toLowerCase()));
+
+    const moderationTableRef = useRef(null);
+    const { visibleCount: visibleReportCount, resetVisibleCount: resetReportCount } = useScrollLoading(filteredReports.length, 15, 15, 200, moderationTableRef);
+    const { visibleCount: visibleUserCount, resetVisibleCount: resetUserCount } = useScrollLoading(filteredUsers.length, 15, 15);
+    const { visibleCount: visibleAuditCount, resetVisibleCount: resetAuditCount } = useScrollLoading(filteredAuditTrail.length, 20, 20);
+
+    useEffect(() => {
+        resetReportCount();
+    }, [searchQuery, statusFilter, reasonFilter, severityFilter, communityFilter, dateRangeFilter, moderatorFilter, activeTab]);
+
+    useEffect(() => {
+        resetUserCount();
+    }, [userSearchTerm, searchQuery, activeTab]);
+
+    useEffect(() => {
+        resetAuditCount();
+    }, [auditSearch, activeTab]);
 
     // 10 Compact Metrics Calculations
     const totalReportsCount = reports.length;
@@ -1436,7 +1485,10 @@ export default function AdminConsole() {
 
                     {/* Suspend User Button */}
                     <button
-                        onClick={() => setIsSuspendModalOpen(true)}
+                        onClick={() => {
+                            setSelectedUserToSuspend(null);
+                            setIsSuspendModalOpen(true);
+                        }}
                         className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-lg shadow-sm transition-all flex items-center gap-1 cursor-pointer shrink-0"
                     >
                         <span className="material-symbols-outlined text-[16px]">person_off</span>
@@ -1825,7 +1877,7 @@ export default function AdminConsole() {
                     </div>
 
                     {/* ─── 5. HIGH-DENSITY 13-COLUMN TABLE VIEW ─── */}
-                    <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-310px)] custom-scrollbar">
+                    <div ref={moderationTableRef} className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-310px)] custom-scrollbar">
                         <table className="w-full text-left border-collapse">
                             <thead className="bg-slate-100/90 dark:bg-slate-800/80 text-slate-500 dark:text-slate-400 font-bold text-[11px] uppercase tracking-wider border-b border-slate-200 dark:border-slate-800 sticky top-0 z-10 backdrop-blur-xs">
                                 <tr>
@@ -1844,7 +1896,7 @@ export default function AdminConsole() {
                                     <th className="px-3 py-2">Community</th>
                                     <th className="px-3 py-2">Reason</th>
                                     <th className="px-3 py-2">Severity</th>
-                                    <th className="px-3 py-2">AI Score</th>
+                                    <th className="px-3 py-2 whitespace-nowrap">Score</th>
                                     <th className="px-3 py-2">Status</th>
                                     <th className="px-3 py-2">Moderator</th>
                                     <th className="px-3 py-2">Date</th>
@@ -1879,7 +1931,7 @@ export default function AdminConsole() {
                                         </td>
                                     </tr>
                                 ) : (
-                                    filteredReports.map(r => {
+                                    filteredReports.slice(0, visibleReportCount).map(r => {
                                         const isPending = r.status === 'Pending';
                                         const isSelected = selectedReportIds.includes(r.reportId);
                                         
@@ -1968,7 +2020,7 @@ export default function AdminConsole() {
                                                     </span>
                                                 </td>
 
-                                                {/* AI Score */}
+                                                {/* Score */}
                                                 <td className="px-3 py-2 font-bold text-[11px] text-slate-700 dark:text-slate-300">
                                                     {r.aiScore || '82% Toxic'}
                                                 </td>
@@ -2032,8 +2084,15 @@ export default function AdminConsole() {
                                                                 {/* Suspend User Icon */}
                                                                 <button
                                                                     onClick={() => {
-                                                                        setSuspendUserId(String(r.reportedUserId || r.reporterUserId));
-                                                                        setSuspendUserName(r.reportedUserName || r.reporterFullName);
+                                                                        const targetId = r.reportedUserId || r.reporterUserId;
+                                                                        const targetUser = usersList.find(u => Number(u.userId || u.id) === Number(targetId)) || {
+                                                                            userId: targetId,
+                                                                            fullName: r.reportedUserName || r.reporterFullName,
+                                                                            name: r.reportedUserName || r.reporterFullName,
+                                                                            roleName: 'Employee',
+                                                                            department: 'General'
+                                                                        };
+                                                                        setSelectedUserToSuspend(targetUser);
                                                                         setIsSuspendModalOpen(true);
                                                                     }}
                                                                     className="p-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 rounded border border-amber-500/20 transition-all cursor-pointer"
@@ -2051,40 +2110,23 @@ export default function AdminConsole() {
                                 )}
                             </tbody>
                         </table>
+                        <ScrollLoadingIndicator isVisible={visibleReportCount < filteredReports.length} text="Loading more moderation reports on scroll..." />
                     </div>
                 </div>
             )}
 
             {/* ─── TAB 2: USER GOVERNANCE ─── */}
-            {activeTab === 'users' && (() => {
-                const activeSearchTerm = (userSearchTerm || searchQuery || '').trim();
-                const filteredUsers = usersList.filter(u => {
-                    if (!activeSearchTerm) return true;
-                    const term = activeSearchTerm.toLowerCase();
-                    if (term === 'suspended') return u.isActive === false || u.isSuspended === true;
-                    if (term === 'active') return u.isActive === true && !u.isSuspended;
-                    if (term === 'admin') return (u.roleName || '').toLowerCase().includes('admin') || (u.role || '').toLowerCase().includes('adm');
-                    return (
-                        String(u.userId || u.id || '').includes(term) ||
-                        (u.fullName || u.name || '').toLowerCase().includes(term) ||
-                        (u.email || u.employeeId || '').toLowerCase().includes(term) ||
-                        (u.designation || '').toLowerCase().includes(term) ||
-                        (u.department || u.departmentName || '').toLowerCase().includes(term) ||
-                        (u.roleName || '').toLowerCase().includes(term)
-                    );
-                });
-
-                return (
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs p-4">
-                        <div className="flex items-center justify-between mb-4">
-                            <div>
-                                <h2 className="text-base font-black text-slate-900 dark:text-white">User Governance & Security Management</h2>
-                                {activeSearchTerm && (
-                                    <p className="text-xs text-indigo-600 font-semibold mt-0.5">
-                                        Filtering: <strong className="capitalize">{activeSearchTerm}</strong> ({filteredUsers.length} Users found)
-                                    </p>
-                                )}
-                            </div>
+            {activeTab === 'users' && (
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs p-4">
+                    <div className="flex items-center justify-between mb-4">
+                        <div>
+                            <h2 className="text-base font-black text-slate-900 dark:text-white">User Governance & Security Management</h2>
+                            {activeUserSearchTerm && (
+                                <p className="text-xs text-indigo-600 font-semibold mt-0.5">
+                                    Filtering: <strong className="capitalize">{activeUserSearchTerm}</strong> ({filteredUsers.length} Users found)
+                                </p>
+                            )}
+                        </div>
                             <div className="flex items-center gap-2">
                                 <input
                                     type="text"
@@ -2115,7 +2157,7 @@ export default function AdminConsole() {
                             <table className="w-full text-left border-collapse text-xs">
                                 <thead className="bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold uppercase tracking-wider">
                                     <tr>
-                                        <th className="px-4 py-2.5">User / Emp ID</th>
+                                        <th className="px-4 py-2.5">User #</th>
                                         <th className="px-4 py-2.5">Employee Name & Email</th>
                                         <th className="px-4 py-2.5">Designation & Dept</th>
                                         <th className="px-4 py-2.5">Assigned Role</th>
@@ -2137,7 +2179,7 @@ export default function AdminConsole() {
                                             </td>
                                         </tr>
                                     ) : (
-                                        filteredUsers.map(u => {
+                                        filteredUsers.slice(0, visibleUserCount).map(u => {
                                             const assignedRole = u.roleName || getUserAssignedRole(u);
                                             const empId = u.employeeId || `MPO${u.userId || u.id || '100'}`;
                                             const uEmail = u.email || `${(u.fullName || u.name || 'user').toLowerCase().replace(/\s+/g, '.')}@mponline.gov.in`;
@@ -2148,8 +2190,8 @@ export default function AdminConsole() {
                                                     <td className="px-4 py-2.5 font-bold">
                                                         <div className="flex flex-col">
                                                             <span className="text-slate-900 dark:text-white font-mono text-[11px]">#{u.userId || u.id}</span>
-                                                            <span className="text-[10px] font-mono text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.2 rounded w-fit mt-0.5">
-                                                                {empId}
+                                                            <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.2 rounded w-fit mt-0.5">
+                                                                Member
                                                             </span>
                                                         </div>
                                                     </td>
@@ -2193,15 +2235,31 @@ export default function AdminConsole() {
                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-2.5">
-                                                        <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-black">
-                                                            <span className="material-symbols-outlined text-[15px]">stars</span>
-                                                            <span>{typeof u.karmaPoints === 'number' ? u.karmaPoints : 0} pts</span>
-                                                        </div>
+                                                        {(() => {
+                                                            const uRoles = getUserRolesList(u).map(r => String(r).toLowerCase());
+                                                            const isUserSysAdmin = (u.role === 'SYSADM' || u.roleName === 'System Administrator' || uRoles.some(r => r.includes('system') || r.includes('sysadm'))) &&
+                                                                                   !uRoles.some(r => r.includes('hr') || r.includes('community') || r.includes('employee'));
+                                                            if (isUserSysAdmin && (!u.karmaPoints || u.karmaPoints === 0)) {
+                                                                return <span className="text-xs font-bold text-slate-400 dark:text-slate-500">—</span>;
+                                                            }
+                                                            return (
+                                                                <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-black">
+                                                                    <span className="material-symbols-outlined text-[15px]">stars</span>
+                                                                    <span>{typeof u.karmaPoints === 'number' ? u.karmaPoints : 0} pts</span>
+                                                                </div>
+                                                            );
+                                                        })()}
                                                     </td>
                                                     <td className="px-4 py-2.5">
-                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${!u.isSuspended && u.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'}`}>
-                                                            {!u.isSuspended && u.isActive ? 'Active' : 'Suspended'}
-                                                        </span>
+                                                        {(() => {
+                                                            const statusCfg = getUserStatusConfig(u);
+                                                            return (
+                                                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${statusCfg.badgeClass}`}>
+                                                                    <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dotClass}`}></span>
+                                                                    {statusCfg.label}
+                                                                </span>
+                                                            );
+                                                        })()}
                                                     </td>
                                                     <td className="px-4 py-2.5 text-right">
                                                         <div className="flex items-center justify-end gap-1.5">
@@ -2243,9 +2301,9 @@ export default function AdminConsole() {
                                 </tbody>
                             </table>
                         </div>
+                        <ScrollLoadingIndicator isVisible={visibleUserCount < filteredUsers.length} text="Loading more users on scroll..." />
                     </div>
-                );
-            })()}
+            )}
 
             {/* ─── TAB 3: COMMUNITY MODERATION ─── */}
             {activeTab === 'communities' && (
@@ -2514,8 +2572,8 @@ export default function AdminConsole() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {auditTrail
-                                    .filter(a => !auditSearch || a.action.toLowerCase().includes(auditSearch.toLowerCase()) || a.target.toLowerCase().includes(auditSearch.toLowerCase()))
+                                {filteredAuditTrail
+                                    .slice(0, visibleAuditCount)
                                     .map(a => (
                                         <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40">
                                             <td className="px-4 py-2.5 text-slate-400 whitespace-nowrap">{a.time}</td>
@@ -2529,6 +2587,7 @@ export default function AdminConsole() {
                             </tbody>
                         </table>
                     </div>
+                    <ScrollLoadingIndicator isVisible={visibleAuditCount < filteredAuditTrail.length} text="Loading more audit logs on scroll..." />
                 </div>
             )}
 
@@ -3114,8 +3173,8 @@ export default function AdminConsole() {
                                             {/* Header */}
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-2">
-                                                    <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
-                                                        {req.employeeId}
+                                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                                                        {req.assignedRoleName || req.requestedRoleCode || 'Role Request'}
                                                     </span>
                                                     <span className="text-[11px] text-slate-400 font-medium">
                                                         {new Date(req.createdAt).toLocaleDateString()}
@@ -3212,191 +3271,23 @@ export default function AdminConsole() {
                 </div>
             )}
 
-            {/* ─── MODAL 1: SUSPEND EMPLOYEE USER ACCOUNT ─── */}
-            {isSuspendModalOpen && (
-                <div className="fixed inset-0 z-[120] bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-in zoom-in-95 max-h-[92vh] overflow-y-auto">
-                        <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
-                            <div className="flex items-center gap-2 text-rose-500">
-                                <span className="material-symbols-outlined text-2xl">person_off</span>
-                                <div>
-                                    <h3 className="text-base font-black text-slate-900 dark:text-white">Suspend Employee Account</h3>
-                                    <p className="text-[11px] text-slate-400 font-medium">Enterprise account suspension & governance enforcement</p>
-                                </div>
-                            </div>
-                            <button 
-                                onClick={() => {
-                                    setIsSuspendModalOpen(false);
-                                    setSuspendUserId('');
-                                    setSuspendUserName('');
-                                    setSuspendSearchTerm('');
-                                    setSuspendReason('');
-                                }} 
-                                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-1"
-                            >
-                                <span className="material-symbols-outlined text-xl">close</span>
-                            </button>
-                        </div>
-
-                        <div className="space-y-4 text-xs">
-                            {/* Target User Card or Searchable Picker */}
-                            {suspendUserId ? (
-                                <div className="p-3 bg-rose-50/70 dark:bg-rose-950/30 rounded-xl border border-rose-200 dark:border-rose-900/50 flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-full bg-rose-500 text-white font-black flex items-center justify-center text-sm shadow-sm">
-                                            {(suspendUserName || 'U')[0]}
-                                        </div>
-                                        <div>
-                                            <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider block">Target User</span>
-                                            <p className="font-extrabold text-slate-900 dark:text-white text-sm">{suspendUserName || `User #${suspendUserId}`}</p>
-                                            <p className="text-[11px] text-slate-500 font-mono">User ID: #{suspendUserId}</p>
-                                        </div>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setSuspendUserId('');
-                                            setSuspendUserName('');
-                                            setSuspendSearchTerm('');
-                                        }}
-                                        className="px-2.5 py-1 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] font-bold hover:bg-slate-50 cursor-pointer"
-                                    >
-                                        Change
-                                    </button>
-                                </div>
-                            ) : (
-                                <div>
-                                    <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">
-                                        Select Employee to Suspend <span className="text-rose-500">*</span>
-                                    </label>
-                                    <div className="relative mb-2">
-                                        <span className="material-symbols-outlined absolute left-2.5 top-2 text-slate-400 text-[16px]">search</span>
-                                        <input
-                                            type="text"
-                                            value={suspendSearchTerm}
-                                            onChange={e => setSuspendSearchTerm(e.target.value)}
-                                            placeholder="Search by name, email, or employee code..."
-                                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-8 pr-3 py-2 text-xs font-semibold outline-none focus:border-rose-500 text-slate-900 dark:text-white"
-                                        />
-                                    </div>
-                                    <div className="max-h-40 overflow-y-auto space-y-1.5 custom-scrollbar border border-slate-200 dark:border-slate-800 rounded-xl p-1 bg-slate-50/50 dark:bg-slate-900/50">
-                                        {usersList
-                                            .filter(u => {
-                                                if (!suspendSearchTerm) return true;
-                                                const term = suspendSearchTerm.toLowerCase();
-                                                return (
-                                                    (u.fullName || u.name || '').toLowerCase().includes(term) ||
-                                                    (u.email || '').toLowerCase().includes(term) ||
-                                                    String(u.employeeId || '').toLowerCase().includes(term) ||
-                                                    String(u.userId || u.id || '').includes(term)
-                                                );
-                                            })
-                                            .slice(0, 15)
-                                            .map(u => (
-                                                <div
-                                                    key={u.userId || u.id}
-                                                    onClick={() => {
-                                                        setSuspendUserId(String(u.userId || u.id));
-                                                        setSuspendUserName(u.fullName || u.name);
-                                                    }}
-                                                    className="p-2 rounded-lg hover:bg-white dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 cursor-pointer flex items-center justify-between transition-colors"
-                                                >
-                                                    <div className="flex items-center gap-2.5 min-w-0">
-                                                        <div className="w-7 h-7 rounded-full bg-indigo-500/20 text-indigo-600 font-bold text-xs flex items-center justify-center shrink-0">
-                                                            {(u.fullName || u.name || 'U')[0]}
-                                                        </div>
-                                                        <div className="min-w-0">
-                                                            <p className="font-bold text-slate-900 dark:text-white text-xs truncate">{u.fullName || u.name}</p>
-                                                            <p className="text-[10px] text-slate-400 truncate">{u.employeeId} • {u.department || u.departmentName || 'General'}</p>
-                                                        </div>
-                                                    </div>
-                                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${u.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'}`}>
-                                                        {u.isActive ? 'Active' : 'Suspended'}
-                                                    </span>
-                                                </div>
-                                            ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            <div>
-                                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">Suspension Duration</label>
-                                <select
-                                    value={suspendDays}
-                                    onChange={e => setSuspendDays(Number(e.target.value))}
-                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 font-bold outline-none text-slate-900 dark:text-white cursor-pointer"
-                                >
-                                    <option value={1}>1 Day (Warning / Cooldown)</option>
-                                    <option value={7}>7 Days (Standard Policy Violation)</option>
-                                    <option value={30}>30 Days (Severe Policy Violation)</option>
-                                    <option value={365}>Permanent Suspension (365 Days)</option>
-                                </select>
-                            </div>
-
-                            {/* Preset Reason Chips */}
-                            <div>
-                                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">Quick Reason Presets</label>
-                                <div className="flex flex-wrap gap-1.5">
-                                    {[
-                                        'Spam / Advertising',
-                                        'Harassment & Abusive Behavior',
-                                        'Compliance Policy Violation',
-                                        'Confidentiality & PII Leak',
-                                        'Inappropriate Content'
-                                    ].map(preset => (
-                                        <button
-                                            key={preset}
-                                            type="button"
-                                            onClick={() => setSuspendReason(preset)}
-                                            className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer ${
-                                                suspendReason === preset 
-                                                    ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/40 font-bold' 
-                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-300'
-                                            }`}
-                                        >
-                                            {preset}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            <div>
-                                <label className="block text-slate-700 dark:text-slate-300 font-bold mb-1.5">Violation Reason & Notes</label>
-                                <textarea
-                                    value={suspendReason}
-                                    onChange={e => setSuspendReason(e.target.value)}
-                                    placeholder="Provide detailed violation reasoning for HR audit..."
-                                    rows="3"
-                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5 outline-none text-slate-900 dark:text-white focus:border-rose-500 text-xs"
-                                ></textarea>
-                            </div>
-                        </div>
-
-                        <div className="mt-6 flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-                            <button
-                                onClick={() => {
-                                    setIsSuspendModalOpen(false);
-                                    setSuspendUserId('');
-                                    setSuspendUserName('');
-                                    setSuspendSearchTerm('');
-                                    setSuspendReason('');
-                                }}
-                                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl transition-all cursor-pointer"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleConfirmSuspend}
-                                disabled={!suspendUserId}
-                                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-1.5"
-                            >
-                                <span className="material-symbols-outlined text-[16px]">person_off</span>
-                                <span>Confirm Suspension</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* ─── MODAL 1: UNIVERSAL SUSPEND EMPLOYEE USER ACCOUNT ─── */}
+            <SuspendUserModal
+                isOpen={isSuspendModalOpen}
+                onClose={() => {
+                    setIsSuspendModalOpen(false);
+                    setSelectedUserToSuspend(null);
+                    setSuspendUserId('');
+                    setSuspendUserName('');
+                    setSuspendSearchTerm('');
+                    setSuspendReason('');
+                }}
+                user={selectedUserToSuspend}
+                availableUsers={usersList}
+                onConfirm={handleConfirmSuspend}
+                title="Suspend Employee Account"
+                subtitle="Enterprise account suspension & governance enforcement"
+            />
 
             {/* ─── MODAL 2: CHANGE EMPLOYEE ROLES (MULTIPLE ROLE ASSIGNMENT) ─── */}
             {isRoleModalOpen && (
@@ -3828,8 +3719,14 @@ export default function AdminConsole() {
                                                 setIsPreviewOpen(false);
                                                 const targetUserId = previewPost?.authorUserId || previewPost?.userId || previewPost?.authorId || previewReport.reportedUserId || previewReport.reporterUserId;
                                                 const targetUserName = previewPost?.authorFullName || previewPost?.authorName || previewPost?.fullName || previewReport.reportedUserName || previewReport.reporterFullName;
-                                                setSuspendUserId(String(targetUserId));
-                                                setSuspendUserName(targetUserName);
+                                                const targetUser = usersList.find(u => Number(u.userId || u.id) === Number(targetUserId)) || {
+                                                    userId: targetUserId,
+                                                    fullName: targetUserName,
+                                                    name: targetUserName,
+                                                    roleName: 'Employee',
+                                                    department: 'General'
+                                                };
+                                                setSelectedUserToSuspend(targetUser);
                                                 setIsSuspendModalOpen(true);
                                             }}
                                             className="px-3.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 font-bold text-[11px] border border-amber-500/20 rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1"
@@ -3882,8 +3779,14 @@ export default function AdminConsole() {
                                                 setIsPreviewOpen(false);
                                                 const targetUserId = previewPost?.authorUserId || previewPost?.userId || previewPost?.authorId || previewReport.reportedUserId || previewReport.reporterUserId;
                                                 const targetUserName = previewPost?.authorFullName || previewPost?.authorName || previewPost?.fullName || previewReport.reportedUserName || previewReport.reporterFullName;
-                                                setSuspendUserId(String(targetUserId));
-                                                setSuspendUserName(targetUserName);
+                                                const targetUser = usersList.find(u => Number(u.userId || u.id) === Number(targetUserId)) || {
+                                                    userId: targetUserId,
+                                                    fullName: targetUserName,
+                                                    name: targetUserName,
+                                                    roleName: 'Employee',
+                                                    department: 'General'
+                                                };
+                                                setSelectedUserToSuspend(targetUser);
                                                 setIsSuspendModalOpen(true);
                                             }}
                                             className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 font-bold text-[11px] border border-amber-500/20 rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1"
@@ -3952,7 +3855,7 @@ export default function AdminConsole() {
                             </div>
 
                             <div>
-                                <label className="block text-slate-500 font-bold mb-1">Assigned Community Moderator</label>
+                                <label className="block text-slate-500 font-bold mb-1">Assigned Community Administrator</label>
                                 <select
                                     value={selectedManageCommunity.mod}
                                     onChange={e => {
@@ -4138,15 +4041,18 @@ export default function AdminConsole() {
                                         alt={selectedUserDetailsUser.fullName || selectedUserDetailsUser.name}
                                         className="w-16 h-16 rounded-2xl object-cover border-2 border-white/40 shadow-lg"
                                     />
-                                    <span className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${selectedUserDetailsUser.isActive ? 'bg-emerald-400' : 'bg-rose-500'}`} />
+                                    {(() => {
+                                        const statusCfg = getUserStatusConfig(selectedUserDetailsUser);
+                                        return <span className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white shadow-xs ${statusCfg.dotClass}`} title={`Status: ${statusCfg.label}`} />;
+                                    })()}
                                 </div>
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <h3 className="text-xl font-black text-white leading-tight">
                                             {selectedUserDetailsUser.fullName || selectedUserDetailsUser.name}
                                         </h3>
-                                        <span className="px-2 py-0.5 rounded-full bg-white/20 text-white font-mono text-[11px] font-bold">
-                                            {selectedUserDetailsUser.employeeId || `MPO${selectedUserDetailsUser.userId || selectedUserDetailsUser.id}`}
+                                        <span className="px-2.5 py-0.5 rounded-full bg-white/20 text-white text-[11px] font-bold">
+                                            {selectedUserDetailsUser.roleName || selectedUserDetailsUser.role || 'Member'}
                                         </span>
                                     </div>
                                     <p className="text-indigo-100 text-xs mt-0.5">
@@ -4176,15 +4082,32 @@ export default function AdminConsole() {
                                 <div className="p-3.5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/40 text-center">
                                     <span className="text-[10px] uppercase font-bold text-amber-500 tracking-wider">Karma Points</span>
                                     <p className="text-xs font-black text-amber-950 dark:text-amber-200 mt-0.5">
-                                        ⭐ {typeof selectedUserDetailsUser.karmaPoints === 'number' ? selectedUserDetailsUser.karmaPoints : 0} pts ({selectedUserDetailsUser.karmaBadgeLevel || 'Bronze'})
+                                        {(() => {
+                                            const role = String(selectedUserDetailsUser.roleName || getUserAssignedRole(selectedUserDetailsUser) || '').toLowerCase();
+                                            const isSysOnly = (role.includes('system') || role.includes('sysadm')) && !role.includes('hr') && !role.includes('community') && !role.includes('employee');
+                                            if (isSysOnly && !selectedUserDetailsUser.karmaPoints) {
+                                                return '— (Exempt)';
+                                            }
+                                            return `⭐ ${typeof selectedUserDetailsUser.karmaPoints === 'number' ? selectedUserDetailsUser.karmaPoints : (selectedUserDetailsUser.karma || 0)} pts (${selectedUserDetailsUser.karmaBadgeLevel || 'Bronze'})`;
+                                        })()}
                                     </p>
                                 </div>
-                                <div className="p-3.5 rounded-2xl bg-emerald-50/50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 text-center">
-                                    <span className="text-[10px] uppercase font-bold text-emerald-500 tracking-wider">Account Status</span>
-                                    <p className={`text-xs font-black mt-0.5 ${selectedUserDetailsUser.isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                                        {selectedUserDetailsUser.isActive ? '● Active & Verified' : '● Suspended'}
-                                    </p>
-                                </div>
+                                {(() => {
+                                    const statusCfg = getUserStatusConfig(selectedUserDetailsUser);
+                                    const textClass = statusCfg.status === 'Active' 
+                                        ? 'text-emerald-600 dark:text-emerald-400' 
+                                        : statusCfg.status === 'Suspended' 
+                                            ? 'text-rose-600 dark:text-rose-400' 
+                                            : 'text-slate-600 dark:text-slate-400';
+                                    return (
+                                        <div className="p-3.5 rounded-2xl bg-slate-50/50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 text-center">
+                                            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Account Status</span>
+                                            <p className={`text-xs font-black mt-0.5 ${textClass}`}>
+                                                ● {statusCfg.label}
+                                            </p>
+                                        </div>
+                                    );
+                                })()}
                             </div>
 
                             {/* Section: Employee & Organization Details */}
@@ -4269,8 +4192,14 @@ export default function AdminConsole() {
 
                                 <button
                                     onClick={() => {
-                                        handleToggleUserActive(selectedUserDetailsUser);
-                                        setSelectedUserDetailsUser(prev => prev ? { ...prev, isActive: !prev.isActive } : null);
+                                        if (selectedUserDetailsUser.isActive) {
+                                            setIsUserDetailsModalOpen(false);
+                                            setSelectedUserToSuspend(selectedUserDetailsUser);
+                                            setIsSuspendModalOpen(true);
+                                        } else {
+                                            handleToggleUserActive(selectedUserDetailsUser);
+                                            setSelectedUserDetailsUser(prev => prev ? { ...prev, isActive: true, isSuspended: false, status: 'Active' } : null);
+                                        }
                                     }}
                                     className={`px-4 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
                                         selectedUserDetailsUser.isActive 

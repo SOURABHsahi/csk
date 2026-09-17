@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import { useUser, INITIAL_USERS } from '../contexts/UserContext';
 import { communitiesApi, mediaApi } from '../../utils/apiService';
 import { apiClient } from '../../utils/apiClient';
+import useScrollLoading from '../../hooks/useScrollLoading';
+import ScrollLoadingIndicator from '../ui/ScrollLoadingIndicator';
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 const MAX_IMAGE_SIZE_MB = 5;
@@ -199,6 +201,31 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
             ((u.department || u.departmentName || '').toLowerCase().includes(q))
         );
     }, [candidateUsers, userSearchQuery]);
+
+    const employeeGridRef = useRef(null);
+    const { visibleCount: visibleUserCount, resetVisibleCount: resetUserCount } = useScrollLoading(filteredUsers.length, 12, 12, 100, employeeGridRef);
+
+    useEffect(() => {
+        resetUserCount();
+    }, [userSearchQuery, step, isOpen]);
+
+    // Full user objects for selected members
+    const selectedUsers = useMemo(() => {
+        const pool = [...candidateUsers, ...(allAvailableUsers || []), ...(users || []), ...(INITIAL_USERS || [])];
+        const seen = new Set();
+        const result = [];
+        for (const id of invitedUserIds) {
+            const u = pool.find(user => String(user.id || user.userId) === String(id));
+            if (u) {
+                const key = String(u.id || u.userId);
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    result.push(u);
+                }
+            }
+        }
+        return result;
+    }, [invitedUserIds, candidateUsers, allAvailableUsers, users]);
 
     // ── Helpers ─────────────────────────────────────────────────
     const toggleInviteUser = (userId) => {
@@ -563,8 +590,8 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                     icon: 'approval',
                     color: 'text-amber-500',
                     bg: 'bg-amber-500/10',
-                    text: `📋 New Community Approval Request: ${currentUser?.name || 'Employee'} (${currentUser?.employeeId || 'MPOnline'}) created "${newCommunity.name}". Awaiting HR Approval.`,
-                    message: `📋 New Community Approval Request: ${currentUser?.name || 'Employee'} (${currentUser?.employeeId || 'MPOnline'}) created "${newCommunity.name}". Awaiting HR Approval.`,
+                    text: `📋 New Community Approval Request: ${currentUser?.name || 'Employee'} (${currentUser?.department || currentUser?.roleName || 'MPOnline'}) created "${newCommunity.name}". Awaiting HR Approval.`,
+                    message: `📋 New Community Approval Request: ${currentUser?.name || 'Employee'} (${currentUser?.department || currentUser?.roleName || 'MPOnline'}) created "${newCommunity.name}". Awaiting HR Approval.`,
                     senderName: currentUser?.name || 'Employee',
                     senderAvatar: currentUser?.avatar || null,
                     senderUserId: currentUser?.userId || currentUser?.id,
@@ -841,7 +868,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-slate-400">Created By:</span>
-                                        <span className="font-bold text-slate-800 dark:text-slate-200">{currentUser?.name} ({currentUser?.employeeId || 'MPOnline'})</span>
+                                        <span className="font-bold text-slate-800 dark:text-slate-200">{currentUser?.name} • {currentUser?.department || currentUser?.roleName || 'MPOnline'}</span>
                                     </div>
                                 </div>
                             </div>
@@ -976,7 +1003,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                                         <h4 className="font-bold text-[13px] sm:text-[14px] text-slate-900 dark:text-white flex items-center gap-1.5">
                                                             <span className="material-symbols-outlined text-[16px] text-amber-500">lock</span> Private
                                                         </h4>
-                                                        <p className="text-[11px] text-slate-500 mt-0.5">Requires Admin approval. Join requests are reviewed before access is granted.</p>
+                                                        <p className="text-[11px] text-slate-500 mt-0.5">Requires Admin approval to join. Join requests are reviewed before access is granted.</p>
                                                     </div>
                                                 </div>
                                             </label>
@@ -1266,6 +1293,94 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                             )}
                                         </div>
 
+                                        {/* Dedicated Selected Members Box */}
+                                        <div className="mb-3.5 bg-white dark:bg-slate-800/90 border border-indigo-200/90 dark:border-indigo-800/70 rounded-2xl p-3 sm:p-3.5 shadow-xs transition-all">
+                                            <div className="flex items-center justify-between gap-2 mb-2 px-0.5">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-6 h-6 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                                                        <span className="material-symbols-outlined text-[16px]">how_to_reg</span>
+                                                    </div>
+                                                    <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                                                        Selected Members Box
+                                                    </span>
+                                                    <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded-full transition-colors ${
+                                                        selectedUsers.length > 0
+                                                            ? 'bg-indigo-600 text-white shadow-xs'
+                                                            : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                                    }`}>
+                                                        {selectedUsers.length}
+                                                    </span>
+                                                </div>
+
+                                                {selectedUsers.length > 0 && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setInvitedUserIds([])}
+                                                        className="text-[11px] font-bold text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 transition-colors flex items-center gap-1 cursor-pointer px-2 py-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                                        title="Deselect all members"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[14px]">remove_done</span>
+                                                        Clear All
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {selectedUsers.length === 0 ? (
+                                                <div className="py-2.5 px-3 text-center border border-dashed border-slate-200 dark:border-slate-700/80 rounded-xl bg-slate-50/60 dark:bg-slate-800/40">
+                                                    <p className="text-[11px] text-slate-400 dark:text-slate-400 font-medium">
+                                                        No members selected yet. Click on any employee cards below to add them to this box.
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-wrap gap-2 max-h-[135px] overflow-y-auto custom-scrollbar p-1">
+                                                    {selectedUsers.map(user => {
+                                                        const userId = user.id || user.userId;
+                                                        const displayName = user.name || user.fullName || 'Employee';
+                                                        const displayAvatar = user.avatar || user.profilePhotoUrl;
+                                                        const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=6366f1&color=fff&size=48`;
+
+                                                        return (
+                                                            <div
+                                                                key={userId}
+                                                                className="inline-flex items-center gap-2 pl-1.5 pr-2 py-1.5 bg-indigo-50/80 dark:bg-indigo-950/50 border border-indigo-200/90 dark:border-indigo-800/60 rounded-xl shadow-2xs hover:border-indigo-400 dark:hover:border-indigo-600 transition-all group select-none animate-in fade-in zoom-in-95 duration-150"
+                                                            >
+                                                                <img
+                                                                    src={displayAvatar || fallbackAvatar}
+                                                                    className="w-5 h-5 rounded-full object-cover shrink-0 border border-indigo-300 dark:border-indigo-600"
+                                                                    alt={displayName}
+                                                                    onError={(e) => {
+                                                                        e.target.onerror = null;
+                                                                        e.target.src = fallbackAvatar;
+                                                                    }}
+                                                                />
+                                                                <div className="flex flex-col min-w-0">
+                                                                    <span className="text-[11px] font-bold text-slate-800 dark:text-slate-100 truncate max-w-[130px] leading-tight">
+                                                                        {displayName}
+                                                                    </span>
+                                                                    {user.designation && (
+                                                                        <span className="text-[9px] text-slate-400 truncate max-w-[130px] leading-none mt-0.5">
+                                                                            {user.designation}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        toggleInviteUser(userId);
+                                                                    }}
+                                                                    className="w-4 h-4 rounded-full flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors cursor-pointer shrink-0 ml-1"
+                                                                    title={`Remove ${displayName}`}
+                                                                >
+                                                                    <span className="material-symbols-outlined text-[13px] leading-none">close</span>
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+
                                         <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium px-1 mb-2">
                                             <span>Showing {filteredUsers.length} of {candidateUsers.length} employees</span>
                                             {invitedUserIds.length > 0 && (
@@ -1274,68 +1389,71 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                         </div>
 
                                         {/* Employee Grid with Scroll */}
-                                        <div className="max-h-[340px] overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
-                                            {filteredUsers.length === 0 ? (
-                                                <div className="col-span-full py-8 text-center bg-white dark:bg-slate-800/60 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
-                                                    <span className="material-symbols-outlined text-[32px] text-slate-400 mb-1">person_search</span>
-                                                    <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">No employees found matching "{userSearchQuery}"</p>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setUserSearchQuery('')}
-                                                        className="mt-2 text-xs text-indigo-500 font-bold hover:underline cursor-pointer"
-                                                    >
-                                                        Clear search
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                filteredUsers.map(user => {
-                                                    const userId = user.id || user.userId;
-                                                    const isSelected = invitedUserIds.some(id => String(id) === String(userId));
-                                                    const displayName = user.name || user.fullName || 'Employee';
-                                                    const displayAvatar = user.avatar || user.profilePhotoUrl;
-                                                    const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=6366f1&color=fff&size=96`;
-
-                                                    return (
-                                                        <div
-                                                            key={userId}
-                                                            onClick={() => toggleInviteUser(userId)}
-                                                            className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all select-none ${
-                                                                isSelected
-                                                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/20 ring-1 ring-indigo-500'
-                                                                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-500'
-                                                            }`}
+                                        <div ref={employeeGridRef} className="max-h-[340px] overflow-y-auto pr-1">
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                                                {filteredUsers.length === 0 ? (
+                                                    <div className="col-span-full py-8 text-center bg-white dark:bg-slate-800/60 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">
+                                                        <span className="material-symbols-outlined text-[32px] text-slate-400 mb-1">person_search</span>
+                                                        <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">No employees found matching "{userSearchQuery}"</p>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setUserSearchQuery('')}
+                                                            className="mt-2 text-xs text-indigo-500 font-bold hover:underline cursor-pointer"
                                                         >
-                                                            <img
-                                                                src={displayAvatar || fallbackAvatar}
-                                                                className="w-8 h-8 rounded-full object-cover shrink-0 border border-white/20"
-                                                                alt={displayName}
-                                                                onError={(e) => {
-                                                                    e.target.onerror = null;
-                                                                    e.target.src = fallbackAvatar;
-                                                                }}
-                                                            />
-                                                            <div className="flex-1 min-w-0">
-                                                                <p className={`text-[12px] font-bold truncate leading-tight ${isSelected ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
-                                                                    {displayName}
-                                                                </p>
-                                                                <p className={`text-[10px] truncate ${isSelected ? 'text-indigo-100' : 'text-slate-500'}`}>
-                                                                    {user.designation || 'Member'}
-                                                                </p>
-                                                                {(user.department || user.departmentName) && (
-                                                                    <span className={`inline-block mt-0.5 text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase tracking-wider ${
-                                                                        isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
-                                                                    }`}>
-                                                                        {user.department || user.departmentName}
-                                                                    </span>
-                                                                )}
+                                                            Clear search
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    filteredUsers.slice(0, visibleUserCount).map(user => {
+                                                        const userId = user.id || user.userId;
+                                                        const isSelected = invitedUserIds.some(id => String(id) === String(userId));
+                                                        const displayName = user.name || user.fullName || 'Employee';
+                                                        const displayAvatar = user.avatar || user.profilePhotoUrl;
+                                                        const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=6366f1&color=fff&size=96`;
+
+                                                        return (
+                                                            <div
+                                                                key={userId}
+                                                                onClick={() => toggleInviteUser(userId)}
+                                                                className={`flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all select-none ${
+                                                                    isSelected
+                                                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/20 ring-1 ring-indigo-500'
+                                                                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-500'
+                                                                }`}
+                                                            >
+                                                                <img
+                                                                    src={displayAvatar || fallbackAvatar}
+                                                                    className="w-8 h-8 rounded-full object-cover shrink-0 border border-white/20"
+                                                                    alt={displayName}
+                                                                    onError={(e) => {
+                                                                        e.target.onerror = null;
+                                                                        e.target.src = fallbackAvatar;
+                                                                    }}
+                                                                />
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className={`text-[12px] font-bold truncate leading-tight ${isSelected ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+                                                                        {displayName}
+                                                                    </p>
+                                                                    <p className={`text-[10px] truncate ${isSelected ? 'text-indigo-100' : 'text-slate-500'}`}>
+                                                                        {user.designation || 'Member'}
+                                                                    </p>
+                                                                    {(user.department || user.departmentName) && (
+                                                                        <span className={`inline-block mt-0.5 text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase tracking-wider ${
+                                                                            isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                                                        }`}>
+                                                                            {user.department || user.departmentName}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <span className={`material-symbols-outlined text-[18px] shrink-0 ${isSelected ? 'text-white' : 'text-slate-400'}`}>
+                                                                    {isSelected ? 'check_circle' : 'add_circle'}
+                                                                </span>
                                                             </div>
-                                                            <span className={`material-symbols-outlined text-[18px] shrink-0 ${isSelected ? 'text-white' : 'text-slate-400'}`}>
-                                                                {isSelected ? 'check_circle' : 'add_circle'}
-                                                            </span>
-                                                        </div>
-                                                    );
-                                                })
-                                            )}
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+                                            <ScrollLoadingIndicator isVisible={visibleUserCount < filteredUsers.length} text="Loading more employees on scroll..." />
                                         </div>
                                     </div>
                                 </div>

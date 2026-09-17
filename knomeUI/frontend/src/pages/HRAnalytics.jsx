@@ -177,8 +177,8 @@ export default function HRAnalytics() {
             <main className="flex-1 p-margin-page bg-background flex flex-col items-center justify-center min-h-[60vh] text-center">
                 <h1 className="text-2xl font-bold text-red-500 mb-2">Authentication Required</h1>
                 <p className="text-slate-500 max-w-md">Please sign in to your Knome workforce account to view enterprise analytics.</p>
-                <Link to="/login" className="mt-4 px-4 py-2 bg-electric-blue text-white rounded-lg font-bold text-sm">
-                    Sign In
+                <Link to="/" className="mt-4 px-4 py-2 bg-electric-blue text-white rounded-lg font-bold text-sm">
+                    Return to Knome
                 </Link>
             </main>
         );
@@ -382,7 +382,7 @@ export default function HRAnalytics() {
             <div className="relative rounded-2xl mb-8 shadow-sm border border-border-subtle dark:border-outline-variant bg-white dark:bg-charcoal-dark flex flex-col md:flex-row items-start md:items-center justify-between text-left px-6 py-8 md:px-10 md:py-8 gap-6 z-20">
                 <div className="relative z-10 flex flex-col items-start max-w-3xl">
                     <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-electric-blue/30 bg-blue-50 dark:bg-blue-900/30 text-electric-blue dark:text-blue-400 text-[11px] font-bold mb-3 uppercase tracking-wider">
-                        ✨ Live Knome Enterprise Database Metrics
+                        ✨ Live Knome Enterprise Workforce Metrics
                     </div>
                     <h1 className="text-3xl md:text-4xl lg:text-[40px] font-black tracking-tight mb-3 text-on-surface dark:text-white" style={{ lineHeight: '1.2' }}>
                         <span className="text-transparent bg-clip-text bg-gradient-to-r from-electric-blue via-teal-accent to-cyan-500">
@@ -390,7 +390,7 @@ export default function HRAnalytics() {
                         </span>
                     </h1>
                     <p className="text-slate-gray text-sm md:text-[15px] font-medium leading-relaxed max-w-2xl">
-                        Real-time workforce intelligence directly synchronized with SQL Server database, user karma logs, community memberships, and content engagement.
+                        Real-time workforce intelligence reflecting user activity, karma recognition, community memberships, and content engagement across MPOnline.
                     </p>
                 </div>
                 
@@ -470,7 +470,7 @@ export default function HRAnalytics() {
             {loading && (
                 <div className="py-12 flex flex-col items-center justify-center text-slate-400">
                     <div className="w-10 h-10 border-4 border-electric-blue border-t-transparent rounded-full animate-spin mb-3"></div>
-                    <p className="text-xs font-semibold">Syncing live analytics metrics from Knome SQL Server Database...</p>
+                    <p className="text-xs font-semibold">Syncing live analytics metrics from Knome platform...</p>
                 </div>
             )}
 
@@ -480,15 +480,24 @@ export default function HRAnalytics() {
                     {/* RPT-01: USER ENGAGEMENT */}
                     {activeReport === 'RPT-01' && (
                         <div className="space-y-stack-lg animate-in fade-in duration-200">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-gutter">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
                                 <div className="glass-card p-stack-md rounded-xl card-shadow">
                                     <div className="flex justify-between items-start mb-2">
-                                        <div className="p-2 bg-blue-50 dark:bg-blue-900/30 rounded-lg text-electric-blue"><span className="material-symbols-outlined">group</span></div>
+                                        <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-lg text-emerald-600"><span className="material-symbols-outlined">group</span></div>
                                         <span className="text-emerald-500 text-xs font-bold flex items-center">Active</span>
                                     </div>
                                     <p className="text-slate-gray text-xs mb-1">Active Platform Users</p>
                                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{activeUsersCount.toLocaleString()}</h2>
-                                    <p className="text-slate-400 text-[11px] mt-1">Total active workforce accounts</p>
+                                    <p className="text-slate-400 text-[11px] mt-1">Enabled workforce accounts</p>
+                                </div>
+                                <div className="glass-card p-stack-md rounded-xl card-shadow">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="p-2 bg-rose-50 dark:bg-rose-900/30 rounded-lg text-rose-600"><span className="material-symbols-outlined">block</span></div>
+                                        <span className="text-rose-500 text-xs font-bold flex items-center">Suspended</span>
+                                    </div>
+                                    <p className="text-slate-gray text-xs mb-1">Suspended Users</p>
+                                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{suspendedUsersCount.toLocaleString()}</h2>
+                                    <p className="text-slate-400 text-[11px] mt-1">Restricted governance status</p>
                                 </div>
                                 <div className="glass-card p-stack-md rounded-xl card-shadow">
                                     <div className="flex justify-between items-start mb-2">
@@ -497,16 +506,16 @@ export default function HRAnalytics() {
                                     </div>
                                     <p className="text-slate-gray text-xs mb-1">Total Registered Users</p>
                                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{totalUsersCount.toLocaleString()}</h2>
-                                    <p className="text-slate-400 text-[11px] mt-1">{suspendedUsersCount} suspended / deactivated</p>
+                                    <p className="text-slate-400 text-[11px] mt-1">Workforce directory roster</p>
                                 </div>
                                 <div className="glass-card p-stack-md rounded-xl card-shadow">
                                     <div className="flex justify-between items-start mb-2">
                                         <div className="p-2 bg-amber-50 dark:bg-amber-900/30 rounded-lg text-amber-500"><span className="material-symbols-outlined">workspace_premium</span></div>
                                         <span className="text-amber-500 text-xs font-bold flex items-center">Karma</span>
                                     </div>
-                                    <p className="text-slate-gray text-xs mb-1">Average Karma Per User</p>
-                                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{avgKarmaPoints.toLocaleString()} <span className="text-xs font-normal text-slate-400">Pts</span></h2>
-                                    <p className="text-slate-400 text-[11px] mt-1">{totalKarmaDistributed.toLocaleString()} total points logged</p>
+                                    <p className="text-slate-gray text-xs mb-1">Total Karma Points</p>
+                                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{totalKarmaDistributed.toLocaleString()} <span className="text-xs font-normal text-slate-400">Pts</span></h2>
+                                    <p className="text-slate-400 text-[11px] mt-1">{avgKarmaPoints.toLocaleString()} avg points per user</p>
                                 </div>
                                 <div className="glass-card p-stack-md rounded-xl card-shadow">
                                     <div className="flex justify-between items-start mb-2">
@@ -597,7 +606,7 @@ export default function HRAnalytics() {
                                 <div className="glass-card p-stack-md rounded-xl card-shadow">
                                     <p className="text-slate-gray text-xs mb-1">Total Active Communities</p>
                                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{totalCommunitiesCount.toLocaleString()}</h2>
-                                    <p className="text-electric-blue text-[11px] mt-1 font-bold">Live in database</p>
+                                    <p className="text-electric-blue text-[11px] mt-1 font-bold">Live on platform</p>
                                 </div>
                                 <div className="glass-card p-stack-md rounded-xl card-shadow">
                                     <p className="text-slate-gray text-xs mb-1">Total Community Memberships</p>
@@ -731,7 +740,7 @@ export default function HRAnalytics() {
                                 <div className="glass-card rounded-xl card-shadow overflow-hidden">
                                     <div className="p-4 border-b border-slate-100 dark:border-slate-800 font-bold text-slate-900 dark:text-white flex items-center justify-between">
                                         <span>🏆 Top Contributors (Karma Leaderboard)</span>
-                                        <span className="text-xs text-slate-400">Live Database Ranks</span>
+                                        <span className="text-xs text-slate-400">Live Platform Ranks</span>
                                     </div>
                                     <div className="divide-y divide-slate-100 dark:divide-slate-800">
                                         {topContributorsList.length > 0 ? (
@@ -750,7 +759,7 @@ export default function HRAnalytics() {
                                                 </div>
                                             ))
                                         ) : (
-                                            <div className="p-6 text-center text-slate-400 text-xs">No karma records found in database.</div>
+                                            <div className="p-6 text-center text-slate-400 text-xs">No karma records found.</div>
                                         )}
                                     </div>
                                 </div>
@@ -759,7 +768,7 @@ export default function HRAnalytics() {
                                 <div className="glass-card rounded-xl card-shadow overflow-hidden">
                                     <div className="p-4 border-b border-slate-100 dark:border-slate-800 font-bold text-slate-900 dark:text-white flex items-center justify-between">
                                         <span>🔥 Top Communities (by Members & Posts)</span>
-                                        <span className="text-xs text-slate-400">Live Database Rank</span>
+                                        <span className="text-xs text-slate-400">Live Platform Rank</span>
                                     </div>
                                     <div className="divide-y divide-slate-100 dark:divide-slate-800">
                                         {topCommunitiesList.length > 0 ? (
@@ -838,7 +847,7 @@ export default function HRAnalytics() {
                                                 ))
                                             ) : (
                                                 <tr>
-                                                    <td colSpan="4" className="p-6 text-center text-slate-400">No moderator audit logs found in the database.</td>
+                                                    <td colSpan="4" className="p-6 text-center text-slate-400">No moderator audit logs found.</td>
                                                 </tr>
                                             )}
                                         </tbody>

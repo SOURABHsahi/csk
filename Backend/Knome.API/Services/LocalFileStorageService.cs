@@ -116,8 +116,8 @@ public class LocalFileStorageService : IFileStorageService
             "image" => new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" },
             "video" => new[] { ".mp4", ".mov", ".avi" },
             "audio" => new[] { ".mp3", ".wav", ".aac" },
-            "doc" or "document" => new[] { ".pdf", ".doc", ".docx", ".txt" },
-            _ => new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".mov", ".avi", ".mp3", ".wav", ".aac", ".pdf", ".doc", ".docx", ".txt" }
+            "doc" or "document" => new[] { ".pdf", ".doc", ".docx", ".txt", ".xls", ".xlsx", ".ppt", ".pptx", ".zip" },
+            _ => new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".mov", ".avi", ".mp3", ".wav", ".aac", ".pdf", ".doc", ".docx", ".txt", ".xls", ".xlsx", ".ppt", ".pptx", ".zip" }
         };
 
         if (!allowedMediaExtensions.Contains(extension))

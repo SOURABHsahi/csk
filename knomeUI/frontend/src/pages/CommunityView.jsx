@@ -1,11 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import { apiClient } from '../utils/apiClient';
-import { communitiesApi, mediaApi, postsApi, notificationsApi, interactionsApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages, formatRelativeTime } from '../utils/apiService';
+import { communitiesApi, mediaApi, postsApi, notificationsApi, interactionsApi, adminApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages, formatRelativeTime } from '../utils/apiService';
 import { checkRestrictedContent } from '../utils/restrictedWords';
 import ArticleShareModal from '../components/modals/ArticleShareModal';
+import SuspendUserModal from '../components/modals/SuspendUserModal';
+import { ImageGrid, ImageLightbox } from '../components/widgets/PostCard';
+import useScrollLoading from '../hooks/useScrollLoading';
+import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 
 const ENTERPRISE_CHANNELS_SEED = {
     '1': {
@@ -51,7 +55,7 @@ const ENTERPRISE_CHANNELS_SEED = {
         description: 'Exploration of machine learning, NLP, computer vision models, agentic workflows, and predictive analytics for public services.',
         rules: ['1. Respect data privacy and security benchmarks.', '2. No production customer PII in experiment posts.', '3. Share reproducible notebook links.'],
         faq: [
-            { q: 'How do I request access?', a: 'Click Request to Join; the AI Lab moderator will review your request.' }
+            { q: 'How do I request access?', a: 'Click Request to Join; the AI Lab community administrator will review your request.' }
         ]
     },
     '5': {
@@ -136,6 +140,8 @@ export default function CommunityView() {
     const [isLoadingComments, setIsLoadingComments] = useState(false);
     const [sharingPost, setSharingPost] = useState(null);
     const [isPostShareModalOpen, setIsPostShareModalOpen] = useState(false);
+    const [lightboxImages, setLightboxImages] = useState(null);
+    const [lightboxStartIndex, setLightboxStartIndex] = useState(0);
     const [joinRequests, setJoinRequests] = useState([]);
     const [membersList, setMembersList] = useState([]);
     const [subscribersList, setSubscribersList] = useState([]);
@@ -143,6 +149,15 @@ export default function CommunityView() {
     const [memberSearchQuery, setMemberSearchQuery] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const [toast, setToast] = useState(null); // { message, type }
+
+    // Admin Protection & Member Management Modals
+    const [adminProtectionWarning, setAdminProtectionWarning] = useState(null); // { title, message }
+    const [suspendModalMember, setSuspendModalMember] = useState(null);
+    const [suspendDuration, setSuspendDuration] = useState('7d');
+    const [suspendCustomDate, setSuspendCustomDate] = useState('');
+    const [suspendReasonCategory, setSuspendReasonCategory] = useState('Violation of community guidelines');
+    const [suspendReasonNote, setSuspendReasonNote] = useState('');
+    const [removeModalMember, setRemoveModalMember] = useState(null);
 
     // Rules & FAQ Management State
     const [editRules, setEditRules] = useState([]);
@@ -170,6 +185,85 @@ export default function CommunityView() {
     const [shareMessageNote, setShareMessageNote] = useState('');
     const [isSharingProcess, setIsSharingProcess] = useState(false);
     const [allCommunities, setAllCommunities] = useState([]);
+
+    // Helper to identify true image attachments (case-insensitive & robust)
+    const isImageAttachment = (a) => {
+        if (!a) return false;
+        const u = (a.url || a.fileUrl || a.backendUrl || (typeof a === 'string' ? a : '')).split('?')[0].toLowerCase();
+        const t = (a.type || a.fileType || a.attachmentType || '').toLowerCase();
+        if (u.match(/\.(mp4|webm|ogg|mov|mkv|avi|mp3|wav|aac|m4a|flac|pdf|doc|docx|txt|xls|xlsx|ppt|pptx|csv)$/i)) {
+            return false;
+        }
+        if (t === 'image' || t === 'img' || t === 'photo') return true;
+        return Boolean(u.match(/\.(jpeg|jpg|png|gif|webp|svg|bmp|ico)$/i)) || u.startsWith('data:image/');
+    };
+
+    // Helper to normalize attachments from all backend DTO shapes & local storage formats
+    const normalizePostAttachments = (p) => {
+        if (!p) return { attachments: [], images: [], attachmentUrls: [] };
+
+        const rawList = [];
+        if (Array.isArray(p.attachments) && p.attachments.length > 0) {
+            rawList.push(...p.attachments);
+        }
+        if (Array.isArray(p.postAttachments) && p.postAttachments.length > 0) {
+            rawList.push(...p.postAttachments);
+        }
+        if (Array.isArray(p.attachmentUrls) && p.attachmentUrls.length > 0) {
+            p.attachmentUrls.forEach((u, i) => {
+                if (u && !rawList.some(r => (r.url === u || r.fileUrl === u || r === u))) {
+                    rawList.push({ id: `att_url_${i}`, url: u, fileUrl: u, type: 'image' });
+                }
+            });
+        }
+        if (Array.isArray(p.mediaUrls) && p.mediaUrls.length > 0) {
+            p.mediaUrls.forEach((u, i) => {
+                if (u && !rawList.some(r => (r.url === u || r.fileUrl === u || r === u))) {
+                    rawList.push({ id: `media_url_${i}`, url: u, fileUrl: u, type: 'image' });
+                }
+            });
+        }
+        if (Array.isArray(p.images) && p.images.length > 0) {
+            p.images.forEach((img, i) => {
+                const u = img?.url || img?.fileUrl || (typeof img === 'string' ? img : '');
+                if (u && !rawList.some(r => (r.url === u || r.fileUrl === u || r === u))) {
+                    rawList.push(typeof img === 'object' ? img : { id: `img_${i}`, url: u, fileUrl: u, type: 'image' });
+                }
+            });
+        }
+        if (p.attachmentUrl && !rawList.some(r => (r.url === p.attachmentUrl || r.fileUrl === p.attachmentUrl || r === p.attachmentUrl))) {
+            rawList.push({ id: 'att_url_single', url: p.attachmentUrl, fileUrl: p.attachmentUrl, type: 'image' });
+        }
+        if (p.imageUrl && !rawList.some(r => (r.url === p.imageUrl || r.fileUrl === p.imageUrl || r === p.imageUrl))) {
+            rawList.push({ id: 'img_url_single', url: p.imageUrl, fileUrl: p.imageUrl, type: 'image' });
+        }
+        if (p.image && typeof p.image === 'string' && !rawList.some(r => (r.url === p.image || r.fileUrl === p.image || r === p.image))) {
+            rawList.push({ id: 'image_single', url: p.image, fileUrl: p.image, type: 'image' });
+        }
+
+        const normalized = rawList.map((a, idx) => {
+            const rawUrl = a.url || a.fileUrl || a.backendUrl || (typeof a === 'string' ? a : '');
+            const isImg = isImageAttachment(a) || isImageAttachment(rawUrl);
+            const rawType = (a.type || a.fileType || a.attachmentType || '').toLowerCase();
+            return {
+                id: a.id || a.attachmentId || idx + 1,
+                url: rawUrl,
+                fileUrl: rawUrl,
+                type: isImg ? 'image' : (rawType || 'doc'),
+                attachmentType: isImg ? 'image' : (rawType || 'doc'),
+                name: a.name || rawUrl?.split('/').pop()?.split('?')[0] || 'attachment'
+            };
+        }).filter(a => a.url && typeof a.url === 'string' && a.url.trim().length > 0);
+
+        const imageAttachments = normalized.filter(isImageAttachment);
+        const attachmentUrls = normalized.map(a => a.url);
+
+        return {
+            attachments: normalized,
+            images: imageAttachments,
+            attachmentUrls: attachmentUrls
+        };
+    };
 
     const getPdfBlobUrl = (urlOrBase64) => {
         if (!urlOrBase64 || urlOrBase64 === '#') {
@@ -867,9 +961,10 @@ export default function CommunityView() {
                     status: 'Approved',
                     profilePhotoUrl: commData.creatorAvatar || null
                 };
-                let resolvedMembers = Array.isArray(rawMembers) && rawMembers.length > 0 
+                let resolvedMembers = (Array.isArray(rawMembers) && rawMembers.length > 0 
                     ? rawMembers 
-                    : (localMembersApi.length > 0 ? localMembersApi : [defaultCreator]);
+                    : (localMembersApi.length > 0 ? localMembersApi : [defaultCreator]))
+                    .map(m => (m.memberType === 'Moderator' ? { ...m, memberType: 'Admin' } : m));
 
                 const userJoinedList = JSON.parse(localStorage.getItem(`knome_joined_communities_${currentUser?.id || 'guest'}`) || '[]');
                 const localEntry = userJoinedList.find(c => String(c.id) === String(commData.communityId));
@@ -947,7 +1042,8 @@ export default function CommunityView() {
                     status: 'Approved',
                     profilePhotoUrl: found?.creatorAvatar || found?.avatar || null
                 };
-                let resolvedMembers = localMembers.length > 0 ? localMembers : [defaultCreator];
+                let resolvedMembers = (localMembers.length > 0 ? localMembers : [defaultCreator])
+                    .map(m => (m.memberType === 'Moderator' ? { ...m, memberType: 'Admin' } : m));
 
                 // Check if current user explicitly joined, created the community, or is in resolved members
                 const userJoinedList = JSON.parse(localStorage.getItem(`knome_joined_communities_${currentUser?.id || 'guest'}`) || '[]');
@@ -1124,6 +1220,21 @@ export default function CommunityView() {
                     const finalLikes = cached && typeof cached.likeCount === 'number' ? Math.max(cached.likeCount, sLikes) : sLikes;
                     const finalComments = cached && typeof cached.commentCount === 'number' ? Math.max(cached.commentCount, sComments) : sComments;
 
+                    // Detect sharedProfile from backend post if contentText has format
+                    const profileMatch = (p.contentText || '').match(/Shared Profile:\s*"([^"]+)"/i);
+                    const profileUrlMatch = (p.contentText || '').match(/(?:https?:\/\/[^\s]+)?\/profile\?id=([a-zA-Z0-9_-]+)/i);
+                    const backendSharedProfile = (profileMatch || profileUrlMatch) ? {
+                        id: profileUrlMatch ? profileUrlMatch[1] : (p.id || 1),
+                        userId: profileUrlMatch ? profileUrlMatch[1] : (p.id || 1),
+                        name: profileMatch ? profileMatch[1] : 'Colleague',
+                        fullName: profileMatch ? profileMatch[1] : 'Colleague',
+                        avatar: null,
+                        designation: 'MPOnline Colleague',
+                        department: 'MPOnline'
+                    } : null;
+
+                    const postMedia = normalizePostAttachments(p);
+
                     return {
                         id: p.postId,
                         postId: p.postId,
@@ -1133,7 +1244,11 @@ export default function CommunityView() {
                         time: new Date(p.createdDate || p.publishedDate || Date.now()).toLocaleString(),
                         content: p.contentText,
                         title: p.title,
-                        attachments: p.attachments || [],
+                        attachments: postMedia.attachments,
+                        images: postMedia.images,
+                        attachmentUrls: postMedia.attachmentUrls,
+                        sharedProfile: backendSharedProfile,
+                        isProfileShare: !!backendSharedProfile,
                         likes: finalLikes,
                         likesCount: finalLikes,
                         comments: finalComments,
@@ -1147,27 +1262,33 @@ export default function CommunityView() {
 
             if (localCommunityPosts.length > 0) {
                 const existingIds = new Set(mergedPosts.map(p => String(p.id)));
-                const formattedLocal = localCommunityPosts.map(p => ({
-                    id: p.id,
-                    author: p.authorName || p.author || 'Member',
-                    role: p.authorRole || p.role || 'Member',
-                    avatar: p.authorAvatar || p.avatar || null,
-                    time: p.timeAgo || p.time || 'Just now',
-                    title: p.title,
-                    content: p.content,
-                    attachments: p.attachments || [],
-                    images: p.images || (p.attachments || []).filter(a => a.type === 'image' || a.attachmentType === 'image'),
-                    sharedCommunity: p.sharedCommunity || null,
-                    sharedContent: p.sharedContent || null,
-                    sharedArticle: p.sharedArticle || null,
-                    sharedPodcast: p.sharedPodcast || null,
-                    sharedVideo: p.sharedVideo || null,
-                    sharedPostId: p.sharedPostId || null,
-                    type: p.type || null,
-                    likes: p.likes || 0,
-                    comments: p.comments || 0,
-                    isPinned: !!p.isPinned
-                }));
+                const formattedLocal = localCommunityPosts.map(p => {
+                    const postMedia = normalizePostAttachments(p);
+                    return {
+                        id: p.id,
+                        author: p.authorName || p.author || 'Member',
+                        role: p.authorRole || p.role || 'Member',
+                        avatar: p.authorAvatar || p.avatar || null,
+                        time: p.timeAgo || p.time || 'Just now',
+                        title: p.title,
+                        content: p.content,
+                        attachments: postMedia.attachments,
+                        images: postMedia.images,
+                        attachmentUrls: postMedia.attachmentUrls,
+                        sharedCommunity: p.sharedCommunity || null,
+                        sharedContent: p.sharedContent || null,
+                        sharedArticle: p.sharedArticle || null,
+                        sharedPodcast: p.sharedPodcast || null,
+                        sharedVideo: p.sharedVideo || null,
+                        sharedProfile: p.sharedProfile || null,
+                        isProfileShare: Boolean(p.isProfileShare || p.type === 'profile_share' || p.sharedProfile),
+                        sharedPostId: p.sharedPostId || null,
+                        type: p.type || null,
+                        likes: p.likes || 0,
+                        comments: p.comments || 0,
+                        isPinned: !!p.isPinned
+                    };
+                });
                 const freshLocal = formattedLocal.filter(p => !existingIds.has(String(p.id)));
                 mergedPosts = [...freshLocal, ...mergedPosts];
             }
@@ -1184,27 +1305,33 @@ export default function CommunityView() {
                     const existingIds = new Set(mergedPosts.map(p => String(p.id)));
                     const mappedGlobal = commSpecificGlobal
                         .filter(p => !existingIds.has(String(p.id)) && !existingIds.has(String(p.id).replace('comm_post_', '')))
-                        .map(p => ({
-                            id: p.id,
-                            author: p.authorName || p.author || 'Member',
-                            role: p.authorRole || p.role || 'Member',
-                            avatar: p.authorAvatar || p.avatar || null,
-                            time: p.createdDate ? new Date(p.createdDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (p.timeAgo || 'Recently'),
-                            title: p.title,
-                            content: p.content,
-                            attachments: p.attachments || [],
-                            images: (p.attachments || []).filter(a => a.type === 'image' || a.attachmentType === 'image'),
-                            sharedCommunity: p.sharedCommunity || null,
-                            sharedContent: p.sharedContent || null,
-                            sharedArticle: p.sharedArticle || null,
-                            sharedPodcast: p.sharedPodcast || null,
-                            sharedVideo: p.sharedVideo || null,
-                            sharedPostId: p.sharedPostId || null,
-                            type: p.type || null,
-                            likes: p.likesCount || p.likes || 0,
-                            comments: p.commentsCount || p.comments || 0,
-                            isPinned: false
-                        }));
+                        .map(p => {
+                            const postMedia = normalizePostAttachments(p);
+                            return {
+                                id: p.id,
+                                author: p.authorName || p.author || 'Member',
+                                role: p.authorRole || p.role || 'Member',
+                                avatar: p.authorAvatar || p.avatar || null,
+                                time: p.createdDate ? new Date(p.createdDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (p.timeAgo || 'Recently'),
+                                title: p.title,
+                                content: p.content,
+                                attachments: postMedia.attachments,
+                                images: postMedia.images,
+                                attachmentUrls: postMedia.attachmentUrls,
+                                sharedCommunity: p.sharedCommunity || null,
+                                sharedContent: p.sharedContent || null,
+                                sharedArticle: p.sharedArticle || null,
+                                sharedPodcast: p.sharedPodcast || null,
+                                sharedVideo: p.sharedVideo || null,
+                                sharedProfile: p.sharedProfile || null,
+                                isProfileShare: Boolean(p.isProfileShare || p.type === 'profile_share' || p.sharedProfile),
+                                sharedPostId: p.sharedPostId || null,
+                                type: p.type || null,
+                                likes: p.likesCount || p.likes || 0,
+                                comments: p.commentsCount || p.comments || 0,
+                                isPinned: false
+                            };
+                        });
                     mergedPosts = [...mappedGlobal, ...mergedPosts];
                 }
             } catch (_) {}
@@ -1303,27 +1430,33 @@ export default function CommunityView() {
             if (localCommunityPosts.length > 0) {
                 setPosts(prev => {
                     const existingIds = new Set(prev.map(p => String(p.id)));
-                    const formattedLocal = localCommunityPosts.map(p => ({
-                        id: p.id,
-                        author: p.authorName || p.author || 'Member',
-                        role: p.authorRole || p.role || 'Member',
-                        avatar: p.authorAvatar || p.avatar || null,
-                        time: p.timeAgo || p.time || 'Just now',
-                        title: p.title,
-                        content: p.content,
-                        attachments: p.attachments || [],
-                        images: p.images || (p.attachments || []).filter(a => a.type === 'image' || a.attachmentType === 'image'),
-                        sharedCommunity: p.sharedCommunity || null,
-                        sharedContent: p.sharedContent || null,
-                        sharedArticle: p.sharedArticle || null,
-                        sharedPodcast: p.sharedPodcast || null,
-                        sharedVideo: p.sharedVideo || null,
-                        sharedPostId: p.sharedPostId || null,
-                        type: p.type || null,
-                        likes: p.likes || 0,
-                        comments: p.comments || 0,
-                        isPinned: !!p.isPinned
-                    }));
+                    const formattedLocal = localCommunityPosts.map(p => {
+                        const postMedia = normalizePostAttachments(p);
+                        return {
+                            id: p.id,
+                            author: p.authorName || p.author || 'Member',
+                            role: p.authorRole || p.role || 'Member',
+                            avatar: p.authorAvatar || p.avatar || null,
+                            time: p.timeAgo || p.time || 'Just now',
+                            title: p.title,
+                            content: p.content,
+                            attachments: postMedia.attachments,
+                            images: postMedia.images,
+                            attachmentUrls: postMedia.attachmentUrls,
+                            sharedCommunity: p.sharedCommunity || null,
+                            sharedContent: p.sharedContent || null,
+                            sharedArticle: p.sharedArticle || null,
+                            sharedPodcast: p.sharedPodcast || null,
+                            sharedVideo: p.sharedVideo || null,
+                            sharedProfile: p.sharedProfile || null,
+                            isProfileShare: Boolean(p.isProfileShare || p.type === 'profile_share' || p.sharedProfile),
+                            sharedPostId: p.sharedPostId || null,
+                            type: p.type || null,
+                            likes: p.likes || 0,
+                            comments: p.comments || 0,
+                            isPinned: !!p.isPinned
+                        };
+                    });
                     const freshLocal = formattedLocal.filter(p => !existingIds.has(String(p.id)));
                     return [...freshLocal, ...prev];
                 });
@@ -1348,17 +1481,6 @@ export default function CommunityView() {
             window.removeEventListener('storage', handleFeedOrPostsUpdated);
         };
     }, [communityId]);
-
-    if (isLoading || !community) {
-        return (
-            <div className="flex-1 flex items-center justify-center p-12 min-h-[60vh]">
-                <div className="flex flex-col items-center gap-3">
-                    <span className="material-symbols-outlined text-[40px] text-indigo-500 animate-spin">progress_activity</span>
-                    <p className="text-sm font-bold text-slate-500">Loading Community Details...</p>
-                </div>
-            </div>
-        );
-    }
 
     // Create New Post inside Community (Only for Members - FR-CM-06)
     const handleCreatePost = async (e) => {
@@ -1671,8 +1793,9 @@ export default function CommunityView() {
         const targetId = communityId || community?.id || 101;
         const targetMember = membersList.find(m => String(m.userId || m.id) === String(memberId));
         const memberName = targetMember?.fullName || targetMember?.name || 'Member';
+        const isCurrentlyAdmin = currentRole === 'Admin' || currentRole === 'Moderator' || currentRole === 'Community Administrator';
 
-        if (currentRole === 'Admin') {
+        if (isCurrentlyAdmin) {
             try {
                 await communitiesApi.removeAdmin(targetId, memberId);
             } catch (err) {
@@ -1680,13 +1803,13 @@ export default function CommunityView() {
                 showToast(msg, 'warning');
                 return;
             }
-        } else if (currentRole === 'Moderator') {
+        } else {
             try {
                 await communitiesApi.addAdmin(targetId, memberId);
             } catch (err) { /* best effort */ }
         }
 
-        const newRole = currentRole === 'Admin' ? 'Member' : (currentRole === 'Member' ? 'Moderator' : 'Admin');
+        const newRole = isCurrentlyAdmin ? 'Member' : 'Admin';
         setMembersList(prev => {
             const updated = prev.map(m => {
                 if (String(m.userId || m.id) === String(memberId)) {
@@ -1699,19 +1822,56 @@ export default function CommunityView() {
             window.dispatchEvent(new CustomEvent('community-members-updated', { detail: { communityId: targetId } }));
             return updated;
         });
-        showToast(`Member role updated to ${newRole} for ${memberName}.`, 'success');
+
+        if (newRole === 'Admin') {
+            setCommunity(prev => ({
+                ...prev,
+                adminContact: memberName
+            }));
+        }
+
+        showToast(`Member role updated to ${newRole === 'Admin' ? 'Community Administrator' : 'Community Member'} for ${memberName}.`, 'success');
     };
 
-    const handleRemoveMemberByAdmin = async (memberId, memberName) => {
-        const ok = await confirm({
-            title: 'Remove Member',
-            message: `Are you sure you want to remove ${memberName} from this community?`,
-            confirmText: 'Remove',
-            cancelText: 'Cancel',
-            variant: 'danger'
-        });
-        if (!ok) return;
+    const getAdminCount = () => {
+        return membersList.filter(m => 
+            m.memberType === 'Admin' || 
+            m.memberType === 'Moderator' || 
+            m.memberType === 'Community Administrator'
+        ).length;
+    };
+
+    const handleInitiateRemoveMember = (member) => {
+        const isCommAdmin = member.memberType === 'Admin' || member.memberType === 'Moderator' || member.memberType === 'Community Administrator';
+        const adminsCount = getAdminCount();
+
+        if (isCommAdmin && adminsCount <= 1) {
+            setAdminProtectionWarning({
+                title: 'Cannot Remove Community Administrator',
+                message: `"${member.fullName || member.name || 'This user'}" is currently the only Community Administrator for this community. A community must always have at least one active Community Administrator.\n\nPlease assign another member as Community Administrator using "Make Administrator" before removing this administrator.`
+            });
+            return;
+        }
+
+        setRemoveModalMember(member);
+    };
+
+    const handleConfirmRemoveMember = async () => {
+        if (!removeModalMember) return;
+        const member = removeModalMember;
+        const memberId = member.userId || member.id;
+        const memberName = member.fullName || member.name || 'Member';
+        const isTargetAdmin = member.memberType === 'Admin' || member.memberType === 'Moderator' || member.memberType === 'Community Administrator';
         const targetId = communityId || community?.id || 101;
+
+        if (isTargetAdmin) {
+            try {
+                await communitiesApi.removeAdmin(targetId, memberId).catch(() => null);
+            } catch (err) {
+                console.warn('Remove admin API warning:', err);
+            }
+        }
+
         setMembersList(prev => {
             const updated = prev.filter(m => String(m.userId || m.id) !== String(memberId));
             localStorage.setItem(`knome_community_members_${targetId}`, JSON.stringify(updated));
@@ -1722,6 +1882,12 @@ export default function CommunityView() {
         });
         setCommunity(prev => ({ ...prev, membersCount: Math.max(1, (prev.membersCount || 1) - 1) }));
         showToast(`${memberName} has been removed from this community.`, 'info');
+        setRemoveModalMember(null);
+    };
+
+    const handleRemoveMemberByAdmin = async (memberId, memberName) => {
+        const member = membersList.find(m => String(m.userId || m.id) === String(memberId)) || { userId: memberId, fullName: memberName };
+        handleInitiateRemoveMember(member);
     };
 
     const handleJoinAction = async () => {
@@ -1989,33 +2155,95 @@ export default function CommunityView() {
         }
     };
 
-    const handleSuspend = async (memberId, memberName) => {
-        const ok = await confirm({
-            title: 'Suspend Member',
-            message: `Suspend ${memberName} from this community? They will lose access to post and view content.`,
-            confirmText: 'Suspend',
-            cancelText: 'Cancel',
-            variant: 'warning'
-        });
-        if (!ok) return;
+    const handleInitiateSuspendMember = (member) => {
+        const isCommAdmin = member.memberType === 'Admin' || member.memberType === 'Moderator' || member.memberType === 'Community Administrator';
+        const adminsCount = getAdminCount();
+
+        if (isCommAdmin && adminsCount <= 1) {
+            setAdminProtectionWarning({
+                title: 'Cannot Suspend Community Administrator',
+                message: `"${member.fullName || member.name || 'This user'}" is currently the only Community Administrator for this community. Suspending them would leave the community without an administrator.\n\nPlease assign another member as Community Administrator using "Make Administrator" before suspending this administrator.`
+            });
+            return;
+        }
+
+        setSuspendModalMember(member);
+    };
+
+    const handleConfirmSuspendMember = async ({ user: member, duration, customDate, fullReason, isPermanent, days }) => {
+        const memberId = member.userId || member.id;
+        const memberName = member.fullName || member.name || 'Member';
         const targetId = community?.id || communityId || 101;
-        const memberToSuspend = membersList.find(m => String(m.userId || m.id) === String(memberId));
-        if (!memberToSuspend) return;
+
+        let durationLabel = `${days} Days`;
+        let suspendedUntil = null;
+        const now = new Date();
+
+        if (duration === '1d') {
+            durationLabel = '24 Hours (1 Day)';
+            suspendedUntil = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+        } else if (duration === '3d') {
+            durationLabel = '3 Days';
+            suspendedUntil = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString();
+        } else if (duration === '7d') {
+            durationLabel = '7 Days (1 Week)';
+            suspendedUntil = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        } else if (duration === '14d') {
+            durationLabel = '14 Days (2 Weeks)';
+            suspendedUntil = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString();
+        } else if (duration === '30d') {
+            durationLabel = '30 Days (1 Month)';
+            suspendedUntil = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        } else if (duration === 'indefinite' || isPermanent) {
+            durationLabel = 'Indefinite / Permanent';
+            suspendedUntil = null;
+        } else if (duration === 'custom' && customDate) {
+            const customDateObj = new Date(customDate);
+            durationLabel = `Until ${customDateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+            suspendedUntil = customDateObj.toISOString();
+        }
+
+        try {
+            // 1. Suspend community membership
+            await communitiesApi.decideMembership(targetId, memberId, 'Banned').catch(() => null);
+            // 2. Suspend platform user account in SQL Server so user cannot log into Knome!
+            await adminApi.suspendUser(memberId, fullReason, days, customDate, isPermanent).catch(() => null);
+        } catch (err) {
+            console.warn('Backend suspend API warning:', err);
+        }
+
+        const suspendedRecord = {
+            ...member,
+            suspendedAt: new Date().toISOString(),
+            suspendedUntil,
+            suspensionDuration: durationLabel,
+            suspensionReason: fullReason,
+            suspendedBy: currentUser?.fullName || currentUser?.name || 'Community Administrator'
+        };
 
         setSuspendedMembers(prev => {
-            const updated = [...prev, { ...memberToSuspend, suspendedAt: new Date().toISOString(), suspendedBy: currentUser?.name }];
+            const updated = [...prev, suspendedRecord];
             localStorage.setItem(`knome_community_suspended_${targetId}`, JSON.stringify(updated));
             return updated;
         });
+
         setMembersList(prev => {
             const updated = prev.filter(m => String(m.userId || m.id) !== String(memberId));
             localStorage.setItem(`knome_community_members_${targetId}`, JSON.stringify(updated));
+            localStorage.setItem(`knome_community_members_updated_${targetId}`, Date.now().toString());
             window.dispatchEvent(new CustomEvent('community-members-updated', { detail: { communityId: targetId } }));
             window.dispatchEvent(new CustomEvent('community-joined-change'));
             return updated;
         });
+
         setCommunity(prev => ({ ...prev, membersCount: Math.max(1, (prev.membersCount || 1) - 1) }));
-        showToast(`${memberName} has been suspended from this community.`, 'warning');
+        showToast(`${memberName} suspended for ${durationLabel}. Account access restricted.`, 'warning');
+        setSuspendModalMember(null);
+    };
+
+    const handleSuspend = async (memberId, memberName) => {
+        const member = membersList.find(m => String(m.userId || m.id) === String(memberId)) || { userId: memberId, fullName: memberName };
+        handleInitiateSuspendMember(member);
     };
 
     const handleReinstate = (memberId, memberName) => {
@@ -2313,6 +2541,66 @@ export default function CommunityView() {
         return String(b.id || '').localeCompare(String(a.id || ''));
     });
 
+    // Dynamically resolve Community Administrator name from current active members
+    const communityAdminDisplay = useMemo(() => {
+        const adminMembers = membersList.filter(m => 
+            m.memberType === 'Admin' || 
+            m.memberType === 'Moderator' || 
+            m.memberType === 'Community Administrator'
+        );
+        if (adminMembers.length > 0) {
+            return adminMembers.map(a => a.fullName || a.name).filter(Boolean).join(', ');
+        }
+        return community?.adminContact || 'Community Administrator';
+    }, [membersList, community?.adminContact]);
+
+    // Filter & sort members: Community Administrators always pinned to the top of the list!
+    const filteredMembers = useMemo(() => {
+        return [...membersList]
+            .filter(m => 
+                !memberSearchQuery.trim() || 
+                (m.fullName || m.name || '').toLowerCase().includes(memberSearchQuery.toLowerCase()) || 
+                (m.designation || '').toLowerCase().includes(memberSearchQuery.toLowerCase())
+            )
+            .sort((a, b) => {
+                const aIsAdmin = a.memberType === 'Admin' || a.memberType === 'Moderator' || a.memberType === 'Community Administrator';
+                const bIsAdmin = b.memberType === 'Admin' || b.memberType === 'Moderator' || b.memberType === 'Community Administrator';
+                if (aIsAdmin && !bIsAdmin) return -1;
+                if (!aIsAdmin && bIsAdmin) return 1;
+                return (a.fullName || a.name || '').localeCompare(b.fullName || b.name || '');
+            });
+    }, [membersList, memberSearchQuery]);
+
+    // Scroll-wise progressive loading hooks
+    const { visibleCount: visiblePostCount, resetVisibleCount: resetPostCount } = useScrollLoading(sortedPosts.length, 6, 6);
+    const { visibleCount: visibleMemberCount, resetVisibleCount: resetMemberCount } = useScrollLoading(filteredMembers.length, 12, 12);
+    const { visibleCount: visibleFileCount, resetVisibleCount: resetFileCount } = useScrollLoading(filteredFiles.length, 9, 9);
+
+    useEffect(() => {
+        resetPostCount();
+        resetMemberCount();
+        resetFileCount();
+    }, [activeTab, communityId]);
+
+    useEffect(() => {
+        resetMemberCount();
+    }, [memberSearchQuery]);
+
+    useEffect(() => {
+        resetFileCount();
+    }, [fileCategoryFilter, fileSearchQuery]);
+
+    if (isLoading || !community) {
+        return (
+            <div className="flex-1 flex items-center justify-center p-12 min-h-[60vh]">
+                <div className="flex flex-col items-center gap-3">
+                    <span className="material-symbols-outlined text-[40px] text-indigo-500 animate-spin">progress_activity</span>
+                    <p className="text-sm font-bold text-slate-500">Loading Community Details...</p>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <main className="flex-1 pb-6">
 
@@ -2599,7 +2887,7 @@ export default function CommunityView() {
 
 
                             {/* FR-CM-08: Posts Feed & Pinned Content */}
-                            {sortedPosts.map(post => {
+                            {sortedPosts.slice(0, visiblePostCount).map(post => {
                                 const authorName = typeof post.author === 'string' 
                                     ? post.author 
                                     : (post.author?.name || post.author?.fullName || post.authorName || 'Member');
@@ -2671,11 +2959,35 @@ export default function CommunityView() {
                                     
                                     {(() => {
                                         const targetComm = resolveTargetCommunityFromPost(post);
-                                        const postUrlMatch = (post.content || '').match(/(?:https?:\/\/[^\s]+)?\/posts\?id=(\d+)/i);
-                                        const extractedPostId = postUrlMatch ? postUrlMatch[1] : (post.sharedPostId || null);
-                                        const sharedPostTitleMatch = (post.content || '').match(/Shared Post:\s*"([^"]+)"/i);
-                                        const sharedPostTitle = sharedPostTitleMatch ? sharedPostTitleMatch[1] : (post.title || 'Shared Post');
-                                        const isSharedPost = Boolean(extractedPostId || (post.content && post.content.includes('Shared Post:')));
+                                        const postUrlMatch = (post.content || '').match(/(?:https?:\/\/[^\s]+)?\/posts\?id=([a-zA-Z0-9_-]+)/i);
+                                        const extractedPostId = post.sharedPostId || (postUrlMatch ? postUrlMatch[1] : null) || post.sharedContent?.id || null;
+                                        const sharedPostTitleMatch = (post.content || '').match(/Shared Post:\s*"([^"]+)"/i)
+                                            || (post.title || '').match(/Shared Post:\s*"([^"]+)"/i);
+                                        let sharedPostTitle = post.sharedContent?.title
+                                            || (sharedPostTitleMatch ? sharedPostTitleMatch[1] : null);
+                                        if (!sharedPostTitle && post.title && !post.title.startsWith('Shared Post:')) {
+                                            sharedPostTitle = post.title;
+                                        }
+                                        if (!sharedPostTitle && extractedPostId) {
+                                            sharedPostTitle = `Post #${extractedPostId}`;
+                                        }
+
+                                        const isSharedPost = Boolean(
+                                            extractedPostId || 
+                                            (post.content && post.content.includes('Shared Post:')) ||
+                                            (post.title && post.title.startsWith('Shared Post:')) ||
+                                            post.type === 'post_share' ||
+                                            post.sharedContent
+                                        );
+
+                                        // Clean user commentary if this is a shared post, article, video, or profile:
+                                        let userCommentary = post.content || '';
+                                        if (isSharedPost || (post.content && (post.content.includes('Shared Article:') || post.content.includes('Shared Video:') || post.content.includes('Shared Profile:')))) {
+                                            userCommentary = userCommentary
+                                                .replace(/Shared\s+(?:Post|Article|Video|Profile):\s*"[^"]*"/gi, '')
+                                                .replace(/(?:https?:\/\/[^\s]+)?\/(?:posts|article-view|videos|profile)\?[^\s]+/gi, '')
+                                                .trim();
+                                        }
 
                                         const renderFormattedText = (text) => {
                                             if (!text) return null;
@@ -2712,91 +3024,123 @@ export default function CommunityView() {
                                             });
                                         };
 
+                                        const sharedAuthor = post.sharedContent?.author || null;
+
                                         return (
                                             <>
-                                                {post.title && (
+                                                {post.title && !post.title.startsWith('Shared Post:') && (
                                                     <h5 
                                                         onClick={() => {
                                                             if (targetComm) navigate(`/community/view?id=${targetComm.id}`);
                                                             else if (extractedPostId) navigate(`/posts?id=${extractedPostId}`);
                                                         }}
-                                                        className={`font-bold text-slate-900 dark:text-white text-sm md:text-base mb-2 flex items-center gap-2 ${(targetComm || extractedPostId) ? 'cursor-pointer hover:text-indigo-500 transition-colors' : ''}`}
+                                                        className={`font-source-sans font-bold text-slate-900 dark:text-white text-sm md:text-base mb-2 flex items-center gap-2 ${(targetComm || extractedPostId) ? 'cursor-pointer hover:text-indigo-500 transition-colors' : ''}`}
                                                     >
                                                         <span className="material-symbols-outlined text-indigo-500 text-[20px]">campaign</span>
                                                         {post.title}
                                                     </h5>
                                                 )}
-                                                <p className="text-sm text-slate-700 dark:text-slate-300 mb-4 whitespace-pre-wrap leading-relaxed">
-                                                    {renderFormattedText(post.content)}
-                                                </p>
+                                                {userCommentary ? (
+                                                    <p className="font-source-sans text-[14.5px] text-slate-800 dark:text-slate-200 mb-3 whitespace-pre-wrap leading-relaxed font-normal">
+                                                        {renderFormattedText(userCommentary)}
+                                                    </p>
+                                                ) : null}
                                                 
-                                                {/* Post Media / Image Attachments */}
+                                                {/* Post Media / Image Attachments — High-Res Grid & Lightbox */}
                                                 {(() => {
-                                                    const rawImages = (post.attachments || []).filter(a => a.type === 'image' || a.attachmentType === 'image' || (typeof a === 'string' && a.match(/\.(jpg|jpeg|png|gif|webp)/i))) || post.images || [];
-                                                    const postImages = rawImages.length > 0 ? rawImages : (post.imageUrl ? [{ url: post.imageUrl }] : (post.image ? [{ url: post.image }] : []));
-                                                    if (postImages.length === 0) return null;
+                                                    const postMedia = normalizePostAttachments(post);
+                                                    const postImages = postMedia.images;
+                                                    if (!postImages || postImages.length === 0) return null;
                                                     return (
-                                                        <div className={`mb-4 grid gap-2 rounded-2xl overflow-hidden ${postImages.length > 1 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                                                            {postImages.map((img, idx) => {
-                                                                const imgUrl = resolveMediaUrl(img.url || img.fileUrl || img);
+                                                        <div className="mb-4 w-full rounded-2xl overflow-hidden">
+                                                            <ImageGrid 
+                                                                images={postImages} 
+                                                                onImageClick={(idx) => {
+                                                                    setLightboxImages(postImages);
+                                                                    setLightboxStartIndex(idx);
+                                                                }} 
+                                                            />
+                                                        </div>
+                                                    );
+                                                })()}
+
+                                                {/* Non-Image Attachments (Documents / Archives / Media) */}
+                                                {(() => {
+                                                    const postMedia = normalizePostAttachments(post);
+                                                    const otherAtts = (postMedia.attachments || []).filter(a => !isImageAttachment(a));
+                                                    if (!otherAtts || otherAtts.length === 0) return null;
+                                                    return (
+                                                        <div className="mb-4 flex flex-col gap-2">
+                                                            {otherAtts.map((att, idx) => {
+                                                                const rawUrl = att.url || att.fileUrl || '';
+                                                                const resolvedUrl = resolveMediaUrl(rawUrl) || rawUrl;
                                                                 return (
-                                                                    <div key={idx} className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 max-h-96">
-                                                                        <img 
-                                                                            src={imgUrl} 
-                                                                            alt="post media" 
-                                                                            className="w-full h-full object-cover"
-                                                                            onError={(e) => { e.target.style.display = 'none'; }}
-                                                                        />
-                                                                    </div>
+                                                                    <a
+                                                                        key={att.id || idx}
+                                                                        href={resolvedUrl}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 hover:border-indigo-400 transition-all text-slate-700 dark:text-slate-200 group"
+                                                                    >
+                                                                        <span className="material-symbols-outlined text-indigo-500 text-[24px]">description</span>
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <p className="text-xs font-bold truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400">{att.name || 'Document Attachment'}</p>
+                                                                            <span className="text-[11px] text-slate-400">Click to view / download</span>
+                                                                        </div>
+                                                                        <span className="material-symbols-outlined text-slate-400 text-[18px]">download</span>
+                                                                    </a>
                                                                 );
                                                             })}
                                                         </div>
                                                     );
                                                 })()}
                                                 
-                                                {/* Shared Post Interactive Preview Card with Open Post Button */}
-                                                {(isSharedPost || extractedPostId) && (
+                                                {/* Shared Post Modern Quote Card (LinkedIn / Twitter Style) */}
+                                                {isSharedPost && (
                                                     <div 
-                                                        onClick={() => {
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
                                                             const targetId = extractedPostId || post.id || post.postId;
                                                             if (targetId) navigate(`/posts?id=${targetId}`);
                                                         }}
-                                                        className="mb-4 p-4 rounded-2xl bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-sky-500/10 border border-blue-500/30 hover:border-blue-500 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 cursor-pointer group shadow-sm hover:shadow-md"
+                                                        className="mb-4 p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/60 hover:bg-slate-100/90 dark:hover:bg-slate-850 border border-slate-200/90 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-500/60 transition-all cursor-pointer group shadow-xs hover:shadow-md"
                                                     >
-                                                        <div className="flex items-center gap-3.5 min-w-0">
-                                                            <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xl shrink-0 shadow-md shadow-blue-500/30 group-hover:scale-105 transition-transform">
-                                                                <span className="material-symbols-outlined text-[24px]">dynamic_feed</span>
-                                                            </div>
-                                                            <div className="min-w-0">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="text-[10px] bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider flex items-center gap-1">
-                                                                        <span className="material-symbols-outlined text-[12px]">share</span>
-                                                                        Shared Post
+                                                        <div className="flex items-center justify-between gap-3 mb-2.5">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-arial text-[11px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60">
+                                                                    <span className="material-symbols-outlined text-[13px]">repeat</span>
+                                                                    Shared Post
+                                                                </span>
+                                                                {extractedPostId && (
+                                                                    <span className="font-arial text-[11px] text-slate-400 dark:text-slate-500 font-mono font-medium">
+                                                                        #{extractedPostId}
                                                                     </span>
-                                                                    {extractedPostId && (
-                                                                        <span className="text-[11px] text-slate-400 font-mono font-bold">#{extractedPostId}</span>
-                                                                    )}
-                                                                </div>
-                                                                <h6 className="font-bold text-slate-900 dark:text-white text-sm group-hover:text-blue-500 transition-colors truncate mt-1">
-                                                                    {sharedPostTitle}
-                                                                </h6>
-                                                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                                                                    Click to open post details, discussions & full comments
-                                                                </p>
+                                                                )}
+                                                                {sharedAuthor && (
+                                                                    <span className="font-arial text-[11.5px] text-slate-500 dark:text-slate-400">
+                                                                        by <strong className="font-source-sans text-slate-700 dark:text-slate-200 font-semibold">{sharedAuthor}</strong>
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex items-center gap-1 font-source-sans text-[12px] font-bold text-blue-600 dark:text-blue-400 group-hover:text-blue-700 dark:group-hover:text-blue-300 group-hover:translate-x-0.5 transition-all shrink-0">
+                                                                <span>Open Post</span>
+                                                                <span className="material-symbols-outlined text-[15px]">arrow_outward</span>
                                                             </div>
                                                         </div>
-                                                        <button 
-                                                            type="button"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                const targetId = extractedPostId || post.id || post.postId;
-                                                                if (targetId) navigate(`/posts?id=${targetId}`);
-                                                            }}
-                                                            className="w-full sm:w-auto px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-600/20 transition-all flex items-center justify-center gap-1.5 shrink-0 group-hover:translate-x-0.5 cursor-pointer"
-                                                        >
-                                                            <span>Open Post</span>
-                                                            <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                                                        </button>
+
+                                                        {/* Quote Box Body with Georgia Italic voice font */}
+                                                        <div className="border-l-3 border-blue-500/70 dark:border-blue-400/70 pl-3.5 py-1.5 bg-white/70 dark:bg-slate-950/40 rounded-r-xl">
+                                                            <p 
+                                                                className="font-georgia-italic text-[16px] text-slate-800 dark:text-slate-100 leading-relaxed group-hover:text-blue-950 dark:group-hover:text-white transition-colors line-clamp-3"
+                                                                style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif', fontStyle: 'italic' }}
+                                                            >
+                                                                "{sharedPostTitle || 'Original Post'}"
+                                                            </p>
+                                                            <p className="font-arial text-[11px] text-slate-500 dark:text-slate-400 mt-2 flex items-center gap-1.5">
+                                                                <span className="material-symbols-outlined text-[14px] text-blue-500/70">chat_bubble</span>
+                                                                Click to open post details, discussions & full comments
+                                                            </p>
+                                                        </div>
                                                     </div>
                                                 )}
 
@@ -2967,37 +3311,69 @@ export default function CommunityView() {
                                                 )}
                                                 
                                                 {/* Shared Profile Card inside Community Post */}
-                                                {post.sharedProfile && (
-                                                    <div className="mb-4 p-4 rounded-2xl bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 border border-indigo-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
-                                                        <div className="flex items-center gap-3.5 min-w-0">
-                                                            <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-black text-lg flex items-center justify-center shrink-0 shadow-md overflow-hidden">
-                                                                {post.sharedProfile.avatar ? (
-                                                                    <img src={post.sharedProfile.avatar} alt={post.sharedProfile.name} className="w-full h-full object-cover" />
-                                                                ) : (
-                                                                    (post.sharedProfile.name || 'U').charAt(0).toUpperCase()
-                                                                )}
-                                                            </div>
-                                                            <div className="min-w-0">
-                                                                <span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-extrabold uppercase tracking-wider">
-                                                                    SHARED PROFILE
-                                                                </span>
-                                                                <h4 className="font-extrabold text-slate-900 dark:text-white text-sm truncate mt-0.5">
-                                                                    {post.sharedProfile.name || post.sharedProfile.fullName}
-                                                                </h4>
-                                                                <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                                                    {post.sharedProfile.designation || 'Contributor'} • {post.sharedProfile.department || 'General'}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                        <button
-                                                            onClick={() => navigate('/profile', { state: { user: post.sharedProfile } })}
-                                                            className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-indigo-500/20 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                                                {(post.sharedProfile || post.isProfileShare || (post.content && post.content.includes('Shared Profile:'))) && (() => {
+                                                    const prof = post.sharedProfile || {
+                                                        name: (post.content?.match(/Shared Profile:\s*"([^"]+)"/i) || [])[1] || 'Colleague',
+                                                        fullName: (post.content?.match(/Shared Profile:\s*"([^"]+)"/i) || [])[1] || 'Colleague',
+                                                        designation: 'MPOnline Team Member',
+                                                        department: 'MPOnline',
+                                                        id: (post.content?.match(/\/profile\?id=([a-zA-Z0-9_-]+)/i) || [])[1] || 1
+                                                    };
+                                                    const profId = prof.userId || prof.id;
+                                                    const profName = prof.fullName || prof.name || 'User';
+                                                    const profAvatar = prof.avatar || prof.profilePhotoUrl;
+                                                    const profDesignation = prof.designation || prof.roleName || prof.role || 'Contributor';
+                                                    const profDept = prof.department || prof.departmentName || 'General';
+
+                                                    const handleOpenProfile = (e) => {
+                                                        e.stopPropagation();
+                                                        navigate(profId ? `/profile?id=${profId}` : '/profile', { state: { user: prof } });
+                                                    };
+
+                                                    return (
+                                                        <div 
+                                                            onClick={handleOpenProfile}
+                                                            className="mb-4 p-4 rounded-2xl bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 border border-indigo-500/25 hover:border-indigo-500/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm hover:shadow-md transition-all cursor-pointer group"
                                                         >
-                                                            <span className="material-symbols-outlined text-[16px]">visibility</span>
-                                                            View Profile
-                                                        </button>
-                                                    </div>
-                                                )}
+                                                            <div className="flex items-center gap-3.5 min-w-0">
+                                                                <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white font-black text-lg flex items-center justify-center shrink-0 shadow-md overflow-hidden group-hover:scale-105 transition-transform">
+                                                                    {profAvatar ? (
+                                                                        <img 
+                                                                            src={resolveMediaUrl(profAvatar) || profAvatar} 
+                                                                            alt={profName} 
+                                                                            className="w-full h-full object-cover" 
+                                                                            onError={(e) => {
+                                                                                e.target.onerror = null;
+                                                                                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(profName)}&background=6366f1&color=fff&bold=true`;
+                                                                            }}
+                                                                        />
+                                                                    ) : (
+                                                                        profName.charAt(0).toUpperCase()
+                                                                    )}
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <span className="px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-extrabold uppercase tracking-wider">
+                                                                        SHARED PROFILE
+                                                                    </span>
+                                                                    <h4 className="font-extrabold text-slate-900 dark:text-white text-sm truncate mt-0.5 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                                                                        {profName}
+                                                                    </h4>
+                                                                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                                                        {profDesignation} • {profDept}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={handleOpenProfile}
+                                                                className="w-full sm:w-auto px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-indigo-500/25 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer group-hover:translate-x-0.5"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[17px]">visibility</span>
+                                                                View Profile
+                                                            </button>
+                                                        </div>
+                                                    );
+                                                })()}
                                                 
                                                 {targetComm && !post.sharedVideo && post.type !== 'video_share' && (
                                                     <div 
@@ -3143,6 +3519,7 @@ export default function CommunityView() {
                                 </div>
                             );
                         })}
+                            <ScrollLoadingIndicator isVisible={visiblePostCount < sortedPosts.length} text="Loading more community posts on scroll..." />
                         </div>
                     )}
 
@@ -3171,12 +3548,13 @@ export default function CommunityView() {
                                 </div>
 
                                 <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                                    {membersList
-                                        .filter(m => !memberSearchQuery.trim() || (m.fullName || m.name || '').toLowerCase().includes(memberSearchQuery.toLowerCase()) || (m.designation || '').toLowerCase().includes(memberSearchQuery.toLowerCase()))
+                                    {filteredMembers
+                                        .slice(0, visibleMemberCount)
                                         .map(m => {
                                             const avatar = resolveMediaUrl(m.profilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(m.fullName || m.name || 'User')}&background=6366f1&color=fff`;
-                                            const roleName = m.memberType === 'Admin' ? 'Community Administrator' : (m.memberType === 'Moderator' ? 'Community Moderator' : 'Community Member');
-                                            const badgeBg = m.memberType === 'Admin' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border-purple-200 dark:border-purple-800' : (m.memberType === 'Moderator' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800');
+                                            const isCommAdmin = m.memberType === 'Admin' || m.memberType === 'Moderator' || m.memberType === 'Community Administrator';
+                                            const roleName = isCommAdmin ? 'Community Administrator' : 'Community Member';
+                                            const badgeBg = isCommAdmin ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border-purple-200 dark:border-purple-800' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800';
 
                                             return (
                                                 <div key={m.userId || m.id || m.employeeId} className="p-4 flex items-center justify-between gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
@@ -3198,7 +3576,7 @@ export default function CommunityView() {
                                                                 </span>
                                                             </div>
                                                             <p className="text-[12px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                                                                {m.designation || 'Employee'} • {m.employeeId || 'MPOnline'}
+                                                                {m.designation || 'Employee'} • {m.department || 'MPOnline'}
                                                             </p>
                                                         </div>
                                                     </div>
@@ -3206,26 +3584,28 @@ export default function CommunityView() {
                                                     <div className="flex items-center gap-2 shrink-0">
                                                          {isAdmin && String(m.userId || m.id) !== String(currentUser?.id) && (
                                                              <>
+                                                                 {!isCommAdmin && (
+                                                                     <button 
+                                                                         onClick={() => handleToggleRole(m.userId || m.id, m.memberType)}
+                                                                         className="px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800/50 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                                                         title="Make Community Administrator"
+                                                                     >
+                                                                         <span className="material-symbols-outlined text-[15px]">manage_accounts</span>
+                                                                         Make Administrator
+                                                                     </button>
+                                                                 )}
                                                                  <button 
-                                                                     onClick={() => handleToggleRole(m.userId || m.id, m.memberType)}
-                                                                     className="px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800/50 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer"
-                                                                     title="Promote or Demote Role"
-                                                                 >
-                                                                     <span className="material-symbols-outlined text-[15px]">manage_accounts</span>
-                                                                     {m.memberType === 'Moderator' ? 'Set as Member' : 'Make Moderator'}
-                                                                 </button>
-                                                                 <button 
-                                                                     onClick={() => handleRemoveMemberByAdmin(m.userId || m.id, m.fullName || m.name)}
+                                                                     onClick={() => handleInitiateRemoveMember(m)}
                                                                      className="px-2.5 py-1.5 rounded-xl border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer"
-                                                                     title="Remove Member from Community"
+                                                                     title={isCommAdmin && getAdminCount() <= 1 ? "Cannot remove sole Community Administrator" : "Remove Member from Community"}
                                                                  >
                                                                      <span className="material-symbols-outlined text-[15px]">person_remove</span>
                                                                      Remove
                                                                  </button>
                                                                  <button 
-                                                                     onClick={() => handleSuspend(m.userId || m.id, m.fullName || m.name)}
+                                                                     onClick={() => handleInitiateSuspendMember(m)}
                                                                      className="px-2.5 py-1.5 rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer"
-                                                                     title="Suspend Member (FR-CM-07)"
+                                                                     title={isCommAdmin && getAdminCount() <= 1 ? "Cannot suspend sole Community Administrator" : "Suspend Member"}
                                                                  >
                                                                      <span className="material-symbols-outlined text-[15px]">person_off</span>
                                                                      Suspend
@@ -3244,6 +3624,7 @@ export default function CommunityView() {
                                             );
                                         })}
                                 </div>
+                                <ScrollLoadingIndicator isVisible={visibleMemberCount < filteredMembers.length} text="Loading more community members on scroll..." />
                             </div>
                         </div>
                     )}
@@ -3307,7 +3688,7 @@ export default function CommunityView() {
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                                    {filteredFiles.map(file => (
+                                    {filteredFiles.slice(0, visibleFileCount).map(file => (
                                         <div key={file.id} className="glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 flex flex-col justify-between hover:border-indigo-300 dark:hover:border-indigo-700/50 transition-all group">
                                             <div onClick={() => setPreviewModalFile(file)} className="cursor-pointer">
                                                 <div className="flex items-start justify-between gap-3 mb-3">
@@ -3370,6 +3751,7 @@ export default function CommunityView() {
                                     ))}
                                 </div>
                             )}
+                            <ScrollLoadingIndicator isVisible={visibleFileCount < filteredFiles.length} text="Loading more community files on scroll..." />
                         </div>
                     )}
 
@@ -3435,9 +3817,26 @@ export default function CommunityView() {
                                                     <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 font-bold text-sm">
                                                         {(m.fullName || m.name || 'U').charAt(0)}
                                                     </div>
-                                                    <div>
-                                                        <h4 className="font-bold text-sm text-slate-900 dark:text-white">{m.fullName || m.name}</h4>
-                                                        <p className="text-[11px] text-slate-500">{m.designation || 'Member'} • Suspended by {m.suspendedBy || 'Admin'}</p>
+                                                    <div className="min-w-0">
+                                                        <h4 className="font-bold text-sm text-slate-900 dark:text-white truncate">{m.fullName || m.name}</h4>
+                                                        <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-500 mt-0.5">
+                                                            <span>{m.designation || 'Member'}</span>
+                                                            <span>•</span>
+                                                            <span>Suspended by {m.suspendedBy || 'Admin'}</span>
+                                                            {m.suspensionDuration && (
+                                                                <>
+                                                                    <span>•</span>
+                                                                    <span className="font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-800/40">
+                                                                        Duration: {m.suspensionDuration}
+                                                                    </span>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                        {m.suspensionReason && (
+                                                            <p className="text-[11px] text-slate-500 dark:text-slate-400 italic mt-1 truncate max-w-md">
+                                                                Reason: {m.suspensionReason}
+                                                            </p>
+                                                        )}
                                                     </div>
                                                 </div>
                                                 <button
@@ -3692,7 +4091,7 @@ export default function CommunityView() {
                             {/* Admin */}
                             <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
                                 <span className="material-symbols-outlined text-[20px] text-indigo-500">shield_person</span>
-                                <span>Admin: <span className="font-bold text-indigo-500">{community.adminContact}</span></span>
+                                <span>Admin: <span className="font-bold text-indigo-500">{communityAdminDisplay}</span></span>
                             </div>
                         </div>
                     </div>
@@ -4340,6 +4739,125 @@ export default function CommunityView() {
                 </div>
             )}
 
+            {/* 1. Admin Protection Warning Modal */}
+            {adminProtectionWarning && (
+                <div className="fixed inset-0 z-[9999] overflow-y-auto p-4 sm:p-6 flex min-h-full items-center justify-center bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="relative bg-white dark:bg-slate-900 w-full max-w-md my-auto rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200">
+                        <div className="p-6 text-center overflow-y-auto flex-1 min-h-0">
+                            <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-900/30 text-amber-500 flex items-center justify-center mx-auto mb-4 border border-amber-200 dark:border-amber-800/50 shadow-sm shrink-0">
+                                <span className="material-symbols-outlined text-[34px]">admin_panel_settings</span>
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
+                                {adminProtectionWarning.title || 'Community Administrator Protection'}
+                            </h3>
+                            <div className="bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/40 rounded-xl p-3.5 mb-5 text-left">
+                                <p className="text-xs text-amber-900 dark:text-amber-200 leading-relaxed whitespace-pre-line">
+                                    {adminProtectionWarning.message}
+                                </p>
+                            </div>
+                            <div className="flex items-center justify-center gap-3">
+                                <button
+                                    onClick={() => setAdminProtectionWarning(null)}
+                                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
+                                >
+                                    I Understand
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 2. Suspend Member Duration Popup Modal */}
+            <SuspendUserModal
+                isOpen={!!suspendModalMember}
+                onClose={() => setSuspendModalMember(null)}
+                user={suspendModalMember}
+                title="Suspend Community Member"
+                subtitle="Choose suspension period and reason"
+                onConfirm={handleConfirmSuspendMember}
+            />
+
+            {/* 3. Remove Member Confirmation Modal */}
+            {removeModalMember && (
+                <div className="fixed inset-0 z-[9999] overflow-y-auto p-4 sm:p-6 flex min-h-full items-center justify-center bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="relative bg-white dark:bg-slate-900 w-full max-w-md my-auto rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="px-6 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-red-50/70 dark:bg-red-950/20 flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-red-500 text-white flex items-center justify-center shadow-md shadow-red-500/20 shrink-0">
+                                    <span className="material-symbols-outlined text-[22px]">person_remove</span>
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-slate-900 dark:text-white text-base">Remove Member</h3>
+                                    <p className="text-[12px] text-slate-500">Confirm member removal</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setRemoveModalMember(null)}
+                                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-lg transition-colors cursor-pointer"
+                            >
+                                <span className="material-symbols-outlined text-[20px]">close</span>
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-5 sm:p-6 flex-1 min-h-0 overflow-y-auto space-y-4">
+                            <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/70 dark:border-slate-700/60">
+                                <img
+                                    src={resolveMediaUrl(removeModalMember.profilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(removeModalMember.fullName || removeModalMember.name || 'User')}&background=6366f1&color=fff`}
+                                    alt={removeModalMember.fullName || removeModalMember.name}
+                                    className="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                                />
+                                <div className="min-w-0 flex-1">
+                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                                        {removeModalMember.fullName || removeModalMember.name}
+                                    </h4>
+                                    <p className="text-xs text-slate-500 truncate">
+                                        {removeModalMember.designation || 'Member'} • {removeModalMember.department || 'MPOnline'}
+                                    </p>
+                                </div>
+                                <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-full border bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 shrink-0">
+                                    {removeModalMember.memberType || 'Member'}
+                                </span>
+                            </div>
+
+                            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                                Are you sure you want to remove <strong className="text-slate-900 dark:text-white font-bold">{removeModalMember.fullName || removeModalMember.name}</strong> from this community?
+                            </p>
+
+                            <div className="p-3 bg-red-50/50 dark:bg-red-950/20 border border-red-200/60 dark:border-red-800/40 rounded-xl text-[11px] text-red-700 dark:text-red-300 flex items-start gap-2">
+                                <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5 text-red-500">warning</span>
+                                <span>
+                                    {removeModalMember.memberType === 'Admin' || removeModalMember.memberType === 'Moderator' || removeModalMember.memberType === 'Community Administrator'
+                                        ? 'This user is a Community Administrator. Once removed, they will lose all admin privileges. Remaining administrators will continue managing the community.'
+                                        : 'They will immediately lose access to private discussions, files, and community activities.'}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-end gap-2.5 shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setRemoveModalMember(null)}
+                                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleConfirmRemoveMember}
+                                className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs shadow-md shadow-red-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                            >
+                                <span className="material-symbols-outlined text-[16px]">person_remove</span>
+                                Yes, Remove Member
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Universal Share Modal for Community Posts */}
             {sharingPost && (
                 <ArticleShareModal 
@@ -4360,6 +4878,15 @@ export default function CommunityView() {
                             return p;
                         }));
                     }}
+                />
+            )}
+
+            {/* Fullscreen Image Lightbox */}
+            {lightboxImages && (
+                <ImageLightbox
+                    images={lightboxImages}
+                    startIndex={lightboxStartIndex}
+                    onClose={() => setLightboxImages(null)}
                 />
             )}
         </main>

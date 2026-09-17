@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { useUser } from '../contexts/UserContext';
+import { useUser, getUserStatusConfig } from '../contexts/UserContext';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import NotificationSettingsModal, { DEFAULT_NOTIF_PREFERENCES } from '../modals/NotificationSettingsModal';
 import NotificationToast from '../ui/NotificationToast';
 import knomeLogo from '../../assets/knome_logo.png';
+import knomeLogoDark from '../../assets/knome_logo_dark.png';
 import { notificationsApi, profileApi, searchApi, karmaApi, resolveMediaUrl, saveRecentSearch, getLocalRecentSearches, clearLocalRecentSearches } from '../../utils/apiService';
 import { useConfirm } from '../contexts/ConfirmDialogContext';
 import * as signalR from '@microsoft/signalr';
@@ -13,15 +14,16 @@ export default function Navbar() {
     const { currentUser, setCurrentUser, users, logout } = useUser();
     const confirm = useConfirm();
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+    const userStatusConfig = getUserStatusConfig(currentUser);
     const { pathname } = useLocation();
     const navigate = useNavigate();
     
     // User Karma Points State
-    const [userKarma, setUserKarma] = useState(currentUser?.karma || 0);
+    const [userKarma, setUserKarma] = useState(currentUser?.karmaPoints ?? currentUser?.karma ?? 0);
 
     useEffect(() => {
-        if (currentUser?.karma !== undefined) {
-            setUserKarma(currentUser.karma);
+        if (currentUser?.karmaPoints !== undefined || currentUser?.karma !== undefined) {
+            setUserKarma(currentUser.karmaPoints ?? currentUser.karma ?? 0);
         }
         const fetchKarma = async () => {
             try {
@@ -64,8 +66,17 @@ export default function Navbar() {
     }, [currentUser?.userId, currentUser?.employeeId, currentUser?.karma]);
 
     const isSysAdmin = currentUser?.role === 'SYSADM' || 
+                       currentUser?.role === 'System Administrator' ||
+                       currentUser?.role === 'SystemAdmin' ||
                        currentUser?.roleName === 'System Administrator' || 
-                       (Array.isArray(currentUser?.roles) && (currentUser.roles.includes('SYSADM') || currentUser.roles.includes('System Administrator') || currentUser.roles.includes('SystemAdmin')));
+                       currentUser?.roleName === 'SYSADM' ||
+                       currentUser?.roleName === 'SystemAdmin' ||
+                       currentUser?.designation === 'System Administrator' ||
+                       (Array.isArray(currentUser?.roles) && (
+                           currentUser.roles.includes('SYSADM') || 
+                           currentUser.roles.includes('System Administrator') || 
+                           currentUser.roles.includes('SystemAdmin')
+                       ));
 
     // Smart YouTube-Style Search State
     const [searchQuery, setSearchQuery] = useState('');
@@ -1172,19 +1183,19 @@ export default function Navbar() {
                         <span className="material-symbols-outlined text-[24px]">menu</span>
                     </button>
 
-                    <Link to="/" className="flex items-center gap-2.5 sm:gap-3.5 transition-all duration-200 hover:scale-[1.02] shrink-0 group">
-                        <div className="relative p-1 bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 shadow-md group-hover:shadow-indigo-500/25 transition-all flex items-center justify-center">
+                    <Link to="/" className="flex items-center gap-2 sm:gap-3 transition-all duration-200 hover:scale-[1.02] shrink-0 group">
+                        <div className="flex flex-col justify-center">
                             <img 
                                 src={knomeLogo} 
-                                alt="Knome Logo" 
-                                className="h-10 sm:h-12 w-auto object-contain rounded-xl" 
+                                alt="KNOME" 
+                                className="h-8 sm:h-9 w-auto object-contain block dark:hidden drop-shadow-xs group-hover:scale-105 transition-transform duration-300" 
                             />
-                        </div>
-                        <div className="flex flex-col justify-center">
-                            <span className="text-[15px] sm:text-[19px] font-black tracking-tight leading-none bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-500 bg-clip-text text-transparent group-hover:opacity-95 transition-opacity drop-shadow-xs">
-                                KNOME PORTAL
-                            </span>
-                            <span className="hidden xs:inline-block text-[10px] sm:text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1 leading-tight tracking-tight">
+                            <img 
+                                src={knomeLogoDark} 
+                                alt="KNOME" 
+                                className="h-8 sm:h-9 w-auto object-contain hidden dark:block drop-shadow-xs group-hover:scale-105 transition-transform duration-300" 
+                            />
+                            <span className="hidden xs:inline-block text-[9.5px] sm:text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-tight tracking-tight pl-0.5">
                                 Connecting People & Knowledge
                             </span>
                         </div>
@@ -1376,10 +1387,9 @@ export default function Navbar() {
                 {/* ─── RIGHT: Actions & Profile ─── */}
                 <div className="flex items-center gap-2.5 justify-end">
 
-                    {/* Karma Badge (Visible for all logged-in members) */}
-                    {/* Karma Badge (Visible for all logged-in members) */}
+                    {/* Karma Badge (Visible for HR Admin, Community Admin, and all logged-in members) */}
                     {currentUser && (
-                        <Link to="/karma-history" className="relative hidden lg:flex items-center gap-1.5 px-3.5 py-1.5 rounded-full transition-all hover:scale-105 group"
+                        <Link to="/karma-history" className="relative flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-full transition-all hover:scale-105 group cursor-pointer"
                             style={{
                                 background: isDark 
                                     ? 'linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(217, 119, 6, 0.1))' 
@@ -1753,9 +1763,12 @@ export default function Navbar() {
                                         e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || currentUser?.fullName || 'User')}&background=6366f1&color=fff`;
                                     }}
                                 />
+                                <div className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-slate-900 ${userStatusConfig.dotClass}`} title={`Status: ${userStatusConfig.label}`}></div>
                             </div>
                             <div className="hidden sm:flex flex-col items-start text-left min-w-0">
-                                <span className="text-[13px] font-bold text-slate-800 dark:text-slate-100 truncate leading-tight">{(currentUser?.name || currentUser?.fullName || 'User').split(' ')[0]}</span>
+                                <span className="text-[13px] font-bold text-slate-800 dark:text-slate-100 truncate leading-tight max-w-[140px]" title={currentUser?.fullName || currentUser?.name || 'User'}>
+                                    {currentUser?.fullName || currentUser?.name || 'User'}
+                                </span>
                                 <span className="text-[9.5px] font-semibold text-slate-500 dark:text-slate-400 mt-0.5 leading-none">{currentUser?.roleName || currentUser?.role || 'Employee'}</span>
                             </div>
                             <span className="material-symbols-outlined text-[16px] text-slate-400 shrink-0">expand_more</span>
@@ -1770,8 +1783,14 @@ export default function Navbar() {
                                     boxShadow: isDark ? '0 24px 80px rgba(0,0,0,0.8)' : '0 24px 80px rgba(37,99,235,0.12), 0 4px 24px rgba(0,0,0,0.08)'
                                 }}>
                                 <div className="px-4 py-3.5 border-b" style={{borderColor: 'var(--border-mid)'}}>
-                                    <p className="font-bold text-sm text-slate-900 dark:text-slate-100">{currentUser.name}</p>
-                                    <p className="text-[12px] text-slate-500 dark:text-slate-400 truncate">{currentUser.roleName}</p>
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p className="font-bold text-sm text-slate-900 dark:text-slate-100 truncate">{currentUser?.name || currentUser?.fullName || 'User'}</p>
+                                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-md border leading-none shrink-0 ${userStatusConfig.badgeClass}`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${userStatusConfig.dotClass}`}></span>
+                                            {userStatusConfig.label}
+                                        </span>
+                                    </div>
+                                    <p className="text-[12px] text-slate-500 dark:text-slate-400 truncate mt-0.5">{currentUser?.roleName || currentUser?.role || 'Employee'}</p>
                                 </div>
                                 <div className="py-1.5">
                                     <div className="border-t px-3 py-2" style={{borderColor: 'var(--border-mid)'}}>
@@ -1783,13 +1802,13 @@ export default function Navbar() {
                                                 setIsUserMenuOpen(false);
                                                 const ok = await confirm({
                                                     title: 'Confirm Logout',
-                                                    message: "Are you sure you want to log out of Knome? You'll need to sign in again to access your account.",
+                                                    message: "Are you sure you want to log out of Knome? You will be redirected to MPO Employee Hub.",
                                                     confirmText: 'Yes, Log Out',
                                                     cancelText: 'Cancel',
                                                     variant: 'danger'
                                                 });
                                                 if (ok) {
-                                                    logout();
+                                                    logout('https://counselling-1.mponline.demo.gov.in:3001/applications');
                                                 }
                                             }}
                                             className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] font-semibold text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors mt-0.5 cursor-pointer"

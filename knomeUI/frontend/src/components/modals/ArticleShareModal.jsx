@@ -760,11 +760,6 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
                                                             <p className="text-xs font-bold leading-tight text-slate-900 dark:text-white truncate">
                                                                 {u.name || u.fullName}
                                                             </p>
-                                                            {u.employeeId && (
-                                                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 font-semibold shrink-0">
-                                                                    {u.employeeId}
-                                                                </span>
-                                                            )}
                                                         </div>
                                                         <p className="text-[10px] text-slate-400 truncate mt-0.5">
                                                             {u.roleName || u.role || u.designation || 'Employee'} • {u.department || 'MPOnline'}

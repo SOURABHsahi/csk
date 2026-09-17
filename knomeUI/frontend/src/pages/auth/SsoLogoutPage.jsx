@@ -18,7 +18,7 @@ export default function SsoLogoutPage() {
         const doLogout = async () => {
             try {
                 if (logout) {
-                    await logout();
+                    await logout(false);
                 } else {
                     localStorage.removeItem('knome_jwt');
                     localStorage.removeItem('accessToken');
