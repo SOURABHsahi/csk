@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useUser, getUserStatusConfig } from '../components/contexts/UserContext';
 import { interactionsApi, adminApi, postsApi, podcastsApi, articlesApi, communitiesApi, resolveMediaUrl, getVideoThumbnail } from '../utils/apiService';
@@ -32,10 +32,28 @@ export default function AdminConsole() {
                          ['System Administrator', 'System Admin'].includes(currentUser?.roleName) ||
                          (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => ['SYSADM', 'System Administrator', 'SystemAdmin'].includes(r)));
 
-    // Active Navigation Tab
+    // Active Navigation Tab & Hierarchical Functional Domain
     const [activeTab, setActiveTab] = useState('moderation');
     const [lastUpdatedTime, setLastUpdatedTime] = useState(new Date().toLocaleTimeString());
     const [isRefreshing, setIsRefreshing] = useState(false);
+
+    // Hierarchical Domain Derived from Active Tab
+    const activeDomain = useMemo(() => {
+        if (['users', 'role_requests'].includes(activeTab)) return 'governance';
+        if (['system', 'audit', 'serilog', 'analytics'].includes(activeTab)) return 'operations';
+        return 'moderation';
+    }, [activeTab]);
+
+    // Switch Domain and Auto-select First Tab in that Domain
+    const handleDomainSelect = (domain) => {
+        if (domain === 'moderation') {
+            setActiveTab('moderation');
+        } else if (domain === 'governance') {
+            setActiveTab('users');
+        } else if (domain === 'operations') {
+            setActiveTab('system');
+        }
+    };
 
     // Moderation Reports & Selection State
     const [reports, setReports] = useState([]);
@@ -878,18 +896,19 @@ export default function AdminConsole() {
         return () => clearInterval(timer);
     }, [activeTab, isAutoRefreshLogs, selectedLogFile, logLevelFilter, logLinesCount, logSearchQuery]);
 
-    // Handle Moderation Action (Dismiss, Remove Content, or Reinstate)
+    // Handle Moderation Action (Dismiss, Delete, or Reinstate)
     const handleResolve = async (reportId, actionType, contentId = null, contentType = null) => {
         const isDismiss = actionType === 'Dismiss';
+        const isDelete = actionType === 'Removed Content' || actionType === 'Delete';
         const isReinstate = actionType === 'Reinstate';
-        const newStatus = isDismiss ? 'Reviewed' : (isReinstate ? 'Reviewed' : 'Action Taken');
+        const newStatus = isDismiss ? 'Dismissed' : (isReinstate ? 'Reviewed' : 'Action Taken');
         const actionTakenText = isDismiss 
             ? 'Dismissed' 
-            : (isReinstate ? 'Reinstated Content' : (actionType === 'Removed Content' ? 'Removed Content' : actionType));
+            : (isReinstate ? 'Reinstated Content' : 'Deleted');
 
         try {
-            await interactionsApi.resolveReport(reportId, isDismiss || isReinstate ? 'Dismiss' : actionType, `Resolved by ${currentUser?.name || 'Admin'}`);
-            if (actionType === 'Removed Content' && contentType === 'Post' && contentId) {
+            await interactionsApi.resolveReport(reportId, isDismiss || isReinstate ? 'Dismiss' : 'Removed Content', `Resolved by ${currentUser?.name || 'Admin'}`);
+            if (isDelete && (contentType === 'Post' || !contentType) && contentId) {
                 try {
                     await postsApi.delete(contentId);
                 } catch {
@@ -900,28 +919,17 @@ export default function AdminConsole() {
             console.warn("Backend API notice:", err);
         }
 
-        const nowStr = new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
-        setReports(prev => prev.map(r => r.reportId === reportId ? {
-            ...r,
-            status: newStatus,
-            moderatorUserId: currentUser?.userId || 1,
-            moderatorFullName: currentUser?.name || 'System Admin',
-            actionTaken: actionTakenText,
-            actionDate: nowStr
-        } : r));
+        // Immediately remove the report from the active reported posts list
+        setReports(prev => prev.filter(r => r.reportId !== reportId));
+        setSelectedReportIds(prev => prev.filter(id => id !== reportId));
 
         if (previewReport && previewReport.reportId === reportId) {
-            setPreviewReport(prev => prev ? {
-                ...prev,
-                status: newStatus,
-                moderatorUserId: currentUser?.userId || 1,
-                moderatorFullName: currentUser?.name || 'System Admin',
-                actionTaken: actionTakenText,
-                actionDate: nowStr
-            } : null);
+            setIsPreviewOpen(false);
+            setPreviewReport(null);
+            setPreviewPost(null);
         }
 
-        showToast(`Report #${reportId} updated: ${actionTakenText}.`);
+        showToast(`Report #${reportId} ${isDismiss ? 'dismissed' : 'deleted'} and removed from list.`);
 
         logAuditEntry(
             isDismiss ? 'DismissReport' : (isReinstate ? 'ReinstateContent' : 'RemoveContent'),
@@ -1400,16 +1408,39 @@ export default function AdminConsole() {
 
             {/* ─── 1. COMPACT PAGE HEADER & QUICK ACTIONS ─── */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 mb-3 shadow-xs flex flex-wrap items-center justify-between gap-3">
-                {/* Left: Breadcrumbs & Title */}
+                {/* Left: Hierarchical Breadcrumbs & Title */}
                 <div>
-                    <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-400 mb-0.5">
-                        <Link to="/" className="hover:text-indigo-600">Home</Link>
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 mb-0.5 flex-wrap">
+                        <Link to="/" className="hover:text-indigo-600 transition-colors">Home</Link>
                         <span>/</span>
-                        <span>Admin Console</span>
+                        <span 
+                            className="hover:text-indigo-600 cursor-pointer transition-colors"
+                            onClick={() => setActiveTab('moderation')}
+                        >
+                            Admin Console
+                        </span>
                         <span>/</span>
-                        <span className="text-indigo-600 dark:text-indigo-400 font-bold">Governance & Moderation</span>
+                        <span 
+                            className="text-slate-600 dark:text-slate-300 font-semibold cursor-pointer hover:text-indigo-600 transition-colors"
+                            onClick={() => handleDomainSelect(activeDomain)}
+                        >
+                            {activeDomain === 'moderation' ? 'Content Moderation & Safety' : activeDomain === 'governance' ? 'User & Access Governance' : 'Operations & Compliance'}
+                        </span>
+                        <span>/</span>
+                        <span className="text-indigo-600 dark:text-indigo-400 font-bold">
+                            {activeTab === 'moderation' ? 'Content Reports' :
+                             activeTab === 'media_approvals' ? 'Media Approvals' :
+                             activeTab === 'ai_moderation' ? 'AI Moderation Rules' :
+                             activeTab === 'communities' ? 'Community Moderation' :
+                             activeTab === 'users' ? 'User Directory' :
+                             activeTab === 'role_requests' ? 'Role Elevation Requests' :
+                             activeTab === 'system' ? 'System Parameters' :
+                             activeTab === 'audit' ? 'Audit Trail' :
+                             activeTab === 'serilog' ? 'Server Logs (Serilog)' :
+                             activeTab === 'analytics' ? 'Platform Analytics' : activeTab}
+                        </span>
                     </div>
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2.5 flex-wrap">
                         <h1 className="text-lg md:text-xl font-black text-slate-900 dark:text-white tracking-tight">
                             Admin Console & Moderation
                         </h1>
@@ -1485,265 +1516,583 @@ export default function AdminConsole() {
                 </div>
             </div>
 
-            {/* ─── 2. COMPACT 10 METRICS STRIP (FULLY INTERACTIVE & WORKABLE) ─── */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-10 gap-2 mb-3">
-                {/* 1. Total Reports */}
+            {/* ─── HIERARCHY TIER 1: FUNCTIONAL DOMAIN PILLARS ─── */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mb-3">
+                {/* Pillar 1: Content Moderation & Safety */}
                 <div 
-                    onClick={() => handleMetricCardClick('total', 'moderation', () => handleResetFilters(), `Filtered: Showing All Content Reports (${totalReportsCount})`)}
-                    className={`p-2 rounded-xl transition-all cursor-pointer group border ${
-                        activeMetricCard === 'total' && activeTab === 'moderation'
-                            ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.03]' 
-                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
+                    onClick={() => handleDomainSelect('moderation')}
+                    className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between group ${
+                        activeDomain === 'moderation'
+                            ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white border-indigo-600 shadow-md shadow-indigo-500/20 ring-2 ring-indigo-500/30'
+                            : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-indigo-400/60 shadow-xs'
                     }`}
                 >
-                    <div className="flex items-center justify-between text-indigo-500 mb-0.5">
-                        <span className="material-symbols-outlined text-[16px]">report</span>
-                        <span className="text-[9px] font-black text-emerald-500">+8%</span>
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${
+                            activeDomain === 'moderation' ? 'bg-white/20 text-white' : 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400'
+                        }`}>
+                            <span className="material-symbols-outlined text-[22px]">gavel</span>
+                        </div>
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                                <span className={`text-[10px] font-black uppercase tracking-wider ${activeDomain === 'moderation' ? 'text-indigo-200' : 'text-slate-400'}`}>
+                                    Domain 1
+                                </span>
+                                {pendingCount > 0 && (
+                                    <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
+                                        activeDomain === 'moderation' ? 'bg-amber-400 text-slate-950' : 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                                    }`}>
+                                        {pendingCount} Pending
+                                    </span>
+                                )}
+                            </div>
+                            <h3 className="font-extrabold text-xs sm:text-sm tracking-tight truncate">
+                                Moderation & Content Safety
+                            </h3>
+                            <p className={`text-[10px] sm:text-[11px] truncate ${activeDomain === 'moderation' ? 'text-indigo-100' : 'text-slate-400'}`}>
+                                Reports, Media Approvals, AI & Communities
+                            </p>
+                        </div>
                     </div>
-                    <p className="text-base font-black text-slate-900 dark:text-white leading-none">{totalReportsCount}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-0.5">Total Reports</p>
-                </div>
-
-                {/* 2. Pending Reports */}
-                <div 
-                    onClick={() => handleMetricCardClick('pending', 'moderation', () => { handleResetFilters(); setStatusFilter('Pending'); }, `Filtered: Showing ${pendingCount} Pending Reports`)}
-                    className={`p-2 rounded-xl transition-all cursor-pointer group border ${
-                        activeMetricCard === 'pending' && activeTab === 'moderation'
-                            ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/50 shadow-md scale-[1.03]' 
-                            : 'bg-white dark:bg-slate-900 border-amber-500/30 hover:border-amber-500 shadow-xs'
-                    }`}
-                >
-                    <div className="flex items-center justify-between text-amber-500 mb-0.5">
-                        <span className="material-symbols-outlined text-[16px]">pending_actions</span>
-                        <span className="text-[9px] font-black text-amber-500">+12%</span>
-                    </div>
-                    <p className="text-base font-black text-amber-500 leading-none">{pendingCount}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-0.5">Pending</p>
-                </div>
-
-                {/* 3. Reviewed */}
-                <div 
-                    onClick={() => handleMetricCardClick('reviewed', 'moderation', () => { handleResetFilters(); setStatusFilter('Action Taken'); }, `Filtered: Showing ${reviewedCount} Reviewed / Action Taken Reports`)}
-                    className={`p-2 rounded-xl transition-all cursor-pointer group border ${
-                        activeMetricCard === 'reviewed' && activeTab === 'moderation'
-                            ? 'bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/50 shadow-md scale-[1.03]' 
-                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 shadow-xs'
-                    }`}
-                >
-                    <div className="flex items-center justify-between text-emerald-500 mb-0.5">
-                        <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                        <span className="text-[9px] font-black text-emerald-500">+5%</span>
-                    </div>
-                    <p className="text-base font-black text-emerald-500 leading-none">{reviewedCount}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-0.5">Reviewed</p>
-                </div>
-
-                {/* 4. High Priority */}
-                <div 
-                    onClick={() => handleMetricCardClick('high_priority', 'moderation', () => { handleResetFilters(); setSeverityFilter('Critical'); }, `Filtered: Showing ${highPriorityCount} High Priority & Critical Reports`)}
-                    className={`p-2 rounded-xl transition-all cursor-pointer group border ${
-                        activeMetricCard === 'high_priority' && activeTab === 'moderation'
-                            ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/50 shadow-md scale-[1.03]' 
-                            : 'bg-white dark:bg-slate-900 border-rose-500/30 hover:border-rose-500 shadow-xs'
-                    }`}
-                >
-                    <div className="flex items-center justify-between text-rose-500 mb-0.5">
-                        <span className="material-symbols-outlined text-[16px]">warning</span>
-                        <span className="text-[9px] font-black text-rose-500">Critical</span>
-                    </div>
-                    <p className="text-base font-black text-rose-500 leading-none">{highPriorityCount}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-0.5">High Priority</p>
-                </div>
-
-                {/* 5. Suspended Users */}
-                <div 
-                    onClick={() => handleMetricCardClick('suspended', 'users', () => setUserSearchTerm('Suspended'), `Navigated to User Governance: Showing Suspended Accounts (${suspendedUsersCount})`)}
-                    className={`p-2 rounded-xl transition-all cursor-pointer group border ${
-                        activeMetricCard === 'suspended' && activeTab === 'users'
-                            ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/50 shadow-md scale-[1.03]' 
-                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-rose-500/40 shadow-xs'
-                    }`}
-                >
-                    <div className="flex items-center justify-between text-slate-400 mb-0.5">
-                        <span className="material-symbols-outlined text-[16px]">person_off</span>
-                        <span className="text-[9px] font-black text-slate-400">-1%</span>
-                    </div>
-                    <p className="text-base font-black text-slate-900 dark:text-white leading-none">{suspendedUsersCount}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-0.5">Suspended</p>
-                </div>
-
-                {/* 6. Active Moderators */}
-                <div 
-                    onClick={() => handleMetricCardClick('moderators', 'users', () => setUserSearchTerm('Admin'), `Navigated to User Governance: Showing Active Moderators (${activeModeratorsCount})`)}
-                    className={`p-2 rounded-xl transition-all cursor-pointer group border ${
-                        activeMetricCard === 'moderators' && activeTab === 'users'
-                            ? 'bg-purple-500/10 border-purple-500 ring-2 ring-purple-500/50 shadow-md scale-[1.03]' 
-                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
-                    }`}
-                >
-                    <div className="flex items-center justify-between text-purple-500 mb-0.5">
-                        <span className="material-symbols-outlined text-[16px]">admin_panel_settings</span>
-                        <span className="text-[9px] font-black text-purple-500">Live</span>
-                    </div>
-                    <p className="text-base font-black text-purple-500 leading-none">{activeModeratorsCount}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-0.5">Moderators</p>
-                </div>
-
-                {/* 7. AI Flagged */}
-                <div 
-                    onClick={() => handleMetricCardClick('ai_flagged', 'ai_moderation', null, `Navigated to AI Toxicity & Auto-Quarantine Parameters`)}
-                    className={`p-2 rounded-xl transition-all cursor-pointer group border ${
-                        activeMetricCard === 'ai_flagged' && activeTab === 'ai_moderation'
-                            ? 'bg-cyan-500/10 border-cyan-500 ring-2 ring-cyan-500/50 shadow-md scale-[1.03]' 
-                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-cyan-500/40 shadow-xs'
-                    }`}
-                >
-                    <div className="flex items-center justify-between text-cyan-500 mb-0.5">
-                        <span className="material-symbols-outlined text-[16px]">smart_toy</span>
-                        <span className="text-[9px] font-black text-cyan-500">Auto</span>
-                    </div>
-                    <p className="text-base font-black text-cyan-500 leading-none">{aiFlaggedCount}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-0.5">AI Flagged</p>
-                </div>
-
-                {/* 8. Communities */}
-                <div 
-                    onClick={() => handleMetricCardClick('communities', 'communities', null, `Navigated to Community Channels Moderation`)}
-                    className={`p-2 rounded-xl transition-all cursor-pointer group border ${
-                        activeMetricCard === 'communities' && activeTab === 'communities'
-                            ? 'bg-blue-500/10 border-blue-500 ring-2 ring-blue-500/50 shadow-md scale-[1.03]' 
-                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
-                    }`}
-                >
-                    <div className="flex items-center justify-between text-blue-500 mb-0.5">
-                        <span className="material-symbols-outlined text-[16px]">forum</span>
-                        <span className="text-[9px] font-black text-blue-500">Active</span>
-                    </div>
-                    <p className="text-base font-black text-slate-900 dark:text-white leading-none">{communitiesCount}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-0.5">Communities</p>
-                </div>
-
-                {/* 9. Active Users */}
-                <div 
-                    onClick={() => handleMetricCardClick('active_users', 'users', () => setUserSearchTerm('Active'), `Navigated to User Governance: Showing Active Accounts (${activeUsersCount})`)}
-                    className={`p-2 rounded-xl transition-all cursor-pointer group border ${
-                        activeMetricCard === 'active_users' && activeTab === 'users'
-                            ? 'bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/50 shadow-md scale-[1.03]' 
-                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 shadow-xs'
-                    }`}
-                >
-                    <div className="flex items-center justify-between text-emerald-500 mb-0.5">
-                        <span className="material-symbols-outlined text-[16px]">group</span>
-                        <span className="text-[9px] font-black text-emerald-500">+15%</span>
-                    </div>
-                    <p className="text-base font-black text-slate-900 dark:text-white leading-none">{activeUsersCount}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-0.5">Active Users</p>
-                </div>
-
-                {/* 10. Today's Reports */}
-                <div 
-                    onClick={() => handleMetricCardClick('todays', 'moderation', () => { handleResetFilters(); setDateRangeFilter('Today'); }, `Filtered: Showing Today's Content Reports (${todayReportsCount})`)}
-                    className={`p-2 rounded-xl transition-all cursor-pointer group border ${
-                        activeMetricCard === 'todays' && activeTab === 'moderation'
-                            ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.03]' 
-                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
-                    }`}
-                >
-                    <div className="flex items-center justify-between text-indigo-500 mb-0.5">
-                        <span className="material-symbols-outlined text-[16px]">today</span>
-                        <span className="text-[9px] font-black text-indigo-500">+2</span>
-                    </div>
-                    <p className="text-base font-black text-indigo-500 leading-none">{todayReportsCount}</p>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-0.5">Today's</p>
-                </div>
-            </div>
-
-            {/* ─── 3. COMPACT HORIZONTAL NAVIGATION TABS (7 TABS) ─── */}
-            <div className="flex border-b border-slate-200 dark:border-slate-800 mb-2 overflow-x-auto whitespace-nowrap bg-white dark:bg-slate-900 rounded-xl px-2 shadow-xs">
-                <button
-                    onClick={() => setActiveTab('moderation')}
-                    className={`px-3 py-2 border-b-2 font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'moderation' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-                >
-                    <span className="material-symbols-outlined text-[16px]">gavel</span>
-                    <span>Content Moderation ({reports.length})</span>
-                </button>
-                <button
-                    onClick={() => setActiveTab('users')}
-                    className={`px-3 py-2 border-b-2 font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'users' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-                >
-                    <span className="material-symbols-outlined text-[16px]">group</span>
-                    <span>User Governance ({usersList.length})</span>
-                </button>
-                <button
-                    onClick={() => setActiveTab('role_requests')}
-                    className={`px-3 py-2 border-b-2 font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'role_requests' ? 'border-amber-500 text-amber-500 dark:text-amber-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-                >
-                    <span className="material-symbols-outlined text-[16px] text-amber-500">verified_user</span>
-                    <span>Role Requests ({roleRequests.filter(r => r.status === 'Pending').length})</span>
-                    {roleRequests.some(r => r.status === 'Pending') && (
-                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                    )}
-                </button>
-                <button
-                    onClick={() => setActiveTab('communities')}
-                    className={`px-3 py-2 border-b-2 font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'communities' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-                >
-                    <span className="material-symbols-outlined text-[16px]">forum</span>
-                    <span>Community Moderation</span>
-                </button>
-                <button
-                    onClick={() => setActiveTab('ai_moderation')}
-                    className={`px-3 py-2 border-b-2 font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'ai_moderation' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-                >
-                    <span className="material-symbols-outlined text-[16px]">smart_toy</span>
-                    <span>AI Moderation</span>
-                </button>
-                <button
-                    onClick={() => setActiveTab('system')}
-                    className={`px-3 py-2 border-b-2 font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'system' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-                >
-                    <span className="material-symbols-outlined text-[16px]">settings</span>
-                    <span>System Parameters</span>
-                </button>
-                <button
-                    onClick={() => setActiveTab('audit')}
-                    className={`px-3 py-2 border-b-2 font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'audit' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-                >
-                    <span className="material-symbols-outlined text-[16px]">history</span>
-                    <span>Audit Trail ({auditTrail.length})</span>
-                </button>
-                <button
-                    onClick={() => setActiveTab('serilog')}
-                    className={`px-3 py-2 border-b-2 font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'serilog' ? 'border-cyan-500 text-cyan-600 dark:text-cyan-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
-                >
-                    <span className="material-symbols-outlined text-[16px] text-cyan-500">terminal</span>
-                    <span>Server Logs (Serilog)</span>
-                    {systemLogCounts.errors > 0 ? (
-                        <span className="px-1.5 py-0.2 rounded-full bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[10px] font-black border border-rose-500/30 animate-pulse">
-                            {systemLogCounts.errors} Err
+                    <div className="text-right shrink-0 pl-2">
+                        <span className={`text-base sm:text-lg font-black block leading-none ${activeDomain === 'moderation' ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+                            {reports.length}
                         </span>
-                    ) : (
-                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                    )}
-                </button>
-                <button
-                    onClick={() => setActiveTab('media_approvals')}
-                    className={`px-3 py-2 border-b-2 font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'media_approvals' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                        <span className={`text-[9px] font-bold uppercase tracking-tight ${activeDomain === 'moderation' ? 'text-indigo-200' : 'text-slate-400'}`}>
+                            Reports
+                        </span>
+                    </div>
+                </div>
+
+                {/* Pillar 2: User Governance & Access */}
+                <div 
+                    onClick={() => handleDomainSelect('governance')}
+                    className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between group ${
+                        activeDomain === 'governance'
+                            ? 'bg-gradient-to-r from-purple-600 to-indigo-700 text-white border-purple-600 shadow-md shadow-purple-500/20 ring-2 ring-purple-500/30'
+                            : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-purple-400/60 shadow-xs'
+                    }`}
                 >
-                    <span className="material-symbols-outlined text-[16px] text-rose-500">video_library</span>
-                    <span>Media Approvals ({pendingMediaApprovals.length})</span>
-                    {pendingMediaApprovals.length > 0 && (
-                        <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-                    )}
-                </button>
-                <button
-                    onClick={() => setActiveTab('analytics')}
-                    className={`px-3 py-2 border-b-2 font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === 'analytics' ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${
+                            activeDomain === 'governance' ? 'bg-white/20 text-white' : 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                        }`}>
+                            <span className="material-symbols-outlined text-[22px]">admin_panel_settings</span>
+                        </div>
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                                <span className={`text-[10px] font-black uppercase tracking-wider ${activeDomain === 'governance' ? 'text-purple-200' : 'text-slate-400'}`}>
+                                    Domain 2
+                                </span>
+                                {roleRequests.filter(r => r.status === 'Pending').length > 0 && (
+                                    <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black animate-pulse ${
+                                        activeDomain === 'governance' ? 'bg-amber-400 text-slate-950' : 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                                    }`}>
+                                        {roleRequests.filter(r => r.status === 'Pending').length} Requests
+                                    </span>
+                                )}
+                            </div>
+                            <h3 className="font-extrabold text-xs sm:text-sm tracking-tight truncate">
+                                User & Access Governance
+                            </h3>
+                            <p className={`text-[10px] sm:text-[11px] truncate ${activeDomain === 'governance' ? 'text-purple-100' : 'text-slate-400'}`}>
+                                Employee Accounts, Roles & Privileges
+                            </p>
+                        </div>
+                    </div>
+                    <div className="text-right shrink-0 pl-2">
+                        <span className={`text-base sm:text-lg font-black block leading-none ${activeDomain === 'governance' ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+                            {usersList.length}
+                        </span>
+                        <span className={`text-[9px] font-bold uppercase tracking-tight ${activeDomain === 'governance' ? 'text-purple-200' : 'text-slate-400'}`}>
+                            Users
+                        </span>
+                    </div>
+                </div>
+
+                {/* Pillar 3: System Operations & Compliance */}
+                <div 
+                    onClick={() => handleDomainSelect('operations')}
+                    className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between group ${
+                        activeDomain === 'operations'
+                            ? 'bg-gradient-to-r from-cyan-600 to-slate-800 text-white border-cyan-600 shadow-md shadow-cyan-500/20 ring-2 ring-cyan-500/30'
+                            : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-cyan-400/60 shadow-xs'
+                    }`}
                 >
-                    <span className="material-symbols-outlined text-[16px]">analytics</span>
-                    <span>Analytics</span>
-                </button>
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${
+                            activeDomain === 'operations' ? 'bg-white/20 text-white' : 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+                        }`}>
+                            <span className="material-symbols-outlined text-[22px]">settings_suggest</span>
+                        </div>
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                                <span className={`text-[10px] font-black uppercase tracking-wider ${activeDomain === 'operations' ? 'text-cyan-200' : 'text-slate-400'}`}>
+                                    Domain 3
+                                </span>
+                                {systemLogCounts.errors > 0 ? (
+                                    <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
+                                        activeDomain === 'operations' ? 'bg-rose-300 text-rose-950' : 'bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30'
+                                    }`}>
+                                        {systemLogCounts.errors} Err
+                                    </span>
+                                ) : (
+                                    <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
+                                        activeDomain === 'operations' ? 'bg-emerald-300 text-emerald-950' : 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                                    }`}>
+                                        Online
+                                    </span>
+                                )}
+                            </div>
+                            <h3 className="font-extrabold text-xs sm:text-sm tracking-tight truncate">
+                                Operations & Compliance
+                            </h3>
+                            <p className={`text-[10px] sm:text-[11px] truncate ${activeDomain === 'operations' ? 'text-cyan-100' : 'text-slate-400'}`}>
+                                Audit Trail, Server Logs, Parameters & KPIs
+                            </p>
+                        </div>
+                    </div>
+                    <div className="text-right shrink-0 pl-2">
+                        <span className={`text-base sm:text-lg font-black block leading-none ${activeDomain === 'operations' ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
+                            {auditTrail.length}
+                        </span>
+                        <span className={`text-[9px] font-bold uppercase tracking-tight ${activeDomain === 'operations' ? 'text-cyan-200' : 'text-slate-400'}`}>
+                            Audits
+                        </span>
+                    </div>
+                </div>
             </div>
+
+            {/* ─── HIERARCHY TIER 2: FUNCTIONAL SUB-TABS (SCOPED TO ACTIVE DOMAIN) ─── */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-1.5 mb-3 shadow-xs flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap py-0.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1 hidden sm:inline-block">
+                        Active Modules:
+                    </span>
+                    {activeDomain === 'moderation' && (
+                        <>
+                            <button
+                                onClick={() => setActiveTab('moderation')}
+                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    activeTab === 'moderation'
+                                        ? 'bg-indigo-600 text-white shadow-xs'
+                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-[16px]">gavel</span>
+                                <span>Content Moderation ({reports.length})</span>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('media_approvals')}
+                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    activeTab === 'media_approvals'
+                                        ? 'bg-indigo-600 text-white shadow-xs'
+                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-[16px] text-rose-500">video_library</span>
+                                <span>Media Approvals ({pendingMediaApprovals.length})</span>
+                                {pendingMediaApprovals.length > 0 && (
+                                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('ai_moderation')}
+                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    activeTab === 'ai_moderation'
+                                        ? 'bg-indigo-600 text-white shadow-xs'
+                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-[16px]">smart_toy</span>
+                                <span>AI Moderation Rules</span>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('communities')}
+                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    activeTab === 'communities'
+                                        ? 'bg-indigo-600 text-white shadow-xs'
+                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-[16px]">forum</span>
+                                <span>Community Moderation ({communityChannels.length})</span>
+                            </button>
+                        </>
+                    )}
+
+                    {activeDomain === 'governance' && (
+                        <>
+                            <button
+                                onClick={() => setActiveTab('users')}
+                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    activeTab === 'users'
+                                        ? 'bg-purple-600 text-white shadow-xs'
+                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-[16px]">group</span>
+                                <span>User Directory ({usersList.length})</span>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('role_requests')}
+                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    activeTab === 'role_requests'
+                                        ? 'bg-purple-600 text-white shadow-xs'
+                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-[16px] text-amber-500">verified_user</span>
+                                <span>Role Requests ({roleRequests.filter(r => r.status === 'Pending').length})</span>
+                                {roleRequests.some(r => r.status === 'Pending') && (
+                                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                                )}
+                            </button>
+                        </>
+                    )}
+
+                    {activeDomain === 'operations' && (
+                        <>
+                            <button
+                                onClick={() => setActiveTab('system')}
+                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    activeTab === 'system'
+                                        ? 'bg-slate-800 text-white shadow-xs'
+                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-[16px]">settings</span>
+                                <span>System Parameters</span>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('audit')}
+                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    activeTab === 'audit'
+                                        ? 'bg-slate-800 text-white shadow-xs'
+                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-[16px]">history</span>
+                                <span>Audit Trail ({auditTrail.length})</span>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('serilog')}
+                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    activeTab === 'serilog'
+                                        ? 'bg-cyan-600 text-white shadow-xs'
+                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-[16px] text-cyan-400">terminal</span>
+                                <span>Server Logs (Serilog)</span>
+                                {systemLogCounts.errors > 0 && (
+                                    <span className="px-1.5 py-0.2 rounded-full bg-rose-500 text-white text-[10px] font-black">
+                                        {systemLogCounts.errors}
+                                    </span>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('analytics')}
+                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
+                                    activeTab === 'analytics'
+                                        ? 'bg-slate-800 text-white shadow-xs'
+                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                <span className="material-symbols-outlined text-[16px]">analytics</span>
+                                <span>Analytics</span>
+                            </button>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* ─── HIERARCHY TIER 3: CONTEXTUAL FUNCTIONAL METRICS STRIP ─── */}
+            {activeDomain === 'moderation' && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
+                    {/* 1. Total Reports */}
+                    <div 
+                        onClick={() => handleMetricCardClick('total', 'moderation', () => handleResetFilters(), `Filtered: Showing All Content Reports (${totalReportsCount})`)}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeMetricCard === 'total' && activeTab === 'moderation'
+                                ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-indigo-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">report</span>
+                            <span className="text-[10px] font-bold text-emerald-500">+8%</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{totalReportsCount}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Total Reports</p>
+                    </div>
+
+                    {/* 2. Pending Reports */}
+                    <div 
+                        onClick={() => handleMetricCardClick('pending', 'moderation', () => { handleResetFilters(); setStatusFilter('Pending'); }, `Filtered: Showing ${pendingCount} Pending Reports`)}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeMetricCard === 'pending' && activeTab === 'moderation'
+                                ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-amber-500/40 hover:border-amber-500 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-amber-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">pending_actions</span>
+                            <span className="text-[10px] font-black text-amber-600 bg-amber-500/15 px-1.5 py-0.2 rounded-full">Action</span>
+                        </div>
+                        <p className="text-lg font-black text-amber-500 leading-none">{pendingCount}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Pending Review</p>
+                    </div>
+
+                    {/* 3. High Priority / Critical */}
+                    <div 
+                        onClick={() => handleMetricCardClick('high_priority', 'moderation', () => { handleResetFilters(); setSeverityFilter('Critical'); }, `Filtered: Showing ${highPriorityCount} High Priority & Critical Reports`)}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeMetricCard === 'high_priority' && activeTab === 'moderation'
+                                ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-rose-500/40 hover:border-rose-500 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-rose-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">warning</span>
+                            <span className="text-[10px] font-black text-rose-600 bg-rose-500/15 px-1.5 py-0.2 rounded-full">Critical</span>
+                        </div>
+                        <p className="text-lg font-black text-rose-500 leading-none">{highPriorityCount}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">High Risk / Alert</p>
+                    </div>
+
+                    {/* 4. Action Taken / Reviewed */}
+                    <div 
+                        onClick={() => handleMetricCardClick('reviewed', 'moderation', () => { handleResetFilters(); setStatusFilter('Action Taken'); }, `Filtered: Showing ${reviewedCount} Reviewed / Action Taken Reports`)}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeMetricCard === 'reviewed' && activeTab === 'moderation'
+                                ? 'bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-emerald-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">check_circle</span>
+                            <span className="text-[10px] font-bold text-emerald-500">+5%</span>
+                        </div>
+                        <p className="text-lg font-black text-emerald-500 leading-none">{reviewedCount}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Action Taken</p>
+                    </div>
+
+                    {/* 5. AI Flagged */}
+                    <div 
+                        onClick={() => handleMetricCardClick('ai_flagged', 'ai_moderation', null, `Navigated to AI Toxicity & Auto-Quarantine Parameters`)}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeMetricCard === 'ai_flagged' && activeTab === 'ai_moderation'
+                                ? 'bg-cyan-500/10 border-cyan-500 ring-2 ring-cyan-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-cyan-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-cyan-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">smart_toy</span>
+                            <span className="text-[10px] font-black text-cyan-600 bg-cyan-500/15 px-1.5 py-0.2 rounded-full">Auto</span>
+                        </div>
+                        <p className="text-lg font-black text-cyan-500 leading-none">{aiFlaggedCount}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">AI Flagged</p>
+                    </div>
+
+                    {/* 6. Today's Reports */}
+                    <div 
+                        onClick={() => handleMetricCardClick('todays', 'moderation', () => { handleResetFilters(); setDateRangeFilter('Today'); }, `Filtered: Showing Today's Content Reports (${todayReportsCount})`)}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeMetricCard === 'todays' && activeTab === 'moderation'
+                                ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-indigo-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">today</span>
+                            <span className="text-[10px] font-bold text-indigo-500">+2 new</span>
+                        </div>
+                        <p className="text-lg font-black text-indigo-500 leading-none">{todayReportsCount}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Reported Today</p>
+                    </div>
+                </div>
+            )}
+
+            {activeDomain === 'governance' && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
+                    {/* 1. Total Users */}
+                    <div 
+                        onClick={() => handleMetricCardClick('all_users', 'users', () => setUserSearchTerm(''), `Showing All ${usersList.length} Registered Accounts`)}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeTab === 'users' && !userSearchTerm
+                                ? 'bg-purple-500/10 border-purple-500 ring-2 ring-purple-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-purple-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-purple-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">badge</span>
+                            <span className="text-[10px] font-bold text-purple-500">Directory</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{usersList.length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Total Employees</p>
+                    </div>
+
+                    {/* 2. Active Users */}
+                    <div 
+                        onClick={() => handleMetricCardClick('active_users', 'users', () => setUserSearchTerm('Active'), `Navigated to User Governance: Showing Active Accounts (${activeUsersCount})`)}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeMetricCard === 'active_users' && activeTab === 'users'
+                                ? 'bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-emerald-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">group</span>
+                            <span className="text-[10px] font-bold text-emerald-500">+15%</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{activeUsersCount}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Active Accounts</p>
+                    </div>
+
+                    {/* 3. Pending Role Requests */}
+                    <div 
+                        onClick={() => setActiveTab('role_requests')}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeTab === 'role_requests'
+                                ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-amber-500/40 hover:border-amber-500 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-amber-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">verified_user</span>
+                            <span className="text-[10px] font-black text-amber-600 bg-amber-500/15 px-1.5 py-0.2 rounded-full">Review</span>
+                        </div>
+                        <p className="text-lg font-black text-amber-500 leading-none">{roleRequests.filter(r => r.status === 'Pending').length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Role Requests</p>
+                    </div>
+
+                    {/* 4. Active Moderators */}
+                    <div 
+                        onClick={() => handleMetricCardClick('moderators', 'users', () => setUserSearchTerm('Admin'), `Navigated to User Governance: Showing Active Moderators (${activeModeratorsCount})`)}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeMetricCard === 'moderators' && activeTab === 'users'
+                                ? 'bg-purple-500/10 border-purple-500 ring-2 ring-purple-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-purple-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">admin_panel_settings</span>
+                            <span className="text-[10px] font-bold text-purple-500">Live</span>
+                        </div>
+                        <p className="text-lg font-black text-purple-500 leading-none">{activeModeratorsCount}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Administrators</p>
+                    </div>
+
+                    {/* 5. Suspended Users */}
+                    <div 
+                        onClick={() => handleMetricCardClick('suspended', 'users', () => setUserSearchTerm('Suspended'), `Navigated to User Governance: Showing Suspended Accounts (${suspendedUsersCount})`)}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeMetricCard === 'suspended' && activeTab === 'users'
+                                ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-rose-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-slate-400 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">person_off</span>
+                            <span className="text-[10px] font-bold text-rose-500">Quarantine</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{suspendedUsersCount}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Suspended Accounts</p>
+                    </div>
+                </div>
+            )}
+
+            {activeDomain === 'operations' && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
+                    {/* 1. Server Logs Telemetry */}
+                    <div 
+                        onClick={() => setActiveTab('serilog')}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeTab === 'serilog'
+                                ? 'bg-cyan-500/10 border-cyan-500 ring-2 ring-cyan-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-cyan-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-cyan-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">terminal</span>
+                            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${systemLogCounts.errors > 0 ? 'bg-rose-500/15 text-rose-600' : 'bg-emerald-500/15 text-emerald-600'}`}>
+                                {systemLogCounts.errors > 0 ? `${systemLogCounts.errors} Errors` : 'Online'}
+                            </span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{systemLogCounts.total || 120}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Server Telemetry</p>
+                    </div>
+
+                    {/* 2. Audit Trail Events */}
+                    <div 
+                        onClick={() => setActiveTab('audit')}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeTab === 'audit'
+                                ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-indigo-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">history</span>
+                            <span className="text-[10px] font-bold text-emerald-500">Tamper-Proof</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{auditTrail.length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Audit Entries</p>
+                    </div>
+
+                    {/* 3. System Parameters */}
+                    <div 
+                        onClick={() => setActiveTab('system')}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeTab === 'system'
+                                ? 'bg-slate-800 text-white ring-2 ring-slate-600 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-slate-400 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">settings</span>
+                            <span className="text-[10px] font-bold text-indigo-500">Configured</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">8 Configs</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">System Params</p>
+                    </div>
+
+                    {/* 4. Active Communities */}
+                    <div 
+                        onClick={() => handleMetricCardClick('communities', 'communities', null, `Navigated to Community Channels Moderation`)}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeMetricCard === 'communities' && activeTab === 'communities'
+                                ? 'bg-blue-500/10 border-blue-500 ring-2 ring-blue-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-blue-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">forum</span>
+                            <span className="text-[10px] font-black text-blue-500">Live</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{communitiesCount}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Communities</p>
+                    </div>
+
+                    {/* 5. Platform Analytics */}
+                    <div 
+                        onClick={() => setActiveTab('analytics')}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            activeTab === 'analytics'
+                                ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-indigo-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">insights</span>
+                            <span className="text-[10px] font-bold text-emerald-500">Live Telemetry</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">99.8%</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">System Health</p>
+                    </div>
+                </div>
+            )}
 
             {/* ─── TAB 1: CONTENT MODERATION ─── */}
             {activeTab === 'moderation' && (
@@ -1887,7 +2236,7 @@ export default function AdminConsole() {
                                     <th className="px-3 py-2 whitespace-nowrap">Score</th>
                                     <th className="px-3 py-2">Status</th>
                                     <th className="px-3 py-2">Moderator</th>
-                                    <th className="px-3 py-2">Date</th>
+                                    <th className="px-3 py-2 whitespace-nowrap">Reported Date</th>
                                     <th className="px-3 py-2 text-right">Actions</th>
                                 </tr>
                             </thead>
@@ -3649,19 +3998,165 @@ export default function AdminConsole() {
                                         </div>
                                     )}
 
-                                    {/* Attachment Images */}
-                                    {((previewPost.attachmentUrls && previewPost.attachmentUrls.length > 0) || (previewPost.attachments && previewPost.attachments.length > 0)) && (
-                                        <div className="grid grid-cols-2 gap-2 pt-2">
-                                            {(previewPost.attachmentUrls || previewPost.attachments).map((url, idx) => (
-                                                <img 
-                                                    key={idx} 
-                                                    src={typeof url === 'string' ? url : url.fileUrl} 
-                                                    alt="Attachment" 
-                                                    className="w-full h-40 object-cover rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm" 
-                                                />
-                                            ))}
-                                        </div>
-                                    )}
+                                    {/* Multi-Type Attachments Preview (Images, Videos, Audio, Documents) */}
+                                    {(() => {
+                                        const rawList = (previewPost.attachments && previewPost.attachments.length > 0)
+                                            ? previewPost.attachments
+                                            : (previewPost.attachmentUrls || []);
+                                        
+                                        if (!rawList || rawList.length === 0) return null;
+
+                                        const parsedList = rawList.map((att, i) => {
+                                            const rawUrl = typeof att === 'string' ? att : (att.fileUrl || att.url || '');
+                                            const resolvedUrl = resolveMediaUrl(rawUrl) || rawUrl;
+                                            let fileType = typeof att === 'object' && (att.fileType || att.type) ? (att.fileType || att.type).toLowerCase() : '';
+                                            
+                                            if (!fileType) {
+                                                if (/\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?.*)?$/i.test(rawUrl)) fileType = 'image';
+                                                else if (/\.(mp4|mov|avi|webm|mkv)(\?.*)?$/i.test(rawUrl)) fileType = 'video';
+                                                else if (/\.(mp3|wav|ogg|aac|m4a)(\?.*)?$/i.test(rawUrl)) fileType = 'audio';
+                                                else fileType = 'doc';
+                                            } else {
+                                                if (fileType.includes('image') || fileType.includes('photo')) fileType = 'image';
+                                                else if (fileType.includes('video')) fileType = 'video';
+                                                else if (fileType.includes('audio') || fileType.includes('podcast')) fileType = 'audio';
+                                                else fileType = 'doc';
+                                            }
+
+                                            const fileName = (typeof att === 'object' && att.name && att.name !== 'attachment') 
+                                                ? att.name 
+                                                : (rawUrl.split('/').pop()?.split('?')[0] || `Attachment_${i + 1}`);
+
+                                            return { rawUrl, resolvedUrl, fileType, fileName };
+                                        });
+
+                                        const imageAtts = parsedList.filter(a => a.fileType === 'image');
+                                        const videoAtts = parsedList.filter(a => a.fileType === 'video');
+                                        const audioAtts = parsedList.filter(a => a.fileType === 'audio');
+                                        const docAtts = parsedList.filter(a => a.fileType === 'doc');
+
+                                        return (
+                                            <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-800/80">
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                                                        <span className="material-symbols-outlined text-[15px] text-indigo-500">attach_file</span>
+                                                        Attachments ({parsedList.length})
+                                                    </span>
+                                                </div>
+
+                                                {/* 1. Image Attachments */}
+                                                {imageAtts.length > 0 && (
+                                                    <div className={`grid gap-2.5 ${imageAtts.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                                                        {imageAtts.map((att, idx) => (
+                                                            <div key={idx} className="relative group overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-900 shadow-xs">
+                                                                <img 
+                                                                    src={att.resolvedUrl} 
+                                                                    alt={att.fileName} 
+                                                                    className="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-300"
+                                                                    onError={(e) => {
+                                                                        e.target.onerror = null;
+                                                                        e.target.src = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="350" viewBox="0 0 600 350"><rect width="600" height="350" fill="%231e293b"/><text x="300" y="175" font-family="system-ui,-apple-system,sans-serif" font-size="16" font-weight="700" fill="%2394a3b8" text-anchor="middle">Attachment Preview</text></svg>`;
+                                                                    }}
+                                                                />
+                                                                <a 
+                                                                    href={att.resolvedUrl} 
+                                                                    target="_blank" 
+                                                                    rel="noopener noreferrer" 
+                                                                    className="absolute bottom-2.5 right-2.5 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-900 text-white text-xs font-bold backdrop-blur-md transition-all flex items-center gap-1.5 shadow-md opacity-0 group-hover:opacity-100 cursor-pointer"
+                                                                >
+                                                                    <span className="material-symbols-outlined text-[15px]">open_in_new</span>
+                                                                    <span>View Full</span>
+                                                                </a>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {/* 2. Video Attachments */}
+                                                {videoAtts.length > 0 && (
+                                                    <div className="space-y-2.5">
+                                                        {videoAtts.map((att, idx) => (
+                                                            <div key={idx} className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-black shadow-md">
+                                                                <div className="px-3.5 py-2 bg-slate-900/90 text-slate-200 text-xs font-bold flex items-center justify-between border-b border-slate-800">
+                                                                    <span className="flex items-center gap-2 truncate">
+                                                                        <span className="material-symbols-outlined text-[17px] text-cyan-400">videocam</span>
+                                                                        <span className="truncate">{att.fileName}</span>
+                                                                    </span>
+                                                                    <a href={att.resolvedUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 text-[11px] shrink-0 flex items-center gap-1 font-semibold">
+                                                                        <span className="material-symbols-outlined text-[13px]">open_in_new</span> Fullscreen
+                                                                    </a>
+                                                                </div>
+                                                                <video 
+                                                                    src={att.resolvedUrl} 
+                                                                    controls 
+                                                                    preload="metadata" 
+                                                                    className="w-full max-h-64 object-contain bg-black" 
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {/* 3. Audio Attachments */}
+                                                {audioAtts.length > 0 && (
+                                                    <div className="space-y-2">
+                                                        {audioAtts.map((att, idx) => (
+                                                            <div key={idx} className="p-3.5 bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-2 shadow-xs">
+                                                                <div className="flex items-center justify-between text-xs font-bold text-slate-800 dark:text-slate-200">
+                                                                    <span className="flex items-center gap-2 truncate">
+                                                                        <div className="w-6 h-6 rounded-lg bg-pink-500/15 text-pink-500 flex items-center justify-center shrink-0">
+                                                                            <span className="material-symbols-outlined text-[15px]">audiotrack</span>
+                                                                        </div>
+                                                                        <span className="truncate">{att.fileName}</span>
+                                                                    </span>
+                                                                    <a 
+                                                                        href={att.resolvedUrl} 
+                                                                        target="_blank" 
+                                                                        rel="noopener noreferrer" 
+                                                                        download={att.fileName}
+                                                                        className="text-indigo-600 dark:text-indigo-400 hover:underline shrink-0 text-[11px] font-semibold flex items-center gap-0.5"
+                                                                    >
+                                                                        <span className="material-symbols-outlined text-[13px]">download</span> Download
+                                                                    </a>
+                                                                </div>
+                                                                <audio controls src={att.resolvedUrl} className="w-full h-8" />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+
+                                                {/* 4. Document Attachments */}
+                                                {docAtts.length > 0 && (
+                                                    <div className="space-y-2">
+                                                        {docAtts.map((att, idx) => (
+                                                            <div key={idx} className="flex items-center justify-between p-3.5 bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl hover:border-indigo-400 dark:hover:border-indigo-500/50 transition-all shadow-xs">
+                                                                <div className="flex items-center gap-3 min-w-0 pr-3">
+                                                                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                                                                        <span className="material-symbols-outlined text-[22px]">description</span>
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">{att.fileName}</p>
+                                                                        <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Document Attachment</p>
+                                                                    </div>
+                                                                </div>
+                                                                <a 
+                                                                    href={att.resolvedUrl} 
+                                                                    target="_blank" 
+                                                                    rel="noopener noreferrer" 
+                                                                    download={att.fileName}
+                                                                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-all shadow-sm cursor-pointer"
+                                                                >
+                                                                    <span className="material-symbols-outlined text-[16px]">download</span>
+                                                                    <span>Open</span>
+                                                                </a>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+
                                 </div>
                             ) : (
                                 <div className="p-6 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 text-center space-y-2">
@@ -3685,22 +4180,20 @@ export default function AdminConsole() {
                                         <button
                                             onClick={() => {
                                                 handleResolve(previewReport.reportId, 'Dismiss', previewReport.contentId, previewReport.contentType);
-                                                setIsPreviewOpen(false);
                                             }}
-                                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 font-bold text-[11px] rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1"
+                                            className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 font-bold text-[11px] rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1.5"
                                         >
                                             <span className="material-symbols-outlined text-[15px]">check_circle</span>
-                                            <span>Dismiss (No Action)</span>
+                                            <span>Dismiss</span>
                                         </button>
                                         <button
                                             onClick={() => {
                                                 handleResolve(previewReport.reportId, 'Removed Content', previewReport.contentId, previewReport.contentType);
-                                                setIsPreviewOpen(false);
                                             }}
-                                            className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 font-bold text-[11px] border border-rose-500/20 rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1"
+                                            className="px-3.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 font-bold text-[11px] border border-rose-500/20 rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1.5"
                                         >
                                             <span className="material-symbols-outlined text-[15px]">delete</span>
-                                            <span>Remove Content</span>
+                                            <span>Delete</span>
                                         </button>
                                         <button
                                             onClick={() => {
@@ -3717,16 +4210,10 @@ export default function AdminConsole() {
                                                 setSelectedUserToSuspend(targetUser);
                                                 setIsSuspendModalOpen(true);
                                             }}
-                                            className="px-3.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 font-bold text-[11px] border border-amber-500/20 rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1"
+                                            className="px-3.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 font-bold text-[11px] border border-amber-500/20 rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1.5"
                                         >
                                             <span className="material-symbols-outlined text-[15px]">person_off</span>
                                             <span>Suspend User</span>
-                                        </button>
-                                        <button
-                                            onClick={() => setIsPreviewOpen(false)}
-                                            className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-[11px] rounded-lg cursor-pointer"
-                                        >
-                                            Close
                                         </button>
                                     </div>
                                 </>
@@ -3756,10 +4243,10 @@ export default function AdminConsole() {
                                                 onClick={() => {
                                                     handleResolve(previewReport.reportId, 'Removed Content', previewReport.contentId, previewReport.contentType);
                                                 }}
-                                                className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 font-bold text-[11px] border border-rose-500/20 rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1"
+                                                className="px-3.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 font-bold text-[11px] border border-rose-500/20 rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1.5"
                                             >
                                                 <span className="material-symbols-outlined text-[15px]">delete</span>
-                                                <span>Remove Content</span>
+                                                <span>Delete</span>
                                             </button>
                                         )}
                                         <button
@@ -3777,16 +4264,10 @@ export default function AdminConsole() {
                                                 setSelectedUserToSuspend(targetUser);
                                                 setIsSuspendModalOpen(true);
                                             }}
-                                            className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 font-bold text-[11px] border border-amber-500/20 rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1"
+                                            className="px-3.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 font-bold text-[11px] border border-amber-500/20 rounded-lg transition-all cursor-pointer shadow-xs flex items-center gap-1.5"
                                         >
                                             <span className="material-symbols-outlined text-[15px]">person_off</span>
                                             <span>Suspend User</span>
-                                        </button>
-                                        <button
-                                            onClick={() => setIsPreviewOpen(false)}
-                                            className="px-3.5 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-[11px] rounded-lg cursor-pointer"
-                                        >
-                                            Close
                                         </button>
                                     </div>
                                 </>

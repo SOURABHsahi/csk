@@ -34,12 +34,21 @@ public class LocalFileStorageService : IFileStorageService
         var configuredPath = _configuration["StorageSettings:BasePath"];
         if (!string.IsNullOrWhiteSpace(configuredPath))
         {
-            if (!Directory.Exists(configuredPath))
-                Directory.CreateDirectory(configuredPath);
-            return configuredPath;
+            try
+            {
+                if (!Directory.Exists(configuredPath))
+                    Directory.CreateDirectory(configuredPath);
+                return configuredPath;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Configured StorageSettings:BasePath {BasePath} is not accessible. Falling back to wwwroot.", configuredPath);
+            }
         }
 
-        return _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+        var webRoot = _env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+        if (!Directory.Exists(webRoot)) Directory.CreateDirectory(webRoot);
+        return webRoot;
     }
 
     public async Task<string> SaveProfileImageAsync(int userId, IFormFile file)
