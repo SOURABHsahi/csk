@@ -175,5 +175,4 @@ dotnet run --project "d:\Knome Final\Backend\Knome.API\scratch\VerifyPhase9\Veri
 - [83_Karma_Points_Page_Loader.md](file:///D:/Knome%20main/Documentation/Development%20Journal/83_Karma_Points_Page_Loader.md) — Phase 83: Karma Points Page Branded Loading State
 - [84_Karma_Points_Level_Table_Clipping_Fix.md](file:///D:/Knome%20main/Documentation/Development%20Journal/84_Karma_Points_Level_Table_Clipping_Fix.md) — Phase 84: Karma Points Level Table Responsive Width & Clipping Prevention
 - [85_Universal_Suspend_Modal_Anti_Clipping_And_Login_Blocking.md](file:///D:/Knome%20main/Documentation/Development%20Journal/85_Universal_Suspend_Modal_Anti_Clipping_And_Login_Blocking.md) — Phase 85: Universal Suspend Modal, Anti-Clipping Responsive Layout, and Strict Login Blocking
-- [86_LinkedIn_Style_Post_Card_And_Read_More_Truncation.md](file:///D:/Knome%20main/Documentation/Development%20Journal/86_LinkedIn_Style_Post_Card_And_Read_More_Truncation.md) — Phase 86: LinkedIn-Style Post Card Overhaul & Content Truncation ("...see more")
 
