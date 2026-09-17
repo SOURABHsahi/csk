@@ -140,6 +140,9 @@ export default function AdminConsole() {
     const [isCommunityModalOpen, setIsCommunityModalOpen] = useState(false);
     const [communityPolicyFilter, setCommunityPolicyFilter] = useState('All');
     const [isCommunityFilterOpen, setIsCommunityFilterOpen] = useState(false);
+    const [mediaTypeFilter, setMediaTypeFilter] = useState('All');
+    const [roleRequestStatusFilter, setRoleRequestStatusFilter] = useState('All');
+    const [auditActionFilter, setAuditActionFilter] = useState('All');
 
     // Get exact live member count for each community from persistent storage or API
     const getCommunityMemberCount = (commId) => {
@@ -505,6 +508,28 @@ export default function AdminConsole() {
         }
 
         showToast(`Rejected ${mediaItem.mediaType} "${mediaItem.title}"`);
+    };
+
+    const handleBatchApproveMedia = () => {
+        if (pendingMediaApprovals.length === 0) {
+            showToast('No pending media submissions to approve.');
+            return;
+        }
+        const count = pendingMediaApprovals.length;
+        setPendingMediaApprovals([]);
+        localStorage.setItem('knome_pending_media_approvals', JSON.stringify([]));
+        showToast(`Successfully batch-approved all ${count} pending media submission${count === 1 ? '' : 's'}.`);
+        setAuditTrail(prev => [
+            {
+                id: Date.now(),
+                time: new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
+                moderator: currentUser?.name || 'System Admin',
+                action: 'MediaBatchApprove',
+                target: `Batch approved all ${count} video & podcast submissions`,
+                color: 'text-emerald-500'
+            },
+            ...prev
+        ]);
     };
 
     // Refresh Handler
@@ -1470,6 +1495,9 @@ export default function AdminConsole() {
                 r.reportedDate?.toLowerCase().includes('today')
             ));
 
+        const matchesAiFlagged = activeMetricCard !== 'ai_flagged' || 
+            (r.reasonCode === 'Spam' || r.reasonCode === 'Inappropriate' || (r.aiScore && parseInt(r.aiScore) > 70));
+
         const matchesSearch = !searchQuery || 
                               String(r.reportId).includes(searchQuery) ||
                               String(r.contentId).includes(searchQuery) ||
@@ -1479,7 +1507,7 @@ export default function AdminConsole() {
                               (r.communityName && r.communityName.toLowerCase().includes(searchQuery.toLowerCase())) ||
                               (r.postContentSnippet && r.postContentSnippet.toLowerCase().includes(searchQuery.toLowerCase()));
 
-        return matchesStatus && matchesReason && matchesSeverity && matchesCommunity && matchesModerator && matchesDateRange && matchesSearch;
+        return matchesStatus && matchesReason && matchesSeverity && matchesCommunity && matchesModerator && matchesDateRange && matchesAiFlagged && matchesSearch;
     });
 
     const activeUserSearchTerm = (userSearchTerm || searchQuery || '').trim().toLowerCase();
@@ -1499,7 +1527,15 @@ export default function AdminConsole() {
         );
     });
 
-    const filteredAuditTrail = auditTrail.filter(a => !auditSearch || a.action.toLowerCase().includes(auditSearch.toLowerCase()) || a.target.toLowerCase().includes(auditSearch.toLowerCase()));
+    const filteredAuditTrail = auditTrail.filter(a => {
+        const matchesSearch = !auditSearch || a.action.toLowerCase().includes(auditSearch.toLowerCase()) || a.target.toLowerCase().includes(auditSearch.toLowerCase());
+        const matchesAction = auditActionFilter === 'All' ||
+            (auditActionFilter === 'ConfigUpdate' && a.action === 'ConfigUpdate') ||
+            (auditActionFilter === 'Moderation' && (a.action === 'ContentModerated' || a.action === 'ReportDismissed')) ||
+            (auditActionFilter === 'User' && a.action?.startsWith('User')) ||
+            (auditActionFilter === 'AIBatchAudit' && (a.action === 'AIBatchAudit' || a.action === 'MediaBatchApprove'));
+        return matchesSearch && matchesAction;
+    });
 
     const moderationTableRef = useRef(null);
     const { visibleCount: visibleReportCount, resetVisibleCount: resetReportCount } = useScrollLoading(filteredReports.length, 15, 15, 200, moderationTableRef);
@@ -1508,7 +1544,7 @@ export default function AdminConsole() {
 
     useEffect(() => {
         resetReportCount();
-    }, [searchQuery, statusFilter, reasonFilter, severityFilter, communityFilter, dateRangeFilter, moderatorFilter, activeTab]);
+    }, [searchQuery, statusFilter, reasonFilter, severityFilter, communityFilter, dateRangeFilter, moderatorFilter, activeMetricCard, activeTab]);
 
     useEffect(() => {
         resetUserCount();
@@ -1516,7 +1552,7 @@ export default function AdminConsole() {
 
     useEffect(() => {
         resetAuditCount();
-    }, [auditSearch, activeTab]);
+    }, [auditSearch, auditActionFilter, activeTab]);
 
     // 10 Compact Metrics Calculations
     const totalReportsCount = reports.length;
@@ -2037,14 +2073,16 @@ export default function AdminConsole() {
                 </div>
             </div>
 
-            {/* ─── HIERARCHY TIER 3: CONTEXTUAL FUNCTIONAL METRICS STRIP ─── */}
-            {activeDomain === 'moderation' && (
+            {/* ─── HIERARCHY TIER 3: CONTEXTUAL FILTER & ACTION STRIP (STRICTLY SCOPED TO ACTIVE MODULE) ─── */}
+
+            {/* TAB 1: CONTENT MODERATION FILTERS */}
+            {activeTab === 'moderation' && (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
-                    {/* 1. Total Reports */}
+                    {/* 1. All Reports */}
                     <div 
-                        onClick={() => handleMetricCardClick('total', 'moderation', () => handleResetFilters(), `Filtered: Showing All Content Reports (${totalReportsCount})`)}
+                        onClick={() => { setActiveMetricCard('total'); handleResetFilters(); }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeMetricCard === 'total' && activeTab === 'moderation'
+                            activeMetricCard === 'total' && statusFilter === 'All' && severityFilter === 'All' && dateRangeFilter === 'All'
                                 ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
                         }`}
@@ -2054,14 +2092,14 @@ export default function AdminConsole() {
                             <span className="text-[10px] font-bold text-emerald-500">+8%</span>
                         </div>
                         <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{totalReportsCount}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Total Reports</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">All Reports</p>
                     </div>
 
-                    {/* 2. Pending Reports */}
+                    {/* 2. Pending Review */}
                     <div 
-                        onClick={() => handleMetricCardClick('pending', 'moderation', () => { handleResetFilters(); setStatusFilter('Pending'); }, `Filtered: Showing ${pendingCount} Pending Reports`)}
+                        onClick={() => { setActiveMetricCard('pending'); setStatusFilter('Pending'); showToast(`Filtered: Showing ${pendingCount} Pending Reports`); }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeMetricCard === 'pending' && activeTab === 'moderation'
+                            statusFilter === 'Pending'
                                 ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-amber-500/40 hover:border-amber-500 shadow-xs'
                         }`}
@@ -2074,11 +2112,11 @@ export default function AdminConsole() {
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Pending Review</p>
                     </div>
 
-                    {/* 3. High Priority / Critical */}
+                    {/* 3. High Risk / Critical */}
                     <div 
-                        onClick={() => handleMetricCardClick('high_priority', 'moderation', () => { handleResetFilters(); setSeverityFilter('Critical'); }, `Filtered: Showing ${highPriorityCount} High Priority & Critical Reports`)}
+                        onClick={() => { setActiveMetricCard('high_priority'); setSeverityFilter('Critical'); showToast(`Filtered: Showing ${highPriorityCount} Critical Reports`); }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeMetricCard === 'high_priority' && activeTab === 'moderation'
+                            severityFilter === 'Critical'
                                 ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-rose-500/40 hover:border-rose-500 shadow-xs'
                         }`}
@@ -2088,14 +2126,14 @@ export default function AdminConsole() {
                             <span className="text-[10px] font-black text-rose-600 bg-rose-500/15 px-1.5 py-0.2 rounded-full">Critical</span>
                         </div>
                         <p className="text-lg font-black text-rose-500 leading-none">{highPriorityCount}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">High Risk / Alert</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Critical Risk</p>
                     </div>
 
-                    {/* 4. Action Taken / Reviewed */}
+                    {/* 4. Action Taken */}
                     <div 
-                        onClick={() => handleMetricCardClick('reviewed', 'moderation', () => { handleResetFilters(); setStatusFilter('Action Taken'); }, `Filtered: Showing ${reviewedCount} Reviewed / Action Taken Reports`)}
+                        onClick={() => { setActiveMetricCard('reviewed'); setStatusFilter('Action Taken'); showToast(`Filtered: Showing ${reviewedCount} Action Taken Reports`); }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeMetricCard === 'reviewed' && activeTab === 'moderation'
+                            statusFilter === 'Action Taken'
                                 ? 'bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 shadow-xs'
                         }`}
@@ -2108,18 +2146,22 @@ export default function AdminConsole() {
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Action Taken</p>
                     </div>
 
-                    {/* 5. AI Flagged */}
+                    {/* 5. AI Flagged (In-Place Filter) */}
                     <div 
-                        onClick={() => handleMetricCardClick('ai_flagged', 'ai_moderation', null, `Navigated to AI Toxicity & Auto-Quarantine Parameters`)}
+                        onClick={() => {
+                            const nextCard = activeMetricCard === 'ai_flagged' ? 'total' : 'ai_flagged';
+                            setActiveMetricCard(nextCard);
+                            showToast(nextCard === 'ai_flagged' ? `Filtered: Showing ${aiFlaggedCount} AI-Flagged Reports` : 'Showing All Reports');
+                        }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeMetricCard === 'ai_flagged' && activeTab === 'ai_moderation'
+                            activeMetricCard === 'ai_flagged'
                                 ? 'bg-cyan-500/10 border-cyan-500 ring-2 ring-cyan-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-cyan-500/40 shadow-xs'
                         }`}
                     >
                         <div className="flex items-center justify-between text-cyan-500 mb-1">
                             <span className="material-symbols-outlined text-[18px]">smart_toy</span>
-                            <span className="text-[10px] font-black text-cyan-600 bg-cyan-500/15 px-1.5 py-0.2 rounded-full">Auto</span>
+                            <span className="text-[10px] font-black text-cyan-600 bg-cyan-500/15 px-1.5 py-0.2 rounded-full">NLP</span>
                         </div>
                         <p className="text-lg font-black text-cyan-500 leading-none">{aiFlaggedCount}</p>
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">AI Flagged</p>
@@ -2127,9 +2169,9 @@ export default function AdminConsole() {
 
                     {/* 6. Today's Reports */}
                     <div 
-                        onClick={() => handleMetricCardClick('todays', 'moderation', () => { handleResetFilters(); setDateRangeFilter('Today'); }, `Filtered: Showing Today's Content Reports (${todayReportsCount})`)}
+                        onClick={() => { setActiveMetricCard('todays'); setDateRangeFilter(dateRangeFilter === 'Today' ? 'All' : 'Today'); showToast(dateRangeFilter === 'Today' ? 'Showing All Reports' : `Filtered: Showing ${todayReportsCount} Today's Reports`); }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeMetricCard === 'todays' && activeTab === 'moderation'
+                            dateRangeFilter === 'Today'
                                 ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
                         }`}
@@ -2144,13 +2186,281 @@ export default function AdminConsole() {
                 </div>
             )}
 
-            {activeDomain === 'governance' && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
-                    {/* 1. Total Users */}
+            {/* TAB 2: MEDIA APPROVALS CONTROLS & FILTERS */}
+            {activeTab === 'media_approvals' && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                    {/* 1. All Pending Media */}
                     <div 
-                        onClick={() => handleMetricCardClick('all_users', 'users', () => setUserSearchTerm(''), `Showing All ${usersList.length} Registered Accounts`)}
+                        onClick={() => { setMediaTypeFilter('All'); showToast('Showing all pending media submissions'); }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeTab === 'users' && !userSearchTerm
+                            mediaTypeFilter === 'All'
+                                ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-rose-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-rose-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">video_library</span>
+                            <span className="text-[10px] font-black text-rose-600 bg-rose-500/15 px-1.5 py-0.2 rounded-full">Queue</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{pendingMediaApprovals.length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">All Pending Submissions</p>
+                    </div>
+
+                    {/* 2. Video Submissions */}
+                    <div 
+                        onClick={() => { setMediaTypeFilter('Video'); showToast('Filtered: Showing Video Submissions'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            mediaTypeFilter === 'Video'
+                                ? 'bg-cyan-500/10 border-cyan-500 ring-2 ring-cyan-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-cyan-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-cyan-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">play_circle</span>
+                            <span className="text-[10px] font-bold text-cyan-500">Video</span>
+                        </div>
+                        <p className="text-lg font-black text-cyan-500 leading-none">{pendingMediaApprovals.filter(m => m.mediaType === 'Video').length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Videos Only</p>
+                    </div>
+
+                    {/* 3. Podcast Submissions */}
+                    <div 
+                        onClick={() => { setMediaTypeFilter('Podcast'); showToast('Filtered: Showing Podcast Submissions'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            mediaTypeFilter === 'Podcast'
+                                ? 'bg-pink-500/10 border-pink-500 ring-2 ring-pink-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-pink-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-pink-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">podcasts</span>
+                            <span className="text-[10px] font-bold text-pink-500">Audio</span>
+                        </div>
+                        <p className="text-lg font-black text-pink-500 leading-none">{pendingMediaApprovals.filter(m => m.mediaType === 'Podcast').length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Podcasts Only</p>
+                    </div>
+
+                    {/* 4. Batch Approve All */}
+                    <div 
+                        onClick={handleBatchApproveMedia}
+                        className="p-2.5 rounded-xl transition-all cursor-pointer group border bg-emerald-500/10 border-emerald-500/40 hover:border-emerald-500 hover:bg-emerald-500/15 shadow-xs"
+                    >
+                        <div className="flex items-center justify-between text-emerald-600 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">done_all</span>
+                            <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-300 bg-emerald-500/20 px-1.5 py-0.2 rounded-full">One-Click</span>
+                        </div>
+                        <p className="text-base font-black text-emerald-600 leading-none mt-1">Approve All</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Batch Release to Hub</p>
+                    </div>
+                </div>
+            )}
+
+            {/* TAB 3: AI MODERATION RULES QUICK PRESETS & TOGGLES */}
+            {activeTab === 'ai_moderation' && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
+                    {/* 1. Active Sensitivity Status */}
+                    <div className="p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xs">
+                        <div className="flex items-center justify-between text-indigo-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">tune</span>
+                            <span className="text-[10px] font-black text-indigo-600 bg-indigo-500/15 px-1.5 py-0.2 rounded-full">NLP</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{configState.aiToxicityThreshold || 80}%</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Current Threshold</p>
+                    </div>
+
+                    {/* 2. Permissive 50% Preset */}
+                    <div 
+                        onClick={() => { setConfigState({ ...configState, aiToxicityThreshold: 50 }); showToast('AI Sensitivity preset set to 50% (Permissive)'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            (configState.aiToxicityThreshold || 80) === 50
+                                ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-slate-400 group-hover:text-indigo-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">filter_1</span>
+                            <span className="text-[10px] font-bold text-slate-400">Low</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-800 dark:text-slate-200 leading-none">50%</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Permissive Mode</p>
+                    </div>
+
+                    {/* 3. Balanced 80% Preset */}
+                    <div 
+                        onClick={() => { setConfigState({ ...configState, aiToxicityThreshold: 80 }); showToast('AI Sensitivity preset set to 80% (Recommended)'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            (configState.aiToxicityThreshold || 80) === 80
+                                ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-indigo-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">verified</span>
+                            <span className="text-[10px] font-black text-indigo-600 bg-indigo-500/15 px-1.5 py-0.2 rounded-full">Default</span>
+                        </div>
+                        <p className="text-lg font-black text-indigo-600 dark:text-indigo-400 leading-none">80%</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Balanced (Recommended)</p>
+                    </div>
+
+                    {/* 4. Strict 95% Preset */}
+                    <div 
+                        onClick={() => { setConfigState({ ...configState, aiToxicityThreshold: 95 }); showToast('AI Sensitivity preset set to 95% (Strict)'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            (configState.aiToxicityThreshold || 80) === 95
+                                ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-rose-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-rose-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">shield</span>
+                            <span className="text-[10px] font-bold text-rose-500">Max</span>
+                        </div>
+                        <p className="text-lg font-black text-rose-500 leading-none">95%</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Strict Mode</p>
+                    </div>
+
+                    {/* 5. Toggle Auto-Quarantine */}
+                    <div 
+                        onClick={() => {
+                            const next = configState.aiAutoQuarantine === false;
+                            setConfigState({ ...configState, aiAutoQuarantine: next });
+                            showToast(`Auto-Quarantine ${next ? 'Enabled' : 'Disabled'}`);
+                        }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            configState.aiAutoQuarantine !== false
+                                ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-rose-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-rose-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">gavel</span>
+                            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${configState.aiAutoQuarantine !== false ? 'bg-rose-500/20 text-rose-600' : 'bg-slate-200 text-slate-500'}`}>
+                                {configState.aiAutoQuarantine !== false ? 'ON' : 'OFF'}
+                            </span>
+                        </div>
+                        <p className="text-base font-black text-slate-900 dark:text-white leading-none mt-1">Auto-Quarantine</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Hide &gt;95% Posts</p>
+                    </div>
+
+                    {/* 6. Toggle Deep PII Scan */}
+                    <div 
+                        onClick={() => {
+                            const next = configState.aiDeepScan === false;
+                            setConfigState({ ...configState, aiDeepScan: next });
+                            showToast(`Deep PII Scan ${next ? 'Enabled' : 'Disabled'}`);
+                        }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            configState.aiDeepScan !== false
+                                ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-amber-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-amber-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">key</span>
+                            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${configState.aiDeepScan !== false ? 'bg-amber-500/20 text-amber-600' : 'bg-slate-200 text-slate-500'}`}>
+                                {configState.aiDeepScan !== false ? 'ON' : 'OFF'}
+                            </span>
+                        </div>
+                        <p className="text-base font-black text-slate-900 dark:text-white leading-none mt-1">Deep PII Scan</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">PAN / Aadhaar / Keys</p>
+                    </div>
+                </div>
+            )}
+
+            {/* TAB 4: COMMUNITY MODERATION FILTERS */}
+            {activeTab === 'communities' && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
+                    {/* 1. All Communities */}
+                    <div 
+                        onClick={() => { setCommunityPolicyFilter('All'); showToast('Showing all communities'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            communityPolicyFilter === 'All'
+                                ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-indigo-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">forum</span>
+                            <span className="text-[10px] font-bold text-indigo-500">All</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{communityChannels.length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">All Communities</p>
+                    </div>
+
+                    {/* 2. Strict Policy */}
+                    <div 
+                        onClick={() => { setCommunityPolicyFilter('Strict'); showToast('Filtered: Showing Strict Policy Communities'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            communityPolicyFilter === 'Strict'
+                                ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-rose-500/40 hover:border-rose-500 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-rose-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">lock</span>
+                            <span className="text-[10px] font-black text-rose-600 bg-rose-500/15 px-1.5 py-0.2 rounded-full">Strict</span>
+                        </div>
+                        <p className="text-lg font-black text-rose-500 leading-none">{communityChannels.filter(c => c.status?.toLowerCase() === 'strict').length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Strict Policy</p>
+                    </div>
+
+                    {/* 3. Standard Policy */}
+                    <div 
+                        onClick={() => { setCommunityPolicyFilter('Standard'); showToast('Filtered: Showing Standard Policy Communities'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            communityPolicyFilter === 'Standard'
+                                ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-indigo-500/40 hover:border-indigo-500 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-indigo-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">verified</span>
+                            <span className="text-[10px] font-black text-indigo-600 bg-indigo-500/15 px-1.5 py-0.2 rounded-full">Standard</span>
+                        </div>
+                        <p className="text-lg font-black text-indigo-500 leading-none">{communityChannels.filter(c => c.status?.toLowerCase() === 'standard').length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Standard Policy</p>
+                    </div>
+
+                    {/* 4. Relaxed Policy */}
+                    <div 
+                        onClick={() => { setCommunityPolicyFilter('Relaxed'); showToast('Filtered: Showing Relaxed Policy Communities'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            communityPolicyFilter === 'Relaxed'
+                                ? 'bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-emerald-500/40 hover:border-emerald-500 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-emerald-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">public</span>
+                            <span className="text-[10px] font-black text-emerald-600 bg-emerald-500/15 px-1.5 py-0.2 rounded-full">Relaxed</span>
+                        </div>
+                        <p className="text-lg font-black text-emerald-500 leading-none">{communityChannels.filter(c => c.status?.toLowerCase() === 'relaxed').length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Relaxed Policy</p>
+                    </div>
+
+                    {/* 5. Create Community Action */}
+                    <div 
+                        onClick={() => { setSelectedManageCommunity(null); setIsCommunityModalOpen(true); }}
+                        className="p-2.5 rounded-xl transition-all cursor-pointer group border bg-indigo-500/10 border-indigo-500/40 hover:border-indigo-500 hover:bg-indigo-500/15 shadow-xs"
+                    >
+                        <div className="flex items-center justify-between text-indigo-600 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                            <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-300 bg-indigo-500/20 px-1.5 py-0.2 rounded-full">Action</span>
+                        </div>
+                        <p className="text-base font-black text-indigo-600 leading-none mt-1">+ Create Channel</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">New Community</p>
+                    </div>
+                </div>
+            )}
+
+            {/* TAB 5: USER DIRECTORY FILTERS */}
+            {activeTab === 'users' && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                    {/* 1. All Users */}
+                    <div 
+                        onClick={() => { setUserSearchTerm(''); showToast(`Showing all ${usersList.length} registered employees`); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            !userSearchTerm
                                 ? 'bg-purple-500/10 border-purple-500 ring-2 ring-purple-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-purple-500/40 shadow-xs'
                         }`}
@@ -2160,14 +2470,14 @@ export default function AdminConsole() {
                             <span className="text-[10px] font-bold text-purple-500">Directory</span>
                         </div>
                         <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{usersList.length}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Total Employees</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">All Employees</p>
                     </div>
 
-                    {/* 2. Active Users */}
+                    {/* 2. Active Accounts */}
                     <div 
-                        onClick={() => handleMetricCardClick('active_users', 'users', () => setUserSearchTerm('Active'), `Navigated to User Governance: Showing Active Accounts (${activeUsersCount})`)}
+                        onClick={() => { setUserSearchTerm('Active'); showToast(`Filtered: Showing ${activeUsersCount} active employee accounts`); }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeMetricCard === 'active_users' && activeTab === 'users'
+                            userSearchTerm === 'Active'
                                 ? 'bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 shadow-xs'
                         }`}
@@ -2180,28 +2490,11 @@ export default function AdminConsole() {
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Active Accounts</p>
                     </div>
 
-                    {/* 3. Pending Role Requests */}
+                    {/* 3. Administrators */}
                     <div 
-                        onClick={() => setActiveTab('role_requests')}
+                        onClick={() => { setUserSearchTerm('Admin'); showToast(`Filtered: Showing ${activeModeratorsCount} administrators`); }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeTab === 'role_requests'
-                                ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/50 shadow-md scale-[1.02]' 
-                                : 'bg-white dark:bg-slate-900 border-amber-500/40 hover:border-amber-500 shadow-xs'
-                        }`}
-                    >
-                        <div className="flex items-center justify-between text-amber-500 mb-1">
-                            <span className="material-symbols-outlined text-[18px]">verified_user</span>
-                            <span className="text-[10px] font-black text-amber-600 bg-amber-500/15 px-1.5 py-0.2 rounded-full">Review</span>
-                        </div>
-                        <p className="text-lg font-black text-amber-500 leading-none">{roleRequests.filter(r => r.status === 'Pending').length}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Role Requests</p>
-                    </div>
-
-                    {/* 4. Active Moderators */}
-                    <div 
-                        onClick={() => handleMetricCardClick('moderators', 'users', () => setUserSearchTerm('Admin'), `Navigated to User Governance: Showing Active Moderators (${activeModeratorsCount})`)}
-                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeMetricCard === 'moderators' && activeTab === 'users'
+                            userSearchTerm === 'Admin'
                                 ? 'bg-purple-500/10 border-purple-500 ring-2 ring-purple-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
                         }`}
@@ -2214,11 +2507,11 @@ export default function AdminConsole() {
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Administrators</p>
                     </div>
 
-                    {/* 5. Suspended Users */}
+                    {/* 4. Suspended Users */}
                     <div 
-                        onClick={() => handleMetricCardClick('suspended', 'users', () => setUserSearchTerm('Suspended'), `Navigated to User Governance: Showing Suspended Accounts (${suspendedUsersCount})`)}
+                        onClick={() => { setUserSearchTerm('Suspended'); showToast(`Filtered: Showing ${suspendedUsersCount} suspended accounts`); }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeMetricCard === 'suspended' && activeTab === 'users'
+                            userSearchTerm === 'Suspended'
                                 ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-rose-500/40 shadow-xs'
                         }`}
@@ -2233,32 +2526,184 @@ export default function AdminConsole() {
                 </div>
             )}
 
-            {activeDomain === 'operations' && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
-                    {/* 1. Server Logs Telemetry */}
+            {/* TAB 6: ROLE REQUESTS FILTERS */}
+            {activeTab === 'role_requests' && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                    {/* 1. All Role Requests */}
                     <div 
-                        onClick={() => setActiveTab('serilog')}
+                        onClick={() => { setRoleRequestStatusFilter('All'); showToast('Showing all role requests'); }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeTab === 'serilog'
-                                ? 'bg-cyan-500/10 border-cyan-500 ring-2 ring-cyan-500/50 shadow-md scale-[1.02]' 
-                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-cyan-500/40 shadow-xs'
+                            roleRequestStatusFilter === 'All'
+                                ? 'bg-purple-500/10 border-purple-500 ring-2 ring-purple-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-purple-500/40 shadow-xs'
                         }`}
                     >
-                        <div className="flex items-center justify-between text-cyan-500 mb-1">
-                            <span className="material-symbols-outlined text-[18px]">terminal</span>
-                            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${systemLogCounts.errors > 0 ? 'bg-rose-500/15 text-rose-600' : 'bg-emerald-500/15 text-emerald-600'}`}>
-                                {systemLogCounts.errors > 0 ? `${systemLogCounts.errors} Errors` : 'Online'}
-                            </span>
+                        <div className="flex items-center justify-between text-purple-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">verified_user</span>
+                            <span className="text-[10px] font-bold text-purple-500">Total</span>
                         </div>
-                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{systemLogCounts.total || 120}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Server Telemetry</p>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{roleRequests.length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">All Requests</p>
                     </div>
 
-                    {/* 2. Audit Trail Events */}
+                    {/* 2. Pending Review */}
                     <div 
-                        onClick={() => setActiveTab('audit')}
+                        onClick={() => { setRoleRequestStatusFilter('Pending'); showToast('Filtered: Showing Pending Role Requests'); }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeTab === 'audit'
+                            roleRequestStatusFilter === 'Pending'
+                                ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-amber-500/40 hover:border-amber-500 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-amber-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">pending_actions</span>
+                            <span className="text-[10px] font-black text-amber-600 bg-amber-500/15 px-1.5 py-0.2 rounded-full">Review</span>
+                        </div>
+                        <p className="text-lg font-black text-amber-500 leading-none">{roleRequests.filter(r => r.status === 'Pending').length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Pending Approval</p>
+                    </div>
+
+                    {/* 3. Approved Requests */}
+                    <div 
+                        onClick={() => { setRoleRequestStatusFilter('Approved'); showToast('Filtered: Showing Approved Role Requests'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            roleRequestStatusFilter === 'Approved'
+                                ? 'bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-emerald-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">check_circle</span>
+                            <span className="text-[10px] font-bold text-emerald-500">Granted</span>
+                        </div>
+                        <p className="text-lg font-black text-emerald-500 leading-none">{roleRequests.filter(r => r.status === 'Approved').length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Approved Requests</p>
+                    </div>
+
+                    {/* 4. Rejected Requests */}
+                    <div 
+                        onClick={() => { setRoleRequestStatusFilter('Rejected'); showToast('Filtered: Showing Rejected Role Requests'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            roleRequestStatusFilter === 'Rejected'
+                                ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-rose-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-rose-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">cancel</span>
+                            <span className="text-[10px] font-bold text-rose-500">Declined</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{roleRequests.filter(r => r.status === 'Rejected').length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Rejected Requests</p>
+                    </div>
+                </div>
+            )}
+
+            {/* TAB 7: SYSTEM PARAMETERS QUICK TOGGLES */}
+            {activeTab === 'system' && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
+                    {/* 1. Platform Online */}
+                    <div className="p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xs">
+                        <div className="flex items-center justify-between text-emerald-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">cloud_done</span>
+                            <span className="text-[10px] font-black text-emerald-600 bg-emerald-500/15 px-1.5 py-0.2 rounded-full">Live</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">Healthy</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Platform Status</p>
+                    </div>
+
+                    {/* 2. Toggle Maintenance Mode */}
+                    <div 
+                        onClick={() => {
+                            const next = !configState.maintenanceMode;
+                            setConfigState({ ...configState, maintenanceMode: next });
+                            showToast(`Maintenance mode ${next ? 'activated' : 'deactivated'}`);
+                        }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            configState.maintenanceMode
+                                ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-amber-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-amber-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">construction</span>
+                            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${configState.maintenanceMode ? 'bg-amber-500/20 text-amber-600' : 'bg-slate-200 text-slate-500'}`}>
+                                {configState.maintenanceMode ? 'ACTIVE' : 'OFF'}
+                            </span>
+                        </div>
+                        <p className="text-base font-black text-slate-900 dark:text-white leading-none mt-1">Maintenance</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Click to Toggle</p>
+                    </div>
+
+                    {/* 3. Toggle Auto-Moderation */}
+                    <div 
+                        onClick={() => {
+                            const next = !configState.autoModeration;
+                            setConfigState({ ...configState, autoModeration: next });
+                            showToast(`Auto-moderation ${next ? 'activated' : 'deactivated'}`);
+                        }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            configState.autoModeration
+                                ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-indigo-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">smart_toy</span>
+                            <span className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${configState.autoModeration ? 'bg-indigo-500/20 text-indigo-600' : 'bg-slate-200 text-slate-500'}`}>
+                                {configState.autoModeration ? 'ACTIVE' : 'OFF'}
+                            </span>
+                        </div>
+                        <p className="text-base font-black text-slate-900 dark:text-white leading-none mt-1">Auto-Moderation</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Click to Toggle</p>
+                    </div>
+
+                    {/* 4. Cycle Upload Limit */}
+                    <div 
+                        onClick={() => {
+                            const cur = configState.maxUploadMb || 100;
+                            const next = cur === 100 ? 200 : (cur === 200 ? 50 : 100);
+                            setConfigState({ ...configState, maxUploadMb: next });
+                            showToast(`Max upload limit set to ${next} MB`);
+                        }}
+                        className="p-2.5 rounded-xl transition-all cursor-pointer group border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs"
+                    >
+                        <div className="flex items-center justify-between text-cyan-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">upload_file</span>
+                            <span className="text-[10px] font-black text-cyan-600 bg-cyan-500/15 px-1.5 py-0.2 rounded-full">Cycle</span>
+                        </div>
+                        <p className="text-lg font-black text-cyan-600 leading-none">{configState.maxUploadMb || 100} MB</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Max Upload Limit</p>
+                    </div>
+
+                    {/* 5. Cycle JWT Session TTL */}
+                    <div 
+                        onClick={() => {
+                            const cur = configState.jwtTtlHours || 24;
+                            const next = cur === 24 ? 48 : (cur === 48 ? 12 : 24);
+                            setConfigState({ ...configState, jwtTtlHours: next });
+                            showToast(`Session TTL set to ${next} Hours`);
+                        }}
+                        className="p-2.5 rounded-xl transition-all cursor-pointer group border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs"
+                    >
+                        <div className="flex items-center justify-between text-slate-400 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">timer</span>
+                            <span className="text-[10px] font-black text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded-full">Cycle</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{configState.jwtTtlHours || 24}h</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Session Duration</p>
+                    </div>
+                </div>
+            )}
+
+            {/* TAB 8: AUDIT TRAIL ACTION FILTERS */}
+            {activeTab === 'audit' && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
+                    {/* 1. All Audits */}
+                    <div 
+                        onClick={() => { setAuditActionFilter('All'); showToast('Showing all audit events'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            auditActionFilter === 'All'
                                 ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
                         }`}
@@ -2268,58 +2713,206 @@ export default function AdminConsole() {
                             <span className="text-[10px] font-bold text-emerald-500">Tamper-Proof</span>
                         </div>
                         <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{auditTrail.length}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Audit Entries</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">All Audit Events</p>
                     </div>
 
-                    {/* 3. System Parameters */}
+                    {/* 2. Config Updates */}
                     <div 
-                        onClick={() => setActiveTab('system')}
+                        onClick={() => { setAuditActionFilter('ConfigUpdate'); showToast('Filtered: Showing Config Updates'); }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeTab === 'system'
-                                ? 'bg-slate-800 text-white ring-2 ring-slate-600 shadow-md scale-[1.02]' 
-                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-400 shadow-xs'
+                            auditActionFilter === 'ConfigUpdate'
+                                ? 'bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 shadow-xs'
                         }`}
                     >
-                        <div className="flex items-center justify-between text-slate-400 mb-1">
+                        <div className="flex items-center justify-between text-emerald-500 mb-1">
                             <span className="material-symbols-outlined text-[18px]">settings</span>
-                            <span className="text-[10px] font-bold text-indigo-500">Configured</span>
+                            <span className="text-[10px] font-bold text-emerald-500">Config</span>
                         </div>
-                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">8 Configs</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">System Params</p>
+                        <p className="text-lg font-black text-emerald-500 leading-none">{auditTrail.filter(a => a.action === 'ConfigUpdate').length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Config Updates</p>
                     </div>
 
-                    {/* 4. Active Communities */}
+                    {/* 3. Moderation Actions */}
                     <div 
-                        onClick={() => handleMetricCardClick('communities', 'communities', null, `Navigated to Community Channels Moderation`)}
+                        onClick={() => { setAuditActionFilter('Moderation'); showToast('Filtered: Showing Moderation Actions'); }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeMetricCard === 'communities' && activeTab === 'communities'
-                                ? 'bg-blue-500/10 border-blue-500 ring-2 ring-blue-500/50 shadow-md scale-[1.02]' 
-                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
+                            auditActionFilter === 'Moderation'
+                                ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-amber-500/40 shadow-xs'
                         }`}
                     >
-                        <div className="flex items-center justify-between text-blue-500 mb-1">
-                            <span className="material-symbols-outlined text-[18px]">forum</span>
-                            <span className="text-[10px] font-black text-blue-500">Live</span>
+                        <div className="flex items-center justify-between text-amber-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">gavel</span>
+                            <span className="text-[10px] font-bold text-amber-500">Safety</span>
                         </div>
-                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{communitiesCount}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Communities</p>
+                        <p className="text-lg font-black text-amber-500 leading-none">{auditTrail.filter(a => a.action === 'ContentModerated' || a.action === 'ReportDismissed').length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Moderation Logs</p>
                     </div>
 
-                    {/* 5. Platform Analytics */}
+                    {/* 4. User Governance */}
                     <div 
-                        onClick={() => setActiveTab('analytics')}
+                        onClick={() => { setAuditActionFilter('User'); showToast('Filtered: Showing User Governance Logs'); }}
                         className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            activeTab === 'analytics'
+                            auditActionFilter === 'User'
+                                ? 'bg-purple-500/10 border-purple-500 ring-2 ring-purple-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-purple-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-purple-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">admin_panel_settings</span>
+                            <span className="text-[10px] font-bold text-purple-500">Users</span>
+                        </div>
+                        <p className="text-lg font-black text-purple-500 leading-none">{auditTrail.filter(a => a.action?.startsWith('User')).length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">User Governance</p>
+                    </div>
+
+                    {/* 5. Batch Audits */}
+                    <div 
+                        onClick={() => { setAuditActionFilter('AIBatchAudit'); showToast('Filtered: Showing Batch AI Audits'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            auditActionFilter === 'AIBatchAudit'
+                                ? 'bg-cyan-500/10 border-cyan-500 ring-2 ring-cyan-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-cyan-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-cyan-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">smart_toy</span>
+                            <span className="text-[10px] font-bold text-cyan-500">Batch</span>
+                        </div>
+                        <p className="text-lg font-black text-cyan-500 leading-none">{auditTrail.filter(a => a.action === 'AIBatchAudit' || a.action === 'MediaBatchApprove').length}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Batch Audits</p>
+                    </div>
+                </div>
+            )}
+
+            {/* TAB 9: SERVER LOGS (SERILOG) LOG LEVEL FILTERS */}
+            {activeTab === 'serilog' && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
+                    {/* 1. All Telemetry */}
+                    <div 
+                        onClick={() => { setLogLevelFilter('ALL'); showToast('Showing all server telemetry logs'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            logLevelFilter === 'ALL'
+                                ? 'bg-cyan-500/10 border-cyan-500 ring-2 ring-cyan-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-cyan-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-cyan-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">terminal</span>
+                            <span className="text-[10px] font-bold text-cyan-500">Telemetry</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{systemLogCounts.total || 120}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">All Server Logs</p>
+                    </div>
+
+                    {/* 2. Errors */}
+                    <div 
+                        onClick={() => { setLogLevelFilter('ERROR'); showToast('Filtered: Showing ERROR logs only'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            logLevelFilter === 'ERROR'
+                                ? 'bg-rose-500/10 border-rose-500 ring-2 ring-rose-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-rose-500/40 hover:border-rose-500 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-rose-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">error</span>
+                            <span className="text-[10px] font-black text-rose-600 bg-rose-500/15 px-1.5 py-0.2 rounded-full">Severity 1</span>
+                        </div>
+                        <p className="text-lg font-black text-rose-500 leading-none">{systemLogCounts.errors}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Error Events</p>
+                    </div>
+
+                    {/* 3. Warnings */}
+                    <div 
+                        onClick={() => { setLogLevelFilter('WARN'); showToast('Filtered: Showing WARNING logs only'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            logLevelFilter === 'WARN'
+                                ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-amber-500/40 hover:border-amber-500 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-amber-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">warning</span>
+                            <span className="text-[10px] font-black text-amber-600 bg-amber-500/15 px-1.5 py-0.2 rounded-full">Severity 2</span>
+                        </div>
+                        <p className="text-lg font-black text-amber-500 leading-none">{systemLogCounts.warnings}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Warnings</p>
+                    </div>
+
+                    {/* 4. Information */}
+                    <div 
+                        onClick={() => { setLogLevelFilter('INFO'); showToast('Filtered: Showing INFO logs only'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            logLevelFilter === 'INFO'
                                 ? 'bg-indigo-500/10 border-indigo-500 ring-2 ring-indigo-500/50 shadow-md scale-[1.02]' 
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500/40 shadow-xs'
                         }`}
                     >
                         <div className="flex items-center justify-between text-indigo-500 mb-1">
-                            <span className="material-symbols-outlined text-[18px]">insights</span>
-                            <span className="text-[10px] font-bold text-emerald-500">Live Telemetry</span>
+                            <span className="material-symbols-outlined text-[18px]">info</span>
+                            <span className="text-[10px] font-bold text-indigo-500">Info</span>
                         </div>
-                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">99.8%</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">System Health</p>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{systemLogCounts.info}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Information</p>
+                    </div>
+
+                    {/* 5. Debug */}
+                    <div 
+                        onClick={() => { setLogLevelFilter('DEBUG'); showToast('Filtered: Showing DEBUG logs only'); }}
+                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
+                            logLevelFilter === 'DEBUG'
+                                ? 'bg-slate-600/10 border-slate-600 ring-2 ring-slate-600/50 shadow-md scale-[1.02]' 
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-500/40 shadow-xs'
+                        }`}
+                    >
+                        <div className="flex items-center justify-between text-slate-400 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">bug_report</span>
+                            <span className="text-[10px] font-bold text-slate-400">Trace</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{systemLogCounts.debug}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Debug Traces</p>
+                    </div>
+                </div>
+            )}
+
+            {/* TAB 10: ANALYTICS OVERVIEW CARDS */}
+            {activeTab === 'analytics' && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                    <div className="p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xs">
+                        <div className="flex items-center justify-between text-indigo-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">insights</span>
+                            <span className="text-[10px] font-bold text-emerald-500">99.8%</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">System Health</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Live Telemetry</p>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xs">
+                        <div className="flex items-center justify-between text-purple-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">groups</span>
+                            <span className="text-[10px] font-bold text-purple-500">{usersList.length}</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{activeUsersCount} Active</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Total Employees</p>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xs">
+                        <div className="flex items-center justify-between text-cyan-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">forum</span>
+                            <span className="text-[10px] font-bold text-cyan-500">Active</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{communityChannels.length} Channels</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Communities</p>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-xs">
+                        <div className="flex items-center justify-between text-rose-500 mb-1">
+                            <span className="material-symbols-outlined text-[18px]">gavel</span>
+                            <span className="text-[10px] font-bold text-rose-500">{pendingCount} Pending</span>
+                        </div>
+                        <p className="text-lg font-black text-slate-900 dark:text-white leading-none">{reports.length} Reports</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Safety Governance</p>
                     </div>
                 </div>
             )}
@@ -4144,13 +4737,15 @@ export default function AdminConsole() {
                             </p>
                         </div>
                         <span className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-3 py-1 rounded-full text-xs font-bold border border-indigo-200 dark:border-indigo-800">
-                            {pendingMediaApprovals.length} Pending Submission{pendingMediaApprovals.length === 1 ? '' : 's'}
+                            {pendingMediaApprovals.filter(item => mediaTypeFilter === 'All' || item.mediaType === mediaTypeFilter).length} {mediaTypeFilter !== 'All' ? mediaTypeFilter : ''} Pending Submission{pendingMediaApprovals.filter(item => mediaTypeFilter === 'All' || item.mediaType === mediaTypeFilter).length === 1 ? '' : 's'}
                         </span>
                     </div>
 
-                    {pendingMediaApprovals.length > 0 ? (
+                    {pendingMediaApprovals.filter(item => mediaTypeFilter === 'All' || item.mediaType === mediaTypeFilter).length > 0 ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {pendingMediaApprovals.map((item) => (
+                            {pendingMediaApprovals
+                                .filter(item => mediaTypeFilter === 'All' || item.mediaType === mediaTypeFilter)
+                                .map((item) => (
                                 <div key={item.id} className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 space-y-3 shadow-xs hover:border-indigo-200 dark:hover:border-indigo-800/50 transition-all">
                                     <div className="flex items-center justify-between">
                                         <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${item.mediaType === 'Video' ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20' : 'bg-pink-500/10 text-pink-600 dark:text-pink-400 border border-pink-500/20'}`}>
@@ -4210,8 +4805,8 @@ export default function AdminConsole() {
                             <div className="w-14 h-14 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center mb-3">
                                 <span className="material-symbols-outlined text-[32px]">task_alt</span>
                             </div>
-                            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">No Pending Media Approvals</h3>
-                            <p className="text-xs text-slate-400 max-w-sm mt-1">All submitted podcasts and videos have been reviewed and processed by system admins.</p>
+                            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">No {mediaTypeFilter !== 'All' ? mediaTypeFilter : 'Pending'} Media Approvals</h3>
+                            <p className="text-xs text-slate-400 max-w-sm mt-1">All {mediaTypeFilter !== 'All' ? mediaTypeFilter.toLowerCase() : 'submitted podcast and video'} submissions have been reviewed and processed by system admins.</p>
                         </div>
                     )}
                 </div>
@@ -4263,26 +4858,30 @@ export default function AdminConsole() {
 
                     {/* List / Table of Requests */}
                     {roleRequests.filter(r => {
+                        const matchesStatus = roleRequestStatusFilter === 'All' || (r.status || '').toLowerCase() === roleRequestStatusFilter.toLowerCase();
                         const term = (roleRequestSearchTerm || searchQuery || '').trim().toLowerCase();
-                        if (!term) return true;
-                        return (r.fullName || '').toLowerCase().includes(term) ||
+                        if (!term) return matchesStatus;
+                        const matchesTerm = (r.fullName || '').toLowerCase().includes(term) ||
                                (r.employeeId || '').toLowerCase().includes(term) ||
                                (r.email || '').toLowerCase().includes(term) ||
                                (r.departmentName || '').toLowerCase().includes(term) ||
                                (r.requestedRoleCode || '').toLowerCase().includes(term) ||
                                (r.assignedRoleName || '').toLowerCase().includes(term);
+                        return matchesStatus && matchesTerm;
                     }).length > 0 ? (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {roleRequests
                                 .filter(r => {
+                                    const matchesStatus = roleRequestStatusFilter === 'All' || (r.status || '').toLowerCase() === roleRequestStatusFilter.toLowerCase();
                                     const term = (roleRequestSearchTerm || searchQuery || '').trim().toLowerCase();
-                                    if (!term) return true;
-                                    return (r.fullName || '').toLowerCase().includes(term) ||
+                                    if (!term) return matchesStatus;
+                                    const matchesTerm = (r.fullName || '').toLowerCase().includes(term) ||
                                            (r.employeeId || '').toLowerCase().includes(term) ||
                                            (r.email || '').toLowerCase().includes(term) ||
                                            (r.departmentName || '').toLowerCase().includes(term) ||
                                            (r.requestedRoleCode || '').toLowerCase().includes(term) ||
                                            (r.assignedRoleName || '').toLowerCase().includes(term);
+                                    return matchesStatus && matchesTerm;
                                 })
                                 .map((req) => {
                                     const isPending = req.status === 'Pending';
@@ -4391,8 +4990,8 @@ export default function AdminConsole() {
                             <div className="w-14 h-14 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center mb-3">
                                 <span className="material-symbols-outlined text-[32px]">task_alt</span>
                             </div>
-                            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">No Pending Role Requests</h3>
-                            <p className="text-xs text-slate-400 max-w-sm mt-1">All employee registration role requests have been reviewed and approved.</p>
+                            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">No {roleRequestStatusFilter !== 'All' ? roleRequestStatusFilter : 'Pending'} Role Requests</h3>
+                            <p className="text-xs text-slate-400 max-w-sm mt-1">There are no {roleRequestStatusFilter !== 'All' ? roleRequestStatusFilter.toLowerCase() : 'pending'} employee role assignment requests found.</p>
                         </div>
                     )}
                 </div>
