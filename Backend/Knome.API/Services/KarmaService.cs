@@ -32,7 +32,7 @@ public class KarmaService : IKarmaService
 
         if (dailyCap.HasValue && dailyCap.Value > 0)
         {
-            var alreadyEarnedToday = await _repo.GetTodayPointsByActivityTypeAsync(userId, activityType, DateTime.UtcNow.Date);
+            var alreadyEarnedToday = await _repo.GetTodayPointsByActivityTypeAsync(userId, activityType, Knome.API.Common.KnomeTime.Now.Date);
             if (alreadyEarnedToday >= dailyCap.Value)
             {
                 return await GetMyBalanceAsync(userId);
@@ -52,7 +52,7 @@ public class KarmaService : IKarmaService
             PointsAwarded = pointsToAward,
             RelatedContentType = contentType,
             RelatedContentId = contentId,
-            CreatedDate = DateTime.UtcNow
+            CreatedDate = Knome.API.Common.KnomeTime.Now
         };
         await _repo.AddTransactionAsync(tx);
 
@@ -62,7 +62,7 @@ public class KarmaService : IKarmaService
         if (balance.TotalPoints < 0) balance.TotalPoints = 0; // Prevent negative balance
 
         balance.BadgeLevel = BadgeLevels.ComputeBadge(balance.TotalPoints);
-        balance.LastUpdated = DateTime.UtcNow;
+        balance.LastUpdated = Knome.API.Common.KnomeTime.Now;
 
         await _repo.UpdateBalanceAsync(balance);
 
@@ -87,7 +87,7 @@ public class KarmaService : IKarmaService
         if (userId <= 0 || communityId <= 0)
             return await GetMyBalanceAsync(userId > 0 ? userId : 1);
 
-        var hasEarnedToday = await _repo.HasEarnedCommunityParticipationTodayAsync(userId, communityId, DateTime.UtcNow.Date);
+        var hasEarnedToday = await _repo.HasEarnedCommunityParticipationTodayAsync(userId, communityId, Knome.API.Common.KnomeTime.Now.Date);
         if (hasEarnedToday)
         {
             return await GetMyBalanceAsync(userId);

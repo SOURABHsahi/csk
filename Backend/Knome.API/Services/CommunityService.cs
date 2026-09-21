@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AutoMapper;
+using Knome.API.Common;
 using Knome.API.Constants;
 using Knome.API.Data;
 using Knome.API.DTOs.Communities;
 using Knome.API.Exceptions;
 using Knome.API.Interfaces;
 using Knome.API.Models;
+using Knome.API.Repositories;
 using Microsoft.EntityFrameworkCore;
 
 namespace Knome.API.Services;
@@ -188,7 +190,7 @@ public class CommunityService : ICommunityService
             Faq = dto.Faq,
             CommunityType = dto.CommunityType,
             CreatedByUserId = currentUserId,
-            CreatedDate = DateTime.UtcNow,
+            CreatedDate = KnomeTime.Now,
             IsActive = true
         };
 
@@ -203,8 +205,8 @@ public class CommunityService : ICommunityService
             UserId = currentUserId,
             MemberType = CommunityMemberTypes.Admin,
             Status = CommunityMemberStatuses.Approved,
-            RequestedDate = DateTime.UtcNow,
-            DecidedDate = DateTime.UtcNow
+            RequestedDate = KnomeTime.Now,
+            DecidedDate = KnomeTime.Now
         };
         await _repo.AddMemberAsync(member);
 
@@ -290,8 +292,8 @@ public class CommunityService : ICommunityService
             existingMember.Status = isAutoApprove
                 ? CommunityMemberStatuses.Approved
                 : CommunityMemberStatuses.Pending;
-            existingMember.RequestedDate = DateTime.UtcNow;
-            existingMember.DecidedDate = isAutoApprove ? DateTime.UtcNow : null;
+            existingMember.RequestedDate = KnomeTime.Now;
+            existingMember.DecidedDate = isAutoApprove ? KnomeTime.Now : null;
 
             await _repo.UpdateMemberAsync(existingMember);
             return _mapper.Map<CommunityMemberDto>(existingMember);
@@ -305,8 +307,8 @@ public class CommunityService : ICommunityService
             Status = (community.CommunityType == CommunityTypes.Public || community.CommunityType == CommunityTypes.Org || community.CommunityType == CommunityTypes.Default)
                 ? CommunityMemberStatuses.Approved
                 : CommunityMemberStatuses.Pending,
-            RequestedDate = DateTime.UtcNow,
-            DecidedDate = (community.CommunityType == CommunityTypes.Public || community.CommunityType == CommunityTypes.Org || community.CommunityType == CommunityTypes.Default) ? DateTime.UtcNow : null
+            RequestedDate = KnomeTime.Now,
+            DecidedDate = (community.CommunityType == CommunityTypes.Public || community.CommunityType == CommunityTypes.Org || community.CommunityType == CommunityTypes.Default) ? KnomeTime.Now : null
         };
 
         await _repo.AddMemberAsync(newMember);
@@ -383,7 +385,7 @@ public class CommunityService : ICommunityService
             throw new NotFoundException($"User ID {targetUserId} is not a member or applicant of this community.");
 
         member.Status = dto.Status;
-        member.DecidedDate = DateTime.UtcNow;
+        member.DecidedDate = KnomeTime.Now;
 
         if (dto.Status == CommunityMemberStatuses.Banned || dto.Status == CommunityMemberStatuses.Rejected)
         {
@@ -514,8 +516,8 @@ public class CommunityService : ICommunityService
             ContentText = dto.ContentText,
             AudienceType = PostAudiences.Community,
             Status = PostStatuses.Published,
-            PublishedDate = DateTime.UtcNow,
-            CreatedDate = DateTime.UtcNow
+            PublishedDate = KnomeTime.Now,
+            CreatedDate = KnomeTime.Now
         };
 
         post = await _postRepo.AddPostAsync(post, dto.AttachmentUrls, dto.AttachmentTypes, new List<int>());
@@ -557,7 +559,7 @@ public class CommunityService : ICommunityService
             AuthorProfilePhotoUrl = author?.ProfilePhotoUrl,
             ContentText = post.ContentText,
             AttachmentUrls = dto.AttachmentUrls,
-            PublishedDate = post.PublishedDate ?? DateTime.UtcNow,
+            PublishedDate = post.PublishedDate ?? KnomeTime.Now,
             IsPinned = false,
             EngagementSummary = summary
         };

@@ -30,8 +30,8 @@ public class PostRepository : IPostRepository
 
     public async Task<List<Post>> GetPostsAsync(string? audienceType, string? search, int pageNumber, int pageSize, int currentUserId = 0)
     {
-        var nowUtc = DateTime.UtcNow;
-        var retentionCutoff = nowUtc.AddMonths(-6);
+        var nowIst = Knome.API.Common.KnomeTime.Now;
+        var retentionCutoff = nowIst.AddMonths(-6);
 
         // Auto-transition any due scheduled posts
         try
@@ -79,9 +79,9 @@ public class PostRepository : IPostRepository
 
     public async Task<int> PublishDueScheduledPostsAsync()
     {
-        var nowUtc = DateTime.UtcNow;
+        var nowIst = Knome.API.Common.KnomeTime.Now;
         var duePosts = await _db.Posts
-            .Where(p => p.Status == "Scheduled" && (p.ScheduledDate == null || p.ScheduledDate <= nowUtc))
+            .Where(p => p.Status == "Scheduled" && (p.ScheduledDate == null || p.ScheduledDate <= nowIst))
             .ToListAsync();
 
         if (!duePosts.Any()) return 0;
@@ -89,7 +89,7 @@ public class PostRepository : IPostRepository
         foreach (var post in duePosts)
         {
             post.Status = "Published";
-            post.PublishedDate = post.ScheduledDate ?? nowUtc;
+            post.PublishedDate = post.ScheduledDate ?? nowIst;
         }
 
         return await _db.SaveChangesAsync();
@@ -123,7 +123,7 @@ public class PostRepository : IPostRepository
                 PostId = post.PostId,
                 FileUrl = url,
                 FileType = type,
-                PublishedDate = DateTime.UtcNow
+                PublishedDate = Knome.API.Common.KnomeTime.Now
             });
         }
 
@@ -157,7 +157,7 @@ public class PostRepository : IPostRepository
                 PostId = post.PostId,
                 FileUrl = url,
                 FileType = type,
-                PublishedDate = DateTime.UtcNow
+                PublishedDate = Knome.API.Common.KnomeTime.Now
             });
         }
 

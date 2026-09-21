@@ -9,7 +9,7 @@ public class SuspendUserValidator : AbstractValidator<SuspendUserDto>
     public SuspendUserValidator()
     {
         RuleFor(x => x)
-            .Must(x => x.IsPermanent || (x.SuspendedUntil.HasValue && x.SuspendedUntil > DateTime.UtcNow))
+            .Must(x => x.IsPermanent || (x.SuspendedUntil.HasValue && x.SuspendedUntil > Knome.API.Common.KnomeTime.Now))
             .WithMessage("Must specify either IsPermanent = true OR a future SuspendedUntil timestamp.");
 
         RuleFor(x => x.Reason)

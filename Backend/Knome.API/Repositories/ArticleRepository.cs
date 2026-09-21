@@ -32,7 +32,7 @@ public class ArticleRepository : IArticleRepository
 
     public async Task<List<Article>> GetArticlesAsync(int? categoryId, string? tag, string? status, string? search, int pageNumber, int pageSize, int currentUserId = 0)
     {
-        var nowUtc = DateTime.UtcNow;
+        var nowIst = Knome.API.Common.KnomeTime.Now;
 
         // Auto-transition any due scheduled articles
         try
@@ -90,9 +90,9 @@ public class ArticleRepository : IArticleRepository
 
     public async Task<int> PublishDueScheduledArticlesAsync()
     {
-        var nowUtc = DateTime.UtcNow;
+        var nowIst = Knome.API.Common.KnomeTime.Now;
         var dueArticles = await _db.Articles
-            .Where(a => a.Status == "Scheduled" && (a.ScheduledDate == null || a.ScheduledDate <= nowUtc))
+            .Where(a => a.Status == "Scheduled" && (a.ScheduledDate == null || a.ScheduledDate <= nowIst))
             .ToListAsync();
 
         if (!dueArticles.Any()) return 0;
@@ -100,7 +100,7 @@ public class ArticleRepository : IArticleRepository
         foreach (var article in dueArticles)
         {
             article.Status = "Published";
-            article.PublishedDate = article.ScheduledDate ?? nowUtc;
+            article.PublishedDate = article.ScheduledDate ?? nowIst;
         }
 
         return await _db.SaveChangesAsync();
@@ -141,7 +141,7 @@ public class ArticleRepository : IArticleRepository
                 ArticleId = article.ArticleId, 
                 FileUrl = url, 
                 FileType = "File", 
-                PublishedDate = DateTime.UtcNow 
+                PublishedDate = Knome.API.Common.KnomeTime.Now 
             });
         }
 

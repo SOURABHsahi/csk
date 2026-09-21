@@ -36,7 +36,7 @@ public class AuditLogService : IAuditLogService
             TargetId = targetId,
             Reason = reason,
             Ipaddress = ipAddress,
-            Timestamp = DateTime.UtcNow
+            Timestamp = Knome.API.Common.KnomeTime.Now
         });
     }
 

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using AutoMapper;
+using Knome.API.Common;
 using Knome.API.Constants;
 using Knome.API.Data;
 using Knome.API.DTOs.Interactions;
@@ -219,7 +220,7 @@ public class ContentInteractionService : IContentInteractionService
             ParentCommentId = dto.ParentCommentId,
             CommentText = dto.CommentText,
             ImageUrl = dto.ImageUrl,
-            CreatedDate = DateTime.UtcNow
+            CreatedDate = KnomeTime.Now
         };
 
         var saved = await _repo.AddCommentAsync(comment);
@@ -411,7 +412,7 @@ public class ContentInteractionService : IContentInteractionService
             {
                 // Different reaction -> update type
                 existing.ReactionType = dto.ReactionType ?? string.Empty;
-                existing.CreatedDate = DateTime.UtcNow;
+                existing.CreatedDate = KnomeTime.Now;
                 await _repo.UpdateReactionAsync(existing);
             }
         }
@@ -424,7 +425,7 @@ public class ContentInteractionService : IContentInteractionService
                 ContentId = contentId,
                 UserId = userId,
                 ReactionType = dto.ReactionType ?? string.Empty,
-                CreatedDate = DateTime.UtcNow
+                CreatedDate = KnomeTime.Now
             };
             await _repo.AddReactionAsync(reaction);
 
@@ -546,7 +547,7 @@ public class ContentInteractionService : IContentInteractionService
             UserId = userId,
             SharedToType = dto.SharedToType,
             SharedToId = dto.SharedToId,
-            CreatedDate = DateTime.UtcNow
+            CreatedDate = KnomeTime.Now
         };
 
         var saved = await _repo.AddShareAsync(share);
@@ -680,7 +681,7 @@ public class ContentInteractionService : IContentInteractionService
                 UserId = userId,
                 ContentType = contentType,
                 ContentId = contentId,
-                SavedDate = DateTime.UtcNow
+                SavedDate = KnomeTime.Now
             };
 
             await _repo.AddBookmarkAsync(bookmark);
@@ -695,7 +696,7 @@ public class ContentInteractionService : IContentInteractionService
                 contentType,
                 contentId,
                 isBookmarked,
-                savedDate = DateTime.UtcNow
+                savedDate = KnomeTime.Now
             });
         }
         catch
@@ -867,7 +868,7 @@ public class ContentInteractionService : IContentInteractionService
             ContentId = contentId,
             ReasonCode = dto.ReasonCode,
             Status = ReportStatuses.Pending,
-            ReportedDate = DateTime.UtcNow
+            ReportedDate = KnomeTime.Now
         };
 
         var saved = await _repo.AddReportAsync(report);
@@ -898,7 +899,7 @@ public class ContentInteractionService : IContentInteractionService
         report.ActionTaken = !string.IsNullOrEmpty(dto.ActionTaken) && dto.ActionTaken.Length > 40
             ? dto.ActionTaken.Substring(0, 40)
             : dto.ActionTaken;
-        report.ActionDate = DateTime.UtcNow;
+        report.ActionDate = KnomeTime.Now;
 
         await _repo.UpdateReportAsync(report);
         var enriched = await EnrichReportsAsync(new List<ModerationReport> { report });

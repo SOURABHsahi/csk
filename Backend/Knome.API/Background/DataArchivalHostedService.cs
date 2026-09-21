@@ -52,7 +52,7 @@ public class DataArchivalHostedService : BackgroundService
     {
         try
         {
-            _logger.LogInformation("DataArchival: starting scheduled database archival cycle at {Time}", DateTime.UtcNow);
+            _logger.LogInformation("DataArchival: starting scheduled database archival cycle at {Time}", Knome.API.Common.KnomeTime.Now);
 
             using var scope = _scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<KnomeDbContext>();
@@ -61,7 +61,7 @@ public class DataArchivalHostedService : BackgroundService
             dbContext.Database.SetCommandTimeout(300);
             await dbContext.Database.ExecuteSqlRawAsync("EXEC dbo.sp_ArchiveKnomeData;", stoppingToken);
 
-            _logger.LogInformation("DataArchival: completed scheduled database archival cycle successfully at {Time}", DateTime.UtcNow);
+            _logger.LogInformation("DataArchival: completed scheduled database archival cycle successfully at {Time}", Knome.API.Common.KnomeTime.Now);
         }
         catch (Exception ex)
         {
@@ -97,7 +97,7 @@ public class DataArchivalHostedService : BackgroundService
                 Directory.CreateDirectory(archiveLogsPath);
             }
 
-            var cutoff = DateTime.UtcNow.AddDays(-retentionDays);
+            var cutoff = Knome.API.Common.KnomeTime.Now.AddDays(-retentionDays);
             var oldLogFiles = Directory.GetFiles(sourceLogsPath, "knome-*.log")
                 .Select(f => new FileInfo(f))
                 .Where(f => f.LastWriteTimeUtc < cutoff)

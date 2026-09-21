@@ -39,7 +39,7 @@ public class KarmaRepository : IKarmaRepository
                 UserId = userId,
                 TotalPoints = 0,
                 BadgeLevel = BadgeLevels.Bronze,
-                LastUpdated = DateTime.UtcNow
+                LastUpdated = Knome.API.Common.KnomeTime.Now
             };
             _db.KarmaBalances.Add(balance);
             await _db.SaveChangesAsync();

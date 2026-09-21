@@ -961,9 +961,9 @@ export const parseLaptopDate = (dateInput) => {
     let s = dateInput.trim();
     if (!s) return null;
 
-    // If format like "YYYY-MM-DDTHH:mm:ss" or "YYYY-MM-DD HH:mm:ss.fff" without timezone indicator ('Z', '+', '-')
-    if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(s)) {
-        s = s.replace(' ', 'T') + 'Z';
+    // Standardize SQL Server space separator "YYYY-MM-DD HH:mm:ss" to ISO "YYYY-MM-DDTHH:mm:ss"
+    if (/^\d{4}-\d{2}-\d{2}[ ]\d{2}:\d{2}/.test(s)) {
+        s = s.replace(' ', 'T');
     }
     const d = new Date(s);
     return isNaN(d.getTime()) ? null : d;

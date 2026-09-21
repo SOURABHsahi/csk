@@ -152,7 +152,7 @@ public class SearchRepository : ISearchRepository
 
     public async Task<List<string>> GetTrendingSearchesAsync(int count = 10)
     {
-        var dateLimit = DateTime.UtcNow.AddDays(-30);
+        var dateLimit = Knome.API.Common.KnomeTime.Now.AddDays(-30);
         var trending = await _context.SearchHistories
             .Where(h => h.SearchedDate >= dateLimit && !string.IsNullOrWhiteSpace(h.SearchTerm))
             .GroupBy(h => h.SearchTerm.Trim().ToLower())

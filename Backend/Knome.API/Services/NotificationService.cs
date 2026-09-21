@@ -54,7 +54,7 @@ public class NotificationService : INotificationService
                 RelatedContentType = relatedContentType,
                 RelatedContentId = relatedContentId,
                 IsRead = false,
-                CreatedDate = DateTime.UtcNow
+                CreatedDate = Knome.API.Common.KnomeTime.Now
             };
 
             var saved = await _repository.AddAsync(notification);
@@ -86,7 +86,7 @@ public class NotificationService : INotificationService
         if (eligible.Count == 0)
             return;
 
-        var now = DateTime.UtcNow;
+        var now = Knome.API.Common.KnomeTime.Now;
         var notifications = eligible.Select(userId => new Notification
         {
             UserId = userId,

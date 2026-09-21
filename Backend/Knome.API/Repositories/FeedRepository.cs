@@ -41,7 +41,7 @@ public class FeedRepository : IFeedRepository
             .Select(cp => cp.PostId)
             .ToListAsync();
 
-        var retentionCutoff = System.DateTime.UtcNow.AddMonths(-6);
+        var retentionCutoff = Knome.API.Common.KnomeTime.Now.AddMonths(-6);
 
         return await _db.Posts
             .Include(p => p.AuthorUser)

@@ -31,7 +31,7 @@ public class JobRepository : IJobRepository
 
     public async Task<PagedResultDto<JobDto>> GetPagedAsync(int? departmentId, string? status, string? search, string? location, string? skills, bool includeExpired, int pageNumber, int pageSize)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = Knome.API.Common.KnomeTime.Today;
         var query = _db.Jobs
             .Include(j => j.Department)
             .Include(j => j.PostedByUser)
@@ -91,7 +91,7 @@ public class JobRepository : IJobRepository
             ClosingDate = dto.ClosingDate,
             ApplicationLink = dto.ApplicationLink,
             PostedByUserId = postedByUserId,
-            PostedDate = DateTime.UtcNow,
+            PostedDate = Knome.API.Common.KnomeTime.Now,
             Status = dto.Status
         };
 

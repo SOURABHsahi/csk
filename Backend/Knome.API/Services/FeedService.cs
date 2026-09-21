@@ -208,7 +208,7 @@ public class FeedService : IFeedService
         if (top <= 0 || top > 50) top = 10;
 
         int windowHours = FeedWindows.GetHours(window);
-        var cutoff = DateTime.UtcNow.AddHours(-windowHours);
+        var cutoff = Knome.API.Common.KnomeTime.Now.AddHours(-windowHours);
 
         var allRecentItems = new List<FeedItemDto>();
 
@@ -218,7 +218,7 @@ public class FeedService : IFeedService
         {
             var summary = await _interactionService.GetContentSummaryAsync(ContentTypes.Post, p.PostId, currentUserId);
             var score = ComputeHotScore(summary.EngagementScore, p.CreatedDate);
-            await _repo.UpdateOrAddHotScoreCacheAsync(new HotPostsScoreCache { ContentType = ContentTypes.Post, ContentId = p.PostId, Window = window, Score = score, CalculatedAt = DateTime.UtcNow });
+            await _repo.UpdateOrAddHotScoreCacheAsync(new HotPostsScoreCache { ContentType = ContentTypes.Post, ContentId = p.PostId, Window = window, Score = score, CalculatedAt = Knome.API.Common.KnomeTime.Now });
 
             allRecentItems.Add(new FeedItemDto
             {
@@ -256,7 +256,7 @@ public class FeedService : IFeedService
             var summary = await _interactionService.GetContentSummaryAsync(ContentTypes.Article, a.ArticleId, currentUserId);
             var pubDate = a.PublishedDate ?? a.CreatedDate;
             var score = ComputeHotScore(summary.EngagementScore, pubDate);
-            await _repo.UpdateOrAddHotScoreCacheAsync(new HotPostsScoreCache { ContentType = ContentTypes.Article, ContentId = a.ArticleId, Window = window, Score = score, CalculatedAt = DateTime.UtcNow });
+            await _repo.UpdateOrAddHotScoreCacheAsync(new HotPostsScoreCache { ContentType = ContentTypes.Article, ContentId = a.ArticleId, Window = window, Score = score, CalculatedAt = Knome.API.Common.KnomeTime.Now });
 
             allRecentItems.Add(new FeedItemDto
             {
@@ -311,7 +311,7 @@ public class FeedService : IFeedService
 
     private decimal ComputeHotScore(long engagementScore, DateTime publishedDate)
     {
-        double ageInHours = (DateTime.UtcNow - publishedDate).TotalHours;
+        double ageInHours = (Knome.API.Common.KnomeTime.Now - publishedDate).TotalHours;
         if (ageInHours < 0) ageInHours = 0;
         double denominator = Math.Pow(ageInHours + 2.0, 1.5);
         if (denominator == 0) denominator = 1.0;

@@ -84,12 +84,12 @@ public class AuthService : IAuthService
                 UserId = user.UserId,
                 PasswordHash = defaultHash,
                 PasswordSalt = string.Empty,
-                LastUpdated = DateTime.UtcNow
+                LastUpdated = Knome.API.Common.KnomeTime.Now
             };
             await _db.SaveChangesAsync();
         }
 
-        if (user.IsPermanentlySuspended || (user.SuspendedUntil.HasValue && user.SuspendedUntil > DateTime.UtcNow))
+        if (user.IsPermanentlySuspended || (user.SuspendedUntil.HasValue && user.SuspendedUntil > Knome.API.Common.KnomeTime.Now))
             throw new BadRequestException("Your account is suspended by system admin.");
 
         if (!user.IsActive)
@@ -271,7 +271,7 @@ public class AuthService : IAuthService
         if (user is null)
             throw new NotFoundException("User not found.");
 
-        if (user.IsPermanentlySuspended || (user.SuspendedUntil.HasValue && user.SuspendedUntil > DateTime.UtcNow) || !user.IsActive)
+        if (user.IsPermanentlySuspended || (user.SuspendedUntil.HasValue && user.SuspendedUntil > Knome.API.Common.KnomeTime.Now) || !user.IsActive)
             throw new ForbiddenException("Your account is suspended by system admin.");
 
         var roles = user.Roles.Select(r => r.RoleName).ToList();
@@ -301,7 +301,7 @@ public class AuthService : IAuthService
         if (user is null)
             throw new NotFoundException("User not found.");
 
-        if (user.IsPermanentlySuspended || (user.SuspendedUntil.HasValue && user.SuspendedUntil > DateTime.UtcNow) || !user.IsActive)
+        if (user.IsPermanentlySuspended || (user.SuspendedUntil.HasValue && user.SuspendedUntil > Knome.API.Common.KnomeTime.Now) || !user.IsActive)
             throw new ForbiddenException("Your account is suspended by system admin.");
 
         var roles = user.Roles.Select(r => r.RoleName).ToList();

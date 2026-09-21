@@ -69,11 +69,11 @@ public class UserRepository : Repository<Models.User>, IUserRepository
         {
             if (filter.IsSuspended.Value)
             {
-                query = query.Where(u => u.IsPermanentlySuspended || (u.SuspendedUntil.HasValue && u.SuspendedUntil > DateTime.UtcNow));
+                query = query.Where(u => u.IsPermanentlySuspended || (u.SuspendedUntil.HasValue && u.SuspendedUntil > Knome.API.Common.KnomeTime.Now));
             }
             else
             {
-                query = query.Where(u => !u.IsPermanentlySuspended && (!u.SuspendedUntil.HasValue || u.SuspendedUntil <= DateTime.UtcNow));
+                query = query.Where(u => !u.IsPermanentlySuspended && (!u.SuspendedUntil.HasValue || u.SuspendedUntil <= Knome.API.Common.KnomeTime.Now));
             }
         }
 
@@ -302,7 +302,7 @@ public class UserRepository : Repository<Models.User>, IUserRepository
 
     public async Task UpdateConnectionRequestAsync(Models.ConnectionRequest request)
     {
-        request.UpdatedDate = System.DateTime.UtcNow;
+        request.UpdatedDate = Knome.API.Common.KnomeTime.Now;
         _db.ConnectionRequests.Update(request);
         await _db.SaveChangesAsync();
     }

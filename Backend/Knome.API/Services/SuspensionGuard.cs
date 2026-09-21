@@ -24,7 +24,7 @@ public class SuspensionGuard : ISuspensionGuard
     public bool IsSuspended(User user)
     {
         return user.IsPermanentlySuspended
-            || (user.SuspendedUntil.HasValue && user.SuspendedUntil > DateTime.UtcNow);
+            || (user.SuspendedUntil.HasValue && user.SuspendedUntil > Knome.API.Common.KnomeTime.Now);
     }
 
     public void EnsureNotSuspended(User user)

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AutoMapper;
+using Knome.API.Common;
 using Knome.API.Constants;
 using Knome.API.Data;
 using Knome.API.DTOs.Articles;
@@ -10,6 +11,7 @@ using Knome.API.DTOs.Categories;
 using Knome.API.Exceptions;
 using Knome.API.Interfaces;
 using Knome.API.Models;
+using Knome.API.Repositories;
 using Microsoft.EntityFrameworkCore;
 
 namespace Knome.API.Services;
@@ -131,12 +133,9 @@ public class ArticleService : IArticleService
             scheduledDate = dto.ScheduledDate.Value;
         }
 
-        var scheduledUtc = scheduledDate.HasValue 
-            ? (scheduledDate.Value.Kind == DateTimeKind.Utc ? scheduledDate.Value : scheduledDate.Value.ToUniversalTime()) 
-            : (DateTime?)null;
-        var isAlreadyDue = scheduledUtc.HasValue && scheduledUtc.Value <= DateTime.UtcNow;
+        var isAlreadyDue = scheduledDate.HasValue && scheduledDate.Value <= KnomeTime.Now;
         var finalStatus = isAlreadyDue ? ArticleStatuses.Published : (string.IsNullOrEmpty(dto.Status) ? ArticleStatuses.Published : dto.Status);
-        var publishedDate = finalStatus == ArticleStatuses.Published ? (scheduledDate ?? DateTime.UtcNow) : (DateTime?)null;
+        var publishedDate = finalStatus == ArticleStatuses.Published ? (scheduledDate ?? KnomeTime.Now) : (DateTime?)null;
 
         var article = new Article
         {
@@ -148,7 +147,7 @@ public class ArticleService : IArticleService
             Status = finalStatus,
             ScheduledDate = scheduledDate,
             PublishedDate = publishedDate,
-            CreatedDate = DateTime.UtcNow,
+            CreatedDate = KnomeTime.Now,
             AvgReadTimeSeconds = CalculateAvgReadTimeSeconds(dto.ContentHtml),
             ViewCount = 0,
             UniqueReadCount = 0
@@ -158,7 +157,7 @@ public class ArticleService : IArticleService
         {
             ContentHtml = dto.ContentHtml,
             EditedByUserId = currentUserId,
-            EditedDate = DateTime.UtcNow
+            EditedDate = KnomeTime.Now
         };
 
         var saved = await _repo.AddArticleAsync(article, dto.Tags, dto.AttachmentUrls, initialVersion);
@@ -188,7 +187,7 @@ public class ArticleService : IArticleService
             {
                 ContentHtml = dto.ContentHtml,
                 EditedByUserId = currentUserId,
-                EditedDate = DateTime.UtcNow
+                EditedDate = KnomeTime.Now
             };
         }
 
@@ -204,13 +203,12 @@ public class ArticleService : IArticleService
 
         if (dto.Status == ArticleStatuses.Scheduled && dto.ScheduledDate.HasValue)
         {
-            var scheduledUtc = dto.ScheduledDate.Value.Kind == DateTimeKind.Utc ? dto.ScheduledDate.Value : dto.ScheduledDate.Value.ToUniversalTime();
-            var isAlreadyDue = scheduledUtc <= DateTime.UtcNow;
+            var isAlreadyDue = dto.ScheduledDate.Value <= KnomeTime.Now;
             if (isAlreadyDue)
             {
                 article.Status = ArticleStatuses.Published;
                 article.ScheduledDate = dto.ScheduledDate;
-                article.PublishedDate = dto.ScheduledDate ?? DateTime.UtcNow;
+                article.PublishedDate = dto.ScheduledDate ?? KnomeTime.Now;
             }
             else
             {
@@ -223,7 +221,7 @@ public class ArticleService : IArticleService
             article.Status = dto.Status;
             article.ScheduledDate = dto.ScheduledDate;
             if (dto.Status == ArticleStatuses.Published && article.PublishedDate == null)
-                article.PublishedDate = DateTime.UtcNow;
+                article.PublishedDate = KnomeTime.Now;
         }
         article.AvgReadTimeSeconds = CalculateAvgReadTimeSeconds(dto.ContentHtml);
 

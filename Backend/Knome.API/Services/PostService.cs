@@ -6,9 +6,11 @@ using AutoMapper;
 using Knome.API.Constants;
 using Knome.API.Data;
 using Knome.API.DTOs.Posts;
+using Knome.API.Models;
+using Knome.API.Repositories;
+using Knome.API.Common;
 using Knome.API.Exceptions;
 using Knome.API.Interfaces;
-using Knome.API.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace Knome.API.Services;
@@ -119,13 +121,10 @@ public class PostService : IPostService
             scheduledDate = dto.ScheduledDate.Value;
         }
 
-        // Check if scheduled time has already arrived or is past (comparing UTC timestamps)
-        var scheduledUtc = scheduledDate.HasValue 
-            ? (scheduledDate.Value.Kind == DateTimeKind.Utc ? scheduledDate.Value : scheduledDate.Value.ToUniversalTime()) 
-            : (DateTime?)null;
-        var isAlreadyDue = scheduledUtc.HasValue && scheduledUtc.Value <= DateTime.UtcNow;
+        // Check if scheduled time has already arrived or is past (comparing IST timestamps)
+        var isAlreadyDue = scheduledDate.HasValue && scheduledDate.Value <= KnomeTime.Now;
         var finalStatus = isAlreadyDue ? PostStatuses.Published : (string.IsNullOrEmpty(dto.Status) ? PostStatuses.Published : dto.Status);
-        var publishedDate = finalStatus == PostStatuses.Published ? (scheduledDate ?? DateTime.UtcNow) : (DateTime?)null;
+        var publishedDate = finalStatus == PostStatuses.Published ? (scheduledDate ?? KnomeTime.Now) : (DateTime?)null;
 
         var post = new Post
         {
@@ -135,7 +134,7 @@ public class PostService : IPostService
             Status = finalStatus,
             ScheduledDate = scheduledDate,
             PublishedDate = publishedDate,
-            CreatedDate = DateTime.UtcNow
+            CreatedDate = KnomeTime.Now
         };
 
         var allTargetedUserIds = (dto.MentionedUserIds ?? new List<int>())
@@ -277,13 +276,12 @@ public class PostService : IPostService
 
         if (dto.Status == PostStatuses.Scheduled && dto.ScheduledDate.HasValue)
         {
-            var scheduledUtc = dto.ScheduledDate.Value.Kind == DateTimeKind.Utc ? dto.ScheduledDate.Value : dto.ScheduledDate.Value.ToUniversalTime();
-            var isAlreadyDue = scheduledUtc <= DateTime.UtcNow;
+            var isAlreadyDue = dto.ScheduledDate.Value <= KnomeTime.Now;
             if (isAlreadyDue)
             {
                 post.Status = PostStatuses.Published;
                 post.ScheduledDate = dto.ScheduledDate;
-                post.PublishedDate = dto.ScheduledDate ?? DateTime.UtcNow;
+                post.PublishedDate = dto.ScheduledDate ?? KnomeTime.Now;
             }
             else
             {
@@ -296,7 +294,7 @@ public class PostService : IPostService
             post.Status = dto.Status;
             post.ScheduledDate = dto.ScheduledDate;
             if (dto.Status == PostStatuses.Published && post.PublishedDate == null)
-                post.PublishedDate = DateTime.UtcNow;
+                post.PublishedDate = KnomeTime.Now;
         }
         
         await _repo.UpdatePostAsync(post, dto.AttachmentUrls, dto.AttachmentTypes, dto.MentionedUserIds);

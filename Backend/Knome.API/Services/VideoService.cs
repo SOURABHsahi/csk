@@ -139,7 +139,7 @@ public class VideoService : IVideoService
             SourceUrl = dto.SourceUrl ?? string.Empty,
             FileSizeMb = dto.FileSizeMb,
             ViewCount = 0,
-            UploadedDate = DateTime.UtcNow
+            UploadedDate = Knome.API.Common.KnomeTime.Now
         };
 
         var saved = await _repo.AddVideoAsync(video, dto.Tags);

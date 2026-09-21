@@ -224,7 +224,7 @@ public class PodcastService : IPodcastService
             CategoryId = dto.CategoryId,
             SeriesId = dto.SeriesId,
             FileSizeMb = dto.FileSizeMb,
-            UploadedDate = DateTime.UtcNow
+            UploadedDate = Knome.API.Common.KnomeTime.Now
         };
 
         var saved = await _repo.AddPodcastAsync(podcast);

@@ -33,7 +33,7 @@ public class JobService : IJobService
 
     public async Task<int> CloseExpiredJobsAsync()
     {
-        return await _repository.CloseExpiredJobsAsync(DateOnly.FromDateTime(DateTime.UtcNow));
+        return await _repository.CloseExpiredJobsAsync(Knome.API.Common.KnomeTime.Today);
     }
 
     public async Task<JobDto> CreateAsync(CreateJobDto dto, int postedByUserId)

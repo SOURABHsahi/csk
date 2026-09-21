@@ -37,7 +37,7 @@ public class NotificationRepository : INotificationRepository
 
     public async Task<List<Notification>> GetForUserAsync(int userId, bool unreadOnly, int skip, int take)
     {
-        var cutoff = System.DateTime.UtcNow.AddMonths(-3);
+        var cutoff = Knome.API.Common.KnomeTime.Now.AddMonths(-3);
         var query = _db.Notifications.Where(n => n.UserId == userId && n.CreatedDate >= cutoff);
         if (unreadOnly)
             query = query.Where(n => !n.IsRead);
@@ -51,7 +51,7 @@ public class NotificationRepository : INotificationRepository
 
     public async Task<int> CountForUserAsync(int userId, bool unreadOnly)
     {
-        var cutoff = System.DateTime.UtcNow.AddMonths(-3);
+        var cutoff = Knome.API.Common.KnomeTime.Now.AddMonths(-3);
         var query = _db.Notifications.Where(n => n.UserId == userId && n.CreatedDate >= cutoff);
         if (unreadOnly)
             query = query.Where(n => !n.IsRead);

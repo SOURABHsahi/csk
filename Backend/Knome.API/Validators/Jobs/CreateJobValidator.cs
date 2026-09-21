@@ -28,7 +28,7 @@ public class CreateJobValidator : AbstractValidator<CreateJobDto>
             .MaximumLength(400).WithMessage("Application link must not exceed 400 characters.");
 
         RuleFor(x => x.ClosingDate)
-            .Must(d => d >= DateOnly.FromDateTime(System.DateTime.UtcNow))
+            .Must(d => d >= Knome.API.Common.KnomeTime.Today)
             .WithMessage("Closing date must be today or in the future.");
 
         RuleFor(x => x.Status)

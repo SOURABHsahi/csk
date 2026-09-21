@@ -128,7 +128,7 @@ public class UserService : IUserService
         user.NetworkVisibility = dto.NetworkVisibility;
         user.PhotosVisibility = dto.PhotosVisibility;
         user.InterestsVisibility = dto.InterestsVisibility;
-        user.ModifiedDate = DateTime.UtcNow;
+        user.ModifiedDate = Knome.API.Common.KnomeTime.Now;
 
         _userRepo.Update(user);
         await _userRepo.SaveChangesAsync();
@@ -154,7 +154,7 @@ public class UserService : IUserService
 
         user.Bio = dto.Bio;
         user.BioVisibility = dto.BioVisibility;
-        user.ModifiedDate = DateTime.UtcNow;
+        user.ModifiedDate = Knome.API.Common.KnomeTime.Now;
 
         _userRepo.Update(user);
         await _userRepo.SaveChangesAsync();
@@ -170,7 +170,7 @@ public class UserService : IUserService
 
         await _userRepo.UpdateUserSkillsAsync(userId, dto.Skills);
 
-        user.ModifiedDate = DateTime.UtcNow;
+        user.ModifiedDate = Knome.API.Common.KnomeTime.Now;
         _userRepo.Update(user);
         await _userRepo.SaveChangesAsync();
 
@@ -191,7 +191,7 @@ public class UserService : IUserService
         }
 
         user.ProfilePhotoUrl = newImageUrl;
-        user.ModifiedDate = DateTime.UtcNow;
+        user.ModifiedDate = Knome.API.Common.KnomeTime.Now;
 
         _userRepo.Update(user);
         await _userRepo.SaveChangesAsync();
@@ -223,7 +223,7 @@ public class UserService : IUserService
             throw new NotFoundException($"User with ID {userId} not found.");
 
         user.DepartmentId = dto.DepartmentId;
-        user.ModifiedDate = DateTime.UtcNow;
+        user.ModifiedDate = Knome.API.Common.KnomeTime.Now;
 
         _userRepo.Update(user);
         await _userRepo.SaveChangesAsync();
@@ -239,7 +239,7 @@ public class UserService : IUserService
         if (user == null)
             throw new NotFoundException($"User with ID {userId} not found.");
 
-        user.ModifiedDate = DateTime.UtcNow;
+        user.ModifiedDate = Knome.API.Common.KnomeTime.Now;
         _userRepo.Update(user);
         await _userRepo.SaveChangesAsync();
 
@@ -322,7 +322,7 @@ public class UserService : IUserService
         user.IsActive = true;
         user.IsPermanentlySuspended = false;
         user.SuspendedUntil = null;
-        user.ModifiedDate = DateTime.UtcNow;
+        user.ModifiedDate = Knome.API.Common.KnomeTime.Now;
 
         _userRepo.Update(user);
         await _userRepo.SaveChangesAsync();
@@ -351,7 +351,7 @@ public class UserService : IUserService
             user.IsActive = false;
         }
 
-        user.ModifiedDate = DateTime.UtcNow;
+        user.ModifiedDate = Knome.API.Common.KnomeTime.Now;
 
         _userRepo.Update(user);
         await _userRepo.SaveChangesAsync();
