@@ -58,7 +58,8 @@ public class UserService : IUserService
             (c.CreatedByUserId == targetUserId || 
              c.CommunityMembers.Any(m => m.UserId == targetUserId && (m.Status == "Approved" || m.Status == "Active")) ||
              c.Users.Any(u => u.UserId == targetUserId) ||
-             c.CommunityType == "Default"));
+             c.CommunityType == "Default" ||
+             c.CommunityType == "Org"));
 
         if (targetUserId != requestingUserId)
         {

@@ -63,6 +63,116 @@ export const resolveEmployeeName = (rawName, empId) => {
 };
 
 /**
+ * Deduplicates community members or employee rosters by employeeId, userId/id, and normalized name.
+ * Intelligently merges records to preserve the highest privilege (e.g. Admin over Member)
+ * and the most accurate designation (e.g. 'Software Developer' over generic 'Employee').
+ */
+export const deduplicateMembers = (members = [], contextUsers = []) => {
+    if (!Array.isArray(members) || members.length === 0) return [];
+
+    const seen = new Map(); // key -> member
+    const uniqueList = [];
+
+    for (const m of members) {
+        if (!m) continue;
+
+        const rawEmpId = (m.employeeId || m.empId || m.displayEmpId || '').toString().trim().toUpperCase();
+        const rawUid = (m.userId !== undefined && m.userId !== null && m.userId !== '') 
+            ? String(m.userId) 
+            : ((m.id !== undefined && m.id !== null && m.id !== '' && !isNaN(m.id)) ? String(m.id) : '');
+        const rawName = (m.fullName || m.name || m.displayName || '').toString().trim();
+        const normName = rawName.toLowerCase();
+
+        // Attempt to find existing match
+        let matchedKey = null;
+        if (rawEmpId && seen.has(`emp:${rawEmpId}`)) {
+            matchedKey = `emp:${rawEmpId}`;
+        } else if (rawUid && seen.has(`uid:${rawUid}`)) {
+            matchedKey = `uid:${rawUid}`;
+        } else if (normName && normName !== 'employee' && normName !== 'member' && !/^(emp|mpo|mp)\d+$/i.test(normName) && seen.has(`name:${normName}`)) {
+            matchedKey = `name:${normName}`;
+        }
+
+        if (matchedKey) {
+            const existing = seen.get(matchedKey);
+            const isExistingAdmin = existing.memberType === 'Admin' || existing.isCommAdmin || existing.roleName === 'Admin' || existing.memberType === 'Community Admin';
+            const isNewAdmin = m.memberType === 'Admin' || m.isCommAdmin || m.roleName === 'Admin' || m.memberType === 'Community Admin';
+            const mergedMemberType = (isExistingAdmin || isNewAdmin) ? 'Admin' : (existing.memberType || m.memberType || 'Member');
+
+            const genericDesigs = ['employee', 'member', 'user'];
+            const existingDesig = (existing.designation || existing.displayDesignation || '').toString().trim();
+            const newDesig = (m.designation || m.displayDesignation || '').toString().trim();
+            let mergedDesig = existingDesig;
+            if ((!existingDesig || genericDesigs.includes(existingDesig.toLowerCase())) && newDesig && !genericDesigs.includes(newDesig.toLowerCase())) {
+                mergedDesig = newDesig;
+            } else if (!mergedDesig && newDesig) {
+                mergedDesig = newDesig;
+            }
+
+            const existingName = (existing.fullName || existing.name || existing.displayName || '').toString().trim();
+            const newName = (m.fullName || m.name || m.displayName || '').toString().trim();
+            let mergedName = existingName;
+            if ((!existingName || existingName.toLowerCase() === 'employee' || /^(emp|mpo|mp)\d+$/i.test(existingName)) && newName) {
+                mergedName = newName;
+            }
+
+            const existingDept = (existing.department || existing.displayDepartment || '').toString().trim();
+            const newDept = (m.department || m.displayDepartment || '').toString().trim();
+            let mergedDept = existingDept;
+            if ((!existingDept || existingDept.toLowerCase() === 'mponline') && newDept && newDept.toLowerCase() !== 'mponline') {
+                mergedDept = newDept;
+            }
+
+            const merged = {
+                ...existing,
+                ...m,
+                userId: existing.userId || m.userId || existing.id || m.id,
+                id: existing.id || m.id || existing.userId || m.userId,
+                employeeId: existing.employeeId || m.employeeId || rawEmpId,
+                fullName: mergedName || existingName || newName,
+                name: mergedName || existingName || newName,
+                displayName: mergedName || existingName || newName,
+                designation: mergedDesig || existingDesig || newDesig || 'Software Developer',
+                displayDesignation: mergedDesig || existingDesig || newDesig || 'Software Developer',
+                department: mergedDept || existingDept || newDept || 'MPOnline',
+                displayDepartment: mergedDept || existingDept || newDept || 'MPOnline',
+                memberType: mergedMemberType,
+                roleName: (isExistingAdmin || isNewAdmin) ? 'Admin' : 'Member',
+                isCommAdmin: isExistingAdmin || isNewAdmin,
+                status: (existing.status === 'Approved' || m.status === 'Approved') ? 'Approved' : (existing.status || m.status),
+                profilePhotoUrl: existing.profilePhotoUrl || m.profilePhotoUrl || existing.avatar || m.avatar
+            };
+
+            // Update in uniqueList
+            const existingIdx = uniqueList.indexOf(existing);
+            if (existingIdx !== -1) {
+                uniqueList[existingIdx] = merged;
+            }
+
+            // Update lookups
+            if (rawEmpId) seen.set(`emp:${rawEmpId}`, merged);
+            if (rawUid) seen.set(`uid:${rawUid}`, merged);
+            if (normName) seen.set(`name:${normName}`, merged);
+            const exEmpId = (existing.employeeId || existing.empId || existing.displayEmpId || '').toString().trim().toUpperCase();
+            if (exEmpId) seen.set(`emp:${exEmpId}`, merged);
+            const exUid = (existing.userId || existing.id) ? String(existing.userId || existing.id) : '';
+            if (exUid) seen.set(`uid:${exUid}`, merged);
+            const exName = (existing.fullName || existing.name || '').toString().trim().toLowerCase();
+            if (exName && exName !== 'employee') seen.set(`name:${exName}`, merged);
+        } else {
+            uniqueList.push(m);
+            if (rawEmpId) seen.set(`emp:${rawEmpId}`, m);
+            if (rawUid) seen.set(`uid:${rawUid}`, m);
+            if (normName && normName !== 'employee' && normName !== 'member' && !/^(emp|mpo|mp)\d+$/i.test(normName)) {
+                seen.set(`name:${normName}`, m);
+            }
+        }
+    }
+
+    return uniqueList;
+};
+
+/**
  * Resolves user status into one of three official states:
  * - 'Active': User is enabled and not under disciplinary suspension
  * - 'Suspended': User is under active administrative or policy suspension
@@ -121,32 +231,33 @@ export const getUserStatusConfig = (statusOrUser) => {
 // Static employee roster for demo login (matches live SQL Server database roster)
 // This is the seed — the live state is managed inside UserProvider via useState.
 export const INITIAL_USERS = [
-    { id: 1, userId: 1, employeeId: 'MP0108', email: 'loveneesh.sharma@mponline.gov.in', name: 'Loveneesh Sharma', fullName: 'Loveneesh Sharma', role: 'SYSADM', roleName: 'System Administrator', designation: 'TPM', department: 'Higher Education', location: 'Bhopal HQ', avatar: null, karmaPoints: 139, karma: 139, isActive: true },
-    { id: 2, userId: 2, employeeId: 'MPO102', email: 'vishendra.sharma@mponline.gov.in', name: 'Vishendra Sharma', fullName: 'Vishendra Sharma', role: 'CADM', roleName: 'Community Administrator', designation: 'Community Experience Specialist', department: 'Employee Experience', location: 'Bhopal HQ', avatar: null, karmaPoints: 225, karma: 225, isActive: true },
-    { id: 3, userId: 3, employeeId: 'MPO103', email: 'sourabh.sahu@mponline.gov.in', name: 'Sourabh Sahu', fullName: 'Sourabh Sahu', role: 'HRADM', roleName: 'HR Administrator', designation: 'Talent Acquisition Manager', department: 'Human Resources', location: 'Bhopal HQ', avatar: null, karmaPoints: 306, karma: 306, isActive: true },
+    { id: 1, userId: 1, employeeId: 'MP0108', email: 'loveneesh.sharma@mponline.gov.in', name: 'Loveneesh Sharma', fullName: 'Loveneesh Sharma', role: 'SYSADM', roleName: 'System Admin', designation: 'TPM', department: 'Higher Education', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 2, userId: 2, employeeId: 'MPO102', email: 'vishendra.sharma@mponline.gov.in', name: 'Vishendra Sharma', fullName: 'Vishendra Sharma', role: 'CADM', roleName: 'Community Admin', designation: 'Community Experience Specialist', department: 'Employee Experience', location: 'Bhopal HQ', avatar: null, karmaPoints: 225, karma: 225, isActive: true },
+    { id: 3, userId: 3, employeeId: 'MPO103', email: 'sourabh.sahu@mponline.gov.in', name: 'Sourabh Sahu', fullName: 'Sourabh Sahu', role: 'HRADM', roleName: 'HR Admin', designation: 'Talent Acquisition Manager', department: 'Human Resources', location: 'Bhopal HQ', avatar: null, karmaPoints: 306, karma: 306, isActive: true },
     { id: 4, userId: 4, employeeId: 'MPO104', email: 'rishikesh.ugle@mponline.gov.in', name: 'Rishikesh Ugle', fullName: 'Rishikesh Ugle', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Product Design', location: 'Bhopal HQ', avatar: null, karmaPoints: 170, karma: 170, isActive: true },
     { id: 5, userId: 5, employeeId: 'MPO105', email: 'meghna.tiwari@mponline.gov.in', name: 'Meghna Tiwari', fullName: 'Meghna Tiwari', role: 'EMP', roleName: 'Employee', designation: 'Business Analyst', department: 'Product Design', location: 'Bhopal HQ', avatar: null, karmaPoints: 123, karma: 123, isActive: true },
     { id: 6, userId: 6, employeeId: 'MPO106', email: 'mayur.verma@mponline.gov.in', name: 'Mayur Verma', fullName: 'Mayur Verma', role: 'EMP', roleName: 'Employee', designation: 'UI Designer', department: 'Engineering', location: 'Bhopal HQ', avatar: null, karmaPoints: 142, karma: 142, isActive: true },
-    { id: 19, userId: 19, employeeId: 'MPO108', email: 'pooja.sharma@mponline.gov.in', name: 'Pooja Sharma', fullName: 'Pooja Sharma', role: 'HRADM', roleName: 'HR Administrator', designation: 'Frontend Engineer', department: 'Development', location: 'Bhopal HQ', avatar: null, karmaPoints: 666, karma: 666, isActive: true },
-    { id: 1034, userId: 1034, employeeId: 'MPO109', email: 'suresh.verma@mponline.gov.in', name: 'Suresh verma', fullName: 'Suresh verma', role: 'CADM', roleName: 'Community Administrator', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 17, karma: 17, isActive: true },
-    { id: 1035, userId: 1035, employeeId: 'MPO110', email: 'kabir.singh@mponline.gov.in', name: 'Kabir singh', fullName: 'Kabir singh', role: 'CADM', roleName: 'Community Administrator', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 21, karma: 21, isActive: true },
+    { id: 19, userId: 19, employeeId: 'MPO108', email: 'pooja.sharma@mponline.gov.in', name: 'Pooja Sharma', fullName: 'Pooja Sharma', role: 'HRADM', roleName: 'HR Admin', designation: 'Frontend Engineer', department: 'Development', location: 'Bhopal HQ', avatar: null, karmaPoints: 666, karma: 666, isActive: true },
+    { id: 1034, userId: 1034, employeeId: 'MPO109', email: 'suresh.verma@mponline.gov.in', name: 'Suresh verma', fullName: 'Suresh verma', role: 'CADM', roleName: 'Community Admin', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 17, karma: 17, isActive: true },
+    { id: 1035, userId: 1035, employeeId: 'MPO110', email: 'kabir.singh@mponline.gov.in', name: 'Kabir singh', fullName: 'Kabir singh', role: 'CADM', roleName: 'Community Admin', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 21, karma: 21, isActive: true },
     { id: 1036, userId: 1036, employeeId: 'MPO111', email: 'mayur.bansal@mponline.gov.in', name: 'Mayur bansal', fullName: 'Mayur bansal', role: 'EMP', roleName: 'Employee', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1037, userId: 1037, employeeId: 'MPO112', email: 'anup@mponline.gov.in', name: 'Anup', fullName: 'Anup', role: 'EMP', roleName: 'Employee', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
-    { id: 1039, userId: 1039, employeeId: 'MPO113', email: 'mahesh.sharma@mponline.gov.in', name: 'Mahesh sharma', fullName: 'Mahesh sharma', role: 'HRADM', roleName: 'HR Administrator', designation: 'Hr', department: 'Human Resources', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1039, userId: 1039, employeeId: 'MPO113', email: 'mahesh.sharma@mponline.gov.in', name: 'Mahesh sharma', fullName: 'Mahesh sharma', role: 'HRADM', roleName: 'HR Admin', designation: 'Hr', department: 'Human Resources', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1041, userId: 1041, employeeId: 'MPO114', email: 'ramesh.sharma@mponline.gov.in', name: 'Ramesh sharma', fullName: 'Ramesh sharma', role: 'EMP', roleName: 'Employee', designation: 'software developer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
-    { id: 1043, userId: 1043, employeeId: 'MPO115', email: 'aishwary@mponline.gov.in', name: 'Aishwary', fullName: 'Aishwary', role: 'CADM', roleName: 'Community Administrator', designation: 'Software Engineer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
-    { id: 1047, userId: 1047, employeeId: 'MPO116', email: 'meghna@mponline.gov.in', name: 'Meghna', fullName: 'Meghna', role: 'HRADM', roleName: 'HR Administrator', designation: 'Software Engineer', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
-    { id: 1050, userId: 1050, employeeId: 'MPO089', email: 'vilash.deshmukh@mponline.gov.in', name: 'Vilash Deshmukh', fullName: 'Vilash Deshmukh', role: 'SYSADM', roleName: 'System Administrator', designation: 'Associate Consultant', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
-    { id: 1052, userId: 1052, employeeId: 'MPO118', email: 'raman.kumar@mponline.gov.in', name: 'Raman Kumar', fullName: 'Raman Kumar', role: 'CADM', roleName: 'Community Administrator', designation: 'Software Engineer', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
-    { id: 1053, userId: 1053, employeeId: 'MPO119', email: 'rishabh.pandey@mponline.gov.in', name: 'Rishabh Pandey', fullName: 'Rishabh Pandey', role: 'CADM', roleName: 'Community Administrator', designation: 'Software Engineer', department: 'Information Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
-    { id: 1054, userId: 1054, employeeId: 'MPO120', email: 'krisha.dabhi@mponline.gov.in', name: 'krisha dabhi', fullName: 'krisha dabhi', role: 'CADM', roleName: 'Community Administrator', designation: 'Software Engineer', department: 'Information Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1043, userId: 1043, employeeId: 'MPO115', email: 'aishwary@mponline.gov.in', name: 'Aishwary', fullName: 'Aishwary', role: 'CADM', roleName: 'Community Admin', designation: 'Software Engineer', department: 'Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1047, userId: 1047, employeeId: 'MPO116', email: 'meghna@mponline.gov.in', name: 'Meghna', fullName: 'Meghna', role: 'HRADM', roleName: 'HR Admin', designation: 'Software Engineer', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1050, userId: 1050, employeeId: 'MPO089', email: 'vilash.deshmukh@mponline.gov.in', name: 'Vilash Deshmukh', fullName: 'Vilash Deshmukh', role: 'SYSADM', roleName: 'System Admin', designation: 'Associate Consultant', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1052, userId: 1052, employeeId: 'MPO118', email: 'raman.kumar@mponline.gov.in', name: 'Raman Kumar', fullName: 'Raman Kumar', role: 'CADM', roleName: 'Community Admin', designation: 'Software Engineer', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1053, userId: 1053, employeeId: 'MPO119', email: 'rishabh.pandey@mponline.gov.in', name: 'Rishabh Pandey', fullName: 'Rishabh Pandey', role: 'CADM', roleName: 'Community Admin', designation: 'Software Engineer', department: 'Information Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1054, userId: 1054, employeeId: 'MPO120', email: 'krisha.dabhi@mponline.gov.in', name: 'krisha dabhi', fullName: 'krisha dabhi', role: 'CADM', roleName: 'Community Admin', designation: 'Software Engineer', department: 'Information Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1055, userId: 1055, employeeId: 'MPO121', email: 'mahi.rathore@mponline.gov.in', name: 'Mahi Rathore', fullName: 'Mahi Rathore', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1056, userId: 1056, employeeId: 'MPO122', email: 'satendra.singh@mponline.gov.in', name: 'Satendra Singh', fullName: 'Satendra Singh', role: 'EMP', roleName: 'Employee', designation: 'Software Engineer', department: 'Information Technology', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1057, userId: 1057, employeeId: 'mpo652', email: 'deepak.simrodia@mponline.gov.in', name: 'Deepak Simrodia', fullName: 'Deepak Simrodia', role: 'EMP', roleName: 'Employee', designation: 'Software Developer', department: 'University', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
     { id: 1063, userId: 1063, employeeId: 'EMP001', email: 'EMP001@mponline.gov.in', name: 'Aarav Sharma', fullName: 'Aarav Sharma', role: 'EMP', roleName: 'Employee', designation: 'Senior Software Engineer', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 50, karma: 50, isActive: true },
     { id: 1064, userId: 1064, employeeId: 'EMP002', email: 'EMP002@mponline.gov.in', name: 'Priya Patel', fullName: 'Priya Patel', role: 'CADM', roleName: 'Community Admin', designation: 'Quality Assurance Lead', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 60, karma: 60, isActive: true },
-    { id: 1065, userId: 1065, employeeId: 'EMP003', email: 'EMP003@mponline.gov.in', name: 'Rohan Verma', fullName: 'Rohan Verma', role: 'HRADM', roleName: 'HR Administrator', designation: 'HR Specialist', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 75, karma: 75, isActive: true },
-    { id: 1066, userId: 1066, employeeId: 'EMP004', email: 'EMP004@mponline.gov.in', name: 'Neha Gupta', fullName: 'Neha Gupta', role: 'SYSADM', roleName: 'System Administrator', designation: 'DevOps Lead', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 90, karma: 90, isActive: true },
+    { id: 1065, userId: 1065, employeeId: 'EMP003', email: 'EMP003@mponline.gov.in', name: 'Rohan Verma', fullName: 'Rohan Verma', role: 'HRADM', roleName: 'HR Admin', designation: 'HR Specialist', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 75, karma: 75, isActive: true },
+    { id: 1066, userId: 1066, employeeId: 'EMP004', email: 'EMP004@mponline.gov.in', name: 'Neha Gupta', fullName: 'Neha Gupta', role: 'SYSADM', roleName: 'System Admin', designation: 'DevOps Lead', department: 'HR', location: 'Bhopal HQ', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
+    { id: 1076, userId: 1076, employeeId: 'MP0664', email: 'vishendra.sharma@mponline.gov.in', name: 'Vishendra Sharma', fullName: 'Vishendra Sharma', role: 'EMP', roleName: 'Employee', designation: 'Track Lead', department: 'Higher Education', location: 'Bhopal', avatar: null, karmaPoints: 0, karma: 0, isActive: true },
 ];
 
 // Keep the named export `users` for any legacy imports
@@ -185,7 +296,9 @@ export const UserProvider = ({ children }) => {
 
         const roleCodeMap = {
             'System Administrator': 'SYSADM',
+            'System Admin': 'SYSADM',
             'HR Administrator': 'HRADM',
+            'HR Admin': 'HRADM',
             'Community Admin': 'CADM',
             'Community Administrator': 'CADM',
             'Employee': 'EMP'
@@ -195,10 +308,14 @@ export const UserProvider = ({ children }) => {
         let derivedRoleName = localUser.roleName || 'Employee';
 
         if (Array.isArray(profile.roles) && profile.roles.length > 0) {
-            const rolePriority = ['System Administrator', 'HR Administrator', 'Community Admin', 'Community Administrator', 'Employee'];
-            const highestRole = rolePriority.find(r => profile.roles.includes(r)) || profile.roles[0];
-            derivedRoleName = highestRole;
-            derivedRole = roleCodeMap[highestRole] || 'EMP';
+            const rolePriority = ['System Admin', 'System Administrator', 'HR Admin', 'HR Administrator', 'Community Admin', 'Community Administrator', 'Employee'];
+            const highestRole = rolePriority.find(r => profile.roles.includes(r) || (r === 'System Admin' && profile.roles.includes('System Administrator')) || (r === 'HR Admin' && profile.roles.includes('HR Administrator'))) || profile.roles[0];
+            const cleanRole = (highestRole === 'System Administrator' || highestRole === 'System Admin') ? 'System Admin'
+                : (highestRole === 'HR Administrator' || highestRole === 'HR Admin') ? 'HR Admin'
+                : (highestRole === 'Community Administrator' || highestRole === 'Community Admin') ? 'Community Admin'
+                : highestRole;
+            derivedRoleName = cleanRole;
+            derivedRole = roleCodeMap[highestRole] || roleCodeMap[cleanRole] || 'EMP';
         } else {
             // New user from EmployeeHub gets default Employee role with full access
             derivedRole = 'EMP';
@@ -244,7 +361,9 @@ export const UserProvider = ({ children }) => {
             fullName: resolvedName,
             role: derivedRole,
             roleName: derivedRoleName,
-            roles: profile.roles && profile.roles.length > 0 ? profile.roles : [derivedRoleName],
+            roles: profile.roles && profile.roles.length > 0 
+                ? profile.roles.map(r => r === 'System Administrator' ? 'System Admin' : r === 'HR Administrator' ? 'HR Admin' : r === 'Community Administrator' ? 'Community Admin' : r)
+                : [derivedRoleName],
             designation: profile.designation || localUser.designation,
             department: profile.departmentName || localUser.department,
             location: profile.location || localUser.location,
@@ -491,6 +610,9 @@ export const UserProvider = ({ children }) => {
                     if (ssoEmpId.toUpperCase() === 'MPO101') {
                         ssoEmpId = 'MP0108';
                     }
+                    if (ssoEmpId.toUpperCase() === 'MPO664') {
+                        ssoEmpId = 'MP0664';
+                    }
                     let localUser = INITIAL_USERS.find(u => 
                         (u.employeeId && u.employeeId.toUpperCase() === ssoEmpId.toUpperCase()) ||
                         (u.email && u.email.toLowerCase() === ssoEmpId.toLowerCase())
@@ -572,14 +694,14 @@ export const UserProvider = ({ children }) => {
                 if (isLocalSuspended) {
                     localStorage.removeItem('knome_jwt');
                     localStorage.removeItem('knome_refresh');
-                    localStorage.removeItem('knome_employeeId');
+                    localStorage.setItem('knome_employeeId', savedEmployeeId);
                     setCurrentUser({
                         ...localUser,
                         isActive: false,
                         isSuspended: true,
                         status: 'Suspended'
                     });
-                    setIsAuthenticated(false);
+                    setIsAuthenticated(true);
                     setIsAuthLoading(false);
                     return;
                 }
@@ -593,14 +715,14 @@ export const UserProvider = ({ children }) => {
                             if (isProfileSuspended) {
                                 localStorage.removeItem('knome_jwt');
                                 localStorage.removeItem('knome_refresh');
-                                localStorage.removeItem('knome_employeeId');
+                                localStorage.setItem('knome_employeeId', savedEmployeeId);
                                 setCurrentUser({
                                     ...mergeProfile(localUser, profile),
                                     isActive: false,
                                     isSuspended: true,
                                     status: 'Suspended'
                                 });
-                                setIsAuthenticated(false);
+                                setIsAuthenticated(true);
                                 setIsAuthLoading(false);
                                 return;
                             }
@@ -625,13 +747,16 @@ export const UserProvider = ({ children }) => {
                     const errMsg = (err?.message || '').toLowerCase();
                     if (err?.isSuspended || errMsg.includes('suspended') || errMsg.includes('inactive') || errMsg.includes('forbidden') || err?.status === 403) {
                         console.warn('Blocked suspended user from restoring session:', err);
+                        localStorage.removeItem('knome_jwt');
+                        localStorage.removeItem('knome_refresh');
+                        localStorage.setItem('knome_employeeId', savedEmployeeId);
                         setCurrentUser({
                             ...localUser,
                             isActive: false,
                             isSuspended: true,
                             status: 'Suspended'
                         });
-                        setIsAuthenticated(false);
+                        setIsAuthenticated(true);
                         setIsAuthLoading(false);
                         return;
                     }
@@ -688,6 +813,7 @@ export const UserProvider = ({ children }) => {
     const login = useCallback(async (employeeId) => {
         let normalizedId = employeeId?.trim()?.toUpperCase() || 'MP0108';
         if (normalizedId === 'MPO101') normalizedId = 'MP0108';
+        if (normalizedId === 'MPO664') normalizedId = 'MP0664';
 
         let localUser = usersList.find(u => 
             u.employeeId?.toUpperCase() === normalizedId ||
@@ -713,14 +839,16 @@ export const UserProvider = ({ children }) => {
         if (isSuspended) {
             localStorage.removeItem('knome_jwt');
             localStorage.removeItem('knome_refresh');
-            localStorage.removeItem('knome_employeeId');
+            if (localUser.employeeId) {
+                localStorage.setItem('knome_employeeId', localUser.employeeId);
+            }
             setCurrentUser({
                 ...localUser,
                 isActive: false,
                 isSuspended: true,
                 status: 'Suspended'
             });
-            setIsAuthenticated(false);
+            setIsAuthenticated(true);
             throw new Error(`Your account (${localUser.name || localUser.fullName}) has been suspended by System Administrator. Please contact HR for compliance clearance.`);
         }
         localStorage.setItem('knome_employeeId', localUser.employeeId);
@@ -731,14 +859,16 @@ export const UserProvider = ({ children }) => {
             if (apiErr?.isSuspended || errMsg.includes('suspended') || errMsg.includes('inactive') || errMsg.includes('forbidden') || apiErr?.status === 403) {
                 localStorage.removeItem('knome_jwt');
                 localStorage.removeItem('knome_refresh');
-                localStorage.removeItem('knome_employeeId');
+                if (localUser.employeeId) {
+                    localStorage.setItem('knome_employeeId', localUser.employeeId);
+                }
                 setCurrentUser({
                     ...localUser,
                     isActive: false,
                     isSuspended: true,
                     status: 'Suspended'
                 });
-                setIsAuthenticated(false);
+                setIsAuthenticated(true);
                 throw apiErr;
             }
             console.warn('Backend login fallback to local session:', apiErr);
@@ -776,14 +906,14 @@ export const UserProvider = ({ children }) => {
         if (isSuspended) {
             localStorage.removeItem('knome_jwt');
             localStorage.removeItem('knome_refresh');
-            localStorage.removeItem('knome_employeeId');
+            localStorage.setItem('knome_employeeId', user.employeeId);
             setCurrentUser({
                 ...user,
                 isActive: false,
                 isSuspended: true,
                 status: 'Suspended'
             });
-            setIsAuthenticated(false);
+            setIsAuthenticated(true);
             return;
         }
         localStorage.setItem('knome_employeeId', user.employeeId);
@@ -798,7 +928,7 @@ export const UserProvider = ({ children }) => {
                     isSuspended: true,
                     status: 'Suspended'
                 });
-                setIsAuthenticated(false);
+                setIsAuthenticated(true);
             }
         }
     }, [authenticateUser]);
@@ -995,7 +1125,13 @@ export const UserProvider = ({ children }) => {
             const matchById = u.userId && String(u.userId) === String(userId);
             const matchBySeedId = u.id && String(u.id) === String(userId);
             if (matchById || matchBySeedId) {
-                return { ...u, isActive: isActive };
+                return { 
+                    ...u, 
+                    isActive: isActive,
+                    isSuspended: !isActive,
+                    isPermanentlySuspended: !isActive,
+                    status: isActive ? 'Active' : 'Suspended'
+                };
             }
             return u;
         }));
@@ -1008,11 +1144,19 @@ export const UserProvider = ({ children }) => {
                 if (!isActive) {
                     localStorage.removeItem('knome_jwt');
                     localStorage.removeItem('knome_refresh');
-                    localStorage.removeItem('knome_employeeId');
-                    setIsAuthenticated(false);
-                    return null;
+                    if (prev.employeeId) {
+                        localStorage.setItem('knome_employeeId', prev.employeeId);
+                    }
+                    setIsAuthenticated(true);
+                    return {
+                        ...prev,
+                        isActive: false,
+                        isSuspended: true,
+                        isPermanentlySuspended: true,
+                        status: 'Suspended'
+                    };
                 }
-                return { ...prev, isActive: isActive };
+                return { ...prev, isActive: true, isSuspended: false, status: 'Active' };
             }
             return prev;
         });

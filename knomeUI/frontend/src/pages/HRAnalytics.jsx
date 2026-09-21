@@ -290,7 +290,8 @@ export default function HRAnalytics() {
     const handleExport = (type) => {
         let headers = [];
         let rows = [];
-        let filename = `knome_${activeReport.toLowerCase()}_report`;
+        const currentReport = reportsList.find(r => r.id === activeReport);
+        let filename = `knome_${(currentReport?.name || activeReport).toLowerCase().replace(/\s+/g, '_')}_report`;
 
         if (activeReport === 'RPT-01') {
             headers = ['Metric', 'Live Value', 'Description'];
@@ -442,8 +443,8 @@ export default function HRAnalytics() {
                                 : 'border-transparent text-slate-gray hover:text-electric-blue'
                         }`}
                     >
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200">
-                            {rpt.id}
+                        <span className="material-symbols-outlined text-[18px]">
+                            {rpt.icon}
                         </span>
                         {rpt.name}
                     </button>
@@ -840,7 +841,7 @@ export default function HRAnalytics() {
                                                 filteredAuditLogs.map((log, i) => (
                                                     <tr key={log.logId || log.id || i} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
                                                         <td className="p-4 text-slate-400">{log.timestamp ? new Date(log.timestamp).toLocaleString() : 'Recent'}</td>
-                                                        <td className="p-4 font-bold text-slate-900 dark:text-white">{log.actorFullName || log.actorUserId || 'System Administrator'}</td>
+                                                        <td className="p-4 font-bold text-slate-900 dark:text-white">{log.actorFullName || log.actorUserId || 'System Admin'}</td>
                                                         <td className="p-4 font-semibold text-electric-blue">{log.action}</td>
                                                         <td className="p-4 text-slate-600 dark:text-slate-300">{log.details || log.entityName || 'Audit Event'}</td>
                                                     </tr>

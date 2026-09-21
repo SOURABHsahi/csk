@@ -510,13 +510,14 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
                 }}
             />
 
-            {/* Report Video Modal */}
             <ReportModal
                 isOpen={isReportOpen}
                 onClose={() => setIsReportOpen(false)}
                 targetType="Video"
-                targetId={video?.id || 1}
-                targetName={video?.title || video?.author || 'Video Content'}
+                targetId={video?.videoId || video?.id || 1}
+                targetName={video?.uploaderFullName || video?.author || video?.title || 'Video Content'}
+                targetUserId={video?.uploaderUserId || video?.authorId}
+                targetContent={video?.title || video?.description || ''}
             />
         </div>
     );

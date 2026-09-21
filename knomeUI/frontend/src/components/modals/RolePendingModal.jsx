@@ -94,7 +94,7 @@ export default function RolePendingModal() {
 
                 {/* System Admin Notice */}
                 <p className="text-xs text-slate-400 leading-relaxed mb-6">
-                    The <strong className="text-amber-300">System Administrator</strong> has been notified to assign your access role. Once approved, you will receive full permissions and an in-app notification alert.
+                    The <strong className="text-amber-300">System Admin</strong> has been notified to assign your access role. Once approved, you will receive full permissions and an in-app notification alert.
                 </p>
 
                 {/* Action Buttons */}

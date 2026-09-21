@@ -12,8 +12,8 @@ export default function Footer() {
 
             <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 md:py-3">
                 
-                {/* Main Compact Row with Centered MPOnline Logo */}
-                <div className="relative flex flex-col lg:flex-row items-center justify-between gap-3">
+                {/* Main Top Row: Left Brand & Right Support */}
+                <div className="flex flex-col lg:flex-row items-center justify-between gap-3">
                     
                     {/* Left: Brand Logo, Tagline & Social Links */}
                     <div className="flex flex-wrap items-center justify-center lg:justify-start gap-3 shrink-0">
@@ -51,18 +51,6 @@ export default function Footer() {
                         </div>
                     </div>
 
-                    {/* Center: Powered by MPOnline Limited (Always Centered) */}
-                    <div className="lg:absolute lg:left-1/2 lg:-translate-x-1/2 flex items-center justify-center gap-2.5 shrink-0 my-1 lg:my-0">
-                        <span className="text-[11px] text-slate-400 font-medium tracking-wide">Powered by</span>
-                        <div className="bg-white px-2.5 py-1 rounded-md shadow-xs flex items-center justify-center hover:scale-105 transition-transform duration-200">
-                            <img 
-                                src={mponlineLogo} 
-                                alt="MPOnline Limited" 
-                                className="h-4.5 md:h-5 max-h-[20px] w-auto object-contain" 
-                            />
-                        </div>
-                    </div>
-
                     {/* Right: Support & Contact Points */}
                     <div className="flex flex-wrap items-center justify-center lg:justify-end gap-x-3.5 gap-y-1 text-[11.5px] text-slate-300 shrink-0">
                         <div className="flex items-center gap-1.5 text-sky-400 font-semibold text-[11px] uppercase tracking-wider hidden xl:flex">
@@ -82,15 +70,32 @@ export default function Footer() {
 
                 </div>
 
-                {/* Sub Micro-Bar: Copyright & Location */}
-                <div className="mt-2 pt-2 border-t border-slate-800/60 flex flex-col sm:flex-row items-center justify-between gap-1 text-[10.5px] text-slate-400">
-                    <div>
+                {/* Sub Bar: Copyright on Left, Powered by in Middle, Location on Right */}
+                <div className="mt-2.5 pt-2.5 border-t border-slate-800/70 flex flex-col md:flex-row items-center justify-between gap-3 text-slate-400">
+                    
+                    {/* Left: Copyright */}
+                    <div className="text-[11px] font-medium text-center md:text-left shrink-0">
                         © {new Date().getFullYear()} MPOnline Limited. All rights reserved.
                     </div>
-                    <div className="flex items-center gap-1 text-slate-400">
-                        <span className="material-symbols-outlined text-[12px] text-sky-400">location_on</span>
+
+                    {/* Middle: Powered by MPOnline Limited (Prominent, Larger Logo) */}
+                    <div className="flex items-center justify-center gap-2 shrink-0">
+                        <span className="text-[12px] text-slate-300 font-medium tracking-wide">Powered by</span>
+                        <div className="bg-white px-3 py-1 rounded-md shadow-xs flex items-center justify-center hover:scale-105 transition-transform duration-200">
+                            <img 
+                                src={mponlineLogo} 
+                                alt="MPOnline Limited" 
+                                className="h-5.5 sm:h-6 max-h-[24px] w-auto object-contain block" 
+                            />
+                        </div>
+                    </div>
+
+                    {/* Right: Headquarters Address */}
+                    <div className="flex items-center gap-1.5 text-[11px] font-medium text-center md:text-right shrink-0">
+                        <span className="material-symbols-outlined text-[13px] text-sky-400">location_on</span>
                         <span>State IT Park, Abbas Nagar near RGPV, Gandhi Nagar, Bhopal 462033</span>
                     </div>
+
                 </div>
 
             </div>

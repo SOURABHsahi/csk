@@ -12,7 +12,7 @@ namespace Knome.API.Services;
 /// </summary>
 public class SuspensionGuard : ISuspensionGuard
 {
-    private const string SuspendedMessage = "This account has been suspended. Please contact HR.";
+    private const string SuspendedMessage = "Your account is suspended by system admin.";
 
     private readonly IUserRepository _userRepository;
 

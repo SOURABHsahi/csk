@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { resolveMediaUrl } from '../../utils/apiService';
 
 /**
@@ -88,7 +89,7 @@ export default function SuspendUserModal({
 
     const isCustomInvalid = duration === 'custom' && !customDate;
 
-    return (
+    return createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-slate-950/75 backdrop-blur-sm overflow-hidden animate-in fade-in duration-200">
             <div className="relative bg-white dark:bg-slate-900 w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200">
                 
@@ -130,7 +131,7 @@ export default function SuspendUserModal({
                                     </div>
                                 )}
                                 <div className="min-w-0 flex-1">
-                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white whitespace-normal break-words">
                                         {displayName}
                                     </h4>
                                     <p className="text-xs text-slate-500 truncate">
@@ -311,6 +312,7 @@ export default function SuspendUserModal({
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }

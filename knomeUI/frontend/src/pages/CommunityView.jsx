@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useUser } from '../components/contexts/UserContext';
+import { useUser, resolveEmployeeName, deduplicateMembers, KNOWN_ROSTER_NAMES, INITIAL_USERS } from '../components/contexts/UserContext';
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import { apiClient } from '../utils/apiClient';
 import { communitiesApi, mediaApi, postsApi, notificationsApi, interactionsApi, adminApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages, formatRelativeTime } from '../utils/apiService';
@@ -26,7 +26,7 @@ const ENTERPRISE_CHANNELS_SEED = {
     },
     '2': {
         name: 'HR & People Ops',
-        type: 'Default (Org)',
+        type: 'Org',
         category: 'Human Resources & Governance',
         adminContact: 'Sourabh Sahu (HR Lead)',
         description: 'Official human resources updates, employee engagement, workplace policies, internal training, and talent development programs.',
@@ -55,12 +55,12 @@ const ENTERPRISE_CHANNELS_SEED = {
         description: 'Exploration of machine learning, NLP, computer vision models, agentic workflows, and predictive analytics for public services.',
         rules: ['1. Respect data privacy and security benchmarks.', '2. No production customer PII in experiment posts.', '3. Share reproducible notebook links.'],
         faq: [
-            { q: 'How do I request access?', a: 'Click Request to Join; the AI Lab community administrator will review your request.' }
+            { q: 'How do I request access?', a: 'Click Request to Join; the community admin will review your request.' }
         ]
     },
     '5': {
         name: 'Finance & Accounting',
-        type: 'Default (Org)',
+        type: 'Org',
         category: 'Finance, Audit & Payroll',
         adminContact: 'Sourabh Sahu (Finance Admin)',
         description: 'Finance announcements, reimbursement policies, payroll schedules, and compliance audit notices for MPOnline teams.',
@@ -102,6 +102,79 @@ const ENTERPRISE_CHANNELS_SEED = {
             { q: 'What can I post here?', a: 'Team shoutouts, hackathons, book recommendations, celebrations, and informal discussions.' }
         ]
     }
+};
+
+/**
+ * Resolves a member object to clean, standardized, non-clipping display tokens.
+ * Handles employee ID resolution (e.g. EMP004 -> Neha Gupta), title-casing,
+ * full designations (e.g. software -> Software Developer), and official department names.
+ */
+const normalizeMemberData = (m, contextUsers = []) => {
+    if (!m) return m;
+    const empId = String(m.employeeId || m.empId || '').trim();
+    const rawName = String(m.fullName || m.name || '').trim();
+
+    // Match against live contextUsers or INITIAL_USERS roster
+    const matched = (contextUsers || []).find(u => 
+        (empId && String(u.employeeId || '').toUpperCase() === empId.toUpperCase()) ||
+        (m.userId && String(u.id || u.userId) === String(m.userId)) ||
+        (m.id && String(u.id || u.userId) === String(m.id)) ||
+        (rawName && String(u.name || u.fullName || '').toLowerCase() === rawName.toLowerCase())
+    ) || (INITIAL_USERS || []).find(u => 
+        (empId && String(u.employeeId || '').toUpperCase() === empId.toUpperCase()) ||
+        (m.userId && String(u.id || u.userId) === String(m.userId)) ||
+        (m.id && String(u.id || u.userId) === String(m.id)) ||
+        (rawName && String(u.name || u.fullName || '').toLowerCase() === rawName.toLowerCase())
+    );
+
+    let resolvedName = resolveEmployeeName(rawName, empId || matched?.employeeId);
+    if ((!resolvedName || resolvedName === 'Employee' || /^(EMP|MPO|MP)\d+$/i.test(resolvedName)) && (matched?.fullName || matched?.name)) {
+        resolvedName = matched.fullName || matched.name;
+    }
+
+    // Capitalize each word properly (e.g., 'kabir singh' -> 'Kabir Singh', 'aishwary' -> 'Aishwary')
+    resolvedName = (resolvedName || 'Employee')
+        .split(' ')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
+
+    const resolvedEmpId = empId || matched?.employeeId || (m.userId ? `MPO${String(m.userId).padStart(3, '0')}` : '');
+
+    let candidateDesig = String(m.designation || '').trim();
+    const genericDesigs = ['employee', 'member', 'user'];
+    if ((!candidateDesig || genericDesigs.includes(candidateDesig.toLowerCase())) && matched?.designation && !genericDesigs.includes(matched.designation.toLowerCase())) {
+        candidateDesig = matched.designation;
+    }
+    let rawDesig = (candidateDesig || matched?.designation || 'Software Developer').trim();
+    if (rawDesig.toLowerCase() === 'software') rawDesig = 'Software Developer';
+    else if (rawDesig.toLowerCase() === 'hr') rawDesig = 'HR Specialist';
+    const resolvedDesig = rawDesig
+        .split(' ')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
+
+    const resolvedDept = String(m.department || matched?.department || 'MPOnline').trim();
+
+    const isCommAdmin = m.memberType === 'Admin' || 
+                        m.memberType === 'Moderator' || 
+                        m.memberType === 'Community Administrator' || 
+                        m.memberType === 'Community Admin';
+
+    const roleName = isCommAdmin ? 'Admin' : 'Member';
+
+    const avatar = resolveMediaUrl(m.profilePhotoUrl || matched?.avatar) || 
+        `https://ui-avatars.com/api/?name=${encodeURIComponent(resolvedName)}&background=6366f1&color=fff`;
+
+    return {
+        ...m,
+        displayName: resolvedName,
+        displayEmpId: resolvedEmpId,
+        displayDesignation: resolvedDesig,
+        displayDepartment: resolvedDept,
+        isCommAdmin,
+        roleName,
+        resolvedAvatar: avatar
+    };
 };
 
 export default function CommunityView() {
@@ -146,6 +219,7 @@ export default function CommunityView() {
     const [membersList, setMembersList] = useState([]);
     const [subscribersList, setSubscribersList] = useState([]);
     const [suspendedMembers, setSuspendedMembers] = useState([]);
+    const [communitySuspensionInfo, setCommunitySuspensionInfo] = useState(null);
     const [memberSearchQuery, setMemberSearchQuery] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const [toast, setToast] = useState(null); // { message, type }
@@ -961,50 +1035,88 @@ export default function CommunityView() {
                     status: 'Approved',
                     profilePhotoUrl: commData.creatorAvatar || null
                 };
-                let resolvedMembers = (Array.isArray(rawMembers) && rawMembers.length > 0 
+                const rawList = (Array.isArray(rawMembers) && rawMembers.length > 0 
                     ? rawMembers 
                     : (localMembersApi.length > 0 ? localMembersApi : [defaultCreator]))
                     .map(m => (m.memberType === 'Moderator' ? { ...m, memberType: 'Admin' } : m));
+                let resolvedMembers = deduplicateMembers(rawList, contextUsers);
 
                 const userJoinedList = JSON.parse(localStorage.getItem(`knome_joined_communities_${currentUser?.id || 'guest'}`) || '[]');
                 const localEntry = userJoinedList.find(c => String(c.id) === String(commData.communityId));
                 const isDefaultOrg = (commData.communityType || '').toLowerCase().includes('default') || (commData.communityType || '').toLowerCase().includes('org');
-                const isMemberInList = currentUser && resolvedMembers.some(m => 
-                    String(m.userId || m.id) === String(currentUser.id) || 
-                    (currentUser.name && (m.fullName || m.name || '').toLowerCase() === currentUser.name.toLowerCase()) ||
-                    (currentUser.employeeId && m.employeeId === currentUser.employeeId)
-                );
+                
+                const currentUid = String(currentUser?.userId || currentUser?.id || '');
+                const currentEmpId = String(currentUser?.employeeId || '').toUpperCase();
+                const currentName = String(currentUser?.fullName || currentUser?.name || '').toLowerCase();
+
+                const isMemberInList = Boolean(currentUser && resolvedMembers.some(m => {
+                    const mUid = String(m.userId || m.id || '');
+                    const mEmpId = String(m.employeeId || m.empId || m.displayEmpId || '').toUpperCase();
+                    const mName = String(m.fullName || m.name || m.displayName || '').toLowerCase();
+                    return (currentUid && mUid === currentUid) || 
+                           (currentEmpId && mEmpId === currentEmpId) || 
+                           (currentName && mName === currentName);
+                }));
+
                 const isUserJoined = !!(localEntry && localEntry.status === 'joined') || 
                                      commData.currentUserMembershipStatus?.toLowerCase() === 'joined' || 
                                      commData.currentUserMembershipStatus?.toLowerCase() === 'approved' ||
                                      isMemberInList;
                 const isUserSubscribed = !!(localEntry && localEntry.status === 'subscribed') || commData.currentUserMembershipStatus?.toLowerCase() === 'subscribed';
 
-                // FR-CM-01: Default (Org) communities auto-join all employees
+                // Load persistent subscribers and suspended members
+                const savedSubs = JSON.parse(localStorage.getItem(`knome_community_subscribers_${commData.communityId}`) || '[]');
+                setSubscribersList(savedSubs);
+                const savedSuspended = JSON.parse(localStorage.getItem(`knome_community_suspended_${commData.communityId}`) || '[]');
+                setSuspendedMembers(savedSuspended);
+
+                // FR-CM-07: Check if current user is suspended from this community
+                const currentEmail = String(currentUser?.email || '').toLowerCase();
+                const userSuspensionRecord = savedSuspended.find(s => {
+                    const sUid = String(s.userId || s.id || '');
+                    const sEmpId = String(s.employeeId || '').toUpperCase();
+                    const sEmail = String(s.email || '').toLowerCase();
+                    return (currentUid && sUid === currentUid) || (currentEmpId && sEmpId === currentEmpId) || (currentEmail && sEmail === currentEmail);
+                });
+                const isUserSuspendedInComm = Boolean(userSuspensionRecord) || commData.currentUserMembershipStatus?.toLowerCase() === 'banned';
+                const isCurrentUserSysAdmin = ['SYSADM'].includes(currentUser?.role) || ['System Administrator', 'System Admin'].includes(currentUser?.roleName);
+
+                // FR-CM-01: Org communities auto-join all employees
                 const savedRequests = JSON.parse(localStorage.getItem(`knome_join_requests_${commData.communityId}`) || '[]');
                 const myRequest = savedRequests.find(r => String(r.userId || r.id) === String(currentUser?.id));
                 let resolvedStatus;
-                if (isUserJoined || isDefaultOrg) resolvedStatus = 'joined';
-                else if (isUserSubscribed) resolvedStatus = 'subscribed';
-                else if (myRequest) resolvedStatus = 'requested';
-                else {
+                if (isUserSuspendedInComm && !isCurrentUserSysAdmin) {
+                    resolvedStatus = 'banned';
+                    setCommunitySuspensionInfo(userSuspensionRecord || {
+                        suspensionReason: 'Violation of community guidelines',
+                        suspensionDuration: 'Indefinite'
+                    });
+                } else if (isUserJoined || isDefaultOrg) {
+                    resolvedStatus = 'joined';
+                } else if (isUserSubscribed) {
+                    resolvedStatus = 'subscribed';
+                } else if (myRequest) {
+                    resolvedStatus = 'requested';
+                } else {
                     const apiStatus = commData.currentUserMembershipStatus?.toLowerCase();
                     resolvedStatus = (apiStatus && apiStatus !== 'none') ? apiStatus : 'none';
                 }
                 setMembershipStatus(resolvedStatus);
 
-                if ((isUserJoined || isDefaultOrg) && currentUser && !resolvedMembers.some(m => String(m.userId || m.id) === String(currentUser.id))) {
+                if (!isUserSuspendedInComm && (isUserJoined || isDefaultOrg) && currentUser && !isMemberInList) {
                     resolvedMembers.push({
-                        userId: currentUser.id,
-                        fullName: currentUser.name,
+                        userId: currentUser.userId || currentUser.id,
+                        fullName: currentUser.fullName || currentUser.name,
                         employeeId: currentUser.employeeId || 'MPO100',
-                        designation: currentUser.roleName || 'Member',
+                        designation: currentUser.designation || currentUser.roleName || 'Software Developer',
                         memberType: 'Member',
                         status: 'Approved',
                         profilePhotoUrl: currentUser.avatar
                     });
                 }
 
+                // Final safety deduplication & permanent cache healing
+                resolvedMembers = deduplicateMembers(resolvedMembers, contextUsers);
                 setMembersList(resolvedMembers);
                 localStorage.setItem(savedMembersKey, JSON.stringify(resolvedMembers));
 
@@ -1017,12 +1129,6 @@ export default function CommunityView() {
                     }
                 });
                 setJoinRequests(mergedRequests);
-
-                // Load persistent subscribers and suspended members
-                const savedSubs = JSON.parse(localStorage.getItem(`knome_community_subscribers_${commData.communityId}`) || '[]');
-                setSubscribersList(savedSubs);
-                const savedSuspended = JSON.parse(localStorage.getItem(`knome_community_suspended_${commData.communityId}`) || '[]');
-                setSuspendedMembers(savedSuspended);
             } else {
                 // Fallback check custom created communities or seeds
                 const customList = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
@@ -1042,32 +1148,43 @@ export default function CommunityView() {
                     status: 'Approved',
                     profilePhotoUrl: found?.creatorAvatar || found?.avatar || null
                 };
-                let resolvedMembers = (localMembers.length > 0 ? localMembers : [defaultCreator])
+                const rawFallbackList = (localMembers.length > 0 ? localMembers : [defaultCreator])
                     .map(m => (m.memberType === 'Moderator' ? { ...m, memberType: 'Admin' } : m));
+                let resolvedMembers = deduplicateMembers(rawFallbackList, contextUsers);
 
                 // Check if current user explicitly joined, created the community, or is in resolved members
                 const userJoinedList = JSON.parse(localStorage.getItem(`knome_joined_communities_${currentUser?.id || 'guest'}`) || '[]');
-                const isMemberInList = currentUser && resolvedMembers.some(m => 
-                    String(m.userId || m.id) === String(currentUser.id) || 
-                    (currentUser.name && (m.fullName || m.name || '').toLowerCase() === currentUser.name.toLowerCase()) ||
-                    (currentUser.employeeId && m.employeeId === currentUser.employeeId)
-                );
+                
+                const currentUidFallback = String(currentUser?.userId || currentUser?.id || '');
+                const currentEmpIdFallback = String(currentUser?.employeeId || '').toUpperCase();
+                const currentNameFallback = String(currentUser?.fullName || currentUser?.name || '').toLowerCase();
+
+                const isMemberInList = Boolean(currentUser && resolvedMembers.some(m => {
+                    const mUid = String(m.userId || m.id || '');
+                    const mEmpId = String(m.employeeId || m.empId || m.displayEmpId || '').toUpperCase();
+                    const mName = String(m.fullName || m.name || m.displayName || '').toLowerCase();
+                    return (currentUidFallback && mUid === currentUidFallback) || 
+                           (currentEmpIdFallback && mEmpId === currentEmpIdFallback) || 
+                           (currentNameFallback && mName === currentNameFallback);
+                }));
+
                 const isUserJoined = userJoinedList.some(c => String(c.id) === String(targetId)) || 
                                      (found?.createdBy && currentUser?.name && found.createdBy.toLowerCase().includes(currentUser.name.toLowerCase())) ||
                                      isMemberInList;
 
-                if (isUserJoined && currentUser && !resolvedMembers.some(m => String(m.userId || m.id) === String(currentUser.id))) {
+                if (isUserJoined && currentUser && !isMemberInList) {
                     resolvedMembers.push({
-                        userId: currentUser.id,
-                        fullName: currentUser.name,
+                        userId: currentUser.userId || currentUser.id,
+                        fullName: currentUser.fullName || currentUser.name,
                         employeeId: currentUser.employeeId || 'MPO100',
-                        designation: currentUser.roleName || 'Member',
+                        designation: currentUser.designation || currentUser.roleName || 'Software Developer',
                         memberType: 'Member',
                         status: 'Approved',
                         profilePhotoUrl: currentUser.avatar
                     });
                 }
 
+                resolvedMembers = deduplicateMembers(resolvedMembers, contextUsers);
                 setMembersList(resolvedMembers);
                 localStorage.setItem(savedMembersKey, JSON.stringify(resolvedMembers));
 
@@ -1075,9 +1192,39 @@ export default function CommunityView() {
                 const savedRequests = JSON.parse(localStorage.getItem(`knome_join_requests_${targetId}`) || '[]');
                 setJoinRequests(savedRequests);
 
+                // Load persistent subscribers and suspended members
+                const savedSubs = JSON.parse(localStorage.getItem(`knome_community_subscribers_${targetId}`) || '[]');
+                setSubscribersList(savedSubs);
+                const savedSuspended = JSON.parse(localStorage.getItem(`knome_community_suspended_${targetId}`) || '[]');
+                setSuspendedMembers(savedSuspended);
+
+                const currentEmailFallback = String(currentUser?.email || '').toLowerCase();
+                const userSuspensionRecord = savedSuspended.find(s => {
+                    const sUid = String(s.userId || s.id || '');
+                    const sEmpId = String(s.employeeId || '').toUpperCase();
+                    const sEmail = String(s.email || '').toLowerCase();
+                    return (currentUidFallback && sUid === currentUidFallback) || (currentEmpIdFallback && sEmpId === currentEmpIdFallback) || (currentEmailFallback && sEmail === currentEmailFallback);
+                });
+                const isUserSuspendedInComm = Boolean(userSuspensionRecord);
+                const isCurrentUserSysAdmin = ['SYSADM'].includes(currentUser?.role) || ['System Administrator', 'System Admin'].includes(currentUser?.roleName);
+
                 const myRequest = savedRequests.find(r => String(r.userId || r.id) === String(currentUser?.id));
                 const isDefaultOrgFallback = found ? ((found.type || '').toLowerCase().includes('default') || (found.type || '').toLowerCase().includes('org')) : false;
-                const calcStatus = (isUserJoined || isDefaultOrgFallback) ? 'joined' : (myRequest ? 'requested' : 'none');
+
+                let calcStatus;
+                if (isUserSuspendedInComm && !isCurrentUserSysAdmin) {
+                    calcStatus = 'banned';
+                    setCommunitySuspensionInfo(userSuspensionRecord || {
+                        suspensionReason: 'Violation of community guidelines',
+                        suspensionDuration: 'Indefinite'
+                    });
+                } else if (isUserJoined || isDefaultOrgFallback) {
+                    calcStatus = 'joined';
+                } else if (myRequest) {
+                    calcStatus = 'requested';
+                } else {
+                    calcStatus = 'none';
+                }
 
                 if (found) {
                     const localRulesFaq = JSON.parse(localStorage.getItem(`knome_community_rules_faq_${targetId}`) || 'null');
@@ -1402,8 +1549,9 @@ export default function CommunityView() {
             const targetId = communityId || community?.id || 101;
             const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${targetId}`) || '[]');
             if (localMembers && localMembers.length > 0) {
-                setMembersList(localMembers);
-                setCommunity(prev => prev ? { ...prev, membersCount: localMembers.length } : prev);
+                const deduped = deduplicateMembers(localMembers, contextUsers);
+                setMembersList(deduped);
+                setCommunity(prev => prev ? { ...prev, membersCount: deduped.length } : prev);
             }
             const savedSubs = JSON.parse(localStorage.getItem(`knome_community_subscribers_${targetId}`) || '[]');
             setSubscribersList(savedSubs);
@@ -1830,25 +1978,26 @@ export default function CommunityView() {
             }));
         }
 
-        showToast(`Member role updated to ${newRole === 'Admin' ? 'Community Administrator' : 'Community Member'} for ${memberName}.`, 'success');
+        showToast(`Member role updated to ${newRole === 'Admin' ? 'Community Admin' : 'Community Member'} for ${memberName}.`, 'success');
     };
 
     const getAdminCount = () => {
         return membersList.filter(m => 
             m.memberType === 'Admin' || 
             m.memberType === 'Moderator' || 
-            m.memberType === 'Community Administrator'
+            m.memberType === 'Community Administrator' ||
+            m.memberType === 'Community Admin'
         ).length;
     };
 
     const handleInitiateRemoveMember = (member) => {
-        const isCommAdmin = member.memberType === 'Admin' || member.memberType === 'Moderator' || member.memberType === 'Community Administrator';
+        const isCommAdmin = member.memberType === 'Admin' || member.memberType === 'Moderator' || member.memberType === 'Community Administrator' || member.memberType === 'Community Admin';
         const adminsCount = getAdminCount();
 
         if (isCommAdmin && adminsCount <= 1) {
             setAdminProtectionWarning({
-                title: 'Cannot Remove Community Administrator',
-                message: `"${member.fullName || member.name || 'This user'}" is currently the only Community Administrator for this community. A community must always have at least one active Community Administrator.\n\nPlease assign another member as Community Administrator using "Make Administrator" before removing this administrator.`
+                title: 'Cannot Remove Community Admin',
+                message: `"${member.fullName || member.name || 'This user'}" is currently the only Community Admin for this community. A community must always have at least one active Community Admin.\n\nPlease assign another member as Community Admin using "Make Admin" before removing this admin.`
             });
             return;
         }
@@ -1993,7 +2142,7 @@ export default function CommunityView() {
     const handleLeaveAction = async () => {
         const isDefaultOrg = community?.type?.toLowerCase().includes('default') || community?.type?.toLowerCase().includes('org');
         if (isDefaultOrg) {
-            showToast('Employees cannot leave a Default organization community (FR-CM-04).', 'warning');
+            showToast('Employees cannot leave an Org community (FR-CM-04).', 'warning');
             return;
         }
 
@@ -2156,13 +2305,26 @@ export default function CommunityView() {
     };
 
     const handleInitiateSuspendMember = (member) => {
-        const isCommAdmin = member.memberType === 'Admin' || member.memberType === 'Moderator' || member.memberType === 'Community Administrator';
+        const isSelf = String(member.userId || member.id) === String(currentUser?.userId || currentUser?.id) || 
+                       (currentUser?.employeeId && String(member.employeeId || '').toUpperCase() === String(currentUser.employeeId).toUpperCase());
+        if (isSelf) {
+            showToast('You cannot suspend your own account from the community.', 'error');
+            return;
+        }
+
+        const isTargetSysAdmin = ['SYSADM', 'SYSTEM ADMINISTRATOR', 'SYSTEM ADMIN'].includes(String(member.role || member.roleName || '').toUpperCase());
+        if (isTargetSysAdmin) {
+            showToast('System Admins cannot be suspended from communities.', 'error');
+            return;
+        }
+
+        const isCommAdmin = member.memberType === 'Admin' || member.memberType === 'Moderator' || member.memberType === 'Community Administrator' || member.memberType === 'Community Admin';
         const adminsCount = getAdminCount();
 
         if (isCommAdmin && adminsCount <= 1) {
             setAdminProtectionWarning({
-                title: 'Cannot Suspend Community Administrator',
-                message: `"${member.fullName || member.name || 'This user'}" is currently the only Community Administrator for this community. Suspending them would leave the community without an administrator.\n\nPlease assign another member as Community Administrator using "Make Administrator" before suspending this administrator.`
+                title: 'Cannot Suspend Community Admin',
+                message: `"${member.fullName || member.name || 'This user'}" is currently the only Community Admin for this community. Suspending them would leave the community without an admin.\n\nPlease assign another member as Community Admin using "Make Admin" before suspending this admin.`
             });
             return;
         }
@@ -2204,10 +2366,8 @@ export default function CommunityView() {
         }
 
         try {
-            // 1. Suspend community membership
+            // Suspend community membership only (FR-CM-07) - does not disable global Knome platform account
             await communitiesApi.decideMembership(targetId, memberId, 'Banned').catch(() => null);
-            // 2. Suspend platform user account in SQL Server so user cannot log into Knome!
-            await adminApi.suspendUser(memberId, fullReason, days, customDate, isPermanent).catch(() => null);
         } catch (err) {
             console.warn('Backend suspend API warning:', err);
         }
@@ -2218,7 +2378,7 @@ export default function CommunityView() {
             suspendedUntil,
             suspensionDuration: durationLabel,
             suspensionReason: fullReason,
-            suspendedBy: currentUser?.fullName || currentUser?.name || 'Community Administrator'
+            suspendedBy: currentUser?.fullName || currentUser?.name || 'Community Admin'
         };
 
         setSuspendedMembers(prev => {
@@ -2233,11 +2393,12 @@ export default function CommunityView() {
             localStorage.setItem(`knome_community_members_updated_${targetId}`, Date.now().toString());
             window.dispatchEvent(new CustomEvent('community-members-updated', { detail: { communityId: targetId } }));
             window.dispatchEvent(new CustomEvent('community-joined-change'));
+            window.dispatchEvent(new CustomEvent('community-suspended-change', { detail: { communityId: targetId } }));
             return updated;
         });
 
         setCommunity(prev => ({ ...prev, membersCount: Math.max(1, (prev.membersCount || 1) - 1) }));
-        showToast(`${memberName} suspended for ${durationLabel}. Account access restricted.`, 'warning');
+        showToast(`${memberName} suspended from this community for ${durationLabel}.`, 'warning');
         setSuspendModalMember(null);
     };
 
@@ -2251,16 +2412,21 @@ export default function CommunityView() {
         const memberToReinstate = suspendedMembers.find(m => String(m.userId || m.id) === String(memberId));
         if (!memberToReinstate) return;
         const { suspendedAt, suspendedBy, ...cleanMember } = memberToReinstate;
+
+        // Re-approve membership in backend DB
+        communitiesApi.decideMembership(targetId, memberId, 'Approved').catch(() => null);
+
         setSuspendedMembers(prev => {
             const updated = prev.filter(m => String(m.userId || m.id) !== String(memberId));
             localStorage.setItem(`knome_community_suspended_${targetId}`, JSON.stringify(updated));
             return updated;
         });
         setMembersList(prev => {
-            const updated = [...prev, { ...cleanMember, memberType: 'Member', status: 'Approved' }];
+            const updated = deduplicateMembers([...prev, { ...cleanMember, memberType: 'Member', status: 'Approved' }], contextUsers);
             localStorage.setItem(`knome_community_members_${targetId}`, JSON.stringify(updated));
             window.dispatchEvent(new CustomEvent('community-members-updated', { detail: { communityId: targetId } }));
             window.dispatchEvent(new CustomEvent('community-joined-change'));
+            window.dispatchEvent(new CustomEvent('community-suspended-change', { detail: { communityId: targetId } }));
             return updated;
         });
         setCommunity(prev => ({ ...prev, membersCount: (prev.membersCount || 0) + 1 }));
@@ -2337,7 +2503,6 @@ export default function CommunityView() {
 
         // Add to membersList
         setMembersList(prev => {
-            const exists = prev.some(m => String(m.userId || m.id) === String(requestId));
             const newMember = {
                 userId: request?.userId || requestId,
                 fullName: request?.name || request?.fullName || requestName,
@@ -2347,7 +2512,7 @@ export default function CommunityView() {
                 status: 'Approved',
                 profilePhotoUrl: request?.avatar || null,
             };
-            const updated = exists ? prev : [...prev, newMember];
+            const updated = deduplicateMembers([...prev, newMember], contextUsers);
             localStorage.setItem(`knome_community_members_${targetId}`, JSON.stringify(updated));
             window.dispatchEvent(new CustomEvent('community-members-updated', { detail: { communityId: targetId } }));
             window.dispatchEvent(new CustomEvent('community-joined-change'));
@@ -2541,35 +2706,43 @@ export default function CommunityView() {
         return String(b.id || '').localeCompare(String(a.id || ''));
     });
 
-    // Dynamically resolve Community Administrator name from current active members
+    // Dynamically resolve Community Admin name from current active members
     const communityAdminDisplay = useMemo(() => {
-        const adminMembers = membersList.filter(m => 
+        const dedupedAll = deduplicateMembers(membersList, contextUsers);
+        const adminMembers = dedupedAll.filter(m => 
             m.memberType === 'Admin' || 
             m.memberType === 'Moderator' || 
-            m.memberType === 'Community Administrator'
+            m.memberType === 'Community Administrator' ||
+            m.memberType === 'Community Admin'
         );
         if (adminMembers.length > 0) {
-            return adminMembers.map(a => a.fullName || a.name).filter(Boolean).join(', ');
+            return adminMembers
+                .map(a => normalizeMemberData(a, contextUsers).displayName)
+                .filter(Boolean)
+                .join(', ');
         }
-        return community?.adminContact || 'Community Administrator';
-    }, [membersList, community?.adminContact]);
+        return community?.adminContact || 'Community Admin';
+    }, [membersList, community?.adminContact, contextUsers]);
 
-    // Filter & sort members: Community Administrators always pinned to the top of the list!
+    // Filter & sort members: Community Admins always pinned to the top of the list!
+    // Strict Deduplication: Every employee appears at most once in the community members roster
     const filteredMembers = useMemo(() => {
-        return [...membersList]
+        const normalized = membersList.map(m => normalizeMemberData(m, contextUsers));
+        const deduped = deduplicateMembers(normalized, contextUsers);
+        return deduped
             .filter(m => 
                 !memberSearchQuery.trim() || 
-                (m.fullName || m.name || '').toLowerCase().includes(memberSearchQuery.toLowerCase()) || 
-                (m.designation || '').toLowerCase().includes(memberSearchQuery.toLowerCase())
+                (m.displayName || '').toLowerCase().includes(memberSearchQuery.toLowerCase()) || 
+                (m.displayEmpId || '').toLowerCase().includes(memberSearchQuery.toLowerCase()) || 
+                (m.displayDesignation || '').toLowerCase().includes(memberSearchQuery.toLowerCase()) ||
+                (m.displayDepartment || '').toLowerCase().includes(memberSearchQuery.toLowerCase())
             )
             .sort((a, b) => {
-                const aIsAdmin = a.memberType === 'Admin' || a.memberType === 'Moderator' || a.memberType === 'Community Administrator';
-                const bIsAdmin = b.memberType === 'Admin' || b.memberType === 'Moderator' || b.memberType === 'Community Administrator';
-                if (aIsAdmin && !bIsAdmin) return -1;
-                if (!aIsAdmin && bIsAdmin) return 1;
-                return (a.fullName || a.name || '').localeCompare(b.fullName || b.name || '');
+                if (a.isCommAdmin && !b.isCommAdmin) return -1;
+                if (!a.isCommAdmin && b.isCommAdmin) return 1;
+                return (a.displayName || '').localeCompare(b.displayName || '');
             });
-    }, [membersList, memberSearchQuery]);
+    }, [membersList, memberSearchQuery, contextUsers]);
 
     // Scroll-wise progressive loading hooks
     const { visibleCount: visiblePostCount, resetVisibleCount: resetPostCount } = useScrollLoading(sortedPosts.length, 6, 6);
@@ -2648,6 +2821,11 @@ export default function CommunityView() {
                         <div className="flex items-center gap-3 mb-2 flex-wrap">
                             <span className="px-2.5 py-0.5 bg-indigo-500/90 backdrop-blur-md text-white rounded-lg text-[10px] font-black uppercase tracking-wider shadow-md">{community.type}</span>
                             <span className="px-2.5 py-0.5 bg-white/20 backdrop-blur-md text-white rounded-lg text-[10px] font-black uppercase tracking-wider shadow-md">{community.category}</span>
+                            {membershipStatus === 'banned' && (
+                                <span className="px-2.5 py-0.5 bg-amber-500/90 backdrop-blur-md text-white rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-md">
+                                    <span className="material-symbols-outlined text-[12px]">person_off</span> Suspended
+                                </span>
+                            )}
                             {membershipStatus === 'joined' && (
                                 <span className="px-2.5 py-0.5 bg-emerald-500/90 backdrop-blur-md text-white rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1 shadow-md">
                                     <span className="material-symbols-outlined text-[12px]">edit</span> Member (Can Post)
@@ -2681,10 +2859,18 @@ export default function CommunityView() {
                         const isDefaultOrg = community?.type?.toLowerCase().includes('default') || community?.type?.toLowerCase().includes('org');
                         return (
                             <div className="flex items-center gap-4 shrink-0">
-                                {isDefaultOrg ? (
+                                {membershipStatus === 'banned' ? (
+                                    <div 
+                                        className="h-10 px-4 bg-amber-500/20 text-amber-300 font-bold rounded-xl flex items-center justify-center gap-2 text-xs border border-amber-500/40 backdrop-blur-md shadow-lg"
+                                        title="You have been suspended from this community by the Community Admin"
+                                    >
+                                        <span className="material-symbols-outlined text-[16px] text-amber-400">person_off</span>
+                                        <span>Community Access Suspended</span>
+                                    </div>
+                                ) : isDefaultOrg ? (
                                     <div 
                                         className="h-10 px-4 bg-slate-900/90 text-purple-300 font-bold rounded-xl flex items-center justify-center gap-2 text-xs border border-purple-500/40 backdrop-blur-md shadow-lg"
-                                        title="Official mandatory organization community for all MPOnline employees (FR-CM-04)"
+                                        title="Official mandatory Org community for all MPOnline employees (FR-CM-04)"
                                     >
                                         <span className="material-symbols-outlined text-[16px] text-amber-400">lock</span>
                                         <span className="font-bold">Official Org Space (Mandatory)</span>
@@ -2770,7 +2956,62 @@ export default function CommunityView() {
         </div>
             </section>
 
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 flex flex-col lg:flex-row gap-8">
+            {membershipStatus === 'banned' ? (
+                <div className="max-w-3xl mx-auto px-4 py-16 text-center">
+                    <div className="glass bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800/60 rounded-3xl p-8 sm:p-12 shadow-xl space-y-6 animate-in fade-in zoom-in duration-200">
+                        <div className="w-20 h-20 rounded-2xl bg-amber-500/10 dark:bg-amber-500/20 text-amber-500 flex items-center justify-center mx-auto shadow-inner border border-amber-500/30">
+                            <span className="material-symbols-outlined text-4xl">person_off</span>
+                        </div>
+                        <div>
+                            <span className="text-[11px] font-extrabold uppercase tracking-wider px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 inline-block mb-2">
+                                Access Restricted
+                            </span>
+                            <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+                                You are suspended from this community
+                            </h2>
+                            <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                                A Community Admin has suspended your membership in <strong className="text-slate-900 dark:text-white">"{community.name}"</strong>.
+                            </p>
+                        </div>
+
+                        {communitySuspensionInfo && (
+                            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 border border-slate-200 dark:border-slate-700 text-left space-y-2 max-w-lg mx-auto">
+                                {communitySuspensionInfo.suspensionDuration && (
+                                    <div className="flex items-center justify-between text-xs">
+                                        <span className="text-slate-500 font-medium">Duration:</span>
+                                        <span className="font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/40 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-800">
+                                            {communitySuspensionInfo.suspensionDuration}
+                                        </span>
+                                    </div>
+                                )}
+                                {communitySuspensionInfo.suspensionReason && (
+                                    <div className="text-xs pt-1 border-t border-slate-200/60 dark:border-slate-700/60">
+                                        <span className="text-slate-500 block mb-0.5 font-medium">Reason for suspension:</span>
+                                        <span className="font-semibold text-slate-700 dark:text-slate-200 italic">
+                                            "{communitySuspensionInfo.suspensionReason}"
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        <div className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+                            While suspended, you cannot access or view discussions, files, or members in this community, and cannot publish posts. Your access to other Knome communities and platform features remains unaffected.
+                        </div>
+
+                        <div className="pt-2">
+                            <button
+                                onClick={() => navigate('/communities')}
+                                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/20 transition-all cursor-pointer flex items-center gap-2 mx-auto"
+                            >
+                                <span className="material-symbols-outlined text-[16px]">arrow_back</span>
+                                Explore Other Communities
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 flex flex-col lg:flex-row gap-8">
                 
                 {/* Main Content Area */}
                 <div className="flex-1 min-w-0">
@@ -3551,73 +3792,90 @@ export default function CommunityView() {
                                     {filteredMembers
                                         .slice(0, visibleMemberCount)
                                         .map(m => {
-                                            const avatar = resolveMediaUrl(m.profilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(m.fullName || m.name || 'User')}&background=6366f1&color=fff`;
-                                            const isCommAdmin = m.memberType === 'Admin' || m.memberType === 'Moderator' || m.memberType === 'Community Administrator';
-                                            const roleName = isCommAdmin ? 'Community Administrator' : 'Community Member';
-                                            const badgeBg = isCommAdmin ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border-purple-200 dark:border-purple-800' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800';
+                                            const badgeBg = m.isCommAdmin 
+                                                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border-purple-200 dark:border-purple-800' 
+                                                : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800';
 
                                             return (
-                                                <div key={m.userId || m.id || m.employeeId} className="p-4 flex items-center justify-between gap-4 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                                                    <div className="flex items-center gap-3 min-w-0">
+                                                <div 
+                                                    key={m.displayEmpId || m.employeeId || m.userId || m.id || m.displayName} 
+                                                    className="p-3 sm:p-4 flex items-center justify-between gap-3 hover:bg-slate-50/90 dark:hover:bg-slate-800/50 transition-colors"
+                                                >
+                                                    {/* Member Details */}
+                                                    <div className="flex items-center gap-3 min-w-0 flex-1">
                                                         <img 
-                                                            src={avatar} 
-                                                            alt={m.fullName || m.name} 
-                                                            className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700 shadow-sm"
+                                                            src={m.resolvedAvatar} 
+                                                            alt={m.displayName} 
+                                                            className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700 shadow-xs"
                                                             onError={(e) => {
                                                                 e.target.onerror = null;
-                                                                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(m.fullName || m.name || 'User')}&background=6366f1&color=fff`;
+                                                                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(m.displayName)}&background=6366f1&color=fff`;
                                                             }}
                                                         />
-                                                        <div className="min-w-0">
-                                                            <div className="flex items-center gap-2 flex-wrap">
-                                                                <h4 className="font-bold text-sm text-slate-900 dark:text-white truncate">{m.fullName || m.name}</h4>
-                                                                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${badgeBg}`}>
-                                                                    {roleName}
+                                                        <div className="min-w-0 flex-1">
+                                                            {/* Name + Employee ID + Role Badge */}
+                                                            <div className="flex items-center gap-1.5 min-w-0">
+                                                                <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate" title={m.displayName}>
+                                                                    {m.displayName}
+                                                                </h4>
+                                                                {m.displayEmpId && (
+                                                                    <span className="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200/70 dark:border-slate-700/60 shrink-0">
+                                                                        {m.displayEmpId}
+                                                                    </span>
+                                                                )}
+                                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 flex items-center gap-0.5 ${badgeBg}`}>
+                                                                    {m.isCommAdmin && <span className="material-symbols-outlined text-[11px]">shield_person</span>}
+                                                                    {m.roleName}
                                                                 </span>
                                                             </div>
-                                                            <p className="text-[12px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                                                                {m.designation || 'Employee'} • {m.department || 'MPOnline'}
+                                                            {/* Designation & Department */}
+                                                            <p className="text-[11px] sm:text-[12px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                                                                <span className="font-medium text-slate-600 dark:text-slate-300">{m.displayDesignation}</span>
+                                                                <span className="mx-1 text-slate-300 dark:text-slate-600">•</span>
+                                                                <span>{m.displayDepartment}</span>
                                                             </p>
                                                         </div>
                                                     </div>
 
-                                                    <div className="flex items-center gap-2 shrink-0">
+                                                    {/* Action Buttons - reduced compact size */}
+                                                    <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                                                          {isAdmin && String(m.userId || m.id) !== String(currentUser?.id) && (
                                                              <>
-                                                                 {!isCommAdmin && (
+                                                                 {!m.isCommAdmin && (
                                                                      <button 
                                                                          onClick={() => handleToggleRole(m.userId || m.id, m.memberType)}
-                                                                         className="px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800/50 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer"
-                                                                         title="Make Community Administrator"
+                                                                         className="px-2 py-1 rounded-lg border border-indigo-200 dark:border-indigo-800/50 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 text-[11px] font-semibold transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap shadow-2xs"
+                                                                         title="Promote to Community Admin"
                                                                      >
-                                                                         <span className="material-symbols-outlined text-[15px]">manage_accounts</span>
-                                                                         Make Administrator
+                                                                         <span className="material-symbols-outlined text-[14px]">manage_accounts</span>
+                                                                         <span>Admin</span>
                                                                      </button>
                                                                  )}
                                                                  <button 
                                                                      onClick={() => handleInitiateRemoveMember(m)}
-                                                                     className="px-2.5 py-1.5 rounded-xl border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer"
-                                                                     title={isCommAdmin && getAdminCount() <= 1 ? "Cannot remove sole Community Administrator" : "Remove Member from Community"}
+                                                                     className="px-2 py-1 rounded-lg border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 text-[11px] font-semibold transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap shadow-2xs"
+                                                                     title={m.isCommAdmin && getAdminCount() <= 1 ? "Cannot remove sole Community Admin" : "Remove Member from Community"}
                                                                  >
-                                                                     <span className="material-symbols-outlined text-[15px]">person_remove</span>
-                                                                     Remove
+                                                                     <span className="material-symbols-outlined text-[14px]">person_remove</span>
+                                                                     <span>Remove</span>
                                                                  </button>
                                                                  <button 
                                                                      onClick={() => handleInitiateSuspendMember(m)}
-                                                                     className="px-2.5 py-1.5 rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer"
-                                                                     title={isCommAdmin && getAdminCount() <= 1 ? "Cannot suspend sole Community Administrator" : "Suspend Member"}
+                                                                     className="px-2 py-1 rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-[11px] font-semibold transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap shadow-2xs"
+                                                                     title={m.isCommAdmin && getAdminCount() <= 1 ? "Cannot suspend sole Community Admin" : "Suspend Member"}
                                                                  >
-                                                                     <span className="material-symbols-outlined text-[15px]">person_off</span>
-                                                                     Suspend
+                                                                     <span className="material-symbols-outlined text-[14px]">person_off</span>
+                                                                     <span>Suspend</span>
                                                                  </button>
                                                              </>
                                                          )}
                                                          <button 
-                                                             onClick={() => navigate(`/profile?id=${m.userId || 1}`)}
-                                                             className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 cursor-pointer"
+                                                             onClick={() => navigate(`/profile?id=${m.userId || m.id || 1}`)}
+                                                             className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-[11px] font-semibold transition-all shrink-0 flex items-center gap-1 cursor-pointer whitespace-nowrap shadow-2xs"
+                                                             title="View Member Profile"
                                                          >
-                                                             <span className="material-symbols-outlined text-[16px]">visibility</span>
-                                                             View Profile
+                                                             <span className="material-symbols-outlined text-[14px]">visibility</span>
+                                                             <span>Profile</span>
                                                          </button>
                                                      </div>
                                                 </div>
@@ -3772,27 +4030,45 @@ export default function CommunityView() {
                                     {joinRequests.length === 0 ? (
                                         <div className="p-8 text-center text-slate-500 text-sm">No pending join requests.</div>
                                     ) : (
-                                        joinRequests.map(req => (
-                                            <div key={req.id} className="p-5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-sm">
-                                                        {(req.name || req.fullName || 'U').charAt(0)}
+                                        joinRequests.map(req => {
+                                            const norm = normalizeMemberData(req, contextUsers);
+                                            return (
+                                                <div key={req.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                                    <div className="flex items-center gap-3.5 min-w-0">
+                                                        <img 
+                                                            src={norm.resolvedAvatar} 
+                                                            alt={norm.displayName} 
+                                                            className="w-10 h-10 rounded-full object-cover shrink-0 border border-slate-200 dark:border-slate-700 shadow-sm"
+                                                            onError={(e) => {
+                                                                e.target.onerror = null;
+                                                                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(norm.displayName)}&background=6366f1&color=fff`;
+                                                            }}
+                                                        />
+                                                        <div className="min-w-0">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <h4 className="font-bold text-sm text-slate-900 dark:text-white whitespace-nowrap">{norm.displayName}</h4>
+                                                                {norm.displayEmpId && (
+                                                                    <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/70 dark:border-slate-700/60 shrink-0">
+                                                                        {norm.displayEmpId}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <p className="text-[12px] text-slate-500 mt-0.5 whitespace-nowrap">
+                                                                {norm.displayDesignation} • {norm.displayDepartment}
+                                                            </p>
+                                                        </div>
                                                     </div>
-                                                    <div>
-                                                        <h4 className="font-bold text-sm text-slate-900 dark:text-white">{req.name || req.fullName}</h4>
-                                                        <p className="text-[12px] text-slate-500">{req.role || req.designation} • {req.department || 'MPOnline'}</p>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        <button onClick={() => handleReject(req.id, norm.displayName)} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer">
+                                                            Reject
+                                                        </button>
+                                                        <button onClick={() => handleApprove(req.id, norm.displayName)} className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/30 transition-colors cursor-pointer shadow-2xs">
+                                                            Approve
+                                                        </button>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    <button onClick={() => handleReject(req.id, req.name || req.fullName)} className="px-4 py-1.5 rounded-lg text-[12px] font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer">
-                                                        Reject
-                                                    </button>
-                                                    <button onClick={() => handleApprove(req.id, req.name || req.fullName)} className="px-4 py-1.5 rounded-lg text-[12px] font-bold bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/30 transition-colors cursor-pointer">
-                                                        Approve
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        ))
+                                            );
+                                        })
                                     )}
                                 </div>
                             </div>
@@ -3811,43 +4087,64 @@ export default function CommunityView() {
                                     {suspendedMembers.length === 0 ? (
                                         <div className="p-8 text-center text-slate-500 text-sm">No suspended members.</div>
                                     ) : (
-                                        suspendedMembers.map(m => (
-                                            <div key={m.userId || m.id} className="p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 font-bold text-sm">
-                                                        {(m.fullName || m.name || 'U').charAt(0)}
-                                                    </div>
-                                                    <div className="min-w-0">
-                                                        <h4 className="font-bold text-sm text-slate-900 dark:text-white truncate">{m.fullName || m.name}</h4>
-                                                        <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-500 mt-0.5">
-                                                            <span>{m.designation || 'Member'}</span>
-                                                            <span>•</span>
-                                                            <span>Suspended by {m.suspendedBy || 'Admin'}</span>
-                                                            {m.suspensionDuration && (
-                                                                <>
-                                                                    <span>•</span>
-                                                                    <span className="font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-800/40">
-                                                                        Duration: {m.suspensionDuration}
+                                        suspendedMembers.map(m => {
+                                            const norm = normalizeMemberData(m, contextUsers);
+                                            return (
+                                                <div key={m.userId || m.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                                                    <div className="flex items-center gap-3.5 min-w-0">
+                                                        <img 
+                                                            src={norm.resolvedAvatar} 
+                                                            alt={norm.displayName} 
+                                                            className="w-10 h-10 rounded-full object-cover shrink-0 border border-amber-200 dark:border-amber-800 shadow-sm"
+                                                            onError={(e) => {
+                                                                e.target.onerror = null;
+                                                                e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(norm.displayName)}&background=f59e0b&color=fff`;
+                                                            }}
+                                                        />
+                                                        <div className="min-w-0">
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <h4 className="font-bold text-sm text-slate-900 dark:text-white whitespace-nowrap">{norm.displayName}</h4>
+                                                                {norm.displayEmpId && (
+                                                                    <span className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/70 dark:border-slate-700/60 shrink-0">
+                                                                        {norm.displayEmpId}
                                                                     </span>
-                                                                </>
+                                                                )}
+                                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shrink-0">
+                                                                    Suspended
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-500 mt-0.5">
+                                                                <span>{norm.displayDesignation}</span>
+                                                                <span>•</span>
+                                                                <span>{norm.displayDepartment}</span>
+                                                                <span>•</span>
+                                                                <span>Suspended by {m.suspendedBy || 'Admin'}</span>
+                                                                {m.suspensionDuration && (
+                                                                    <>
+                                                                        <span>•</span>
+                                                                        <span className="font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-800/40">
+                                                                            Duration: {m.suspensionDuration}
+                                                                        </span>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                            {m.suspensionReason && (
+                                                                <p className="text-[11px] text-slate-500 dark:text-slate-400 italic mt-1 truncate max-w-md">
+                                                                    Reason: {m.suspensionReason}
+                                                                </p>
                                                             )}
                                                         </div>
-                                                        {m.suspensionReason && (
-                                                            <p className="text-[11px] text-slate-500 dark:text-slate-400 italic mt-1 truncate max-w-md">
-                                                                Reason: {m.suspensionReason}
-                                                            </p>
-                                                        )}
                                                     </div>
+                                                    <button
+                                                        onClick={() => handleReinstate(m.userId || m.id, norm.displayName)}
+                                                        className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-emerald-50 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 hover:bg-emerald-100 transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[14px]">person_add</span>
+                                                        Reinstate
+                                                    </button>
                                                 </div>
-                                                <button
-                                                    onClick={() => handleReinstate(m.userId || m.id, m.fullName || m.name)}
-                                                    className="px-4 py-1.5 rounded-lg text-[12px] font-bold bg-emerald-50 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 hover:bg-emerald-100 transition-colors cursor-pointer flex items-center gap-1"
-                                                >
-                                                    <span className="material-symbols-outlined text-[15px]">person_add</span>
-                                                    Reinstate
-                                                </button>
-                                            </div>
-                                        ))
+                                            );
+                                        })
                                     )}
                                 </div>
                             </div>
@@ -4153,6 +4450,7 @@ export default function CommunityView() {
                 </div>
 
             </div>
+            )}
 
             {/* Upload File Modal */}
             {isUploadModalOpen && (
@@ -4748,7 +5046,7 @@ export default function CommunityView() {
                                 <span className="material-symbols-outlined text-[34px]">admin_panel_settings</span>
                             </div>
                             <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
-                                {adminProtectionWarning.title || 'Community Administrator Protection'}
+                                {adminProtectionWarning.title || 'Community Admin Protection'}
                             </h3>
                             <div className="bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/40 rounded-xl p-3.5 mb-5 text-left">
                                 <p className="text-xs text-amber-900 dark:text-amber-200 leading-relaxed whitespace-pre-line">
@@ -4805,32 +5103,32 @@ export default function CommunityView() {
                         <div className="p-5 sm:p-6 flex-1 min-h-0 overflow-y-auto space-y-4">
                             <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200/70 dark:border-slate-700/60">
                                 <img
-                                    src={resolveMediaUrl(removeModalMember.profilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(removeModalMember.fullName || removeModalMember.name || 'User')}&background=6366f1&color=fff`}
-                                    alt={removeModalMember.fullName || removeModalMember.name}
+                                    src={removeModalMember.resolvedAvatar || resolveMediaUrl(removeModalMember.profilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(removeModalMember.displayName || removeModalMember.fullName || removeModalMember.name || 'User')}&background=6366f1&color=fff`}
+                                    alt={removeModalMember.displayName || removeModalMember.fullName || removeModalMember.name}
                                     className="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0"
                                 />
                                 <div className="min-w-0 flex-1">
-                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white truncate">
-                                        {removeModalMember.fullName || removeModalMember.name}
+                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white whitespace-nowrap">
+                                        {removeModalMember.displayName || removeModalMember.fullName || removeModalMember.name}
                                     </h4>
                                     <p className="text-xs text-slate-500 truncate">
-                                        {removeModalMember.designation || 'Member'} • {removeModalMember.department || 'MPOnline'}
+                                        {removeModalMember.displayDesignation || removeModalMember.designation || 'Member'} • {removeModalMember.displayDepartment || removeModalMember.department || 'MPOnline'}
                                     </p>
                                 </div>
                                 <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-full border bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700 shrink-0">
-                                    {removeModalMember.memberType || 'Member'}
+                                    {removeModalMember.roleName || removeModalMember.memberType || 'Member'}
                                 </span>
                             </div>
 
                             <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                                Are you sure you want to remove <strong className="text-slate-900 dark:text-white font-bold">{removeModalMember.fullName || removeModalMember.name}</strong> from this community?
+                                Are you sure you want to remove <strong className="text-slate-900 dark:text-white font-bold">{removeModalMember.displayName || removeModalMember.fullName || removeModalMember.name}</strong> from this community?
                             </p>
 
                             <div className="p-3 bg-red-50/50 dark:bg-red-950/20 border border-red-200/60 dark:border-red-800/40 rounded-xl text-[11px] text-red-700 dark:text-red-300 flex items-start gap-2">
                                 <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5 text-red-500">warning</span>
                                 <span>
-                                    {removeModalMember.memberType === 'Admin' || removeModalMember.memberType === 'Moderator' || removeModalMember.memberType === 'Community Administrator'
-                                        ? 'This user is a Community Administrator. Once removed, they will lose all admin privileges. Remaining administrators will continue managing the community.'
+                                    {removeModalMember.memberType === 'Admin' || removeModalMember.memberType === 'Moderator' || removeModalMember.memberType === 'Community Administrator' || removeModalMember.memberType === 'Community Admin'
+                                        ? 'This user is a Community Admin. Once removed, they will lose all admin privileges. Remaining admins will continue managing the community.'
                                         : 'They will immediately lose access to private discussions, files, and community activities.'}
                                 </span>
                             </div>

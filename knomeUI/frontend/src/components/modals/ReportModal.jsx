@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { interactionsApi } from '../../utils/apiService';
+import { useUser } from '../contexts/UserContext';
 
 const REASON_MAPPING = [
     { label: 'Spam or Marketing', code: 'Spam' },
@@ -10,7 +11,8 @@ const REASON_MAPPING = [
     { label: 'Other Issues', code: 'Other' },
 ];
 
-export default function ReportModal({ isOpen, onClose, targetType = 'Post', targetId, targetName }) {
+export default function ReportModal({ isOpen, onClose, targetType = 'Post', targetId, targetName, targetContent = '', targetUserId = null }) {
+    const { currentUser } = useUser();
     const [selectedCode, setSelectedCode] = useState('');
     const [details, setDetails] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -26,6 +28,27 @@ export default function ReportModal({ isOpen, onClose, targetType = 'Post', targ
         try {
             const formattedType = targetType.charAt(0).toUpperCase() + targetType.slice(1);
             const numericId = typeof targetId === 'number' ? targetId : parseInt(String(targetId).replace(/\D/g, ''), 10);
+            const activeReporterUserId = currentUser?.userId || currentUser?.id || 1050;
+            const activeReporterName = currentUser?.fullName || currentUser?.name || 'Vilash Deshmukh';
+
+            // Cache report details with content snippet and author for admin preview modal
+            try {
+                const existingCache = JSON.parse(localStorage.getItem('knome_reported_posts_cache') || '{}');
+                const cacheData = {
+                    contentId: targetId,
+                    contentType: formattedType,
+                    authorName: safeTargetName,
+                    authorUserId: targetUserId || null,
+                    content: targetContent || details || 'Flagged content under moderation review',
+                    reporterFullName: activeReporterName,
+                    reporterUserId: activeReporterUserId,
+                    reportedDate: new Date().toISOString()
+                };
+                existingCache[`${formattedType}_${numericId || targetId}`] = cacheData;
+                existingCache[`Post_${numericId || targetId}`] = cacheData;
+                existingCache[numericId || targetId] = cacheData;
+                localStorage.setItem('knome_reported_posts_cache', JSON.stringify(existingCache));
+            } catch {}
 
             if (!isNaN(numericId) && numericId > 0 && !String(targetId).startsWith('yt_')) {
                 await interactionsApi.reportContent(formattedType, numericId, { reasonCode: selectedCode });
@@ -33,14 +56,17 @@ export default function ReportModal({ isOpen, onClose, targetType = 'Post', targ
                 // For custom / imported content, persist in local moderation reports
                 const newReport = {
                     reportId: Date.now(),
-                    reporterUserId: 1,
-                    reporterFullName: 'Current User',
+                    reporterUserId: activeReporterUserId,
+                    reporterFullName: activeReporterName,
                     contentType: formattedType,
                     contentId: targetId,
                     reasonCode: selectedCode,
                     details: details || '',
                     status: 'Pending',
-                    reportedDate: new Date().toISOString()
+                    reportedDate: new Date().toISOString(),
+                    reportedUserName: safeTargetName,
+                    reportedUserId: targetUserId || null,
+                    postContentSnippet: targetContent || details || ''
                 };
                 try {
                     const existing = JSON.parse(localStorage.getItem('knome_moderation_reports') || '[]');

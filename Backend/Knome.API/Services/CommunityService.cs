@@ -286,11 +286,12 @@ public class CommunityService : ICommunityService
                 throw new BadRequestException("You have been banned from joining this community.");
 
             // Re-apply if previously rejected
-            existingMember.Status = community.CommunityType == CommunityTypes.Public
+            var isAutoApprove = community.CommunityType == CommunityTypes.Public || community.CommunityType == CommunityTypes.Org || community.CommunityType == CommunityTypes.Default;
+            existingMember.Status = isAutoApprove
                 ? CommunityMemberStatuses.Approved
                 : CommunityMemberStatuses.Pending;
             existingMember.RequestedDate = DateTime.UtcNow;
-            existingMember.DecidedDate = community.CommunityType == CommunityTypes.Public ? DateTime.UtcNow : null;
+            existingMember.DecidedDate = isAutoApprove ? DateTime.UtcNow : null;
 
             await _repo.UpdateMemberAsync(existingMember);
             return _mapper.Map<CommunityMemberDto>(existingMember);
@@ -301,11 +302,11 @@ public class CommunityService : ICommunityService
             CommunityId = communityId,
             UserId = currentUserId,
             MemberType = CommunityMemberTypes.Subscriber,
-            Status = community.CommunityType == CommunityTypes.Public
+            Status = (community.CommunityType == CommunityTypes.Public || community.CommunityType == CommunityTypes.Org || community.CommunityType == CommunityTypes.Default)
                 ? CommunityMemberStatuses.Approved
                 : CommunityMemberStatuses.Pending,
             RequestedDate = DateTime.UtcNow,
-            DecidedDate = community.CommunityType == CommunityTypes.Public ? DateTime.UtcNow : null
+            DecidedDate = (community.CommunityType == CommunityTypes.Public || community.CommunityType == CommunityTypes.Org || community.CommunityType == CommunityTypes.Default) ? DateTime.UtcNow : null
         };
 
         await _repo.AddMemberAsync(newMember);
@@ -339,8 +340,8 @@ public class CommunityService : ICommunityService
         if (community == null)
             throw new NotFoundException($"Community ID {communityId} not found.");
 
-        if (community.CommunityType == CommunityTypes.Default)
-            throw new BadRequestException("Employees cannot leave a Default system community (FR-CM-04).");
+        if (community.CommunityType == CommunityTypes.Default || community.CommunityType == CommunityTypes.Org)
+            throw new BadRequestException("Employees cannot leave an Org system community (FR-CM-04).");
 
         var isAdmin = await _repo.IsCommunityAdminAsync(communityId, currentUserId);
         if (isAdmin)

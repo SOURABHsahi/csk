@@ -978,8 +978,8 @@ public class ContentInteractionService : IContentInteractionService
                 }
                 else
                 {
-                    dto.ReportedUserName = dto.ReporterFullName;
-                    dto.PostContentSnippet = $"Reported {dto.ReasonCode} content for Post #{dto.ContentId}. Content removed under admin governance policy.";
+                    dto.ReportedUserName = "Reported Author";
+                    dto.PostContentSnippet = $"Reported {dto.ReasonCode} content for Post #{dto.ContentId}. Content snapshot under administrative review.";
                     dto.CommunityName = "Engineering & Tech";
                 }
             }
@@ -994,7 +994,7 @@ public class ContentInteractionService : IContentInteractionService
                 }
                 else
                 {
-                    dto.ReportedUserName = dto.ReporterFullName;
+                    dto.ReportedUserName = "Content Creator";
                     dto.PostContentSnippet = $"Reported {dto.ReasonCode} violation on Video #{dto.ContentId}.";
                     dto.CommunityName = "Video Library";
                 }
@@ -1010,7 +1010,7 @@ public class ContentInteractionService : IContentInteractionService
                 }
                 else
                 {
-                    dto.ReportedUserName = dto.ReporterFullName;
+                    dto.ReportedUserName = "Article Author";
                     dto.PostContentSnippet = $"Reported {dto.ReasonCode} violation on Article #{dto.ContentId}.";
                     dto.CommunityName = "Knowledge Hub";
                 }
@@ -1026,7 +1026,7 @@ public class ContentInteractionService : IContentInteractionService
                 }
                 else
                 {
-                    dto.ReportedUserName = dto.ReporterFullName;
+                    dto.ReportedUserName = "Podcast Host";
                     dto.PostContentSnippet = $"Reported {dto.ReasonCode} violation on Podcast #{dto.ContentId}.";
                     dto.CommunityName = "Audio Room";
                 }

@@ -63,11 +63,15 @@ export default function AuthGuard({ children }) {
                         <span className="material-symbols-outlined text-4xl">person_off</span>
                     </div>
                     <div>
-                        <h2 className="text-2xl font-black text-rose-400 tracking-tight mb-1">ACCESS DENIED</h2>
-                        <h3 className="text-base font-bold text-slate-200 uppercase tracking-wide">Account Suspended</h3>
+                        <span className="text-[11px] font-extrabold uppercase tracking-wider px-3 py-1 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 inline-block mb-3">
+                            Access Denied
+                        </span>
+                        <h2 className="text-2xl sm:text-3xl font-black text-rose-500 tracking-tight leading-snug">
+                            Your account is suspended by system admin
+                        </h2>
                     </div>
                     <p className="text-sm text-slate-300 leading-relaxed bg-slate-800/80 p-4 rounded-xl border border-slate-700/50">
-                        Your account <strong className="text-white">({currentUser.name || currentUser.fullName || 'Employee'})</strong> has been suspended by System Administrator due to compliance & governance policies.
+                        Your account <strong className="text-white">({currentUser.name || currentUser.fullName || 'Employee'})</strong> has been suspended by System Admin. You cannot access the Knome platform at this time. Please contact System Administration / HR for assistance.
                     </p>
                     <div className="text-xs text-rose-300 font-semibold bg-rose-500/10 p-3 rounded-xl border border-rose-500/20 text-left space-y-1">
                         <div className="font-black text-rose-400 mb-1 uppercase tracking-wider">Restricted Modules:</div>
@@ -135,7 +139,7 @@ export default function AuthGuard({ children }) {
                         <div className="flex items-start gap-2.5">
                             <span className="material-symbols-outlined text-amber-400 text-lg shrink-0 mt-0.5">info</span>
                             <p className="text-xs text-slate-300 leading-relaxed">
-                                Your account is authenticated via <strong>EmployeeHub SSO</strong>, but portal access is locked until the <strong>System Administrator</strong> assigns your access role.
+                                Your account is authenticated via <strong>EmployeeHub SSO</strong>, but portal access is locked until the <strong>System Admin</strong> assigns your access role.
                             </p>
                         </div>
 

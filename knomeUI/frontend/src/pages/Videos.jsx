@@ -706,7 +706,15 @@ export default function Videos() {
         <>
             {/* Upload Video Modal */}
             <UploadVideoModal isOpen={isUploadOpen} onClose={() => setIsUploadOpen(false)} onVideoUploaded={fetchVideos} />
-            <ReportModal isOpen={!!reportingVideo} onClose={() => setReportingVideo(null)} targetType="Video" targetId={reportingVideo?.id || 1} targetName={reportingVideo?.author || 'Creator'} />
+            <ReportModal 
+                isOpen={!!reportingVideo} 
+                onClose={() => setReportingVideo(null)} 
+                targetType="Video" 
+                targetId={reportingVideo?.videoId || reportingVideo?.id || 1} 
+                targetName={reportingVideo?.uploaderFullName || reportingVideo?.author || 'Creator'} 
+                targetUserId={reportingVideo?.uploaderUserId || reportingVideo?.authorId}
+                targetContent={reportingVideo?.title || reportingVideo?.description || ''}
+            />
             <SaveToCategoryModal isOpen={!!savingVideoModal} onClose={() => setSavingVideoModal(null)} item={savingVideoModal} onSaved={(s) => setSavedMap(p => ({ ...p, [s.contentId || s.id]: true }))} />
 
             {/* Create Playlist / Series Modal */}

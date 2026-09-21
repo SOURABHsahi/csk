@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useUser, getUserStatusConfig } from '../contexts/UserContext';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import NotificationSettingsModal, { DEFAULT_NOTIF_PREFERENCES } from '../modals/NotificationSettingsModal';
+import RoleFaqModal from '../modals/RoleFaqModal';
 import NotificationToast from '../ui/NotificationToast';
 import knomeLogo from '../../assets/knome_logo.png';
 import knomeLogoDark from '../../assets/knome_logo_dark.png';
@@ -14,6 +15,7 @@ export default function Navbar() {
     const { currentUser, setCurrentUser, users, logout } = useUser();
     const confirm = useConfirm();
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+    const [isFaqModalOpen, setIsFaqModalOpen] = useState(false);
     const userStatusConfig = getUserStatusConfig(currentUser);
     const { pathname } = useLocation();
     const navigate = useNavigate();
@@ -65,20 +67,14 @@ export default function Navbar() {
         };
     }, [currentUser?.userId, currentUser?.employeeId, currentUser?.karma]);
 
-    const isSysAdmin = currentUser?.role === 'SYSADM' || 
-                       currentUser?.role === 'System Administrator' ||
-                       currentUser?.role === 'SystemAdmin' ||
-                       currentUser?.roleName === 'System Administrator' || 
-                       currentUser?.roleName === 'SYSADM' ||
-                       currentUser?.roleName === 'SystemAdmin' ||
-                       currentUser?.designation === 'System Administrator' ||
-                       (Array.isArray(currentUser?.roles) && (
-                           currentUser.roles.includes('SYSADM') || 
-                           currentUser.roles.includes('System Administrator') || 
-                           currentUser.roles.includes('SystemAdmin')
+    const isSysAdmin = ['SYSADM', 'SYSTEM ADMINISTRATOR', 'SYSTEM ADMIN', 'SYSTEMADMIN'].includes(String(currentUser?.role || '').toUpperCase()) || 
+                       ['SYSADM', 'SYSTEM ADMINISTRATOR', 'SYSTEM ADMIN', 'SYSTEMADMIN'].includes(String(currentUser?.roleName || '').toUpperCase()) || 
+                       ['SYSTEM ADMINISTRATOR', 'SYSTEM ADMIN'].includes(String(currentUser?.designation || '').toUpperCase()) ||
+                       (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => 
+                           ['SYSADM', 'SYSTEM ADMINISTRATOR', 'SYSTEM ADMIN', 'SYSTEMADMIN'].includes(String(r || '').toUpperCase())
                        ));
 
-    // Smart YouTube-Style Search State
+    // Smart Enterprise Search State
     const [searchQuery, setSearchQuery] = useState('');
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [suggestions, setSuggestions] = useState([]);
@@ -1259,7 +1255,7 @@ export default function Navbar() {
                             </button>
                         </div>
 
-                        {/* Search Overlay Dropdown (YouTube-style) */}
+                        {/* Search Overlay Dropdown (Universal Enterprise Search) */}
                         {showSuggestions && (
                             <div className="absolute top-12 left-0 w-full rounded-2xl overflow-hidden shadow-2xl py-2 z-50"
                                 style={{
@@ -1387,8 +1383,8 @@ export default function Navbar() {
                 {/* ─── RIGHT: Actions & Profile ─── */}
                 <div className="flex items-center gap-2.5 justify-end">
 
-                    {/* Karma Badge (Visible for HR Admin, Community Admin, and all logged-in members) */}
-                    {currentUser && (
+                    {/* Karma Badge (Visible for HR Admin, Community Admin, and all members; System Admin is exempt) */}
+                    {currentUser && !isSysAdmin && (
                         <Link to="/karma-history" className="relative flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 rounded-full transition-all hover:scale-105 group cursor-pointer"
                             style={{
                                 background: isDark 
@@ -1403,6 +1399,25 @@ export default function Navbar() {
                             <span className="text-[9px] font-extrabold uppercase tracking-wider text-amber-700/70 dark:text-amber-300/70">pts</span>
                         </Link>
                     )}
+
+                    {/* ─── Role & Platform FAQ Guide Button ─── */}
+                    <button
+                        onClick={() => setIsFaqModalOpen(true)}
+                        title="Knome Role & Platform FAQs (How to use Knome properly)"
+                        className="relative flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl transition-all hover:scale-105 active:scale-95 cursor-pointer group"
+                        style={{
+                            background: isDark ? 'rgba(15, 23, 42, 0.8)' : 'rgba(241, 245, 249, 0.9)',
+                            border: '1px solid var(--border-mid)',
+                            boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.3)' : '0 1px 3px rgba(0,0,0,0.05)'
+                        }}
+                    >
+                        <span className="material-symbols-outlined text-[18px] text-indigo-600 dark:text-indigo-400 group-hover:rotate-12 transition-transform" style={{fontVariationSettings:"'FILL' 1"}}>
+                            help
+                        </span>
+                        <span className="text-[12px] font-bold text-slate-700 dark:text-slate-200">
+                            FAQ
+                        </span>
+                    </button>
 
                     {/* ─── Theme Toggle ─── */}
                     <button
@@ -1825,6 +1840,7 @@ export default function Navbar() {
         </nav>
 
         {isNotifSettingsOpen && <NotificationSettingsModal isOpen={isNotifSettingsOpen} onClose={() => setIsNotifSettingsOpen(false)} />}
+        {isFaqModalOpen && <RoleFaqModal isOpen={isFaqModalOpen} onClose={() => setIsFaqModalOpen(false)} />}
         {toastNotification && <NotificationToast notification={toastNotification} onClose={() => setToastNotification(null)} />}
         </>
     );

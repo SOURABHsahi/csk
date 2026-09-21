@@ -63,7 +63,8 @@ public class CommunityRepository : ICommunityRepository
             .Where(c => c.CommunityMembers.Any(m => m.UserId == userId && (m.Status == "Approved" || m.Status == "Active")) ||
                         c.Users.Any(u => u.UserId == userId) ||
                         c.CreatedByUserId == userId ||
-                        c.CommunityType == "Default")
+                        c.CommunityType == "Default" ||
+                        c.CommunityType == "Org")
             .OrderByDescending(c => c.CreatedDate)
             .ToListAsync();
     }

@@ -50,13 +50,14 @@ public class AuthService : IAuthService
     {
         var searchId = request.EmployeeId?.Trim() ?? string.Empty;
         var searchLower = searchId.ToLower();
+        var altSearchLower = searchLower.StartsWith("mpo") ? "mp0" + searchLower.Substring(3) : (searchLower.StartsWith("mp0") ? "mpo" + searchLower.Substring(3) : searchLower);
 
         // 1. Load user with credential, department and roles
         var user = await _db.Users
             .Include(u => u.UserCredential)
             .Include(u => u.Department)
             .Include(u => u.Roles)
-            .Where(u => u.EmployeeId.ToLower() == searchLower || (u.Email != null && u.Email.ToLower() == searchLower))
+            .Where(u => u.EmployeeId.ToLower() == searchLower || u.EmployeeId.ToLower() == altSearchLower || (u.Email != null && u.Email.ToLower() == searchLower))
             .FirstOrDefaultAsync();
 
         // If user not yet in Knome, attempt auto-sync from EmployeeHubDb
@@ -67,7 +68,7 @@ public class AuthService : IAuthService
                 .Include(u => u.UserCredential)
                 .Include(u => u.Department)
                 .Include(u => u.Roles)
-                .Where(u => u.EmployeeId.ToLower() == searchLower || (u.Email != null && u.Email.ToLower() == searchLower))
+                .Where(u => u.EmployeeId.ToLower() == searchLower || u.EmployeeId.ToLower() == altSearchLower || (u.Email != null && u.Email.ToLower() == searchLower))
                 .FirstOrDefaultAsync();
         }
 
@@ -89,10 +90,10 @@ public class AuthService : IAuthService
         }
 
         if (user.IsPermanentlySuspended || (user.SuspendedUntil.HasValue && user.SuspendedUntil > DateTime.UtcNow))
-            throw new BadRequestException("This account has been suspended. Please contact HR.");
+            throw new BadRequestException("Your account is suspended by system admin.");
 
         if (!user.IsActive)
-            throw new BadRequestException("This account has been deactivated. Please contact HR.");
+            throw new BadRequestException("Your account is suspended by system admin.");
 
         // 2. Validate Password (Try MPO OIDC Password Grant first if configured, then local BCrypt)
         bool passwordValid = false;
@@ -271,7 +272,7 @@ public class AuthService : IAuthService
             throw new NotFoundException("User not found.");
 
         if (user.IsPermanentlySuspended || (user.SuspendedUntil.HasValue && user.SuspendedUntil > DateTime.UtcNow) || !user.IsActive)
-            throw new ForbiddenException("This account has been suspended. Please contact HR.");
+            throw new ForbiddenException("Your account is suspended by system admin.");
 
         var roles = user.Roles.Select(r => r.RoleName).ToList();
         return MapToCurrentUser(user, roles);
@@ -301,7 +302,7 @@ public class AuthService : IAuthService
             throw new NotFoundException("User not found.");
 
         if (user.IsPermanentlySuspended || (user.SuspendedUntil.HasValue && user.SuspendedUntil > DateTime.UtcNow) || !user.IsActive)
-            throw new ForbiddenException("This account has been suspended. Please contact HR.");
+            throw new ForbiddenException("Your account is suspended by system admin.");
 
         var roles = user.Roles.Select(r => r.RoleName).ToList();
         if (roles.Count == 0)

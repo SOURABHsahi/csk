@@ -2187,8 +2187,10 @@ export default function PostCard({ post, onPostDeleted }) {
                 isOpen={isReportModalOpen} 
                 onClose={() => setIsReportModalOpen(false)} 
                 targetType="Post"
-                targetId={post?.id}
-                targetName={post?.author?.name || post?.authorFullName || 'Author'}
+                targetId={post?.postId || post?.id}
+                targetName={post?.author?.name || post?.authorFullName || post?.authorName || 'Author'}
+                targetUserId={post?.author?.id || post?.authorId || post?.authorUserId || post?.userId}
+                targetContent={post?.content || post?.contentText || post?.text || ''}
             />
 
             {/* Comments Section (FR-CI-02, FR-CI-05) */}

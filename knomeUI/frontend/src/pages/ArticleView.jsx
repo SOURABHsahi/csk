@@ -845,8 +845,10 @@ export default function ArticleView() {
                 isOpen={isReportOpen}
                 onClose={() => setIsReportOpen(false)}
                 targetType="Article"
-                targetId={article?.id || 1}
-                targetName={article?.author?.name || 'Author'}
+                targetId={article?.articleId || article?.id || 1}
+                targetName={article?.authorFullName || article?.author?.name || article?.authorName || 'Author'}
+                targetUserId={article?.authorUserId || article?.author?.id}
+                targetContent={article?.title || article?.summary || ''}
             />
 
             {/* Save to Category Modal */}

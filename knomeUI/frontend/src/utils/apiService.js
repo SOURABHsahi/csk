@@ -108,8 +108,10 @@ export const roleRequestsApi = {
         return apiClient.get(`/users/role-requests?${params}`);
     },
     /** POST /users/role-requests/{id}/approve */
-    approve: (requestId, roleName = 'Employee', comment = '') =>
-        apiClient.post(`/users/role-requests/${requestId}/approve`, { roleName, comment }),
+    approve: (requestId, roleName = 'Employee', comment = '') => {
+        const mappedRole = roleName === 'HR Admin' ? 'HR Administrator' : roleName === 'System Admin' ? 'System Administrator' : roleName;
+        return apiClient.post(`/users/role-requests/${requestId}/approve`, { roleName: mappedRole, comment });
+    },
     /** POST /users/role-requests/{id}/reject */
     reject: (requestId, reason = '') =>
         apiClient.post(`/users/role-requests/${requestId}/reject`, { reason }),
@@ -358,7 +360,153 @@ export const getCommunityImages = (name = '', category = '') => {
     };
 };
 
-
+/** Unified Enterprise Community Channels shared across Communities catalog and Admin Console */
+export const DEFAULT_ENTERPRISE_COMMUNITIES = [
+    {
+        id: 'ec-1',
+        communityId: 'ec-1',
+        name: 'Engineering & Tech',
+        category: 'Technology & Architecture',
+        categoryName: 'Technology & Architecture',
+        type: 'Public',
+        communityType: 'Public',
+        members: '1 member',
+        membersCount: 1,
+        activity: '5 posts',
+        postsCount: 5,
+        description: 'Core engineering, architecture standards, and tech innovation discussions.',
+        mod: 'Loveneesh Sharma',
+        status: 'Strict',
+        filterKey: 'Engineering',
+        icon: 'developer_board'
+    },
+    {
+        id: 'ec-2',
+        communityId: 'ec-2',
+        name: 'HR & People Ops',
+        category: 'Human Resources & Governance',
+        categoryName: 'Human Resources & Governance',
+        type: 'Org',
+        communityType: 'Org',
+        members: '6 members',
+        membersCount: 6,
+        activity: '3 posts',
+        postsCount: 3,
+        description: 'Human resources, talent management, company policies, and workplace governance.',
+        mod: 'Sourabh Sahu',
+        status: 'Standard',
+        filterKey: 'HR',
+        icon: 'groups'
+    },
+    {
+        id: 'ec-3',
+        communityId: 'ec-3',
+        name: 'Product Design & UX',
+        category: 'UI/UX & Design Systems',
+        categoryName: 'UI/UX & Design Systems',
+        type: 'Public',
+        communityType: 'Public',
+        members: '6 members',
+        membersCount: 6,
+        activity: '2 posts',
+        postsCount: 2,
+        description: 'UI/UX guidelines, design systems, usability research, and creative prototypes.',
+        mod: 'Mayur Verma',
+        status: 'Standard',
+        filterKey: 'Product',
+        icon: 'palette'
+    },
+    {
+        id: 'ec-4',
+        communityId: 'ec-4',
+        name: 'AI & Data Science Lab',
+        category: 'AI Research & Data Science',
+        categoryName: 'AI Research & Data Science',
+        type: 'Private',
+        communityType: 'Private',
+        members: '4 members',
+        membersCount: 4,
+        activity: '4 posts',
+        postsCount: 4,
+        description: 'Machine learning, predictive models, big data pipelines, and AI experiments.',
+        mod: 'Vishendra Sharma',
+        status: 'Strict',
+        filterKey: 'AI',
+        icon: 'psychology'
+    },
+    {
+        id: 'ec-5',
+        communityId: 'ec-5',
+        name: 'Finance & Accounting',
+        category: 'Finance, Audit & Payroll',
+        categoryName: 'Finance, Audit & Payroll',
+        type: 'Org',
+        communityType: 'Org',
+        members: '5 members',
+        membersCount: 5,
+        activity: '1 post',
+        postsCount: 1,
+        description: 'Payroll, financial planning, budget guidelines, and corporate audit coordination.',
+        mod: 'Sourabh Sahu',
+        status: 'Standard',
+        filterKey: 'Finance',
+        icon: 'account_balance'
+    },
+    {
+        id: 'ec-6',
+        communityId: 'ec-6',
+        name: 'Marketing & Brand Strategy',
+        category: 'Marketing, PR & Events',
+        categoryName: 'Marketing, PR & Events',
+        type: 'Public',
+        communityType: 'Public',
+        members: '3 members',
+        membersCount: 3,
+        activity: '1 post',
+        postsCount: 1,
+        description: 'Brand assets, public relations, event management, and corporate outreach.',
+        mod: 'Meghna Tiwari',
+        status: 'Standard',
+        filterKey: 'Marketing',
+        icon: 'campaign'
+    },
+    {
+        id: 'ec-7',
+        communityId: 'ec-7',
+        name: 'CTO Leadership Circle',
+        category: 'Executive Leadership & Strategy',
+        categoryName: 'Executive Leadership & Strategy',
+        type: 'Private',
+        communityType: 'Private',
+        members: '2 members',
+        membersCount: 2,
+        activity: '0 posts',
+        postsCount: 0,
+        description: 'Executive technology decisions, strategic roadmap, and architectural oversight.',
+        mod: 'Loveneesh Sharma',
+        status: 'Strict',
+        filterKey: 'CTO',
+        icon: 'military_tech'
+    },
+    {
+        id: 'ec-8',
+        communityId: 'ec-8',
+        name: 'General Discussion',
+        category: 'Company Open Lounge',
+        categoryName: 'Company Open Lounge',
+        type: 'Public',
+        communityType: 'Public',
+        members: '8 members',
+        membersCount: 8,
+        activity: '2 posts',
+        postsCount: 2,
+        description: 'Open employee forum for casual conversations, team highlights, and general chatter.',
+        mod: 'System Admin',
+        status: 'Relaxed',
+        filterKey: 'General',
+        icon: 'forum'
+    }
+];
 
 // ─────────────────────────────────────────────
 //  INTERACTIONS (Comments, Reactions, Bookmarks, Shares)
@@ -574,8 +722,16 @@ export const adminApi = {
         apiClient.put(`/users/${userId}/activate`),
 
     /** PUT /users/{id}/roles */
-    changeUserRoles: (userId, roleNames) =>
-        apiClient.put(`/users/${userId}/roles`, { roleNames: Array.isArray(roleNames) ? roleNames : [roleNames] }),
+    changeUserRoles: (userId, roleNames) => {
+        const rawList = Array.isArray(roleNames) ? roleNames : [roleNames];
+        const backendMapped = rawList.map(r => {
+            if (r === 'HR Admin') return 'HR Administrator';
+            if (r === 'System Admin') return 'System Administrator';
+            if (r === 'Community Administrator') return 'Community Admin';
+            return r;
+        });
+        return apiClient.put(`/users/${userId}/roles`, { roleNames: backendMapped });
+    },
 
     /** GET /audit/logs */
     getAuditLogs: (pageNumber = 1, pageSize = 20) => 

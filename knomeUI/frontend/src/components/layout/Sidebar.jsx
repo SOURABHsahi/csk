@@ -59,15 +59,15 @@ export default function Sidebar() {
         { to: '/search',           icon: 'search',       label: 'Discover',      color: '#8b5cf6' },
     ];
 
-    const isSysAdmin = currentUser?.role === 'SYSADM' ||
-                       ['System Administrator', 'System Admin'].includes(currentUser?.roleName) ||
-                       (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => ['SYSADM', 'System Administrator', 'SystemAdmin'].includes(r)));
+    const isSysAdmin = ['SYSADM', 'SYSTEM ADMIN', 'SYSTEM ADMINISTRATOR'].includes(String(currentUser?.role || '').toUpperCase()) ||
+                       ['SYSTEM ADMINISTRATOR', 'SYSTEM ADMIN'].includes(String(currentUser?.roleName || '').toUpperCase()) ||
+                       (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => ['SYSADM', 'SYSTEM ADMINISTRATOR', 'SYSTEMADMIN', 'SYSTEM ADMIN'].includes(String(r || '').toUpperCase())));
 
-    const isHrOrSysAdmin = ['SYSADM', 'HRADM'].includes(currentUser?.role) ||
-                           ['System Administrator', 'HR Administrator', 'System Admin', 'HR Admin'].includes(currentUser?.roleName) ||
-                           (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => ['SYSADM', 'HRADM', 'System Administrator', 'HR Administrator', 'SystemAdmin', 'HRAdmin'].includes(r)));
+    const isHrOrSysAdmin = ['SYSADM', 'HRADM', 'SYSTEM ADMIN', 'HR ADMIN', 'ADMIN'].includes(String(currentUser?.role || '').toUpperCase()) ||
+                           ['SYSTEM ADMINISTRATOR', 'HR ADMINISTRATOR', 'SYSTEM ADMIN', 'HR ADMIN', 'ADMIN'].includes(String(currentUser?.roleName || '').toUpperCase()) ||
+                           (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => ['SYSADM', 'HRADM', 'SYSTEM ADMINISTRATOR', 'HR ADMINISTRATOR', 'SYSTEMADMIN', 'HRADMIN', 'SYSTEM ADMIN', 'HR ADMIN', 'ADMIN'].includes(String(r || '').toUpperCase())));
 
-    if (isSysAdmin) {
+    if (isSysAdmin || isHrOrSysAdmin) {
         navItems.push({ to: '/admin-console', icon: 'admin_panel_settings', label: 'Admin Console', color: '#f43f5e' });
     }
     if (isHrOrSysAdmin) {
@@ -175,11 +175,13 @@ export default function Sidebar() {
                     </div>
 
                     {/* Stats Row */}
-                    <div className="relative z-10 grid grid-cols-3 gap-1.5 pt-2.5 mt-1 border-t border-theme-30">
-                        <div className="text-center py-1.5 px-1 rounded-xl bg-theme-60 dark:bg-slate-800/60 border border-theme-30/60">
-                            <p className="text-[12.5px] font-black text-slate-900 dark:text-white leading-tight">{liveKarma.toLocaleString()}</p>
-                            <p className="text-[8.5px] uppercase tracking-wider font-extrabold text-theme-30-text mt-0.5">Points</p>
-                        </div>
+                    <div className={`relative z-10 grid ${isSysAdmin ? 'grid-cols-2' : 'grid-cols-3'} gap-1.5 pt-2.5 mt-1 border-t border-theme-30`}>
+                        {!isSysAdmin && (
+                            <div className="text-center py-1.5 px-1 rounded-xl bg-theme-60 dark:bg-slate-800/60 border border-theme-30/60">
+                                <p className="text-[12.5px] font-black text-slate-900 dark:text-white leading-tight">{liveKarma.toLocaleString()}</p>
+                                <p className="text-[8.5px] uppercase tracking-wider font-extrabold text-theme-30-text mt-0.5">Points</p>
+                            </div>
+                        )}
                         <div className="text-center py-1.5 px-1 rounded-xl bg-theme-60 dark:bg-slate-800/60 border border-theme-30/60">
                             <p className="text-[12.5px] font-black text-slate-900 dark:text-white leading-tight">{livePosts}</p>
                             <p className="text-[8.5px] uppercase tracking-wider font-extrabold text-theme-30-text mt-0.5">Posts</p>

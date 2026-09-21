@@ -1519,8 +1519,10 @@ export default function Articles() {
                 isOpen={!!reportingArticle}
                 onClose={() => setReportingArticle(null)}
                 targetType="Article"
-                targetId={reportingArticle?.id || 1}
-                targetName={reportingArticle?.author?.name || 'Author'}
+                targetId={reportingArticle?.articleId || reportingArticle?.id || 1}
+                targetName={reportingArticle?.authorFullName || reportingArticle?.author?.name || reportingArticle?.authorName || 'Author'}
+                targetUserId={reportingArticle?.authorUserId || reportingArticle?.author?.id}
+                targetContent={reportingArticle?.title || reportingArticle?.summary || ''}
             />
 
             {/* Save to Category Modal */}

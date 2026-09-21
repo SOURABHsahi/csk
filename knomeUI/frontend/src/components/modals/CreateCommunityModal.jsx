@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { useUser, INITIAL_USERS } from '../contexts/UserContext';
+import { useUser, INITIAL_USERS, deduplicateMembers } from '../contexts/UserContext';
 import { communitiesApi, mediaApi } from '../../utils/apiService';
 import { apiClient } from '../../utils/apiClient';
 import useScrollLoading from '../../hooks/useScrollLoading';
@@ -94,9 +94,12 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
         return () => { isMounted = false; };
     }, [isOpen, users]);
 
-    const isHRorAdmin = ['SYSADM', 'HRADM', 'CADM'].includes(currentUser?.role) ||
-        ['System Administrator', 'HR Administrator', 'Community Administrator', 'HR Manager', 'System Admin'].includes(currentUser?.roleName) ||
-        (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => ['SYSADM', 'HRADM', 'CADM', 'System Administrator', 'HR Administrator', 'Community Administrator'].includes(r))) ||
+    const isHRorAdmin = ['SYSADM', 'HRADM', 'CADM', 'ADMIN'].includes(String(currentUser?.role || '').toUpperCase()) ||
+        ['SYSTEM ADMINISTRATOR', 'HR ADMINISTRATOR', 'COMMUNITY ADMINISTRATOR', 'HR MANAGER', 'SYSTEM ADMIN', 'HR ADMIN', 'COMMUNITY ADMIN', 'ADMIN'].includes(String(currentUser?.roleName || '').toUpperCase()) ||
+        ['SYSTEM ADMINISTRATOR', 'HR ADMINISTRATOR', 'COMMUNITY ADMINISTRATOR', 'HR MANAGER', 'SYSTEM ADMIN', 'HR ADMIN', 'COMMUNITY ADMIN', 'ADMIN'].includes(String(currentUser?.role || '').toUpperCase()) ||
+        (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => 
+            ['SYSADM', 'HRADM', 'CADM', 'ADMIN', 'SYSTEM ADMINISTRATOR', 'HR ADMINISTRATOR', 'COMMUNITY ADMINISTRATOR', 'SYSTEM ADMIN', 'HR ADMIN', 'COMMUNITY ADMIN'].includes(String(r || '').toUpperCase())
+        )) ||
         (currentUser?.name || '').toLowerCase().includes('loveneesh');
 
     // Form State
@@ -501,7 +504,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
 
             const filteredRules = rulesList.filter(r => r.trim());
             const filteredFaq = faqList.filter(f => f.q.trim() && f.a.trim());
-            const formattedCommunityType = type === 'private' ? 'Private' : type === 'default' ? 'Default' : 'Public';
+            const formattedCommunityType = type === 'private' ? 'Private' : type === 'default' ? 'Org' : 'Public';
 
             // 2. Persist directly to SQL Server database via API!
             const createPayload = {
@@ -534,7 +537,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                 id: communityId,
                 communityId: communityId,
                 name: dbCommunity?.name || name.trim(),
-                type: dbCommunity?.communityType || (type === 'default' ? 'Default (Org)' : type.charAt(0).toUpperCase() + type.slice(1)),
+                type: type === 'default' ? 'Org' : (dbCommunity?.communityType ? (['default', 'org'].includes(String(dbCommunity.communityType).toLowerCase()) ? 'Org' : dbCommunity.communityType) : type.charAt(0).toUpperCase() + type.slice(1)),
                 category: dbCommunity?.categoryName || category,
                 members: '1 member',
                 activity: 'New',
@@ -700,8 +703,9 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                 }
             });
 
-            newCommunity.members = `${memberList.length} ${memberList.length === 1 ? 'member' : 'members'}`;
-            safeSetStorage(`knome_community_members_${communityId}`, memberList);
+            const dedupedMemberList = deduplicateMembers(memberList);
+            newCommunity.members = `${dedupedMemberList.length} ${dedupedMemberList.length === 1 ? 'member' : 'members'}`;
+            safeSetStorage(`knome_community_members_${communityId}`, dedupedMemberList);
 
             // Seed official welcome post in the name of the new community
             const initialCommunityPost = {
@@ -722,7 +726,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
             };
             safeSetStorage(`knome_community_posts_${communityId}`, [initialCommunityPost]);
 
-            // FR-CM-04: Default (Org) community — save department assignment
+            // FR-CM-04: Org community — save department assignment
             if (type === 'default') {
                 const deptAssignments = JSON.parse(localStorage.getItem('knome_default_community_assignments') || '[]');
                 deptAssignments.push({ communityId, communityName: newCommunity.name, department: defaultOrg || 'All Employees', createdAt: new Date().toISOString() });
@@ -844,7 +848,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                 "{name}" Submitted for Review!
                             </h3>
                             <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed mb-6">
-                                Your community request has been forwarded to the <strong>HR Administrator</strong> for governance review. Once approved, it will be published live across the organization and you will receive an instant notification.
+                                Your community request has been forwarded to the <strong>HR Admin</strong> for governance review. Once approved, it will be published live across the organization and you will receive an instant notification.
                             </p>
 
                             {/* Summary Card */}
@@ -864,7 +868,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-slate-400">Visibility:</span>
-                                        <span className="font-bold text-slate-800 dark:text-slate-200">{type === 'default' ? 'Default (Org)' : type.charAt(0).toUpperCase() + type.slice(1)}</span>
+                                        <span className="font-bold text-slate-800 dark:text-slate-200">{type === 'default' ? 'Org' : type.charAt(0).toUpperCase() + type.slice(1)}</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span className="text-slate-400">Created By:</span>
@@ -1029,9 +1033,9 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                                         />
                                                         <div>
                                                             <h4 className="font-bold text-[13px] sm:text-[14px] text-slate-900 dark:text-white flex items-center gap-1.5">
-                                                                <span className="material-symbols-outlined text-[16px] text-purple-500">corporate_fare</span> Organization Default (Auto-Assigned)
+                                                                <span className="material-symbols-outlined text-[16px] text-purple-500">corporate_fare</span> Org (Auto-Assigned Organization Space)
                                                             </h4>
-                                                            <p className="text-[11px] text-slate-500 mt-0.5">Strictly HR Administrator Only: Auto-subscribes all employees or specific department members automatically.</p>
+                                                            <p className="text-[11px] text-slate-500 mt-0.5">Strictly HR Admin Only: Auto-subscribes all employees or specific department members automatically.</p>
                                                         </div>
                                                     </div>
                                                 </label>
@@ -1223,7 +1227,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                             <div className="flex items-center gap-2">
                                                 <span className="material-symbols-outlined text-indigo-500">group_add</span>
                                                 <h3 className="font-bold text-[15px] text-slate-900 dark:text-white">
-                                                    {type === 'default' ? '🏢 Organization Employees' : 'Add / Invite Employees'}
+                                                    {type === 'default' ? '🏢 Org Employees' : 'Add / Invite Employees'}
                                                 </h3>
                                                 {invitedUserIds.length > 0 && (
                                                     <span className="bg-indigo-500 text-white text-[11px] px-2.5 py-0.5 rounded-full font-bold">

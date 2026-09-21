@@ -6,7 +6,6 @@ const ASPECT_PRESETS = [
     { id: 'square', label: 'Square (1:1)', width: 1200, height: 1200, ratio: 1, ratioStr: '1:1', icon: 'crop_square' },
     { id: 'landscape', label: 'Landscape (1.91:1)', width: 1200, height: 627, ratio: 1200 / 627, ratioStr: '1.91:1', icon: 'crop_landscape' },
     { id: 'portrait', label: 'Portrait (4:5)', width: 1080, height: 1350, ratio: 1080 / 1350, ratioStr: '4:5', icon: 'crop_portrait' },
-    { id: 'linkedin', label: 'LinkedIn Post', width: 1200, height: 627, ratio: 1200 / 627, ratioStr: '1.91:1', icon: 'view_compact' },
     { id: '16_9', label: '16:9', ratio: 16 / 9, ratioStr: '16:9', icon: 'crop_16_9' }
 ];
 

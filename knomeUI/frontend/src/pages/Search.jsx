@@ -265,7 +265,7 @@ export default function Search() {
                 <div className="absolute top-1/2 left-0 -translate-y-1/2 w-[500px] h-32 bg-violet-400/10 dark:bg-violet-500/10 blur-[80px] pointer-events-none"></div>
                 <div className="relative z-10 flex flex-col items-start max-w-3xl">
                     <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-violet-500/30 bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-400 text-[11px] font-bold mb-3 backdrop-blur-md uppercase tracking-wider">
-                        ✨ Universal YouTube-Style Search
+                        ✨ Universal Enterprise Search
                     </div>
                     <h1 className="text-3xl md:text-4xl lg:text-[40px] font-black tracking-tight mb-3 text-slate-900 dark:text-white" style={{ lineHeight: '1.2' }}>
                         <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-600 dark:from-violet-400 dark:via-purple-400 dark:to-fuchsia-400">
@@ -426,7 +426,7 @@ export default function Search() {
                                                             <span className="text-[10px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800/50">
                                                                 {isUser ? 'People' : res.contentType}
                                                             </span>
-                                                            <h4 className="text-[15px] font-bold text-slate-900 dark:text-white group-hover:text-indigo-500 transition-colors truncate">
+                                                            <h4 className="text-[15px] font-bold text-slate-900 dark:text-white group-hover:text-indigo-500 transition-colors whitespace-normal break-words">
                                                                 <HighlightText text={res.title || (res.contentType === 'Post' ? `${res.authorFullName || 'Employee'}'s Post` : res.summary)} query={searchQuery} />
                                                             </h4>
                                                         </div>

@@ -50,6 +50,7 @@ These rules are mandatory.
 - Keep Controllers thin.
 - Follow SOLID pragmatically.
 - Prefer readable code over clever code.
+- **Always log in through MPO Employee Hub**: [MPO Employee Hub](https://counselling-1.mponline.demo.gov.in:3001/applications).
 
 ---
 

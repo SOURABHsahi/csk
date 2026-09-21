@@ -225,7 +225,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
 
     const handleUpload = async () => {
         if (currentUser?.isActive === false) {
-            addToast("Your account is currently suspended by System Administrator. You cannot upload podcasts for approval.", 'error');
+            addToast("Your account is currently suspended by System Admin. You cannot upload podcasts for approval.", 'error');
             return;
         }
 

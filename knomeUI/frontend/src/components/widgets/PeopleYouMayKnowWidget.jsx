@@ -305,7 +305,7 @@ export default function PeopleYouMayKnowWidget() {
                             </p>
                             {/* Visible Common Connection */}
                             <div className="flex items-center gap-1.5 mt-0.5 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">
-                                <span className="material-symbols-outlined text-[14px]" style={{fontVariationSettings: "'FILL' 1"}}>hub</span>
+                                <span className="material-symbols-outlined text-[14px]" style={{fontVariationSettings: "'FILL' 1"}}>group</span>
                                 <span className="truncate">{person.commonConnectionText || '3 mutual connections'}</span>
                             </div>
                         </div>

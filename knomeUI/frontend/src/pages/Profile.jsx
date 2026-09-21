@@ -527,10 +527,11 @@ export default function Profile() {
     };
 
     const isSysAdmin = Boolean(
-        (displayUser?.role === 'SYSADM' || 
-         displayUser?.roleName === 'System Administrator' || 
-         (Array.isArray(displayUser?.roles) && (displayUser.roles.includes('SYSADM') || displayUser.roles.includes('System Administrator') || displayUser.roles.includes('SystemAdmin')))) &&
-        !['HR Administrator', 'Community Administrator', 'Community Admin', 'Employee'].includes(displayUser?.roleName)
+        (['SYSADM', 'SYSTEM ADMINISTRATOR', 'SYSTEM ADMIN', 'SYSTEMADMIN'].includes(String(displayUser?.role || '').toUpperCase()) || 
+         ['SYSADM', 'SYSTEM ADMINISTRATOR', 'SYSTEM ADMIN', 'SYSTEMADMIN'].includes(String(displayUser?.roleName || '').toUpperCase()) || 
+         ['SYSTEM ADMINISTRATOR', 'SYSTEM ADMIN'].includes(String(displayUser?.designation || '').toUpperCase()) ||
+         (Array.isArray(displayUser?.roles) && displayUser.roles.some(r => ['SYSADM', 'SYSTEM ADMINISTRATOR', 'SYSTEM ADMIN', 'SYSTEMADMIN'].includes(String(r || '').toUpperCase())))) &&
+        !['HR Administrator', 'HR Admin', 'Community Administrator', 'Community Admin', 'Employee'].includes(displayUser?.roleName)
     );
 
     const tabs = isSysAdmin 
@@ -877,7 +878,7 @@ export default function Profile() {
                     </div>
 
                     {/* Interactive Stats Row */}
-                    <div className="grid grid-cols-3 md:grid-cols-6 gap-4 py-6 border-t border-slate-100 dark:border-slate-800/50">
+                    <div className={`grid ${isSysAdmin ? 'grid-cols-2 md:grid-cols-4' : 'grid-cols-3 md:grid-cols-6'} gap-4 py-6 border-t border-slate-100 dark:border-slate-800/50`}>
                         {!isSysAdmin && (
                             <button onClick={() => setActiveTab('Posts')} className="text-center group cursor-pointer transition-transform hover:scale-105">
                                 <p className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-br from-indigo-500 to-purple-500">{stats.posts}</p>
@@ -959,7 +960,7 @@ export default function Profile() {
                                 </div>
                                 <div className="rounded-2xl border shadow-sm p-6 glass card-lift">
                                     <h3 className="text-[15px] font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
-                                        <span className="material-symbols-outlined text-pink-500">favorite</span>
+                                        <span className="material-symbols-outlined text-pink-500">interests</span>
                                         Interests
                                     </h3>
                                     <div className="flex flex-wrap gap-2">
@@ -983,7 +984,7 @@ export default function Profile() {
                                     <div className="absolute -right-8 -top-8 w-32 h-32 bg-indigo-500/20 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-700"></div>
                                     <h3 className="text-[12px] font-black uppercase tracking-widest text-indigo-500 mb-4 flex items-center gap-2">
                                         <span className="material-symbols-outlined text-[18px]">admin_panel_settings</span>
-                                        System Administrator
+                                        System Admin
                                     </h3>
                                     <p className="text-slate-600 dark:text-slate-300 text-xs leading-relaxed mb-4 font-medium">
                                         Full platform governance access, user management, audit logs, and security controls active across Knome.
@@ -1407,7 +1408,7 @@ export default function Profile() {
                                                             }}
                                                         />
                                                         <div className="min-w-0">
-                                                            <h4 className="font-bold text-slate-900 dark:text-white text-sm truncate">{personName}</h4>
+                                                            <h4 className="font-bold text-slate-900 dark:text-white text-sm whitespace-normal break-words">{personName}</h4>
                                                             <p className="text-xs text-slate-400 truncate">{person.designation || 'MPOnline Colleague'}</p>
                                                             <p className="text-[11px] text-slate-400 mt-0.5 truncate">{person.department || 'Department'}</p>
                                                         </div>

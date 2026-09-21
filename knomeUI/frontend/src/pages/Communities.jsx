@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useUser, INITIAL_USERS } from '../components/contexts/UserContext';
+import { useUser, INITIAL_USERS, deduplicateMembers } from '../components/contexts/UserContext';
 import { useToast } from '../components/contexts/ToastContext';
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import CreateCommunityModal from '../components/modals/CreateCommunityModal';
-import { communitiesApi, getCommunityImages, resolveMediaUrl } from '../utils/apiService';
+import { communitiesApi, getCommunityImages, resolveMediaUrl, DEFAULT_ENTERPRISE_COMMUNITIES } from '../utils/apiService';
 import { useScrollLoading } from '../hooks/useScrollLoading';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 
@@ -36,9 +36,12 @@ export default function Communities() {
     const [approvalSuccessMsg, setApprovalSuccessMsg] = useState('');
     const [successPopup, setSuccessPopup] = useState(null);
 
-    const isHRorAdmin = ['SYSADM', 'HRADM', 'CADM'].includes(currentUser?.role) || 
-        ['System Administrator', 'HR Administrator', 'Community Administrator', 'HR Manager', 'System Admin'].includes(currentUser?.roleName) ||
-        (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => ['SYSADM', 'HRADM', 'CADM', 'System Administrator', 'HR Administrator', 'Community Administrator'].includes(r)));
+    const isHRorAdmin = ['SYSADM', 'HRADM', 'CADM', 'ADMIN'].includes(String(currentUser?.role || '').toUpperCase()) || 
+        ['SYSTEM ADMINISTRATOR', 'HR ADMINISTRATOR', 'COMMUNITY ADMINISTRATOR', 'HR MANAGER', 'SYSTEM ADMIN', 'HR ADMIN', 'COMMUNITY ADMIN', 'ADMIN'].includes(String(currentUser?.roleName || '').toUpperCase()) ||
+        ['SYSTEM ADMINISTRATOR', 'HR ADMINISTRATOR', 'COMMUNITY ADMINISTRATOR', 'HR MANAGER', 'SYSTEM ADMIN', 'HR ADMIN', 'COMMUNITY ADMIN', 'ADMIN'].includes(String(currentUser?.role || '').toUpperCase()) ||
+        (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => 
+            ['SYSADM', 'HRADM', 'CADM', 'ADMIN', 'SYSTEM ADMINISTRATOR', 'HR ADMINISTRATOR', 'COMMUNITY ADMINISTRATOR', 'SYSTEM ADMIN', 'HR ADMIN', 'COMMUNITY ADMIN'].includes(String(r || '').toUpperCase())
+        ));
 
     const loadPendingApprovals = () => {
         try {
@@ -53,9 +56,25 @@ export default function Communities() {
         loadPendingApprovals();
         try {
             const data = await communitiesApi.getAll().catch(() => null);
-            // Check localStorage for user's actual join status
-            const userJoinedList = JSON.parse(localStorage.getItem(`knome_joined_communities_${currentUser?.id || 'guest'}`) || '[]');
+            const currentUid = currentUser?.userId || currentUser?.id;
+            const currentEmpId = (currentUser?.employeeId || '').toUpperCase();
+            const currentEmail = (currentUser?.email || '').toLowerCase();
+            const userJoinedList = JSON.parse(localStorage.getItem(`knome_joined_communities_${currentUid || 'guest'}`) || '[]');
             const getStatus = (id, apiStatus, type) => {
+                // Check if user is suspended in this community
+                try {
+                    const commSusp = JSON.parse(localStorage.getItem(`knome_community_suspended_${id}`) || '[]');
+                    const isSusp = commSusp.some(s => {
+                        const sUid = s.userId || s.id;
+                        const sEmpId = (s.employeeId || '').toUpperCase();
+                        const sEmail = (s.email || '').toLowerCase();
+                        return (currentUid && String(sUid) === String(currentUid)) ||
+                               (currentEmpId && sEmpId && sEmpId === currentEmpId) ||
+                               (currentEmail && sEmail && sEmail === currentEmail);
+                    });
+                    if (isSusp) return 'Banned';
+                } catch (_) {}
+
                 const entry = userJoinedList.find(c => String(c.id) === String(id));
                 if (entry) return entry.status === 'joined' ? 'Approved' : 'Subscribed';
                 if (type?.toLowerCase().includes('default') || type?.toLowerCase().includes('org')) return 'Approved';
@@ -63,7 +82,7 @@ export default function Communities() {
                 if (s === 'approved' || s === 'joined') return 'Approved';
                 if (s === 'pending') return 'Pending';
                 const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${id}`) || '[]');
-                if (currentUser && localMembers.some(m => String(m.userId || m.id) === String(currentUser.id) || (currentUser.name && (m.fullName || m.name || '').toLowerCase() === currentUser.name.toLowerCase()))) return 'Approved';
+                if (currentUser && localMembers.some(m => (currentUid && String(m.userId || m.id) === String(currentUid)) || (currentUser.name && (m.fullName || m.name || '').toLowerCase() === currentUser.name.toLowerCase()))) return 'Approved';
                 return 'none';
             };
 
@@ -77,7 +96,7 @@ export default function Communities() {
                     .filter(c => !deletedIds.has(String(c.communityId)) && (c.isActive === undefined || c.isActive === true || c.isActive === 1))
                     .map(c => {
                         const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${c.communityId}`) || '[]');
-                        const count = localMembers.length > 0 ? localMembers.length : (c.membersCount || 1);
+                        const count = localMembers.length > 0 ? deduplicateMembers(localMembers).length : (c.membersCount || 1);
                         const imgs = getCommunityImages(c.name, c.categoryName);
                         const bannerResolved = resolveMediaUrl(c.bannerUrl || c.bannerImageUrl) || imgs.banner;
                         const thumbResolved = resolveMediaUrl(c.thumbnailUrl) || imgs.thumbnail;
@@ -128,7 +147,7 @@ export default function Communities() {
                 const cleanName = (c.name || '').toLowerCase().trim();
                 if (!deletedIds.has(String(c.id)) && !existingIds.has(String(c.id)) && !existingNames.has(cleanName)) {
                     const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${c.id}`) || '[]');
-                    const count = localMembers.length > 0 ? localMembers.length : (parseInt(c.members) || 1);
+                    const count = localMembers.length > 0 ? deduplicateMembers(localMembers).length : (parseInt(c.members) || 1);
                     const imgs = getCommunityImages(c.name, c.category);
                     existingNames.add(cleanName);
                     existingIds.add(String(c.id));
@@ -146,6 +165,29 @@ export default function Communities() {
                         thumbnail: resolveMediaUrl(userThumb) || userThumb || imgs.thumbnail,
                         avatar: resolveMediaUrl(userThumb) || userThumb || imgs.thumbnail,
                         membershipStatus: getStatus(c.id, null, c.type)
+                    });
+                }
+            });
+
+            // Merge Default Enterprise Channels so Communities catalog and Admin Console are 100% in sync
+            (DEFAULT_ENTERPRISE_COMMUNITIES || []).forEach(ec => {
+                const cleanName = (ec.name || '').toLowerCase().trim();
+                if (!deletedIds.has(String(ec.id)) && !existingIds.has(String(ec.id)) && !existingNames.has(cleanName)) {
+                    existingNames.add(cleanName);
+                    existingIds.add(String(ec.id));
+                    const imgs = getCommunityImages(ec.name, ec.category);
+                    combinedList.push({
+                        id: ec.id,
+                        name: ec.name,
+                        type: formatCommunityType(ec.type),
+                        category: ec.category || 'General',
+                        members: ec.members || '6 members',
+                        activity: ec.activity || '0 posts',
+                        description: ec.description || 'Enterprise collaboration community.',
+                        banner: imgs.banner,
+                        thumbnail: imgs.thumbnail,
+                        avatar: imgs.thumbnail,
+                        membershipStatus: getStatus(ec.id, null, ec.type)
                     });
                 }
             });
@@ -180,17 +222,24 @@ export default function Communities() {
 
         window.addEventListener('community-created', handleCommunityUpdate);
         window.addEventListener('community-joined-change', handleCommunityUpdate);
+        window.addEventListener('community-suspended-change', handleCommunityUpdate);
         window.addEventListener('community-approval-requested', handleApprovalRequested);
         window.addEventListener('storage', handleApprovalRequested);
         return () => {
             window.removeEventListener('community-created', handleCommunityUpdate);
             window.removeEventListener('community-joined-change', handleCommunityUpdate);
+            window.removeEventListener('community-suspended-change', handleCommunityUpdate);
             window.removeEventListener('community-approval-requested', handleApprovalRequested);
             window.removeEventListener('storage', handleApprovalRequested);
         };
     }, [isHRorAdmin]);
 
-    const isSysAdmin = ['SYSADM', 'CADM'].includes(currentUser?.role) || ['System Administrator', 'HR Administrator', 'Community Administrator', 'System Admin'].includes(currentUser?.roleName);
+    const isSysAdmin = ['SYSADM', 'CADM', 'HRADM', 'ADMIN'].includes(String(currentUser?.role || '').toUpperCase()) || 
+        ['SYSTEM ADMINISTRATOR', 'HR ADMINISTRATOR', 'COMMUNITY ADMINISTRATOR', 'SYSTEM ADMIN', 'HR ADMIN', 'COMMUNITY ADMIN', 'ADMIN'].includes(String(currentUser?.roleName || '').toUpperCase()) ||
+        ['SYSTEM ADMINISTRATOR', 'HR ADMINISTRATOR', 'COMMUNITY ADMINISTRATOR', 'SYSTEM ADMIN', 'HR ADMIN', 'COMMUNITY ADMIN', 'ADMIN'].includes(String(currentUser?.role || '').toUpperCase()) ||
+        (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => 
+            ['SYSADM', 'CADM', 'HRADM', 'ADMIN', 'SYSTEM ADMINISTRATOR', 'HR ADMINISTRATOR', 'COMMUNITY ADMINISTRATOR', 'SYSTEM ADMIN', 'HR ADMIN', 'COMMUNITY ADMIN'].includes(String(r || '').toUpperCase())
+        ));
 
     const handleDeleteCommunityCard = async (e, community) => {
         e.stopPropagation();
@@ -359,15 +408,16 @@ export default function Communities() {
             });
         }
 
-        localStorage.setItem(`knome_community_members_${comm.id}`, JSON.stringify(memberList));
+        const dedupedMemberList = deduplicateMembers(memberList);
+        localStorage.setItem(`knome_community_members_${comm.id}`, JSON.stringify(dedupedMemberList));
 
         const approvedComm = {
             ...comm,
             status: 'Approved',
             isApproved: true,
-            approvedBy: currentUser?.name || 'HR Administrator',
+            approvedBy: currentUser?.name || 'HR Admin',
             approvedAt: new Date().toISOString(),
-            members: `${memberList.length} ${memberList.length === 1 ? 'member' : 'members'}`
+            members: `${dedupedMemberList.length} ${dedupedMemberList.length === 1 ? 'member' : 'members'}`
         };
 
         // 4. Add to active custom communities
@@ -385,9 +435,9 @@ export default function Communities() {
             icon: 'verified',
             color: 'text-emerald-500',
             bg: 'bg-emerald-500/10',
-            text: `🎉 Great news! Your community "${comm.name}" has been approved by HR Administrator (${currentUser?.name || 'HR Admin'}) and is now live!`,
-            message: `🎉 Great news! Your community "${comm.name}" has been approved by HR Administrator (${currentUser?.name || 'HR Admin'}) and is now live!`,
-            senderName: currentUser?.name || 'HR Administrator',
+            text: `🎉 Great news! Your community "${comm.name}" has been approved by HR Admin (${currentUser?.name || 'HR Admin'}) and is now live!`,
+            message: `🎉 Great news! Your community "${comm.name}" has been approved by HR Admin (${currentUser?.name || 'HR Admin'}) and is now live!`,
+            senderName: currentUser?.name || 'HR Admin',
             senderAvatar: currentUser?.avatar || null,
             senderUserId: currentUser?.userId || currentUser?.id,
             createdDate: new Date().toISOString(),
@@ -420,7 +470,7 @@ export default function Communities() {
         }));
 
         localStorage.setItem('knome_notifications', JSON.stringify([approvalNotif, ...inviteNotifs, ...existingNotifs]));
-        localStorage.setItem(`knome_community_members_${comm.id}`, JSON.stringify(memberList));
+        localStorage.setItem(`knome_community_members_${comm.id}`, JSON.stringify(dedupedMemberList));
 
         window.dispatchEvent(new CustomEvent('knome_notification_received', { detail: approvalNotif }));
         window.dispatchEvent(new CustomEvent('community-joined-change'));
@@ -835,10 +885,10 @@ export default function Communities() {
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                     {myPendingCommunities.map(c => (
-                                        <div key={c.id} className="bg-white dark:bg-slate-900 border-2 border-dashed border-amber-300 dark:border-amber-700/60 rounded-2xl overflow-hidden shadow-sm flex flex-col opacity-90">
-                                            <div className="h-28 relative overflow-hidden bg-slate-200 dark:bg-slate-800">
+                                        <div key={c.id} className="bg-white dark:bg-slate-900 border-2 border-dashed border-amber-300 dark:border-amber-700/60 rounded-xl overflow-hidden shadow-xs flex flex-col opacity-90 min-h-[230px]">
+                                            <div className="h-24 sm:h-26 relative overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0">
                                                 <img 
                                                     src={c.banner || getCommunityImages(c.name, c.category).banner} 
                                                     alt={c.name} 
@@ -849,18 +899,18 @@ export default function Communities() {
                                                     className="w-full h-full object-cover" 
                                                 />
                                                 <div className="absolute inset-0 bg-slate-900/40"></div>
-                                                <div className="absolute top-3 left-3">
-                                                    <span className="px-2.5 py-1 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white shadow-sm">
+                                                <div className="absolute top-2 left-2">
+                                                    <span className="px-2 py-0.5 backdrop-blur-md rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-500 text-white shadow-xs">
                                                         Under HR Review
                                                     </span>
                                                 </div>
                                             </div>
-                                            <div className="p-4 flex flex-col flex-1">
-                                                <h3 className="font-extrabold text-sm text-slate-900 dark:text-white mb-1">{c.name}</h3>
-                                                <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed mb-3 flex-1">{c.description}</p>
-                                                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 text-[11px] text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1">
-                                                    <span className="material-symbols-outlined text-[14px]">schedule</span>
-                                                    Awaiting HR Governance clearance
+                                            <div className="p-3 sm:p-3.5 flex flex-col flex-1">
+                                                <h3 className="font-extrabold text-[13px] sm:text-[14px] text-slate-900 dark:text-white mb-1 line-clamp-1" title={c.name}>{c.name}</h3>
+                                                <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed mb-2 flex-1">{c.description}</p>
+                                                <div className="pt-2 mt-auto border-t border-slate-100 dark:border-slate-800 text-[10px] text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1 whitespace-nowrap">
+                                                    <span className="material-symbols-outlined text-[13px]">schedule</span>
+                                                    Awaiting HR clearance
                                                 </div>
                                             </div>
                                         </div>
@@ -869,11 +919,12 @@ export default function Communities() {
                             </div>
                         )}
 
-                        {/* Communities Grid */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                            {filteredCommunities.slice(0, visibleCount).map(community => (
-                                <div key={community.id} onClick={() => navigate(`/community/view?id=${community.id}`)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer group flex flex-col h-full">
-                                    <div className="h-32 relative overflow-hidden bg-slate-200 dark:bg-slate-800">
+                        {/* Communities Grid — Compact, Modern Enterprise Cards */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                            {(activeTab === 'Discover' ? filteredCommunities : filteredCommunities.slice(0, visibleCount)).map(community => (
+                                <div key={community.id} onClick={() => navigate(`/community/view?id=${community.id}`)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden hover:shadow-lg hover:-translate-y-0.5 transition-all cursor-pointer group flex flex-col h-full min-h-[230px]">
+                                    {/* Compact Header Banner */}
+                                    <div className="h-24 sm:h-26 relative overflow-hidden bg-slate-200 dark:bg-slate-800 shrink-0">
                                         <img 
                                             src={community.banner || community.thumbnail || community.avatar || getCommunityImages(community.name, community.category).banner} 
                                             alt={community.name} 
@@ -883,9 +934,9 @@ export default function Communities() {
                                             }}
                                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
                                         />
-                                        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent"></div>
+                                        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-slate-900/20 to-transparent"></div>
                                         {(community.thumbnail || community.avatar) && (
-                                            <div className="absolute bottom-2 left-3 w-9 h-9 rounded-xl overflow-hidden border-2 border-white dark:border-slate-900 shadow-md bg-white shrink-0 z-10">
+                                            <div className="absolute bottom-2 left-2.5 w-7 h-7 sm:w-8 sm:h-8 rounded-lg overflow-hidden border-2 border-white dark:border-slate-900 shadow-xs bg-white shrink-0 z-10">
                                                 <img 
                                                     src={community.thumbnail || community.avatar} 
                                                     alt={community.name} 
@@ -894,20 +945,14 @@ export default function Communities() {
                                                 />
                                             </div>
                                         )}
+                                        {/* Quick Photo Upload Button (clean on banner) */}
                                         {isSysAdmin && (
-                                            <div className="absolute top-3 left-3 flex items-center gap-1.5 z-10" onClick={(e) => e.stopPropagation()}>
-                                                <button 
-                                                    onClick={(e) => handleDeleteCommunityCard(e, community)}
-                                                    className="w-8 h-8 rounded-full bg-red-600/90 hover:bg-red-600 text-white flex items-center justify-center shadow-lg backdrop-blur-md transition-all hover:scale-110 cursor-pointer"
-                                                    title="Remove Community"
-                                                >
-                                                    <span className="material-symbols-outlined text-[18px]">delete</span>
-                                                </button>
+                                            <div className="absolute top-2 left-2 z-10" onClick={(e) => e.stopPropagation()}>
                                                 <label 
-                                                    className="w-8 h-8 rounded-full bg-slate-900/80 hover:bg-indigo-600 text-white flex items-center justify-center shadow-lg backdrop-blur-md transition-all hover:scale-110 cursor-pointer"
+                                                    className="w-6 h-6 rounded-md bg-slate-900/70 hover:bg-indigo-600 text-white flex items-center justify-center shadow-xs backdrop-blur-md transition-all hover:scale-105 cursor-pointer"
                                                     title="Change Photo / Banner"
                                                 >
-                                                    <span className="material-symbols-outlined text-[16px]">photo_camera</span>
+                                                    <span className="material-symbols-outlined text-[13px]">photo_camera</span>
                                                     <input 
                                                         type="file" 
                                                         accept="image/*" 
@@ -917,10 +962,11 @@ export default function Communities() {
                                                 </label>
                                             </div>
                                         )}
-                                        <div className="absolute top-3 right-3">
-                                            <span className={`px-2.5 py-1 backdrop-blur-md rounded-full text-[10px] font-black uppercase tracking-wider border shadow-sm ${
+                                        {/* Type Pill */}
+                                        <div className="absolute top-2 right-2">
+                                            <span className={`px-2 py-0.5 backdrop-blur-md rounded-md text-[9px] font-black uppercase tracking-wider border shadow-xs ${
                                                 formatCommunityType(community.type) === 'Private' ? 'bg-amber-500/90 text-white border-amber-400' :
-                                                formatCommunityType(community.type) === 'Public' ? 'bg-white/90 text-indigo-600 border-white/50' :
+                                                formatCommunityType(community.type) === 'Public' ? 'bg-white/95 text-indigo-600 border-white/60 dark:bg-slate-900/90 dark:text-indigo-400' :
                                                 'bg-purple-500/90 text-white border-purple-400'
                                             }`}>
                                                 {formatCommunityType(community.type)}
@@ -928,68 +974,120 @@ export default function Communities() {
                                         </div>
                                     </div>
 
-                                    <div className="p-5 flex flex-col flex-1">
-                                        <div className="flex justify-between items-start mb-2">
-                                            <h3 className="font-bold text-[16px] text-slate-900 dark:text-white group-hover:text-indigo-500 transition-colors leading-tight">
+                                    {/* Compact Body Content */}
+                                    <div className="p-3 sm:p-3.5 flex flex-col flex-1">
+                                        <div className="flex justify-between items-start gap-1.5 mb-1.5">
+                                            <h3 className="font-bold text-[13px] sm:text-[14px] text-slate-900 dark:text-white group-hover:text-indigo-500 transition-colors leading-snug line-clamp-1 flex-1" title={community.name}>
                                                 {community.name}
                                             </h3>
-                                            <div className="flex items-center gap-2 shrink-0">
+                                            <div className="flex items-center gap-1 shrink-0">
                                                 {/* FR-CM-01/FR-CM-09: Card action buttons */}
-                                                {(community.type?.toLowerCase().includes('default') || community.type?.toLowerCase().includes('org')) ? (
-                                                    // Default (Org) — always auto-subscribed
-                                                    community.membershipStatus === 'Approved' ? (
-                                                        <button onClick={(e) => e.stopPropagation()} className="px-3 py-1 bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 rounded-lg font-bold text-[11px] cursor-default">Joined</button>
-                                                    ) : (
-                                                        <button onClick={(e) => e.stopPropagation()} className="px-3 py-1 bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400 rounded-lg font-bold text-[11px] cursor-default flex items-center gap-1">
-                                                            <span className="material-symbols-outlined text-[12px]">corporate_fare</span>
-                                                            Subscribed
-                                                        </button>
-                                                    )
-                                                ) : community.type === 'Public' ? (
-                                                    <button onClick={(e) => { 
-                                                        e.stopPropagation(); 
-                                                        if (community.membershipStatus !== 'Approved') {
-                                                            saveJoinedCommunity(community);
-                                                        }
-                                                    }} className={`px-3 py-1 rounded-lg font-bold text-[11px] transition-colors ${community.membershipStatus === 'Approved' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 cursor-default' : community.membershipStatus === 'Subscribed' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-indigo-100 cursor-pointer' : 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 cursor-pointer'}`}>
-                                                        {community.membershipStatus === 'Approved' ? 'Joined' : community.membershipStatus === 'Subscribed' ? 'Upgrade →' : 'Join'}
-                                                    </button>
-                                                ) : community.type === 'Private' ? (
-                                                    <button onClick={(e) => { 
-                                                        e.stopPropagation(); 
-                                                        if (community.membershipStatus !== 'Pending' && community.membershipStatus !== 'Approved') {
-                                                            saveJoinedCommunity(community);
-                                                        }
-                                                    }} className={`px-3 py-1 rounded-lg font-bold text-[11px] transition-colors ${community.membershipStatus === 'Pending' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 cursor-default' : community.membershipStatus === 'Approved' ? 'bg-emerald-100 text-emerald-600 cursor-default' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer'}`}>
-                                                        {community.membershipStatus === 'Pending' ? 'Requested' : community.membershipStatus === 'Approved' ? 'Joined' : 'Request'}
-                                                    </button>
-                                                ) : (
-                                                    <button onClick={(e) => { e.stopPropagation(); }} className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-lg font-bold text-[11px] cursor-default">Subscribed</button>
-                                                )}
+                                                {(() => {
+                                                    const currentUid = currentUser?.userId || currentUser?.id;
+                                                    const currentEmpId = (currentUser?.employeeId || '').toUpperCase();
+                                                    const currentEmail = (currentUser?.email || '').toLowerCase();
+                                                    let isSuspendedInThisComm = false;
+                                                    try {
+                                                        const commSusp = JSON.parse(localStorage.getItem(`knome_community_suspended_${community.id}`) || '[]');
+                                                        isSuspendedInThisComm = commSusp.some(s => {
+                                                            const sUid = s.userId || s.id;
+                                                            const sEmpId = (s.employeeId || '').toUpperCase();
+                                                            const sEmail = (s.email || '').toLowerCase();
+                                                            return (currentUid && String(sUid) === String(currentUid)) ||
+                                                                   (currentEmpId && sEmpId && sEmpId === currentEmpId) ||
+                                                                   (currentEmail && sEmail && sEmail === currentEmail);
+                                                        }) || community.membershipStatus === 'Banned';
+                                                    } catch (_) {}
+
+                                                    if (isSuspendedInThisComm) {
+                                                        return (
+                                                            <span className="px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-300 dark:border-amber-700 rounded-md font-bold text-[10px] flex items-center gap-0.5">
+                                                                <span className="material-symbols-outlined text-[11px]">person_off</span>
+                                                                Suspended
+                                                            </span>
+                                                        );
+                                                    }
+
+                                                    if (community.type?.toLowerCase().includes('default') || community.type?.toLowerCase().includes('org')) {
+                                                        return community.membershipStatus === 'Approved' ? (
+                                                            <button onClick={(e) => e.stopPropagation()} className="px-2 py-0.5 bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 rounded-md font-bold text-[10px] cursor-default">Joined</button>
+                                                        ) : (
+                                                            <button onClick={(e) => e.stopPropagation()} className="px-2 py-0.5 bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400 rounded-md font-bold text-[10px] cursor-default flex items-center gap-0.5">
+                                                                <span className="material-symbols-outlined text-[11px]">corporate_fare</span>
+                                                                Subscribed
+                                                            </button>
+                                                        );
+                                                    }
+
+                                                    if (community.type === 'Public') {
+                                                        return (
+                                                            <button onClick={(e) => { 
+                                                                e.stopPropagation(); 
+                                                                if (community.membershipStatus !== 'Approved') {
+                                                                    saveJoinedCommunity(community);
+                                                                }
+                                                            }} className={`px-2.5 py-0.5 rounded-md font-bold text-[10px] transition-colors ${community.membershipStatus === 'Approved' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 cursor-default' : community.membershipStatus === 'Subscribed' ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-indigo-100 cursor-pointer' : 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 cursor-pointer'}`}>
+                                                                {community.membershipStatus === 'Approved' ? 'Joined' : community.membershipStatus === 'Subscribed' ? 'Upgrade →' : 'Join'}
+                                                            </button>
+                                                        );
+                                                    }
+
+                                                    if (community.type === 'Private') {
+                                                        return (
+                                                            <button onClick={(e) => { 
+                                                                e.stopPropagation(); 
+                                                                if (community.membershipStatus !== 'Pending' && community.membershipStatus !== 'Approved') {
+                                                                    saveJoinedCommunity(community);
+                                                                }
+                                                            }} className={`px-2.5 py-0.5 rounded-md font-bold text-[10px] transition-colors ${community.membershipStatus === 'Pending' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 cursor-default' : community.membershipStatus === 'Approved' ? 'bg-emerald-100 text-emerald-600 cursor-default' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer'}`}>
+                                                                {community.membershipStatus === 'Pending' ? 'Requested' : community.membershipStatus === 'Approved' ? 'Joined' : 'Request'}
+                                                            </button>
+                                                        );
+                                                    }
+
+                                                    return (
+                                                        <button onClick={(e) => { e.stopPropagation(); }} className="px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-md font-bold text-[10px] cursor-default">Subscribed</button>
+                                                    );
+                                                })()}
                                             </div>
                                         </div>
 
-                                        <p className="text-[13px] text-slate-500 line-clamp-2 leading-relaxed mb-4 flex-1">
-                                            {community.description}
+                                        <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mb-2 flex-1">
+                                            {community.description || 'No description provided.'}
                                         </p>
 
-                                        <div className="flex items-center gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                                            <div className="flex items-center gap-1.5 text-slate-500 font-bold text-[12px]">
-                                                <span className="material-symbols-outlined text-[16px]">group</span>
-                                                {community.members}
+                                        {/* Footer Metadata & DELETE BUTTON IN BOTTOM RIGHT OF BOX */}
+                                        <div className="flex items-center justify-between gap-1.5 pt-2 mt-auto border-t border-slate-100 dark:border-slate-800/80 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                                            <div className="flex items-center gap-1 shrink-0 whitespace-nowrap">
+                                                <span className="material-symbols-outlined text-[13px] text-indigo-500">group</span>
+                                                <span>{community.members}</span>
                                             </div>
                                             {community.category && (
-                                                <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full">{community.category}</span>
+                                                <span className="text-[9px] font-extrabold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded-full truncate max-w-[80px]" title={community.category}>
+                                                    {community.category}
+                                                </span>
                                             )}
-                                            <div className={`flex items-center gap-1.5 font-bold text-[12px] ml-auto ${community.type === 'Public' ? 'text-teal-500' : 'text-slate-500'}`}>
-                                                <span className="material-symbols-outlined text-[16px]">{community.type === 'Public' ? 'trending_up' : 'forum'}</span>
-                                                {community.activity}
+                                            <div className="flex items-center gap-1.5 ml-auto shrink-0">
+                                                <div className={`flex items-center gap-0.5 whitespace-nowrap ${community.type === 'Public' ? 'text-teal-600 dark:text-teal-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                                                    <span className="material-symbols-outlined text-[13px]">{community.type === 'Public' ? 'trending_up' : 'forum'}</span>
+                                                    <span>{community.activity}</span>
+                                                </div>
+                                                {/* Delete Button located in bottom right of box */}
+                                                {isSysAdmin && (
+                                                    <button 
+                                                        onClick={(e) => handleDeleteCommunityCard(e, community)}
+                                                        className="w-5.5 h-5.5 rounded-md bg-rose-50 text-rose-500 hover:bg-rose-500 hover:text-white dark:bg-rose-500/10 dark:text-rose-400 dark:hover:bg-rose-500 dark:hover:text-white flex items-center justify-center transition-all hover:scale-105 cursor-pointer ml-1"
+                                                        title="Remove Community"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[13px]">delete</span>
+                                                    </button>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             ))}
-                            <ScrollLoadingIndicator isVisible={visibleCount < filteredCommunities.length} text="Loading more communities on scroll..." />
+                            <ScrollLoadingIndicator isVisible={activeTab !== 'Discover' && visibleCount < filteredCommunities.length} text="Loading more communities on scroll..." />
                         </div>
                     </>
                 )}

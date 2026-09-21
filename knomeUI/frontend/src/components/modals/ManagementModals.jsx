@@ -31,9 +31,9 @@ export function CreateCommunityModal({ isOpen, onClose }) {
                         <select className="bg-surface-container border border-border-subtle rounded-lg px-3 py-2 outline-none">
                             <option value="public">Public (Open to all)</option>
                             <option value="private">Private (Request to join)</option>
-                            <option value="default">Default (Auto-subscribed)</option>
+                            <option value="default">Org (Auto-subscribed)</option>
                         </select>
-                        <span className="text-[10px] text-slate-gray mt-1">* Default type requires HR Admin privileges (FR-CM-04)</span>
+                        <span className="text-[10px] text-slate-gray mt-1">* Org type requires HR Admin privileges (FR-CM-04)</span>
                     </div>
                 </div>
 

@@ -142,7 +142,15 @@ public class UserRepository : Repository<Models.User>, IUserRepository
 
         foreach (var roleName in roleNames.Distinct())
         {
-            var role = await _db.Roles.FirstOrDefaultAsync(r => r.RoleName == roleName);
+            var normalizedRole = roleName switch
+            {
+                "System Admin" => "System Administrator",
+                "HR Admin" => "HR Administrator",
+                "Community Administrator" => "Community Admin",
+                _ => roleName
+            };
+
+            var role = await _db.Roles.FirstOrDefaultAsync(r => r.RoleName == roleName || r.RoleName == normalizedRole || r.RoleCode == roleName);
             if (role == null)
                 throw new BadRequestException($"Role '{roleName}' does not exist in the database.");
 

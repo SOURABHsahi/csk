@@ -32,11 +32,11 @@ const KNOWN_ROSTER_NAMES = {
 const KNOWN_ROSTER_ROLES = {
     'EMP001': { role: 'Employee', designation: 'Senior Software Engineer' },
     'EMP002': { role: 'Community Admin', designation: 'Quality Assurance Lead' },
-    'EMP003': { role: 'HR Administrator', designation: 'HR Specialist' },
-    'EMP004': { role: 'System Administrator', designation: 'DevOps Lead' },
-    'MPO101': { role: 'System Administrator', designation: 'System Administrator' },
+    'EMP003': { role: 'HR Admin', designation: 'HR Specialist' },
+    'EMP004': { role: 'System Admin', designation: 'DevOps Lead' },
+    'MPO101': { role: 'System Admin', designation: 'System Admin' },
     'MPO102': { role: 'Community Admin', designation: 'Community Experience Specialist' },
-    'MPO103': { role: 'HR Administrator', designation: 'Talent Acquisition Manager' },
+    'MPO103': { role: 'HR Admin', designation: 'Talent Acquisition Manager' },
     'MPO104': { role: 'Employee', designation: 'Software Engineer' },
 };
 
@@ -149,9 +149,9 @@ export default function Network() {
         // Normalize role strings
         const normalizedRoles = roleList.map(r => {
             const s = String(r).trim();
-            if (s === 'SYSADM' || s === 'SystemAdmin') return 'System Administrator';
-            if (s === 'HRADM' || s === 'HRAdmin') return 'HR Administrator';
-            if (s === 'CADM' || s === 'CommunityAdministrator') return 'Community Admin';
+            if (s === 'SYSADM' || s === 'SystemAdmin' || s === 'System Administrator') return 'System Admin';
+            if (s === 'HRADM' || s === 'HRAdmin' || s === 'HR Administrator') return 'HR Admin';
+            if (s === 'CADM' || s === 'CommunityAdministrator' || s === 'Community Administrator') return 'Community Admin';
             if (s === 'EMP') return 'Employee';
             return s;
         });
@@ -940,7 +940,7 @@ function PersonCard({ person, onConnect, onCancel, onAccept, onReject, onRemove 
             
             <button 
                 onClick={handleOpenProfile} 
-                className="font-bold text-[16px] text-slate-900 dark:text-white group-hover:text-blue-500 transition-colors leading-tight mb-2 truncate max-w-full cursor-pointer hover:underline"
+                className="font-bold text-[16px] text-slate-900 dark:text-white group-hover:text-blue-500 transition-colors leading-tight mb-2 whitespace-normal break-words text-center max-w-full cursor-pointer hover:underline"
             >
                 {person.name}
             </button>

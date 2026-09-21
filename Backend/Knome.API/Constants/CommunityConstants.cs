@@ -5,13 +5,14 @@ public static class CommunityTypes
     public const string Public = "Public";
     public const string Private = "Private";
     public const string Default = "Default";
+    public const string Org = "Org";
 
-    public static readonly string[] All = { Public, Private, Default };
+    public static readonly string[] All = { Public, Private, Default, Org };
 
     public static bool IsValid(string? type)
     {
         if (string.IsNullOrWhiteSpace(type)) return false;
-        return type == Public || type == Private || type == Default;
+        return type == Public || type == Private || type == Default || type == Org;
     }
 }
 
