@@ -34,6 +34,7 @@ public class CreateCommunityDto
     public string? Rules { get; set; }
     public string? Faq { get; set; }
     public string CommunityType { get; set; } = null!;
+    public List<int>? MemberUserIds { get; set; }
 }
 
 public class UpdateCommunityDto

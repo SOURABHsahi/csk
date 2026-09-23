@@ -21,5 +21,5 @@ public interface IPodcastService
     Task<PodcastDto> CreatePodcastAsync(int currentUserId, CreatePodcastDto dto);
     Task<PodcastDto> UpdatePodcastAsync(long podcastId, int currentUserId, UpdatePodcastDto dto);
     Task DeletePodcastAsync(long podcastId, int currentUserId);
-    Task<int> IncrementViewCountAsync(long podcastId);
+    Task<int> IncrementViewCountAsync(long podcastId, int currentUserId = 0);
 }

@@ -6,6 +6,7 @@ import { apiClient } from '../../utils/apiClient';
 import { checkRestrictedContent, syncRestrictedWordsFromBackend, addRestrictedWord } from '../../utils/restrictedWords';
 import ImageCropModal from './ImageCropModal';
 import CustomDateTimePicker from '../widgets/CustomDateTimePicker';
+import HighlightText from '../ui/HighlightText';
 
 const PREDEFINED_HASHTAGS = ['Announcement', 'Development', 'Design', 'Marketing', 'Help', 'Kudos', 'Team', 'Project'];
 
@@ -1016,7 +1017,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                                                                     <div className="w-6 h-6 rounded bg-blue-500/10 text-blue-500 flex items-center justify-center text-xs shrink-0">
                                                                         <span className="material-symbols-outlined text-[14px]">groups</span>
                                                                     </div>
-                                                                    <span className="truncate font-semibold">{comm.name}</span>
+                                                                    <span className="truncate font-semibold"><HighlightText text={comm.name} query={audienceSearch} /></span>
                                                                 </div>
                                                                 {selectedCommunity?.id === comm.id && (
                                                                     <span className="material-symbols-outlined text-sm text-blue-500 shrink-0">check</span>
@@ -1090,8 +1091,8 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                                                                             </div>
                                                                         )}
                                                                         <div className="truncate">
-                                                                            <p className="font-semibold truncate leading-none">{uName}</p>
-                                                                            <p className="text-[10px] text-slate-400 truncate mt-0.5">{u.roleName || u.designation || 'Employee'}</p>
+                                                                            <p className="font-semibold truncate leading-none"><HighlightText text={uName} query={audienceSearch} /></p>
+                                                                            <p className="text-[10px] text-slate-400 truncate mt-0.5"><HighlightText text={u.roleName || u.designation || 'Employee'} query={audienceSearch} /></p>
                                                                         </div>
                                                                     </div>
                                                                     <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors shrink-0 ${

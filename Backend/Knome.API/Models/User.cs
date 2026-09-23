@@ -75,6 +75,8 @@ public partial class User
 
     public virtual ICollection<ConnectionRequest> ConnectionRequestSenders { get; set; } = new List<ConnectionRequest>();
 
+    public virtual ICollection<ContentView> ContentViews { get; set; } = new List<ContentView>();
+
     public virtual Department? Department { get; set; }
 
     public virtual ICollection<Follower> FollowerFollowerUsers { get; set; } = new List<Follower>();

@@ -124,7 +124,7 @@ public class PodcastController : KnomeControllerBase
     [ProducesResponseType(typeof(ApiResponse<int>), StatusCodes.Status200OK)]
     public async Task<IActionResult> RecordView(long podcastId)
     {
-        var newCount = await _podcastService.IncrementViewCountAsync(podcastId);
+        var newCount = await _podcastService.IncrementViewCountAsync(podcastId, GetCurrentUserId());
         return Ok(ApiResponse<int>.SuccessResponse(200, "Podcast view recorded.", newCount));
     }
 }

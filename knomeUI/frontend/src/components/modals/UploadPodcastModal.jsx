@@ -1,17 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { mediaApi, podcastsApi } from '../../utils/apiService';
+import { apiClient } from '../../utils/apiClient';
 import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
 import { checkRestrictedContent } from '../../utils/restrictedWords';
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB (FR-PD-05)
-const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.aac', '.ogg', '.m4a', '.webm'];
+const ALLOWED_EXTENSIONS = ['.mp3', '.wav', '.aac', '.ogg', '.m4a', '.webm', '.flac'];
 
 export default function UploadPodcastModal({ isOpen, onClose }) {
     const { currentUser } = useUser();
     const { addToast } = useToast();
-    const isCurrentUserAdmin = ['SYSADM', 'CADM', 'HRADM'].includes(currentUser?.role) ||
-        ['System Administrator', 'HR Administrator', 'Community Administrator', 'System Admin'].includes(currentUser?.roleName);
 
     const [tab, setTab] = useState('upload');
     const [isRecording, setIsRecording] = useState(false);
@@ -25,6 +24,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
     const [categoryName, setCategoryName] = useState('General');
     
     const [audioFile, setAudioFile] = useState(null);
+    const [recordedAudioUrl, setRecordedAudioUrl] = useState(null);
     const [coverImageFile, setCoverImageFile] = useState(null);
 
     const [seriesList, setSeriesList] = useState([]);
@@ -34,6 +34,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
 
     const mediaRecorderRef = useRef(null);
     const audioChunksRef = useRef([]);
+    const recordingTimeRef = useRef(0);
     const audioInputRef = useRef(null);
     const coverInputRef = useRef(null);
 
@@ -61,15 +62,20 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
         setDuration('');
         setSeriesId('');
         setAudioFile(null);
+        if (recordedAudioUrl) {
+            try { URL.revokeObjectURL(recordedAudioUrl); } catch (e) {}
+        }
+        setRecordedAudioUrl(null);
         setCoverImageFile(null);
         setTab('upload');
         setRecordingTime(0);
+        recordingTimeRef.current = 0;
         setIsRecording(false);
         setIsCreatingSeries(false);
         setNewSeriesTitle('');
         setNewSeriesDesc('');
         if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-            mediaRecorderRef.current.stop();
+            try { mediaRecorderRef.current.stop(); } catch (e) {}
         }
     };
 
@@ -78,7 +84,11 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
         let interval;
         if (isRecording) {
             interval = setInterval(() => {
-                setRecordingTime(prev => prev + 1);
+                setRecordingTime(prev => {
+                    const next = prev + 1;
+                    recordingTimeRef.current = next;
+                    return next;
+                });
             }, 1000);
         } else {
             clearInterval(interval);
@@ -106,7 +116,11 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
         if (isRecording) {
             // Stop recording
             if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-                mediaRecorderRef.current.stop();
+                try {
+                    mediaRecorderRef.current.stop();
+                } catch (e) {
+                    console.error("Error stopping mediaRecorder:", e);
+                }
             }
             setIsRecording(false);
         } else {
@@ -117,7 +131,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                 const mediaRecorder = new MediaRecorder(stream);
 
                 mediaRecorder.ondataavailable = (event) => {
-                    if (event.data.size > 0) {
+                    if (event.data && event.data.size > 0) {
                         audioChunksRef.current.push(event.data);
                     }
                 };
@@ -126,19 +140,44 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                     const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                     const file = new File([audioBlob], `recorded_podcast_${Date.now()}.webm`, { type: 'audio/webm' });
                     setAudioFile(file);
-                    setDuration(formatTime(recordingTime));
+                    
+                    const finalSeconds = Math.max(1, recordingTimeRef.current);
+                    setDuration(formatTime(finalSeconds));
+
+                    if (recordedAudioUrl) {
+                        try { URL.revokeObjectURL(recordedAudioUrl); } catch (e) {}
+                    }
+                    const previewUrl = URL.createObjectURL(audioBlob);
+                    setRecordedAudioUrl(previewUrl);
+
                     stream.getTracks().forEach(track => track.stop());
                 };
 
                 mediaRecorderRef.current = mediaRecorder;
-                mediaRecorder.start();
                 setRecordingTime(0);
+                recordingTimeRef.current = 0;
+                mediaRecorder.start();
                 setIsRecording(true);
             } catch (err) {
                 console.error("Microphone access error:", err);
                 addToast("Microphone permission denied or unavailable in this browser.", 'error');
             }
         }
+    };
+
+    const handleDiscardRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            try { mediaRecorderRef.current.stop(); } catch (e) {}
+        }
+        if (recordedAudioUrl) {
+            try { URL.revokeObjectURL(recordedAudioUrl); } catch (e) {}
+        }
+        setAudioFile(null);
+        setRecordedAudioUrl(null);
+        setRecordingTime(0);
+        recordingTimeRef.current = 0;
+        setDuration('');
+        setIsRecording(false);
     };
 
     // File Validation & Handling (FR-PD-05)
@@ -162,31 +201,20 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
 
             setAudioFile(file);
             
-            // Auto detect duration if possible
-            const audioUrl = URL.createObjectURL(file);
-            const audioObj = new Audio(audioUrl);
+            if (recordedAudioUrl) {
+                try { URL.revokeObjectURL(recordedAudioUrl); } catch (e) {}
+            }
+            const previewUrl = URL.createObjectURL(file);
+            setRecordedAudioUrl(previewUrl);
+
+            // Auto detect duration
+            const audioObj = new Audio(previewUrl);
             audioObj.onloadedmetadata = () => {
                 if (audioObj.duration && !isNaN(audioObj.duration)) {
-                    setDuration(formatTime(Math.floor(audioObj.duration)));
+                    const secs = Math.floor(audioObj.duration);
+                    recordingTimeRef.current = secs;
+                    setDuration(formatTime(secs));
                 }
-                try {
-                    audioObj.pause();
-                    audioObj.removeAttribute('src');
-                    audioObj.load();
-                } catch (e) {}
-                setTimeout(() => {
-                    try { URL.revokeObjectURL(audioUrl); } catch (e) {}
-                }, 2000);
-            };
-            audioObj.onerror = () => {
-                try {
-                    audioObj.pause();
-                    audioObj.removeAttribute('src');
-                    audioObj.load();
-                } catch (e) {}
-                setTimeout(() => {
-                    try { URL.revokeObjectURL(audioUrl); } catch (e) {}
-                }, 2000);
             };
         }
     };
@@ -225,7 +253,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
 
     const handleUpload = async () => {
         if (currentUser?.isActive === false) {
-            addToast("Your account is currently suspended by System Admin. You cannot upload podcasts for approval.", 'error');
+            addToast("Your account is currently suspended by System Admin. You cannot publish podcasts.", 'error');
             return;
         }
 
@@ -259,10 +287,18 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                 }
             }
 
+            if (!audioUrl) {
+                throw new Error("Failed to upload audio file. Please ensure backend is running.");
+            }
+
             if (coverImageFile) {
-                const coverResponse = await mediaApi.uploadFile(coverImageFile, 'image');
-                if (coverResponse && coverResponse.url) {
-                    coverImageUrl = coverResponse.url;
+                try {
+                    const coverResponse = await mediaApi.uploadFile(coverImageFile, 'image');
+                    if (coverResponse && coverResponse.url) {
+                        coverImageUrl = coverResponse.url;
+                    }
+                } catch (e) {
+                    console.warn("Cover image upload failed:", e);
                 }
             }
 
@@ -277,72 +313,33 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
             }
 
             const currentAuthorId = currentUser?.id || currentUser?.userId;
-            const currentAuthorName = currentUser?.fullName || currentUser?.name || 'Employee';
+            const durationSecs = parseDuration(duration) || recordingTimeRef.current || 1;
+            const calculatedFileSizeMb = Math.max(1, Math.min(100, Math.ceil((audioFile?.size || 1024 * 1024) / (1024 * 1024))));
 
             const podcastData = {
                 title: title.trim(),
                 description: description.trim(),
-                audioUrl: audioUrl || null,
+                audioUrl: audioUrl,
                 coverImageUrl: coverImageUrl,
-                durationSeconds: parseDuration(duration),
+                durationSeconds: durationSecs,
                 seriesId: seriesId ? parseInt(seriesId) : null,
                 categoryName: categoryName || 'General',
                 categoryId: null,
+                fileSizeMb: calculatedFileSizeMb,
                 uploaderUserId: currentAuthorId
             };
 
-            if (isCurrentUserAdmin) {
-                await podcastsApi.create(podcastData);
-                addToast("Podcast episode published successfully!", 'success');
-                window.dispatchEvent(new CustomEvent('podcast-published'));
-            } else {
-                const pendingItem = {
-                    id: `pending_podcast_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-                    mediaType: 'Podcast',
-                    title: title.trim(),
-                    description: description.trim(),
-                    thumbnail: coverImageUrl || 'https://images.unsplash.com/photo-1590602847861-f357a9332bbc?auto=format&fit=crop&q=90&w=1600&h=900',
-                    audioUrl: audioUrl,
-                    duration: duration || 'Podcast',
-                    category: categoryName || 'General',
-                    authorName: currentAuthorName,
-                    authorId: currentAuthorId,
-                    authorAvatar: currentUser?.profilePhotoUrl || currentUser?.avatar,
-                    submittedDate: new Date().toISOString(),
-                    status: 'PendingApproval',
-                    podcastData: podcastData
-                };
+            const createdRes = await podcastsApi.create(podcastData);
+            const createdPodcast = createdRes?.data || createdRes;
 
-                const existingPending = JSON.parse(localStorage.getItem('knome_pending_media_approvals') || '[]');
-                localStorage.setItem('knome_pending_media_approvals', JSON.stringify([pendingItem, ...existingPending]));
-
-                const adminNotif = {
-                    id: `notif_approval_${Date.now()}`,
-                    type: 'media_approval',
-                    category: 'System',
-                    text: `${currentUser?.name || currentUser?.fullName || 'Employee'} uploaded podcast "${title.trim()}" awaiting your admin approval.`,
-                    senderName: currentUser?.name || currentUser?.fullName || 'Employee',
-                    senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
-                    senderUserId: currentUser?.userId || currentUser?.id,
-                    createdDate: new Date().toISOString(),
-                    createdAt: new Date().toISOString(),
-                    targetUserId: 'admin',
-                    targetUrl: '/admin-console',
-                    unread: true,
-                    mediaType: 'Podcast',
-                    pendingId: pendingItem.id
-                };
-                const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
-                localStorage.setItem('knome_notifications', JSON.stringify([adminNotif, ...existingNotifs]));
-
-                addToast(`Podcast episode "${title.trim()}" submitted successfully! It has been sent to the Admin for approval before going live.`, 'success');
-            }
+            addToast("Podcast episode published successfully!", 'success');
+            window.dispatchEvent(new CustomEvent('podcast-published', { detail: { newPodcast: createdPodcast } }));
             
             setIsUploading(false);
             onClose();
         } catch (error) {
             console.error('Failed to publish podcast:', error);
-            addToast('Failed to publish podcast. Please try again.', 'error');
+            addToast(`Failed to publish podcast: ${error.message || 'Please try again.'}`, 'error');
             setIsUploading(false);
         }
     };
@@ -357,7 +354,7 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                 
                 <div className="flex items-center justify-between p-4 sm:p-6 border-b border-slate-100 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 z-10">
                     <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <span className="material-symbols-outlined text-pink-500">mic</span>
+                        <span className="material-symbols-outlined text-violet-500">podcasts</span>
                         Publish Podcast Episode
                     </h2>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
@@ -387,16 +384,37 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                     </div>
 
                     {/* Input Area */}
-                    <div className="mb-8 p-6 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex flex-col items-center justify-center text-center min-h-[200px]">
+                    <div className="mb-8 p-6 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex flex-col items-center justify-center text-center min-h-[220px]">
                         {tab === 'upload' ? (
                             <>
-                                <div className="w-16 h-16 bg-pink-100 dark:bg-pink-900/30 rounded-full flex items-center justify-center text-pink-500 mb-4">
+                                <div className="w-16 h-16 bg-pink-100 dark:bg-pink-900/30 rounded-full flex items-center justify-center text-pink-500 mb-3">
                                     <span className="material-symbols-outlined text-[32px]">audio_file</span>
                                 </div>
-                                <h3 className="text-[15px] font-bold text-slate-900 dark:text-white mb-2">
+                                <h3 className="text-[15px] font-bold text-slate-900 dark:text-white mb-1">
                                     {audioFile ? audioFile.name : 'Select or drag & drop audio file'}
                                 </h3>
-                                <p className="text-[12px] text-slate-500 mb-4 max-w-sm">Maximum upload size: 100MB. Supported formats: MP3, WAV, AAC, OGG, M4A, WEBM.</p>
+                                {audioFile && (
+                                    <span className="text-[12px] font-semibold text-emerald-600 dark:text-emerald-400 mb-2">
+                                        ✓ File selected ({(audioFile.size / (1024 * 1024)).toFixed(2)} MB • {duration || 'Detecting duration...'})
+                                    </span>
+                                )}
+                                {!audioFile && (
+                                    <p className="text-[12px] text-slate-500 mb-4 max-w-sm">Maximum upload size: 100MB. Supported formats: MP3, WAV, AAC, OGG, M4A, WEBM, FLAC.</p>
+                                )}
+
+                                {recordedAudioUrl && (
+                                    <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 rounded-xl mb-4 shadow-sm text-left">
+                                        <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 mb-1.5">
+                                            <span className="flex items-center gap-1.5">
+                                                <span className="material-symbols-outlined text-[16px] text-pink-500">volume_up</span>
+                                                Audio Preview
+                                            </span>
+                                            <span className="font-mono text-pink-600">{duration}</span>
+                                        </div>
+                                        <audio controls src={recordedAudioUrl} className="w-full h-9 rounded" />
+                                    </div>
+                                )}
+
                                 <input 
                                     type="file" 
                                     accept="audio/*" 
@@ -405,36 +423,77 @@ export default function UploadPodcastModal({ isOpen, onClose }) {
                                     onChange={handleAudioFileChange} 
                                 />
                                 <button 
+                                    type="button"
                                     onClick={() => audioInputRef.current?.click()}
-                                    className="px-6 py-2 bg-pink-500 text-white font-bold rounded-xl hover:bg-pink-600 transition-colors shadow-md shadow-pink-500/20"
+                                    className="px-6 py-2 bg-pink-500 text-white font-bold rounded-xl hover:bg-pink-600 transition-colors shadow-md shadow-pink-500/20 text-xs"
                                 >
                                     {audioFile ? 'Change Audio File' : 'Select Audio File'}
                                 </button>
                             </>
                         ) : (
                             <>
-                                <div className="mb-6 flex flex-col items-center">
-                                    <div className="text-4xl font-black text-slate-800 dark:text-slate-200 mb-4 font-mono">
-                                        {formatTime(recordingTime)}
-                                    </div>
-                                    {isRecording && (
-                                        <div className="flex items-center gap-1 h-8">
-                                            {[1,2,3,4,5,4,3,2,1].map((bar, i) => (
-                                                <div key={i} className="w-1.5 bg-pink-500 rounded-full animate-pulse" style={{ height: `${bar * 6}px`, animationDelay: `${i * 0.1}s` }}></div>
-                                            ))}
+                                {audioFile && !isRecording ? (
+                                    <div className="flex flex-col items-center w-full max-w-md">
+                                        <div className="text-4xl font-black text-slate-800 dark:text-slate-200 mb-2 font-mono">
+                                            {duration || formatTime(recordingTime)}
                                         </div>
-                                    )}
-                                </div>
-                                
-                                <button 
-                                    onClick={handleToggleRecording}
-                                    className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg ${isRecording ? 'bg-slate-800 text-red-500 animate-pulse ring-4 ring-red-500/30' : 'bg-red-500 text-white hover:scale-105'}`}
-                                >
-                                    <span className="material-symbols-outlined text-[32px]">{isRecording ? 'stop' : 'mic'}</span>
-                                </button>
-                                <p className="text-[12px] font-bold text-slate-500 mt-4">
-                                    {isRecording ? 'Recording in progress... Click stop when finished.' : audioFile ? 'Recording saved! Ready to publish.' : 'Click mic to start browser recording'}
-                                </p>
+                                        <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 text-xs font-bold mb-3 border border-emerald-200 dark:border-emerald-800">
+                                            <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                                            Recording saved! Ready to publish.
+                                        </div>
+
+                                        {recordedAudioUrl && (
+                                            <div className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-3 rounded-xl mb-4 shadow-sm text-left">
+                                                <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 mb-1.5">
+                                                    <span className="flex items-center gap-1.5">
+                                                        <span className="material-symbols-outlined text-[16px] text-pink-500">volume_up</span>
+                                                        Recorded Audio Preview
+                                                    </span>
+                                                    <span className="font-mono text-pink-600 font-bold">{duration}</span>
+                                                </div>
+                                                <audio controls src={recordedAudioUrl} className="w-full h-9 rounded" />
+                                            </div>
+                                        )}
+
+                                        <div className="flex items-center gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={handleDiscardRecording}
+                                                className="flex items-center gap-1.5 px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-rose-100 hover:text-rose-600 dark:hover:bg-rose-950/50 dark:hover:text-rose-400 text-slate-700 dark:text-slate-200 text-xs font-bold rounded-xl transition-all cursor-pointer"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+                                                Discard & Record Again
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="mb-4 flex flex-col items-center">
+                                            <div className="text-4xl font-black text-slate-800 dark:text-slate-200 mb-2 font-mono">
+                                                {formatTime(recordingTime)}
+                                            </div>
+                                            {isRecording && (
+                                                <div className="flex items-center gap-1 h-8 mb-2">
+                                                    {[1,2,3,4,5,4,3,2,1].map((bar, i) => (
+                                                        <div key={i} className="w-1.5 bg-pink-500 rounded-full animate-pulse" style={{ height: `${bar * 6}px`, animationDelay: `${i * 0.1}s` }}></div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        
+                                        <button 
+                                            type="button"
+                                            onClick={handleToggleRecording}
+                                            className={`w-16 h-16 rounded-full flex items-center justify-center transition-all shadow-lg ${isRecording ? 'bg-slate-800 text-red-500 animate-pulse ring-4 ring-red-500/30' : 'bg-red-500 text-white hover:scale-105'}`}
+                                            title={isRecording ? 'Stop Recording' : 'Start Recording'}
+                                        >
+                                            <span className="material-symbols-outlined text-[32px]">{isRecording ? 'stop' : 'mic'}</span>
+                                        </button>
+                                        <p className="text-[12px] font-bold text-slate-500 mt-4">
+                                            {isRecording ? 'Recording in progress... Click stop when finished.' : 'Click mic to start browser recording'}
+                                        </p>
+                                    </>
+                                )}
                             </>
                         )}
                     </div>

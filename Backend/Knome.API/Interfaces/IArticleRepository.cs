@@ -13,5 +13,5 @@ public interface IArticleRepository
     Task UpdateArticleAsync(Article article, List<string> tags, List<string> attachmentUrls, ArticleVersion? newVersionOrNull);
     Task DeleteArticleAsync(Article article);
     Task IncrementViewCountAsync(long articleId);
-    Task<int> PublishDueScheduledArticlesAsync();
+    Task<List<Article>> PublishDueScheduledArticlesAsync();
 }

@@ -23,17 +23,22 @@ export default function CreateArticleModal({ isOpen, onClose, onArticleCreated }
         italic: false,
         underline: false,
         list: false,
-        numlist: false
+        numlist: false,
+        heading: false,
+        quote: false
     });
 
     const updateActiveFormats = () => {
         try {
+            const block = (document.queryCommandValue('formatBlock') || '').toLowerCase();
             setActiveFormats({
                 bold: document.queryCommandState('bold'),
                 italic: document.queryCommandState('italic'),
                 underline: document.queryCommandState('underline'),
                 list: document.queryCommandState('insertUnorderedList'),
-                numlist: document.queryCommandState('insertOrderedList')
+                numlist: document.queryCommandState('insertOrderedList'),
+                heading: block === 'h1' || block === 'h2' || block === 'h3',
+                quote: block === 'blockquote'
             });
         } catch (e) {}
     };
@@ -62,6 +67,58 @@ export default function CreateArticleModal({ isOpen, onClose, onArticleCreated }
             document.execCommand('insertUnorderedList', false, null);
         } else if (format === 'numlist') {
             document.execCommand('insertOrderedList', false, null);
+        } else if (format === 'quote') {
+            const block = (document.queryCommandValue('formatBlock') || '').toLowerCase();
+            const isQuote = block.includes('blockquote');
+            if (isQuote) {
+                try { document.execCommand('formatBlock', false, '<p>'); } catch (e) { document.execCommand('formatBlock', false, 'p'); }
+            } else {
+                try { document.execCommand('formatBlock', false, '<blockquote>'); } catch (e) { document.execCommand('formatBlock', false, 'blockquote'); }
+            }
+        } else if (format === 'codeblock') {
+            const selection = window.getSelection();
+            const selectedText = selection ? selection.toString() : '';
+            const codeSnippet = selectedText || '// Enter your code snippet here\nfunction example() {\n  return true;\n}';
+            const escapedCode = codeSnippet.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const blockHtml = `<pre class="my-4 p-4 rounded-xl bg-slate-900 text-emerald-400 font-mono text-xs overflow-x-auto border border-slate-800 shadow-inner"><code>${escapedCode}</code></pre><p><br></p>`;
+            document.execCommand('insertHTML', false, blockHtml);
+        } else if (format === 'divider') {
+            document.execCommand('insertHTML', false, '<hr class="my-6 border-t border-slate-300 dark:border-slate-700" /><p><br></p>');
+        } else if (format === 'link') {
+            const selection = window.getSelection();
+            const selectedText = selection ? selection.toString() : '';
+            const url = window.prompt('Enter website or reference URL (e.g. https://example.com):', 'https://');
+            if (url && url.trim() && url.trim() !== 'https://') {
+                if (selectedText) {
+                    document.execCommand('createLink', false, url.trim());
+                } else {
+                    const linkText = window.prompt('Enter link text to display:', url.trim()) || url.trim();
+                    const linkHtml = `<a href="${url.trim()}" target="_blank" rel="noopener noreferrer" class="text-blue-600 dark:text-blue-400 underline font-semibold hover:text-blue-700">${linkText}</a>&nbsp;`;
+                    document.execCommand('insertHTML', false, linkHtml);
+                }
+            }
+        } else if (format === 'code') {
+            const selection = window.getSelection();
+            const selectedText = selection ? selection.toString() : '';
+            if (selectedText && !selectedText.includes('\n')) {
+                const isCode = selection.anchorNode?.parentElement?.tagName === 'CODE';
+                if (isCode) {
+                    document.execCommand('removeFormat', false, null);
+                } else {
+                    document.execCommand('insertHTML', false, `<code class="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-rose-500 font-mono text-xs rounded border border-slate-200 dark:border-slate-700 font-medium">${selectedText}</code>`);
+                }
+            } else {
+                const codeSnippet = selectedText || '// Enter your code snippet here\nfunction example() {\n  return true;\n}';
+                const escapedCode = codeSnippet.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const blockHtml = `<pre class="my-4 p-4 rounded-xl bg-slate-900 text-emerald-400 font-mono text-xs overflow-x-auto border border-slate-800 shadow-inner"><code>${escapedCode}</code></pre><p><br></p>`;
+                document.execCommand('insertHTML', false, blockHtml);
+            }
+        } else if (format === 'image') {
+            const imgUrl = window.prompt('Enter image URL:');
+            if (imgUrl && imgUrl.trim()) {
+                const imgHtml = `<figure class="my-4"><img src="${imgUrl.trim()}" alt="Article illustration" class="rounded-xl max-w-full h-auto shadow-md border border-slate-200 dark:border-slate-800" /><figcaption class="text-xs text-slate-400 mt-1.5 text-center italic">Image</figcaption></figure><p><br></p>`;
+                document.execCommand('insertHTML', false, imgHtml);
+            }
         }
 
         updateActiveFormats();
@@ -396,54 +453,105 @@ export default function CreateArticleModal({ isOpen, onClose, onArticleCreated }
 
                 {/* Workable Rich Text Toolbar & Content Area */}
                 <div className="border border-border-subtle rounded-lg overflow-hidden flex flex-col mt-2 focus-within:ring-2 focus-within:ring-electric-blue">
-                    <div className="bg-surface-container flex items-center gap-1 p-2 border-b border-border-subtle">
+                    {/* LinkedIn Article Editor Style Toolbar */}
+                    <div className="bg-surface-container flex items-center gap-1 sm:gap-1.5 p-2 border-b border-border-subtle overflow-x-auto select-none">
+
+                        {/* Bold */}
                         <button 
                             type="button" 
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => toggleFormat('bold')}
-                            className={`p-1.5 rounded transition-colors cursor-pointer flex items-center justify-center ${activeFormats.bold ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs' : 'text-slate-gray hover:bg-surface-container-high'}`}
+                            className={`w-7 h-7 rounded transition-colors cursor-pointer flex items-center justify-center shrink-0 ${activeFormats.bold ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs' : 'text-slate-gray hover:bg-surface-container-high'}`}
                             title="Bold (Ctrl+B)"
                         >
-                            <span className="material-symbols-outlined text-[18px]">format_bold</span>
+                            <span className="font-serif font-black text-[13px]">B</span>
                         </button>
+
+                        {/* Italic */}
                         <button 
                             type="button" 
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => toggleFormat('italic')}
-                            className={`p-1.5 rounded transition-colors cursor-pointer flex items-center justify-center ${activeFormats.italic ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs' : 'text-slate-gray hover:bg-surface-container-high'}`}
+                            className={`w-7 h-7 rounded transition-colors cursor-pointer flex items-center justify-center shrink-0 ${activeFormats.italic ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs' : 'text-slate-gray hover:bg-surface-container-high'}`}
                             title="Italic (Ctrl+I)"
                         >
-                            <span className="material-symbols-outlined text-[18px]">format_italic</span>
+                            <span className="font-serif italic font-bold text-[13px]">I</span>
                         </button>
-                        <button 
-                            type="button" 
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => toggleFormat('underline')}
-                            className={`p-1.5 rounded transition-colors cursor-pointer flex items-center justify-center ${activeFormats.underline ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs' : 'text-slate-gray hover:bg-surface-container-high'}`}
-                            title="Underline (Ctrl+U)"
-                        >
-                            <span className="material-symbols-outlined text-[18px]">format_underlined</span>
-                        </button>
-                        
-                        <div className="w-px h-5 bg-border-subtle mx-1"></div>
-                        
+
+                        <div className="w-px h-4 bg-border-subtle mx-1 shrink-0"></div>
+
+                        {/* Bulleted List */}
                         <button 
                             type="button" 
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => toggleFormat('list')}
-                            className={`p-1.5 rounded transition-colors cursor-pointer flex items-center justify-center ${activeFormats.list ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs' : 'text-slate-gray hover:bg-surface-container-high'}`}
+                            className={`w-7 h-7 rounded transition-colors cursor-pointer flex items-center justify-center shrink-0 ${activeFormats.list ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs' : 'text-slate-gray hover:bg-surface-container-high'}`}
                             title="Bulleted List"
                         >
-                            <span className="material-symbols-outlined text-[18px]">format_list_bulleted</span>
+                            <span className="material-symbols-outlined text-[17px]">format_list_bulleted</span>
                         </button>
+
+                        {/* Numbered List */}
                         <button 
                             type="button" 
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => toggleFormat('numlist')}
-                            className={`p-1.5 rounded transition-colors cursor-pointer flex items-center justify-center ${activeFormats.numlist ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs' : 'text-slate-gray hover:bg-surface-container-high'}`}
+                            className={`w-7 h-7 rounded transition-colors cursor-pointer flex items-center justify-center shrink-0 ${activeFormats.numlist ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs' : 'text-slate-gray hover:bg-surface-container-high'}`}
                             title="Numbered List"
                         >
-                            <span className="material-symbols-outlined text-[18px]">format_list_numbered</span>
+                            <span className="material-symbols-outlined text-[17px]">format_list_numbered</span>
+                        </button>
+
+                        <div className="w-px h-4 bg-border-subtle mx-1 shrink-0"></div>
+
+                        {/* Quote */}
+                        <button 
+                            type="button" 
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => toggleFormat('quote')}
+                            className={`w-7 h-7 rounded transition-colors cursor-pointer flex items-center justify-center shrink-0 ${activeFormats.quote ? 'bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs' : 'text-slate-gray hover:bg-surface-container-high'}`}
+                            title="Blockquote"
+                        >
+                            <span className="font-serif text-[18px] font-black leading-none">”</span>
+                        </button>
+
+
+
+                        {/* Divider */}
+                        <button 
+                            type="button" 
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => toggleFormat('divider')}
+                            className="w-7 h-7 rounded transition-colors cursor-pointer flex items-center justify-center shrink-0 text-slate-gray hover:bg-surface-container-high"
+                            title="Divider Line"
+                        >
+                            <span className="font-bold text-[16px] leading-none">—</span>
+                        </button>
+
+                        <div className="w-px h-4 bg-border-subtle mx-1 shrink-0"></div>
+
+                        {/* Link */}
+                        <button 
+                            type="button" 
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => toggleFormat('link')}
+                            className="w-7 h-7 rounded transition-colors cursor-pointer flex items-center justify-center shrink-0 text-slate-gray hover:bg-surface-container-high"
+                            title="Add Link"
+                        >
+                            <span className="material-symbols-outlined text-[17px]">link</span>
+                        </button>
+
+
+
+                        {/* Image */}
+                        <button 
+                            type="button" 
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => toggleFormat('image')}
+                            className="w-7 h-7 rounded transition-colors cursor-pointer flex items-center justify-center shrink-0 text-slate-gray hover:bg-surface-container-high"
+                            title="Insert Image"
+                        >
+                            <span className="material-symbols-outlined text-[17px]">image</span>
                         </button>
                     </div>
 

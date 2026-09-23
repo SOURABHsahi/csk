@@ -77,4 +77,12 @@ public class VideoController : KnomeControllerBase
         await _videoService.DeleteVideoAsync(videoId, GetCurrentUserId());
         return Ok(ApiResponse.SuccessResponse(200, "Video deleted successfully."));
     }
+
+    [HttpPost("{videoId:long}/view")]
+    [ProducesResponseType(typeof(ApiResponse<int>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RecordView(long videoId)
+    {
+        var newCount = await _videoService.IncrementViewCountAsync(videoId, GetCurrentUserId());
+        return Ok(ApiResponse<int>.SuccessResponse(200, "Video view recorded.", newCount));
+    }
 }

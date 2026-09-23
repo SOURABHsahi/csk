@@ -21,6 +21,8 @@ public partial class Post
 
     public DateTime CreatedDate { get; set; }
 
+    public int ViewCount { get; set; }
+
     public virtual User AuthorUser { get; set; } = null!;
 
     public virtual ICollection<CommunityPost> CommunityPosts { get; set; } = new List<CommunityPost>();

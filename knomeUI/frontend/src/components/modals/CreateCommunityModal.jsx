@@ -4,6 +4,7 @@ import { communitiesApi, mediaApi } from '../../utils/apiService';
 import { apiClient } from '../../utils/apiClient';
 import useScrollLoading from '../../hooks/useScrollLoading';
 import ScrollLoadingIndicator from '../ui/ScrollLoadingIndicator';
+import HighlightText from '../ui/HighlightText';
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 const MAX_IMAGE_SIZE_MB = 5;
@@ -506,6 +507,8 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
             const filteredFaq = faqList.filter(f => f.q.trim() && f.a.trim());
             const formattedCommunityType = type === 'private' ? 'Private' : type === 'default' ? 'Org' : 'Public';
 
+            const validMemberUserIds = (invitedUserIds || []).map(Number).filter(n => !isNaN(n) && n > 0);
+
             // 2. Persist directly to SQL Server database via API!
             const createPayload = {
                 name: name.trim(),
@@ -515,7 +518,8 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                 categoryId: mappedCategoryId,
                 rules: filteredRules.join('\n'),
                 faq: JSON.stringify(filteredFaq),
-                communityType: formattedCommunityType
+                communityType: formattedCommunityType,
+                memberUserIds: validMemberUserIds
             };
 
             let dbCommunity = null;
@@ -742,18 +746,12 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                 detail: { invitedUserIds, communityName: newCommunity.name, senderName: currentUser?.name, senderUserId: currentUser?.userId || currentUser?.id }
             }));
 
-            // Sync to backend DB if available
-            try {
-                communitiesApi.create({
-                    name: newCommunity.name,
-                    description: newCommunity.description,
-                    bannerUrl: finalBanner,
-                    thumbnailUrl: finalAvatar,
-                    rules: Array.isArray(newCommunity.rules) ? newCommunity.rules.join('\n') : (newCommunity.rules || ''),
-                    faq: Array.isArray(newCommunity.faq) ? JSON.stringify(newCommunity.faq) : (newCommunity.faq || ''),
-                    communityType: type === 'default' ? 'Public' : (type.charAt(0).toUpperCase() + type.slice(1))
-                }).catch(e => console.warn('Background community API sync note:', e));
-            } catch (e) {}
+            // Sync invited members to backend DB if needed
+            if (validMemberUserIds && validMemberUserIds.length > 0 && dbCommunity?.communityId) {
+                try {
+                    communitiesApi.addMembers(dbCommunity.communityId, validMemberUserIds).catch(() => {});
+                } catch (e) {}
+            }
 
             const generatedLink = `${window.location.origin}/community/view?id=${communityId}`;
             if (onCommunityCreated) {
@@ -1436,16 +1434,16 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                                                 />
                                                                 <div className="flex-1 min-w-0">
                                                                     <p className={`text-[12px] font-bold truncate leading-tight ${isSelected ? 'text-white' : 'text-slate-900 dark:text-white'}`}>
-                                                                        {displayName}
+                                                                        <HighlightText text={displayName} query={userSearchQuery} />
                                                                     </p>
                                                                     <p className={`text-[10px] truncate ${isSelected ? 'text-indigo-100' : 'text-slate-500'}`}>
-                                                                        {user.designation || 'Member'}
+                                                                        <HighlightText text={user.designation || 'Member'} query={userSearchQuery} />
                                                                     </p>
                                                                     {(user.department || user.departmentName) && (
                                                                         <span className={`inline-block mt-0.5 text-[9px] px-1.5 py-0.2 rounded font-semibold uppercase tracking-wider ${
                                                                             isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
                                                                         }`}>
-                                                                            {user.department || user.departmentName}
+                                                                            <HighlightText text={user.department || user.departmentName} query={userSearchQuery} />
                                                                         </span>
                                                                     )}
                                                                 </div>

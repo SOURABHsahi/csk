@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useToast } from '../contexts/ToastContext';
 import { interactionsApi, searchApi, communitiesApi, notificationsApi, adminApi, postsApi, resolveMediaUrl, getCommunityImages } from '../../utils/apiService';
 import { useUser } from '../contexts/UserContext';
+import HighlightText from '../ui/HighlightText';
 
 export default function ShareProfileModal({ isOpen, onClose, user }) {
     const { addToast } = useToast();
@@ -31,6 +32,7 @@ export default function ShareProfileModal({ isOpen, onClose, user }) {
             setSelectedUsers([]);
             setUserSearchQuery('');
             setCommunitySearchQuery('');
+            setSelectedCommunityId('');
 
             const loadCommunities = async () => {
                 try {
@@ -94,12 +96,11 @@ export default function ShareProfileModal({ isOpen, onClose, user }) {
                     });
 
                     setCommunities(combinedList);
-                    if (combinedList.length > 0) {
-                        setSelectedCommunityId(prev => {
-                            const exists = combinedList.some(c => String(c.communityId || c.id) === String(prev));
-                            return exists ? prev : String(combinedList[0].communityId || combinedList[0].id);
-                        });
-                    }
+                    setSelectedCommunityId(prev => {
+                        if (!prev) return '';
+                        const exists = combinedList.some(c => String(c.communityId || c.id) === String(prev));
+                        return exists ? prev : '';
+                    });
                 } catch (err) {
                     console.error('Failed to load communities for sharing', err);
                 }
@@ -554,7 +555,7 @@ export default function ShareProfileModal({ isOpen, onClose, user }) {
                                             return (
                                                 <div
                                                     key={cId}
-                                                    onClick={() => setSelectedCommunityId(cId)}
+                                                    onClick={() => setSelectedCommunityId(prev => String(prev) === cId ? '' : cId)}
                                                     className={`p-2.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 group ${
                                                         isSelected 
                                                             ? 'border-cyan-500 bg-cyan-50/80 dark:bg-cyan-950/40 ring-2 ring-cyan-500/20 shadow-sm' 
@@ -576,11 +577,11 @@ export default function ShareProfileModal({ isOpen, onClose, user }) {
                                                         <div className="min-w-0 flex-1">
                                                             <div className="flex items-center gap-2">
                                                                 <h4 className={`text-xs font-bold truncate ${isSelected ? 'text-cyan-700 dark:text-cyan-300' : 'text-slate-900 dark:text-white'}`}>
-                                                                    {c.name}
+                                                                    <HighlightText text={c.name} query={communitySearchQuery} />
                                                                 </h4>
                                                                 {c.category && (
                                                                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-700/70 text-slate-600 dark:text-slate-300 shrink-0">
-                                                                        {c.category}
+                                                                        <HighlightText text={c.category} query={communitySearchQuery} />
                                                                     </span>
                                                                 )}
                                                             </div>
@@ -591,7 +592,7 @@ export default function ShareProfileModal({ isOpen, onClose, user }) {
                                                                 </span>
                                                                 {c.description && (
                                                                     <span className="truncate max-w-[170px] hidden sm:inline text-slate-400 text-[10px]">
-                                                                        • {c.description}
+                                                                        • <HighlightText text={c.description} query={communitySearchQuery} />
                                                                     </span>
                                                                 )}
                                                             </div>
@@ -626,7 +627,7 @@ export default function ShareProfileModal({ isOpen, onClose, user }) {
                             <button
                                 onClick={handleShareToCommunity}
                                 disabled={isSharingToComm || !selectedCommunityId}
-                                className="w-full py-3 bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-sm rounded-xl transition-all shadow-md shadow-cyan-500/20 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                                className="w-full py-3 bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-sm rounded-xl transition-all shadow-md shadow-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2"
                             >
                                 <span className="material-symbols-outlined text-[18px]">send</span>
                                 {isSharingToComm ? 'Sharing...' : 'Share Profile to Selected Community'}
@@ -677,9 +678,13 @@ export default function ShareProfileModal({ isOpen, onClose, user }) {
                                                     <img src={targetAvatar} alt={targetName} className="w-8 h-8 rounded-full object-cover shrink-0 shadow-xs" />
                                                     <div className="min-w-0 flex-1">
                                                         <div className="flex items-center gap-1.5">
-                                                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">{targetName}</p>
+                                                            <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                                                                <HighlightText text={targetName} query={userSearchQuery} />
+                                                            </p>
                                                         </div>
-                                                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">{targetRole} • {targetDept}</p>
+                                                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                                            <HighlightText text={`${targetRole} • ${targetDept}`} query={userSearchQuery} />
+                                                        </p>
                                                     </div>
                                                 </div>
 

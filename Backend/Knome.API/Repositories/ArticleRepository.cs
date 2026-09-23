@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Knome.API.Data;
@@ -88,14 +89,14 @@ public class ArticleRepository : IArticleRepository
             .ToListAsync();
     }
 
-    public async Task<int> PublishDueScheduledArticlesAsync()
+    public async Task<List<Article>> PublishDueScheduledArticlesAsync()
     {
         var nowIst = Knome.API.Common.KnomeTime.Now;
         var dueArticles = await _db.Articles
             .Where(a => a.Status == "Scheduled" && (a.ScheduledDate == null || a.ScheduledDate <= nowIst))
             .ToListAsync();
 
-        if (!dueArticles.Any()) return 0;
+        if (!dueArticles.Any()) return new List<Article>();
 
         foreach (var article in dueArticles)
         {
@@ -103,7 +104,8 @@ public class ArticleRepository : IArticleRepository
             article.PublishedDate = article.ScheduledDate ?? nowIst;
         }
 
-        return await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync();
+        return dueArticles;
     }
 
     public async Task<List<Article>> GetMyArticlesAsync(int authorUserId, int pageNumber = 1, int pageSize = 20)
@@ -140,7 +142,7 @@ public class ArticleRepository : IArticleRepository
             { 
                 ArticleId = article.ArticleId, 
                 FileUrl = url, 
-                FileType = "File", 
+                FileType = DetermineFileType(url), 
                 PublishedDate = Knome.API.Common.KnomeTime.Now 
             });
         }
@@ -173,7 +175,7 @@ public class ArticleRepository : IArticleRepository
 
         foreach (var url in attachmentUrls)
         {
-            _db.ArticleAttachments.Add(new ArticleAttachment { ArticleId = article.ArticleId, FileUrl = url, FileType = "File" });
+            _db.ArticleAttachments.Add(new ArticleAttachment { ArticleId = article.ArticleId, FileUrl = url, FileType = DetermineFileType(url) });
         }
 
         if (newVersionOrNull != null)
@@ -229,5 +231,17 @@ public class ArticleRepository : IArticleRepository
             article.ViewCount++;
             await _db.SaveChangesAsync();
         }
+    }
+
+    private static string DetermineFileType(string url)
+    {
+        var ext = Path.GetExtension(url)?.ToLowerInvariant() ?? "";
+        return ext switch
+        {
+            ".mp3" or ".wav" or ".ogg" or ".m4a" or ".aac" or ".flac" => "Audio",
+            ".mp4" or ".webm" or ".mov" or ".m4v" or ".mkv" => "Video",
+            ".jpg" or ".jpeg" or ".png" or ".gif" or ".webp" or ".svg" or ".bmp" => "Image",
+            _ => "Document"
+        };
     }
 }

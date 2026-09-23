@@ -35,7 +35,12 @@ public class PodcastService : IPodcastService
     private async Task CheckIsAdminAsync(int currentUserId)
     {
         var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
-        if (user == null || !user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.CommunityAdmin))
+        if (user == null || !user.Roles.Any(r => 
+            r.RoleName == Roles.SystemAdmin || r.RoleCode == "SYSADM" ||
+            r.RoleName == Roles.HRAdmin || r.RoleCode == "HRADM" ||
+            r.RoleName == Roles.CommunityAdmin || r.RoleCode == "CADM" ||
+            (r.RoleName != null && r.RoleName.Contains("Admin")) ||
+            (r.RoleCode != null && r.RoleCode.Contains("ADM"))))
         {
             throw new UnauthorizedException("You must be an Administrator to create/modify podcast series definitions.");
         }
@@ -46,7 +51,12 @@ public class PodcastService : IPodcastService
         if (podcast.UploaderUserId == currentUserId) return;
 
         var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
-        if (user == null || !user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.CommunityAdmin))
+        if (user == null || !user.Roles.Any(r => 
+            r.RoleName == Roles.SystemAdmin || r.RoleCode == "SYSADM" ||
+            r.RoleName == Roles.HRAdmin || r.RoleCode == "HRADM" ||
+            r.RoleName == Roles.CommunityAdmin || r.RoleCode == "CADM" ||
+            (r.RoleName != null && r.RoleName.Contains("Admin")) ||
+            (r.RoleCode != null && r.RoleCode.Contains("ADM"))))
         {
             throw new UnauthorizedException("You must be the uploader of this podcast episode or an Administrator to modify/delete it.");
         }
@@ -183,6 +193,15 @@ public class PodcastService : IPodcastService
         }
 
         // FK existence validation (GBV-001) — CategoryId
+        if (!dto.CategoryId.HasValue && !string.IsNullOrWhiteSpace(dto.CategoryName))
+        {
+            var matchingCat = await _db.Categories.FirstOrDefaultAsync(c => c.Name.ToLower() == dto.CategoryName.Trim().ToLower());
+            if (matchingCat != null)
+            {
+                dto.CategoryId = matchingCat.CategoryId;
+            }
+        }
+
         if (dto.CategoryId.HasValue)
         {
             var categoryExists = await _db.Categories.AnyAsync(c => c.CategoryId == dto.CategoryId.Value);
@@ -291,15 +310,13 @@ public class PodcastService : IPodcastService
         await _repo.DeletePodcastAsync(podcast);
     }
 
-    public async Task<int> IncrementViewCountAsync(long podcastId)
+    public async Task<int> IncrementViewCountAsync(long podcastId, int currentUserId = 0)
     {
-        var newCount = await _repo.IncrementViewCountAsync(podcastId);
-        if (newCount == 0)
-        {
-            var exists = await _repo.GetPodcastByIdAsync(podcastId);
-            if (exists == null)
-                throw new NotFoundException($"Podcast ID {podcastId} not found.");
-        }
-        return newCount;
+        var exists = await _repo.GetPodcastByIdAsync(podcastId);
+        if (exists == null)
+            throw new NotFoundException($"Podcast ID {podcastId} not found.");
+
+        var count = await _interactionService.RecordViewAsync(ContentTypes.Podcast, podcastId, currentUserId);
+        return (int)count;
     }
 }

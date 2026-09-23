@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useUser } from '../../components/contexts/UserContext';
 import { profileApi } from '../../utils/apiService';
+import SuspendedAlertModal from '../../components/modals/SuspendedAlertModal';
 
 /**
  * SSO Handler — /sso?token=<mpo_access_token>
@@ -11,7 +12,8 @@ import { profileApi } from '../../utils/apiService';
  *  2. This page picks up the token, saves it as 'knome_jwt' & 'accessToken'
  *  3. Calls backend /api/auth/me (or profileApi.getMe) to get user details & roles
  *  4. Syncs user into UserContext and redirects to /
- *  5. If token is invalid or missing, redirects to MPO login.
+ *  5. If user is suspended, pops up suspend alert with OK button and logs out.
+ *  6. If token is invalid or missing, redirects to MPO login.
  */
 export default function SsoPage() {
     const [searchParams] = useSearchParams();
@@ -19,6 +21,7 @@ export default function SsoPage() {
     const { currentUser, isAuthLoading } = useUser();
     const [statusMessage, setStatusMessage] = useState('Validating SSO token with MPO Employee Hub...');
     const [error, setError] = useState(null);
+    const [suspendedUser, setSuspendedUser] = useState(null);
 
     useEffect(() => {
         const hashString = window.location.hash.startsWith('#') ? window.location.hash.substring(1) : window.location.hash;
@@ -66,9 +69,35 @@ export default function SsoPage() {
                     localStorage.setItem('knome_employeeId', email);
                 }
 
+                let isSuspendedLocal = false;
+                try {
+                    const suspendedMap = JSON.parse(localStorage.getItem('knome_suspended_accounts') || '{}');
+                    if ((email && suspendedMap[email.toUpperCase()]) || (email && suspendedMap[email.toLowerCase()])) {
+                        isSuspendedLocal = true;
+                    }
+                } catch {}
+
                 // Verify with backend
                 const profile = await profileApi.getMe();
                 if (profile) {
+                    let isSuspended = isSuspendedLocal || profile.isSuspended === true || profile.isPermanentlySuspended === true || profile.isActive === false || (profile.suspendedUntil && new Date(profile.suspendedUntil) > new Date());
+                    try {
+                        const suspendedMap = JSON.parse(localStorage.getItem('knome_suspended_accounts') || '{}');
+                        const pUid = String(profile.userId || profile.id || '');
+                        const pEmp = String(profile.employeeId || '').toUpperCase();
+                        if ((pUid && suspendedMap[pUid]) || (pEmp && suspendedMap[pEmp])) {
+                            isSuspended = true;
+                        }
+                    } catch {}
+
+                    if (isSuspended) {
+                        setSuspendedUser({
+                            fullName: profile.fullName || profile.name || email || 'Employee',
+                            employeeId: profile.employeeId || email || '',
+                            email: profile.email || email,
+                        });
+                        return;
+                    }
                     setStatusMessage('Welcome to Knome! Redirecting to dashboard...');
                     setTimeout(() => {
                         window.location.href = '/';
@@ -78,20 +107,49 @@ export default function SsoPage() {
                 }
             } catch (err) {
                 console.error('[SSO] Verification failed:', err);
+                const errMsg = (err?.message || '').toLowerCase();
+                const isSuspended = err?.status === 403 || errMsg.includes('suspended') || errMsg.includes('inactive') || errMsg.includes('forbidden');
+                if (isSuspended) {
+                    setSuspendedUser({
+                        fullName: email || 'Employee',
+                        employeeId: email || '',
+                        email: email,
+                    });
+                    return;
+                }
                 setError(err?.message || 'SSO authentication failed.');
                 localStorage.removeItem('knome_jwt');
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('knome_employeeId');
                 
                 setTimeout(() => {
-                    const returnUrl = encodeURIComponent('https://counselling-1.mponline.demo.gov.in:3001/login');
-                    window.location.href = `https://counselling-1.mponline.demo.gov.in:3001/sso-logout?returnUrl=${returnUrl}&source=knome`;
+                    window.location.href = 'https://counselling-1.mponline.demo.gov.in:3001/applications';
                 }, 2000);
             }
         };
 
         doSso();
     }, [searchParams, navigate]);
+
+    const handleSuspendOk = () => {
+        localStorage.removeItem('knome_jwt');
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('knome_refresh');
+        localStorage.removeItem('knome_employeeId');
+        window.location.href = 'https://counselling-1.mponline.demo.gov.in:3001/applications';
+    };
+
+    if (suspendedUser) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
+                <SuspendedAlertModal
+                    isOpen={true}
+                    user={suspendedUser}
+                    onOk={handleSuspendOk}
+                />
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-white p-4">

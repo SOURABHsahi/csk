@@ -12,5 +12,5 @@ public interface IPostRepository
     Task<Post> AddPostAsync(Post post, List<string> attachmentUrls, List<string> attachmentTypes, List<int> mentionedUserIds);
     Task UpdatePostAsync(Post post, List<string> attachmentUrls, List<string> attachmentTypes, List<int> mentionedUserIds);
     Task DeletePostAsync(Post post);
-    Task<int> PublishDueScheduledPostsAsync();
+    Task<List<Post>> PublishDueScheduledPostsAsync();
 }

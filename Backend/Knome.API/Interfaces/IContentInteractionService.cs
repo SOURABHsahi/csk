@@ -41,4 +41,8 @@ public interface IContentInteractionService
     Task<List<ModerationReportDto>> GetPendingReportsAsync(int pageNumber, int pageSize);
     Task<List<ModerationReportDto>> GetAllReportsAsync(string? status, int pageNumber, int pageSize);
     Task<ModerationReportDto> ResolveReportAsync(long reportId, int moderatorUserId, ResolveReportDto dto);
+
+    // Unique View Resolution
+    Task<long> RecordViewAsync(string contentType, long contentId, int userId);
+    Task<bool> HasUserViewedAsync(string contentType, long contentId, int userId);
 }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { resolveMediaUrl } from '../../utils/apiService';
+import HighlightText from '../ui/HighlightText';
 
 /**
  * Universal Suspend User / Member Modal
@@ -192,10 +193,14 @@ export default function SuspendUserModal({
                                                 <div className="w-7 h-7 rounded-full bg-amber-500/20 text-amber-600 font-bold text-xs flex items-center justify-center shrink-0">
                                                     {(u.fullName || u.name || 'U')[0]}
                                                 </div>
-                                                <div className="min-w-0">
-                                                    <p className="font-bold text-slate-900 dark:text-white text-xs truncate">{u.fullName || u.name}</p>
-                                                    <p className="text-[10px] text-slate-400 truncate">{u.designation || u.roleName || 'Employee'} • {u.department || u.departmentName || 'General'}</p>
-                                                </div>
+                                                 <div className="min-w-0">
+                                                     <p className="font-bold text-slate-900 dark:text-white text-xs truncate">
+                                                         <HighlightText text={u.fullName || u.name} query={userSearchTerm} />
+                                                     </p>
+                                                     <p className="text-[10px] text-slate-400 truncate">
+                                                         <HighlightText text={`${u.designation || u.roleName || 'Employee'} • ${u.department || u.departmentName || 'General'}`} query={userSearchTerm} />
+                                                     </p>
+                                                 </div>
                                             </div>
                                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${u.isActive ? 'bg-emerald-500/10 text-emerald-600' : 'bg-rose-500/10 text-rose-600'}`}>
                                                 {u.isActive ? 'Active' : 'Suspended'}

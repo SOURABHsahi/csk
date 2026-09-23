@@ -1,38 +1,42 @@
 import React, { useState, useEffect } from 'react';
-import { useUser } from '../components/contexts/UserContext';
-import CreateJobModal from '../components/modals/CreateJobModal';
 import { jobsApi } from '../utils/apiService';
 import { useScrollLoading } from '../hooks/useScrollLoading';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 
 export default function Jobs() {
-    const { currentUser } = useUser();
-    const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [activeFilter, setActiveFilter] = useState('All Roles');
     const [jobs, setJobs] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
 
-    const canPostJobs = currentUser?.role === 'HRADM' || currentUser?.role === 'SYSADM' || currentUser?.role === 'HR Administrator' || currentUser?.role === 'System Administrator';
-
     const filters = ['All Roles', 'Engineering', 'Product & Design', 'Marketing', 'Product'];
+
+const normalizeJobUrl = (url) => {
+    if (!url || typeof url !== 'string') return 'https://ats.mponline.gov.in';
+    const trimmed = url.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        return trimmed;
+    }
+    return `https://${trimmed}`;
+};
 
     const fetchJobsFromDb = async () => {
         setIsLoading(true);
         try {
             const data = await jobsApi.getAll();
-            if (Array.isArray(data) && data.length > 0) {
-                const mapped = data.map(j => ({
+            const items = Array.isArray(data) ? data : (data?.items || []);
+            if (items.length > 0) {
+                const mapped = items.map(j => ({
                     id: j.jobId || j.id,
                     title: j.title,
                     department: j.departmentName || j.department || 'Engineering',
                     team: j.departmentName || 'Product Team',
                     location: j.location || 'Bhopal, MP',
-                    posted: new Date(j.createdDate || j.postedDate || Date.now()).toLocaleDateString(),
-                    closes: j.expiryDate ? new Date(j.expiryDate).toLocaleDateString() : 'Dec 31, 2026',
-                    skills: j.requirements ? j.requirements.split(',').map(s => s.trim()) : ['Design Systems', 'Backend'],
+                    posted: new Date(j.postedDate || j.createdDate || Date.now()).toLocaleDateString(),
+                    closes: j.closingDate ? new Date(j.closingDate).toLocaleDateString() : (j.expiryDate ? new Date(j.expiryDate).toLocaleDateString() : 'Dec 31, 2026'),
+                    skills: j.skillsRequired ? j.skillsRequired.split(',').map(s => s.trim()) : (j.requirements ? j.requirements.split(',').map(s => s.trim()) : ['Design Systems', 'Backend']),
                     isFeatured: j.isFeatured || false,
                     isExpired: j.isExpired || false,
-                    link: j.applicationUrl || 'https://ats.mponline.gov.in'
+                    link: normalizeJobUrl(j.applicationLink || j.applicationUrl)
                 }));
                 setJobs(mapped);
             } else {
@@ -94,7 +98,6 @@ export default function Jobs() {
     ];
 
     const displayedJobs = jobs.filter(job => activeFilter === 'All Roles' || job.department === activeFilter);
-    const recommendedJobs = jobs.filter(job => job.department === currentUser?.department && !job.isExpired);
 
     const { visibleCount, reset: resetScrollLoading } = useScrollLoading(displayedJobs.length, 6, 6);
 
@@ -125,17 +128,6 @@ export default function Jobs() {
                         <p className="text-slate-600 dark:text-slate-400 text-sm font-normal max-w-xl">
                             Explore cross-department openings, internal transfers, and career advancement roles across MPOnline.
                         </p>
-                    </div>
-
-                    <div className="relative z-10 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
-                        {canPostJobs && (
-                            <button 
-                                onClick={() => setIsCreateOpen(true)}
-                                className="px-6 py-3.5 bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white font-bold text-sm rounded-xl shadow-lg shadow-teal-500/25 flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98]">
-                                <span className="material-symbols-outlined text-[20px]">add_circle</span>
-                                Post Internal Job
-                            </button>
-                        )}
                     </div>
                 </div>
 
@@ -212,7 +204,14 @@ export default function Jobs() {
                                             href={job.link} 
                                             target="_blank" 
                                             rel="noopener noreferrer"
-                                            className="px-4 py-2 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 font-bold text-xs hover:bg-teal-500 hover:text-white transition-all flex items-center gap-1">
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (job.link) {
+                                                    window.open(job.link, '_blank', 'noopener,noreferrer');
+                                                    e.preventDefault();
+                                                }
+                                            }}
+                                            className="px-4 py-2 rounded-xl bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 font-bold text-xs hover:bg-teal-500 hover:text-white transition-all flex items-center gap-1 cursor-pointer">
                                             Apply Now
                                             <span className="material-symbols-outlined text-[14px]">north_east</span>
                                         </a>
@@ -225,12 +224,6 @@ export default function Jobs() {
                 </div>
 
             </main>
-
-            <CreateJobModal 
-                isOpen={isCreateOpen} 
-                onClose={() => setIsCreateOpen(false)} 
-                onJobCreated={fetchJobsFromDb}
-            />
         </>
     );
 }

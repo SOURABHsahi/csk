@@ -12,9 +12,10 @@ import PeopleYouMayKnowWidget from '../components/widgets/PeopleYouMayKnowWidget
 import TextScramble from '../components/ui/TextScramble';
 import ScrollExpandMedia from '../components/ui/scroll-expansion-hero';
 import { BackgroundPaths } from '../components/ui/background-paths';
-import { dashboardApi, karmaApi, mapFeedItem, resolveMediaUrl } from '../utils/apiService';
+import { dashboardApi, karmaApi, mapFeedItem, resolveMediaUrl, notificationsApi } from '../utils/apiService';
 import { useScrollLoading } from '../hooks/useScrollLoading';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
+import BroadcastModal from '../components/modals/BroadcastModal';
 
 export default function Dashboard() {
     const navigate = useNavigate();
@@ -33,10 +34,17 @@ export default function Dashboard() {
 
     const [activeFilter, setActiveFilter] = useState('All');
     const [announcements, setAnnouncements] = useState([]);
+    const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState(false);
+    const [editingBroadcastData, setEditingBroadcastData] = useState(null);
 
     const isSysAdmin = currentUser?.role === 'SYSADM' || 
                        currentUser?.roleName === 'System Administrator' || 
                        (Array.isArray(currentUser?.roles) && (currentUser.roles.includes('SYSADM') || currentUser.roles.includes('System Administrator') || currentUser.roles.includes('SystemAdmin')));
+
+    const isHrOrSysAdmin = isSysAdmin || 
+                           ['HRADM', 'HR ADMIN', 'HR ADMINISTRATOR'].includes(String(currentUser?.role || '').toUpperCase()) ||
+                           ['HR ADMINISTRATOR', 'HR ADMIN'].includes(String(currentUser?.roleName || '').toUpperCase()) ||
+                           (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => ['HRADM', 'HR ADMINISTRATOR', 'HR ADMIN', 'HRADMIN'].includes(String(r || '').toUpperCase())));
 
     useEffect(() => {
         if (currentUser?.karma !== undefined) {
@@ -55,10 +63,32 @@ export default function Dashboard() {
         loadKarma();
 
         // Load HR Broadcast Announcements (FR-DB-05)
-        dashboardApi.getAnnouncements().then(res => {
-            if (Array.isArray(res)) setAnnouncements(res);
-            else if (res?.items) setAnnouncements(res.items);
-        }).catch(() => {});
+        const loadAnnouncements = () => {
+            dashboardApi.getAnnouncements().then(res => {
+                const list = Array.isArray(res) ? res : (res?.items || res?.data || []);
+                // Ensure only genuine broadcast announcements are rendered (never comments or personal notifications)
+                const validAnnouncements = list.filter(item => {
+                    const evt = String(item.eventType || item.type || '').toUpperCase();
+                    const msg = String(item.message || item.content || '').toLowerCase();
+                    if (msg.includes('commented on') || msg.includes('liked your') || msg.includes('published a new post') || msg.includes('published a new article')) {
+                        return false;
+                    }
+                    return evt === 'HRANNOUNCEMENT' || evt === 'ADMINBROADCAST' || item.isBroadcast === true || item.sender === 'HR Administration';
+                });
+                setAnnouncements(validAnnouncements);
+            }).catch(() => {
+                setAnnouncements([]);
+            });
+        };
+        loadAnnouncements();
+
+        const handleBroadcastUpdate = () => {
+            loadAnnouncements();
+        };
+        window.addEventListener('knome:broadcast-updated', handleBroadcastUpdate);
+        return () => {
+            window.removeEventListener('knome:broadcast-updated', handleBroadcastUpdate);
+        };
     }, [currentUser?.userId, currentUser?.employeeId, currentUser?.karma]);
 
     useEffect(() => {
@@ -191,19 +221,88 @@ export default function Dashboard() {
                     </div>
 
                     {/* HR Organization Announcement Banner (FR-DB-05) */}
-                    {announcements && announcements.length > 0 && (
-                        <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 border border-amber-500/30 flex items-start gap-3 shadow-xs">
-                            <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
-                                <span className="material-symbols-outlined text-[20px]" style={{fontVariationSettings: "'FILL' 1"}}>campaign</span>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-0.5">
-                                    <span className="text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white px-2 py-0.5 rounded-md">HR Broadcast</span>
-                                    <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">• Organization Announcement</span>
+                    {announcements && announcements.length > 0 && announcements[0] && (
+                        <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/5 border border-amber-500/30 flex items-start justify-between gap-3 shadow-xs animate-in fade-in duration-300">
+                            <div className="flex items-start gap-3 flex-1 min-w-0">
+                                <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+                                    <span className="material-symbols-outlined text-[20px]" style={{fontVariationSettings: "'FILL' 1"}}>campaign</span>
                                 </div>
-                                <h4 className="text-sm font-black text-slate-900 dark:text-white leading-snug">{announcements[0].title || announcements[0].message}</h4>
-                                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 font-medium">{announcements[0].content || announcements[0].details || announcements[0].message}</p>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                                        <span className="text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white px-2 py-0.5 rounded-md">HR Broadcast</span>
+                                        <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400">• Organization Announcement</span>
+                                    </div>
+                                    <h4 className="text-sm font-black text-slate-900 dark:text-white leading-snug">{announcements[0].title || announcements[0].message}</h4>
+                                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 font-medium leading-relaxed">{announcements[0].content || announcements[0].details || announcements[0].message}</p>
+                                </div>
                             </div>
+
+                            {/* HR Admin & System Admin Actions */}
+                            {isHrOrSysAdmin && (
+                                <div className="flex items-center gap-1.5 shrink-0 self-start">
+                                    <button
+                                        onClick={() => {
+                                            setEditingBroadcastData(announcements[0]);
+                                            setIsBroadcastModalOpen(true);
+                                        }}
+                                        className="px-2.5 py-1 rounded-lg text-xs font-bold text-amber-800 dark:text-amber-200 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 transition-all flex items-center gap-1 cursor-pointer"
+                                        title="Edit this broadcast announcement"
+                                    >
+                                        <span className="material-symbols-outlined text-[15px]">edit</span>
+                                        <span>Edit</span>
+                                    </button>
+                                    <button
+                                        onClick={async () => {
+                                            if (window.confirm('Remove this broadcast announcement from all employee feeds?')) {
+                                                try {
+                                                    await notificationsApi.broadcasts.delete(announcements[0].id);
+                                                    window.dispatchEvent(new CustomEvent('knome:broadcast-updated'));
+                                                } catch (e) {
+                                                    console.error('Failed to remove broadcast:', e);
+                                                }
+                                            }
+                                        }}
+                                        className="p-1 rounded-lg text-amber-700/60 dark:text-amber-300/60 hover:text-rose-600 hover:bg-rose-500/15 transition-all cursor-pointer"
+                                        title="Remove announcement"
+                                    >
+                                        <span className="material-symbols-outlined text-[17px]">delete</span>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* HR Admin Prompt when No Broadcast is Active */}
+                    {(!announcements || announcements.length === 0) && isHrOrSysAdmin && (
+                        <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-amber-500/5 border border-dashed border-amber-500/30 flex items-center justify-between gap-3 shadow-2xs">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                    <span className="material-symbols-outlined text-[20px]" style={{fontVariationSettings: "'FILL' 1"}}>campaign</span>
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-black uppercase tracking-wider bg-amber-500/20 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-md">
+                                            HR Admin Broadcast
+                                        </span>
+                                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                            No Active Organization Broadcast
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                        Publish company-wide announcements, town halls, or urgent notices to all MPOnline employees.
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setEditingBroadcastData(null);
+                                    setIsBroadcastModalOpen(true);
+                                }}
+                                className="px-3.5 py-1.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 transition-all shadow-xs shadow-amber-500/20 flex items-center gap-1.5 cursor-pointer shrink-0"
+                            >
+                                <span className="material-symbols-outlined text-[16px]">campaign</span>
+                                <span>Create Broadcast</span>
+                            </button>
                         </div>
                     )}
 
@@ -338,6 +437,15 @@ export default function Dashboard() {
             <CreatePostModal isOpen={isCreatePostOpen} onClose={() => setIsCreatePostOpen(false)} onPostCreated={() => loadPosts(500)} />
             <CreateArticleModal isOpen={isCreateArticleOpen} onClose={() => setIsCreateArticleOpen(false)} onArticleCreated={() => loadPosts(activeFilter)} />
             <UploadVideoModal isOpen={isUploadVideoOpen} onClose={() => setIsUploadVideoOpen(false)} onVideoUploaded={() => loadPosts(activeFilter)} />
+            <BroadcastModal
+                isOpen={isBroadcastModalOpen}
+                onClose={() => {
+                    setIsBroadcastModalOpen(false);
+                    setEditingBroadcastData(null);
+                }}
+                initialData={editingBroadcastData}
+                onSuccess={() => {}}
+            />
         </>
     );
 }

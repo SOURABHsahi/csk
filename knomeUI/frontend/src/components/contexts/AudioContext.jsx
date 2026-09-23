@@ -101,10 +101,7 @@ export function AudioProvider({ children }) {
         const pid = podcast?.podcastId || podcast?.id;
         if (!pid) return;
 
-        // Instant optimistic client update so user sees view count increase immediately
-        window.dispatchEvent(new CustomEvent('knome_podcast_viewed', { 
-            detail: { id: Number(pid), increment: 1 } 
-        }));
+        // Authoritative backend record and sync (strictly 1 view per user)
 
         // Authoritative backend record and sync
         podcastsApi.recordView(pid)

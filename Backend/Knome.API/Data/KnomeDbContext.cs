@@ -42,6 +42,8 @@ public partial class KnomeDbContext : DbContext
 
     public virtual DbSet<ConnectionRequest> ConnectionRequests { get; set; }
 
+    public virtual DbSet<ContentView> ContentViews { get; set; }
+
     public virtual DbSet<Department> Departments { get; set; }
 
     public virtual DbSet<Follower> Followers { get; set; }
@@ -104,7 +106,7 @@ public partial class KnomeDbContext : DbContext
 
             entity.HasIndex(e => new { e.CreatedDate, e.Status }, "IX_Articles_CreatedDate").IsDescending(true, false);
 
-            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.Description).HasMaxLength(500);
             entity.Property(e => e.Status)
                 .HasMaxLength(20)
@@ -131,7 +133,7 @@ public partial class KnomeDbContext : DbContext
                 .HasMaxLength(20)
                 .IsUnicode(false);
             entity.Property(e => e.FileUrl).HasMaxLength(400);
-            entity.Property(e => e.PublishedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.PublishedDate).HasDefaultValueSql("(sysdatetime())");
 
             entity.HasOne(d => d.Article).WithMany(p => p.ArticleAttachments)
                 .HasForeignKey(d => d.ArticleId)
@@ -155,7 +157,7 @@ public partial class KnomeDbContext : DbContext
         {
             entity.HasKey(e => e.VersionId).HasName("PK__ArticleV__16C6400FE9E0B942");
 
-            entity.Property(e => e.EditedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.EditedDate).HasDefaultValueSql("(sysdatetime())");
 
             entity.HasOne(d => d.Article).WithMany(p => p.ArticleVersions)
                 .HasForeignKey(d => d.ArticleId)
@@ -191,7 +193,7 @@ public partial class KnomeDbContext : DbContext
             entity.Property(e => e.TargetType)
                 .HasMaxLength(30)
                 .IsUnicode(false);
-            entity.Property(e => e.Timestamp).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.Timestamp).HasDefaultValueSql("(sysdatetime())");
 
             entity.HasOne(d => d.ActorUser).WithMany(p => p.AuditLogs)
                 .HasForeignKey(d => d.ActorUserId)
@@ -214,7 +216,7 @@ public partial class KnomeDbContext : DbContext
             entity.Property(e => e.ContentType)
                 .HasMaxLength(20)
                 .IsUnicode(false);
-            entity.Property(e => e.SavedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.SavedDate).HasDefaultValueSql("(sysdatetime())");
 
             entity.HasOne(d => d.User).WithMany(p => p.Bookmarks)
                 .HasForeignKey(d => d.UserId)
@@ -240,7 +242,7 @@ public partial class KnomeDbContext : DbContext
             entity.Property(e => e.ContentType)
                 .HasMaxLength(20)
                 .IsUnicode(false);
-            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.ImageUrl).HasMaxLength(400);
 
             entity.HasOne(d => d.ParentComment).WithMany(p => p.InverseParentComment)
@@ -261,7 +263,7 @@ public partial class KnomeDbContext : DbContext
             entity.Property(e => e.CommunityType)
                 .HasMaxLength(20)
                 .IsUnicode(false);
-            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.Description).HasMaxLength(1000);
             entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.Name).HasMaxLength(150);
@@ -302,7 +304,7 @@ public partial class KnomeDbContext : DbContext
                 .HasMaxLength(20)
                 .IsUnicode(false)
                 .HasDefaultValue("Subscriber");
-            entity.Property(e => e.RequestedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.RequestedDate).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.Status)
                 .HasMaxLength(20)
                 .IsUnicode(false)
@@ -340,11 +342,11 @@ public partial class KnomeDbContext : DbContext
 
             entity.HasIndex(e => new { e.SenderId, e.ReceiverId }, "UQ_ConnectionRequests_Sender_Receiver").IsUnique();
 
-            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(getutcdate())");
+            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.Status)
                 .HasMaxLength(20)
                 .HasDefaultValue("Pending");
-            entity.Property(e => e.UpdatedDate).HasDefaultValueSql("(getutcdate())");
+            entity.Property(e => e.UpdatedDate).HasDefaultValueSql("(sysdatetime())");
 
             entity.HasOne(d => d.Receiver).WithMany(p => p.ConnectionRequestReceivers)
                 .HasForeignKey(d => d.ReceiverId)
@@ -355,6 +357,24 @@ public partial class KnomeDbContext : DbContext
                 .HasForeignKey(d => d.SenderId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK__Connectio__Sende__0B5CAFEA");
+        });
+
+        modelBuilder.Entity<ContentView>(entity =>
+        {
+            entity.HasKey(e => e.ViewId).HasName("PK__ContentV__1E371CF6AF162961");
+
+            entity.HasIndex(e => new { e.ContentType, e.ContentId }, "IX_ContentViews_Content");
+
+            entity.HasIndex(e => e.UserId, "IX_ContentViews_User");
+
+            entity.HasIndex(e => new { e.ContentType, e.ContentId, e.UserId }, "UK_ContentViews_User_Content").IsUnique();
+
+            entity.Property(e => e.ContentType).HasMaxLength(50);
+            entity.Property(e => e.ViewedDate).HasDefaultValueSql("(sysutcdatetime())");
+
+            entity.HasOne(d => d.User).WithMany(p => p.ContentViews)
+                .HasForeignKey(d => d.UserId)
+                .HasConstraintName("FK_ContentViews_Users");
         });
 
         modelBuilder.Entity<Department>(entity =>
@@ -375,7 +395,7 @@ public partial class KnomeDbContext : DbContext
 
             entity.HasIndex(e => e.FollowingUserId, "IX_Followers_FollowingUserId");
 
-            entity.Property(e => e.FollowedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.FollowedDate).HasDefaultValueSql("(sysdatetime())");
 
             entity.HasOne(d => d.FollowerUser).WithMany(p => p.FollowerFollowerUsers)
                 .HasForeignKey(d => d.FollowerUserId)
@@ -400,7 +420,7 @@ public partial class KnomeDbContext : DbContext
             entity.Property(e => e.Window)
                 .HasMaxLength(10)
                 .IsUnicode(false);
-            entity.Property(e => e.CalculatedAt).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.CalculatedAt).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.Score).HasColumnType("decimal(12, 2)");
         });
 
@@ -410,7 +430,7 @@ public partial class KnomeDbContext : DbContext
 
             entity.Property(e => e.ApplicationLink).HasMaxLength(400);
             entity.Property(e => e.Location).HasMaxLength(150);
-            entity.Property(e => e.PostedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.PostedDate).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.SkillsRequired).HasMaxLength(500);
             entity.Property(e => e.Status)
                 .HasMaxLength(20)
@@ -437,7 +457,7 @@ public partial class KnomeDbContext : DbContext
                 .HasMaxLength(20)
                 .IsUnicode(false)
                 .HasDefaultValue("None");
-            entity.Property(e => e.LastUpdated).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.LastUpdated).HasDefaultValueSql("(sysdatetime())");
 
             entity.HasOne(d => d.User).WithOne(p => p.KarmaBalance)
                 .HasForeignKey<KarmaBalance>(d => d.UserId)
@@ -452,7 +472,7 @@ public partial class KnomeDbContext : DbContext
             entity.Property(e => e.ActivityType)
                 .HasMaxLength(40)
                 .IsUnicode(false);
-            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.RelatedContentType)
                 .HasMaxLength(20)
                 .IsUnicode(false);
@@ -476,7 +496,7 @@ public partial class KnomeDbContext : DbContext
             entity.Property(e => e.ReasonCode)
                 .HasMaxLength(40)
                 .IsUnicode(false);
-            entity.Property(e => e.ReportedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.ReportedDate).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.Status)
                 .HasMaxLength(20)
                 .IsUnicode(false)
@@ -498,7 +518,7 @@ public partial class KnomeDbContext : DbContext
 
             entity.HasIndex(e => new { e.UserId, e.IsRead, e.CreatedDate }, "IX_Notifications_UserId_IsRead").IsDescending(false, false, true);
 
-            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.EventType)
                 .HasMaxLength(40)
                 .IsUnicode(false);
@@ -535,7 +555,7 @@ public partial class KnomeDbContext : DbContext
             entity.Property(e => e.CoverImageUrl).HasMaxLength(400);
             entity.Property(e => e.Description).HasMaxLength(1000);
             entity.Property(e => e.Title).HasMaxLength(200);
-            entity.Property(e => e.UploadedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.UploadedDate).HasDefaultValueSql("(sysdatetime())");
 
             entity.HasOne(d => d.Category).WithMany(p => p.Podcasts)
                 .HasForeignKey(d => d.CategoryId)
@@ -570,7 +590,7 @@ public partial class KnomeDbContext : DbContext
                 .IsUnicode(false)
                 .HasDefaultValue("Everyone");
             entity.Property(e => e.ContentText).HasMaxLength(400);
-            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.Status)
                 .HasMaxLength(20)
                 .IsUnicode(false)
@@ -641,7 +661,7 @@ public partial class KnomeDbContext : DbContext
                 .HasMaxLength(20)
                 .IsUnicode(false);
             entity.Property(e => e.FileUrl).HasMaxLength(400);
-            entity.Property(e => e.PublishedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.PublishedDate).HasDefaultValueSql("(sysdatetime())");
 
             entity.HasOne(d => d.Post).WithMany(p => p.PostAttachments)
                 .HasForeignKey(d => d.PostId)
@@ -660,7 +680,7 @@ public partial class KnomeDbContext : DbContext
             entity.Property(e => e.ContentType)
                 .HasMaxLength(20)
                 .IsUnicode(false);
-            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.ReactionType)
                 .HasMaxLength(20)
                 .IsUnicode(false);
@@ -706,7 +726,7 @@ public partial class KnomeDbContext : DbContext
                 .HasMaxLength(50)
                 .IsUnicode(false);
             entity.Property(e => e.AssignedRoleName).HasMaxLength(50);
-            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(getutcdate())");
+            entity.Property(e => e.CreatedAt).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.DepartmentName).HasMaxLength(100);
             entity.Property(e => e.Designation).HasMaxLength(100);
             entity.Property(e => e.Email)
@@ -733,7 +753,7 @@ public partial class KnomeDbContext : DbContext
                 .ToTable("SearchHistory");
 
             entity.Property(e => e.SearchTerm).HasMaxLength(200);
-            entity.Property(e => e.SearchedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.SearchedDate).HasDefaultValueSql("(sysdatetime())");
 
             entity.HasOne(d => d.User).WithMany()
                 .HasForeignKey(d => d.UserId)
@@ -748,7 +768,7 @@ public partial class KnomeDbContext : DbContext
             entity.Property(e => e.ContentType)
                 .HasMaxLength(20)
                 .IsUnicode(false);
-            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.SharedToType)
                 .HasMaxLength(20)
                 .IsUnicode(false);
@@ -780,7 +800,7 @@ public partial class KnomeDbContext : DbContext
                 .HasMaxLength(20)
                 .IsUnicode(false)
                 .HasDefaultValue("Public");
-            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.Designation)
                 .HasMaxLength(100)
                 .IsUnicode(false);
@@ -849,7 +869,7 @@ public partial class KnomeDbContext : DbContext
             entity.HasKey(e => e.UserId);
 
             entity.Property(e => e.UserId).ValueGeneratedNever();
-            entity.Property(e => e.LastUpdated).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.LastUpdated).HasDefaultValueSql("(sysdatetime())");
             entity.Property(e => e.PasswordHash)
                 .HasMaxLength(255)
                 .IsUnicode(false);
@@ -899,7 +919,7 @@ public partial class KnomeDbContext : DbContext
             entity.Property(e => e.SourceUrl).HasMaxLength(400);
             entity.Property(e => e.ThumbnailUrl).HasMaxLength(400);
             entity.Property(e => e.Title).HasMaxLength(200);
-            entity.Property(e => e.UploadedDate).HasDefaultValueSql("(sysutcdatetime())");
+            entity.Property(e => e.UploadedDate).HasDefaultValueSql("(sysdatetime())");
 
             entity.HasOne(d => d.Category).WithMany(p => p.Videos)
                 .HasForeignKey(d => d.CategoryId)

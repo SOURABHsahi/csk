@@ -283,6 +283,13 @@ public class UserService : IUserService
             var p2 = cmd.CreateParameter(); p2.ParameterName = "@empId"; p2.Value = empId; cmd.Parameters.Add(p2);
             await cmd.ExecuteNonQueryAsync();
 
+            await _notificationService.PublishAsync(
+                userId,
+                NotificationTypes.HrAnnouncement,
+                $"Your Knome roles have been updated to: {rolesDisplay}.",
+                relatedContentType: NotificationContentTypes.User,
+                relatedContentId: userId);
+
             if (!string.IsNullOrWhiteSpace(userEmail))
             {
                 _ = Task.Run(async () =>
@@ -329,6 +336,13 @@ public class UserService : IUserService
 
         await _auditLogService.RecordAsync(actorUserId, "ActivateUser", "User", userId, reason: "User reactivated.");
 
+        await _notificationService.PublishAsync(
+            userId,
+            NotificationTypes.HrAnnouncement,
+            "Your Knome account has been reactivated.",
+            relatedContentType: NotificationContentTypes.User,
+            relatedContentId: userId);
+
         return await GetUserProfileAsync(userId, userId);
     }
 
@@ -357,6 +371,17 @@ public class UserService : IUserService
         await _userRepo.SaveChangesAsync();
 
         await _auditLogService.RecordAsync(actorUserId, "SuspendUser", "User", userId, reason: dto.Reason);
+
+        var suspendMsg = dto.IsPermanent
+            ? "Your Knome account has been permanently suspended."
+            : $"Your Knome account has been suspended until {dto.SuspendedUntil:dd-MM-yyyy, hh:mm tt}.";
+
+        await _notificationService.PublishAsync(
+            userId,
+            NotificationTypes.HrAnnouncement,
+            suspendMsg,
+            relatedContentType: NotificationContentTypes.User,
+            relatedContentId: userId);
 
         return await GetUserProfileAsync(userId, userId);
     }
@@ -913,6 +938,13 @@ public class UserService : IUserService
                 await _db.SaveChangesAsync();
             }
             await _auditLogService.RecordAsync(actorUserId, "ApproveRoleRequest", "User", knomeUser.UserId, reason: $"Assigned role '{roleName}' to {empId}");
+
+            await _notificationService.PublishAsync(
+                knomeUser.UserId,
+                NotificationTypes.HrAnnouncement,
+                $"Your role request has been approved! Assigned role: '{roleName}'.",
+                relatedContentType: NotificationContentTypes.User,
+                relatedContentId: knomeUser.UserId);
         }
 
         // 4. Send Professional Confirmation Email
@@ -996,6 +1028,35 @@ public class UserService : IUserService
 
         await cmd.ExecuteNonQueryAsync();
         await _auditLogService.RecordAsync(actorUserId, "RejectRoleRequest", "RoleRequest", requestId, reason: dto.Reason ?? "Role request rejected.");
+
+        try
+        {
+            using var fetchCmd = conn.CreateCommand();
+            fetchCmd.CommandText = "SELECT EmployeeId FROM [RoleRequests] WHERE RequestId = @reqId";
+            var pFetch = fetchCmd.CreateParameter();
+            pFetch.ParameterName = "@reqId";
+            pFetch.Value = requestId;
+            fetchCmd.Parameters.Add(pFetch);
+            var empIdObj = await fetchCmd.ExecuteScalarAsync();
+            if (empIdObj != null && empIdObj != DBNull.Value)
+            {
+                var empId = empIdObj.ToString();
+                var knomeUser = await _db.Users.FirstOrDefaultAsync(u => u.EmployeeId == empId);
+                if (knomeUser != null)
+                {
+                    await _notificationService.PublishAsync(
+                        knomeUser.UserId,
+                        NotificationTypes.HrAnnouncement,
+                        $"Your role request was reviewed and declined. Reason: {dto.Reason ?? "Not specified"}",
+                        relatedContentType: NotificationContentTypes.User,
+                        relatedContentId: knomeUser.UserId);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send role rejection notification for RequestId {RequestId}", requestId);
+        }
 
         return true;
     }

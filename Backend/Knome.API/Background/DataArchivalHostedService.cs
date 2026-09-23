@@ -98,7 +98,7 @@ public class DataArchivalHostedService : BackgroundService
             }
 
             var cutoff = Knome.API.Common.KnomeTime.Now.AddDays(-retentionDays);
-            var oldLogFiles = Directory.GetFiles(sourceLogsPath, "knome-*.log")
+            var oldLogFiles = Directory.GetFiles(sourceLogsPath, "knome-*.log", SearchOption.AllDirectories)
                 .Select(f => new FileInfo(f))
                 .Where(f => f.LastWriteTimeUtc < cutoff)
                 .ToList();

@@ -3,13 +3,14 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useUser, resolveEmployeeName, deduplicateMembers, KNOWN_ROSTER_NAMES, INITIAL_USERS } from '../components/contexts/UserContext';
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import { apiClient } from '../utils/apiClient';
-import { communitiesApi, mediaApi, postsApi, notificationsApi, interactionsApi, adminApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages, formatRelativeTime } from '../utils/apiService';
+import { communitiesApi, mediaApi, postsApi, notificationsApi, interactionsApi, adminApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages, formatRelativeTime, resolveSharedTarget } from '../utils/apiService';
 import { checkRestrictedContent } from '../utils/restrictedWords';
 import ArticleShareModal from '../components/modals/ArticleShareModal';
 import SuspendUserModal from '../components/modals/SuspendUserModal';
 import { ImageGrid, ImageLightbox } from '../components/widgets/PostCard';
 import useScrollLoading from '../hooks/useScrollLoading';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
+import HighlightText from '../components/ui/HighlightText';
 
 const ENTERPRISE_CHANNELS_SEED = {
     '1': {
@@ -233,6 +234,13 @@ export default function CommunityView() {
     const [suspendReasonNote, setSuspendReasonNote] = useState('');
     const [removeModalMember, setRemoveModalMember] = useState(null);
 
+    // Add Members Modal State
+    const [isAddMembersModalOpen, setIsAddMembersModalOpen] = useState(false);
+    const [selectedNewMemberIds, setSelectedNewMemberIds] = useState([]);
+    const [addMemberSearch, setAddMemberSearch] = useState('');
+    const [isSubmittingMembers, setIsSubmittingMembers] = useState(false);
+    const [allAvailableUsers, setAllAvailableUsers] = useState([]);
+
     // Rules & FAQ Management State
     const [editRules, setEditRules] = useState([]);
     const [editFaq, setEditFaq] = useState([]);
@@ -257,6 +265,7 @@ export default function CommunityView() {
     const [shareTargetCommunity, setShareTargetCommunity] = useState('');
     const [shareSelectedUsers, setShareSelectedUsers] = useState([]);
     const [shareMessageNote, setShareMessageNote] = useState('');
+    const [shareUserSearchQuery, setShareUserSearchQuery] = useState('');
     const [isSharingProcess, setIsSharingProcess] = useState(false);
     const [allCommunities, setAllCommunities] = useState([]);
 
@@ -491,6 +500,7 @@ export default function CommunityView() {
         setShareTargetCommunity('');
         setShareSelectedUsers([]);
         setShareMessageNote('');
+        setShareUserSearchQuery('');
         loadAllCommunities();
         setIsShareModalOpen(true);
     };
@@ -625,7 +635,7 @@ export default function CommunityView() {
             // 2. Build local notifications for immediate bell/dropdown update with recipient isolation
             const savedNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
             const newNotifs = shareSelectedUsers.map(uId => {
-                const uObj = (contextUsers || []).find(u => String(u.id || u.userId) === String(uId));
+                const uObj = allShareEligibleUsers.find(u => String(u.id || u.userId) === String(uId)) || (contextUsers || []).find(u => String(u.id || u.userId) === String(uId));
                 return {
                     id: `notif_comm_share_${Date.now()}_${uId}_${Math.random().toString(36).slice(2, 6)}`,
                     targetUserId: uId,
@@ -667,6 +677,7 @@ export default function CommunityView() {
             setIsShareModalOpen(false);
             setShareTab('menu');
             setShareSelectedUsers([]);
+            setShareUserSearchQuery('');
             setShareMessageNote('');
             showToast(`✅ Notification sent to ${newNotifs.length} selected team member(s)!`, 'success');
         } catch (err) {
@@ -822,17 +833,7 @@ export default function CommunityView() {
             return { category: 'Video', ext: ext || 'mp3' };
         }
 
-        // 3. Archive / Compressed
-        if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'iso'].includes(ext) || mimeType.includes('zip') || mimeType.includes('compressed') || mimeType.includes('tar') || mimeType.includes('archive')) {
-            return { category: 'Archive', ext: ext || 'zip' };
-        }
-
-        // 4. Code / Developer Script
-        if (['js', 'jsx', 'ts', 'tsx', 'py', 'c', 'cpp', 'cs', 'html', 'css', 'json', 'sql', 'java', 'go', 'rs', 'sh', 'php', 'xml', 'yaml', 'yml'].includes(ext) || mimeType.includes('javascript') || mimeType.includes('json') || mimeType.includes('xml')) {
-            return { category: 'Code', ext: ext || 'code' };
-        }
-
-        // 5. Document (PDF, Word, Excel, PowerPoint, Text)
+        // 3. Document (PDF, Word, Excel, PowerPoint, Text, etc.)
         return { category: 'Document', ext: ext || 'pdf' };
     };
 
@@ -1009,23 +1010,12 @@ export default function CommunityView() {
                     ? parseFaqList(localRulesFaq.faq) 
                     : (commData.faq ? parseFaqList(commData.faq) : (localMatch?.faq ? parseFaqList(localMatch.faq) : parseFaqList(null)));
 
-                setCommunity({
-                    id: commData.communityId,
-                    name: commData.name,
-                    type: commData.communityType || 'Public',
-                    category: commData.categoryName || 'Technology',
-                    membersCount: commData.membersCount || 1,
-                    adminContact: commData.createdByUserName || 'Admin',
-                    banner: localMatch?.banner || localMatch?.bannerUrl || resolveMediaUrl(commData.bannerUrl || commData.bannerImageUrl) || imgs.banner,
-                    thumbnail: localMatch?.thumbnail || localMatch?.avatar || localMatch?.thumbnailUrl || resolveMediaUrl(commData.thumbnailUrl) || imgs.thumbnail,
-                    description: commData.description || 'Community for MPOnline team members.',
-                    rules: resolvedRules,
-                    faq: resolvedFaq
-                });
-
                 // Resolve Persistent Members for this Community (FR-CM-06)
                 const savedMembersKey = `knome_community_members_${commData.communityId}`;
                 const localMembersApi = JSON.parse(localStorage.getItem(savedMembersKey) || '[]');
+                const removedMembersList = JSON.parse(localStorage.getItem(`knome_community_removed_${commData.communityId}`) || '[]');
+                const removedSet = new Set(removedMembersList.map(x => String(x).toLowerCase()));
+
                 const defaultCreator = {
                     userId: commData.creatorUserId || 1,
                     fullName: commData.createdBy || 'Community Creator',
@@ -1035,11 +1025,44 @@ export default function CommunityView() {
                     status: 'Approved',
                     profilePhotoUrl: commData.creatorAvatar || null
                 };
-                const rawList = (Array.isArray(rawMembers) && rawMembers.length > 0 
-                    ? rawMembers 
-                    : (localMembersApi.length > 0 ? localMembersApi : [defaultCreator]))
-                    .map(m => (m.memberType === 'Moderator' ? { ...m, memberType: 'Admin' } : m));
-                let resolvedMembers = deduplicateMembers(rawList, contextUsers);
+
+                // Merge API members with locally stored/enrolled members seamlessly
+                const combinedMembers = [];
+                const seenUserIds = new Set();
+
+                const addUniqueMember = (m) => {
+                    if (!m) return;
+                    const uid = String(m.userId || m.id || '').toLowerCase();
+                    const empId = String(m.employeeId || m.empId || m.displayEmpId || '').toLowerCase();
+                    if (removedSet.has(uid) || (empId && removedSet.has(empId))) {
+                        return; // Exclude removed member
+                    }
+                    if (uid && !seenUserIds.has(uid)) {
+                        seenUserIds.add(uid);
+                        combinedMembers.push(m.memberType === 'Moderator' ? { ...m, memberType: 'Admin' } : m);
+                    }
+                };
+
+                if (Array.isArray(rawMembers)) rawMembers.forEach(addUniqueMember);
+                if (Array.isArray(localMembersApi)) localMembersApi.forEach(addUniqueMember);
+                if (combinedMembers.length === 0) combinedMembers.push(defaultCreator);
+
+                let resolvedMembers = deduplicateMembers(combinedMembers, contextUsers);
+                localStorage.setItem(savedMembersKey, JSON.stringify(resolvedMembers));
+
+                setCommunity({
+                    id: commData.communityId,
+                    name: commData.name,
+                    type: commData.communityType || 'Public',
+                    category: commData.categoryName || 'Technology',
+                    membersCount: Math.max(commData.membersCount || 1, resolvedMembers.length),
+                    adminContact: commData.createdByUserName || 'Admin',
+                    banner: localMatch?.banner || localMatch?.bannerUrl || resolveMediaUrl(commData.bannerUrl || commData.bannerImageUrl) || imgs.banner,
+                    thumbnail: localMatch?.thumbnail || localMatch?.avatar || localMatch?.thumbnailUrl || resolveMediaUrl(commData.thumbnailUrl) || imgs.thumbnail,
+                    description: commData.description || 'Community for MPOnline team members.',
+                    rules: resolvedRules,
+                    faq: resolvedFaq
+                });
 
                 const userJoinedList = JSON.parse(localStorage.getItem(`knome_joined_communities_${currentUser?.id || 'guest'}`) || '[]');
                 const localEntry = userJoinedList.find(c => String(c.id) === String(commData.communityId));
@@ -1137,6 +1160,8 @@ export default function CommunityView() {
                 const targetId = communityId || 101;
                 const savedMembersKey = `knome_community_members_${targetId}`;
                 const localMembers = JSON.parse(localStorage.getItem(savedMembersKey) || '[]');
+                const removedMembersList = JSON.parse(localStorage.getItem(`knome_community_removed_${targetId}`) || '[]');
+                const removedSet = new Set(removedMembersList.map(x => String(x).toLowerCase()));
 
                 const creatorName = found?.createdBy || 'Community Creator';
                 const defaultCreator = {
@@ -1149,8 +1174,14 @@ export default function CommunityView() {
                     profilePhotoUrl: found?.creatorAvatar || found?.avatar || null
                 };
                 const rawFallbackList = (localMembers.length > 0 ? localMembers : [defaultCreator])
+                    .filter(m => {
+                        const uid = String(m.userId || m.id || '').toLowerCase();
+                        const empId = String(m.employeeId || m.empId || '').toLowerCase();
+                        return !removedSet.has(uid) && (!empId || !removedSet.has(empId));
+                    })
                     .map(m => (m.memberType === 'Moderator' ? { ...m, memberType: 'Admin' } : m));
                 let resolvedMembers = deduplicateMembers(rawFallbackList, contextUsers);
+                localStorage.setItem(savedMembersKey, JSON.stringify(resolvedMembers));
 
                 // Check if current user explicitly joined, created the community, or is in resolved members
                 const userJoinedList = JSON.parse(localStorage.getItem(`knome_joined_communities_${currentUser?.id || 'guest'}`) || '[]');
@@ -1323,7 +1354,7 @@ export default function CommunityView() {
                         { id: 1, name: 'System_Architecture_Overview.pdf', category: 'Document', extension: 'pdf', size: '3.4 MB', uploadedBy: 'Loveneesh Sharma', uploadedAt: '2026-07-25T10:30:00.000Z', url: SAMPLE_PDF_DATA_URL, downloadCount: 14 },
                         { id: 2, name: 'API_Integration_Guild_v2.docx', category: 'Document', extension: 'docx', size: '1.2 MB', uploadedBy: 'Vishendra Sharma', uploadedAt: '2026-07-26T14:15:00.000Z', url: 'https://filesamples.com/samples/document/docx/sample3.docx', downloadCount: 9 },
                         { id: 3, name: 'Database_Schema_Architecture.png', category: 'Image', extension: 'png', size: '850 KB', uploadedBy: 'Sourabh Sahu', uploadedAt: '2026-07-27T09:45:00.000Z', url: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=1200&h=800', downloadCount: 22 },
-                        { id: 4, name: 'Frontend_Boilerplate_Assets.zip', category: 'Archive', extension: 'zip', size: '14.8 MB', uploadedBy: 'Rishikesh Ugle', uploadedAt: '2026-07-28T08:00:00.000Z', url: '#', downloadCount: 7 }
+                        { id: 4, name: 'Project_Walkthrough_Demo.mp4', category: 'Video', extension: 'mp4', size: '14.8 MB', uploadedBy: 'Rishikesh Ugle', uploadedAt: '2026-07-28T08:00:00.000Z', url: '#', downloadCount: 7 }
                     ];
                     setFilesList(seedFiles);
                     safeSetStorage(savedFilesKey, seedFiles);
@@ -1630,6 +1661,54 @@ export default function CommunityView() {
         };
     }, [communityId]);
 
+    // Load available colleagues pool for community member additions
+    useEffect(() => {
+        let isMounted = true;
+        const loadAllUsers = async () => {
+            const roster = [...(contextUsers || []), ...(INITIAL_USERS || [])];
+            try {
+                const customUsers = JSON.parse(localStorage.getItem('knome_custom_users') || '[]');
+                if (Array.isArray(customUsers)) {
+                    customUsers.forEach(cu => {
+                        const cuid = cu.id || cu.userId;
+                        if (!roster.some(u => String(u.id || u.userId) === String(cuid) || (u.employeeId && cu.employeeId && u.employeeId.toUpperCase() === cu.employeeId.toUpperCase()))) {
+                            roster.push(cu);
+                        }
+                    });
+                }
+            } catch (_) {}
+
+            try {
+                const searchRes = await apiClient.get('/search/users?pageSize=100');
+                const items = searchRes?.items || (Array.isArray(searchRes) ? searchRes : (searchRes?.data?.items || searchRes?.data || []));
+                if (Array.isArray(items) && items.length > 0) {
+                    items.forEach(u => {
+                        const uid = u.id || u.userId;
+                        if (!roster.some(existing => String(existing.id || existing.userId) === String(uid) || (existing.employeeId && u.authorEmployeeId && existing.employeeId.toUpperCase() === u.authorEmployeeId.toUpperCase()))) {
+                            roster.push({
+                                id: uid,
+                                userId: uid,
+                                name: u.title || u.authorFullName || u.name || `Employee ${uid}`,
+                                fullName: u.title || u.authorFullName || u.name || `Employee ${uid}`,
+                                employeeId: u.authorEmployeeId || `MPO${uid}`,
+                                designation: u.summary || u.designation || 'Employee',
+                                department: u.departmentName || u.department || 'MPOnline Limited',
+                                avatar: u.authorProfilePhotoUrl || u.thumbnailUrl || null
+                            });
+                        }
+                    });
+                }
+            } catch (_) {}
+
+            if (isMounted) {
+                setAllAvailableUsers(roster);
+            }
+        };
+
+        loadAllUsers();
+        return () => { isMounted = false; };
+    }, [contextUsers]);
+
     // Create New Post inside Community (Only for Members - FR-CM-06)
     const handleCreatePost = async (e) => {
         e.preventDefault();
@@ -1924,6 +2003,11 @@ export default function CommunityView() {
     };
 
     const handleOpenPost = (post) => {
+        const target = resolveSharedTarget(post);
+        if (target && target.url) {
+            navigate(target.url);
+            return;
+        }
         const postUrlMatch = (post.content || '').match(/(?:https?:\/\/[^\s]+)?\/posts\?id=(\d+)/i);
         const targetId = postUrlMatch ? postUrlMatch[1] : (post.sharedPostId || post.postId || post.id);
         const numId = Number(targetId);
@@ -2010,10 +2094,24 @@ export default function CommunityView() {
         const member = removeModalMember;
         const memberId = member.userId || member.id;
         const memberName = member.fullName || member.name || 'Member';
-        const isTargetAdmin = member.memberType === 'Admin' || member.memberType === 'Moderator' || member.memberType === 'Community Administrator';
+        const isTargetAdmin = member.memberType === 'Admin' || member.memberType === 'Moderator' || member.memberType === 'Community Administrator' || member.memberType === 'Community Admin';
         const targetId = communityId || community?.id || 101;
 
-        if (isTargetAdmin) {
+        // 1. Call Backend API to remove member from database
+        const numId = Number(targetId);
+        const numMemberId = Number(memberId);
+        if (!isNaN(numId) && numId > 0 && numId < 1000000000 && !isNaN(numMemberId) && numMemberId > 0) {
+            try {
+                await communitiesApi.removeMember(numId, numMemberId);
+            } catch (apiErr) {
+                console.warn('Backend remove member API warning:', apiErr);
+                if (isTargetAdmin) {
+                    try {
+                        await communitiesApi.removeAdmin(numId, numMemberId).catch(() => null);
+                    } catch (e) {}
+                }
+            }
+        } else if (isTargetAdmin) {
             try {
                 await communitiesApi.removeAdmin(targetId, memberId).catch(() => null);
             } catch (err) {
@@ -2021,15 +2119,44 @@ export default function CommunityView() {
             }
         }
 
+        // 2. Track tombstone in localStorage so refresh never restores removed member
+        const removedKey = `knome_community_removed_${targetId}`;
+        const currentRemoved = JSON.parse(localStorage.getItem(removedKey) || '[]');
+        const updatedRemoved = Array.from(new Set([
+            ...currentRemoved,
+            String(memberId),
+            ...(member.employeeId ? [String(member.employeeId).toUpperCase()] : [])
+        ]));
+        localStorage.setItem(removedKey, JSON.stringify(updatedRemoved));
+
+        // 3. Remove from community members local cache
         setMembersList(prev => {
-            const updated = prev.filter(m => String(m.userId || m.id) !== String(memberId));
+            const updated = prev.filter(m => {
+                const mUid = String(m.userId || m.id || '');
+                const mEmpId = String(m.employeeId || m.empId || '').toUpperCase();
+                const targetUid = String(memberId);
+                const targetEmpId = String(member.employeeId || '').toUpperCase();
+                if (mUid === targetUid) return false;
+                if (targetEmpId && mEmpId === targetEmpId) return false;
+                return true;
+            });
             localStorage.setItem(`knome_community_members_${targetId}`, JSON.stringify(updated));
             localStorage.setItem(`knome_community_members_updated_${targetId}`, Date.now().toString());
             window.dispatchEvent(new CustomEvent('community-members-updated', { detail: { communityId: targetId } }));
             window.dispatchEvent(new CustomEvent('community-joined-change'));
             return updated;
         });
-        setCommunity(prev => ({ ...prev, membersCount: Math.max(1, (prev.membersCount || 1) - 1) }));
+
+        // 4. Clean up target member's joined communities in localStorage
+        try {
+            const targetUserKey = `knome_joined_communities_${memberId}`;
+            const targetJoined = JSON.parse(localStorage.getItem(targetUserKey) || '[]');
+            const updatedTargetJoined = targetJoined.filter(c => String(c.id) !== String(targetId));
+            localStorage.setItem(targetUserKey, JSON.stringify(updatedTargetJoined));
+        } catch (e) {}
+
+        // 5. Decrement community members count
+        setCommunity(prev => prev ? ({ ...prev, membersCount: Math.max(1, (prev.membersCount || 1) - 1) }) : prev);
         showToast(`${memberName} has been removed from this community.`, 'info');
         setRemoveModalMember(null);
     };
@@ -2037,6 +2164,79 @@ export default function CommunityView() {
     const handleRemoveMemberByAdmin = async (memberId, memberName) => {
         const member = membersList.find(m => String(m.userId || m.id) === String(memberId)) || { userId: memberId, fullName: memberName };
         handleInitiateRemoveMember(member);
+    };
+
+    const handleAddSelectedMembers = async () => {
+        if (!selectedNewMemberIds || selectedNewMemberIds.length === 0) {
+            showToast('Please select at least one colleague to add.', 'warning');
+            return;
+        }
+
+        setIsSubmittingMembers(true);
+        const targetId = community?.id || communityId;
+
+        try {
+            const numId = Number(targetId);
+            if (!isNaN(numId) && numId > 0 && numId < 1000000000) {
+                try {
+                    await communitiesApi.addMembers(numId, selectedNewMemberIds);
+                } catch (apiErr) {
+                    console.warn('Backend bulk add members warning, updating locally:', apiErr);
+                }
+            }
+
+            const pool = [...(allAvailableUsers || []), ...(contextUsers || []), ...(INITIAL_USERS || [])];
+            const newMemberObjects = selectedNewMemberIds.map(uid => {
+                const u = pool.find(user => String(user.userId || user.id) === String(uid)) || { userId: uid, fullName: `Employee ${uid}` };
+                return {
+                    userId: u.userId || u.id || uid,
+                    id: u.userId || u.id || uid,
+                    fullName: u.fullName || u.name || `Employee ${uid}`,
+                    name: u.fullName || u.name || `Employee ${uid}`,
+                    employeeId: u.employeeId || `MPO${uid}`,
+                    designation: u.designation || u.roleName || 'Employee',
+                    department: u.department || 'MPOnline Limited',
+                    memberType: 'Member',
+                    status: 'Approved',
+                    profilePhotoUrl: u.profilePhotoUrl || u.avatar || null
+                };
+            });
+
+            const savedMembersKey = `knome_community_members_${targetId}`;
+            const updatedMembers = deduplicateMembers([...membersList, ...newMemberObjects], contextUsers);
+
+            setMembersList(updatedMembers);
+            localStorage.setItem(savedMembersKey, JSON.stringify(updatedMembers));
+            localStorage.setItem(`knome_community_members_updated_${targetId}`, Date.now().toString());
+
+            setCommunity(prev => prev ? { ...prev, membersCount: updatedMembers.length } : prev);
+
+            // Remove from join requests if any were pending
+            setJoinRequests(prev => {
+                const updated = prev.filter(r => !selectedNewMemberIds.some(sid => String(sid) === String(r.id || r.userId)));
+                localStorage.setItem(`knome_join_requests_${targetId}`, JSON.stringify(updated));
+                return updated;
+            });
+
+            // Clear added members from removed tombstone so they can be re-enrolled cleanly
+            const removedKey = `knome_community_removed_${targetId}`;
+            const currentRemoved = JSON.parse(localStorage.getItem(removedKey) || '[]');
+            const updatedRemoved = currentRemoved.filter(id => !selectedNewMemberIds.some(sel => String(sel).toLowerCase() === String(id).toLowerCase()));
+            localStorage.setItem(removedKey, JSON.stringify(updatedRemoved));
+
+            window.dispatchEvent(new CustomEvent('community-members-updated', { detail: { communityId: targetId } }));
+            window.dispatchEvent(new CustomEvent('community-joined-change'));
+
+            showToast(`Added ${selectedNewMemberIds.length} colleague(s) to ${community?.name || 'community'}.`, 'success');
+            setIsAddMembersModalOpen(false);
+            setSelectedNewMemberIds([]);
+            setAddMemberSearch('');
+        } catch (err) {
+            console.error('Failed to add members:', err);
+            showToast('Failed to add members. Please try again.', 'error');
+        } finally {
+            setIsSubmittingMembers(false);
+        }
     };
 
     const handleJoinAction = async () => {
@@ -2744,6 +2944,103 @@ export default function CommunityView() {
             });
     }, [membersList, memberSearchQuery, contextUsers]);
 
+    // Candidate colleagues for adding to community (excluding existing members)
+    const filteredCandidates = useMemo(() => {
+        const pool = [...(allAvailableUsers || []), ...(contextUsers || []), ...(INITIAL_USERS || [])];
+        const currentMemberIds = new Set(membersList.map(m => String(m.userId || m.id)));
+        const currentMemberEmpIds = new Set(membersList.map(m => String(m.employeeId || m.displayEmpId || '').toUpperCase()).filter(Boolean));
+        const currentMemberNames = new Set(membersList.map(m => String(m.fullName || m.displayName || m.name || '').toLowerCase()).filter(Boolean));
+
+        const uniqueCandidates = [];
+        const seen = new Set();
+
+        for (const u of pool) {
+            if (!u) continue;
+            const uid = String(u.userId || u.id || '');
+            const empId = String(u.employeeId || '').toUpperCase();
+            const fullName = String(u.fullName || u.name || '').toLowerCase();
+
+            if (currentMemberIds.has(uid)) continue;
+            if (empId && currentMemberEmpIds.has(empId)) continue;
+            if (fullName && currentMemberNames.has(fullName)) continue;
+
+            const dedupeKey = uid || empId || fullName;
+            if (!seen.has(dedupeKey)) {
+                seen.add(dedupeKey);
+                uniqueCandidates.push({
+                    userId: u.userId || u.id || uid,
+                    id: u.userId || u.id || uid,
+                    fullName: u.fullName || u.name || `Colleague ${uid}`,
+                    name: u.fullName || u.name || `Colleague ${uid}`,
+                    employeeId: u.employeeId || `MPO${uid}`,
+                    designation: u.designation || u.roleName || 'Employee',
+                    department: u.department || 'MPOnline Limited',
+                    avatar: u.profilePhotoUrl || u.avatar || null
+                });
+            }
+        }
+
+        if (!addMemberSearch.trim()) return uniqueCandidates;
+
+        const q = addMemberSearch.toLowerCase().trim();
+        return uniqueCandidates.filter(u => 
+            (u.fullName || '').toLowerCase().includes(q) ||
+            (u.employeeId || '').toLowerCase().includes(q) ||
+            (u.designation || '').toLowerCase().includes(q) ||
+            (u.department || '').toLowerCase().includes(q)
+        );
+    }, [allAvailableUsers, contextUsers, membersList, addMemberSearch]);
+
+    // All platform employees eligible for direct community sharing (excluding current user)
+    const allShareEligibleUsers = useMemo(() => {
+        const pool = [...(allAvailableUsers || []), ...(contextUsers || []), ...(INITIAL_USERS || [])];
+        const currentUid = String(currentUser?.userId || currentUser?.id || '');
+        const currentEmp = String(currentUser?.employeeId || '').toUpperCase();
+        const seen = new Set();
+        const unique = [];
+
+        for (const u of pool) {
+            if (!u) continue;
+            const uid = String(u.userId || u.id || '');
+            const empId = String(u.employeeId || '').toUpperCase();
+            const fullName = String(u.fullName || u.name || '').trim();
+
+            if (!fullName && !empId && !uid) continue;
+
+            // Exclude current logged in user
+            if ((currentUid && uid === currentUid) || (currentEmp && empId === currentEmp)) continue;
+
+            const dedupeKey = empId ? `emp:${empId}` : (uid ? `uid:${uid}` : `name:${fullName.toLowerCase()}`);
+            if (seen.has(dedupeKey)) continue;
+            seen.add(dedupeKey);
+
+            unique.push({
+                id: u.id || u.userId || uid,
+                userId: u.userId || u.id || uid,
+                name: fullName || `Employee ${uid}`,
+                fullName: fullName || `Employee ${uid}`,
+                employeeId: u.employeeId || '',
+                designation: u.designation || u.roleName || u.role || 'Employee',
+                department: u.department || 'MPOnline Limited',
+                avatar: u.profilePhotoUrl || u.avatar || null
+            });
+        }
+
+        return unique.sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
+    }, [allAvailableUsers, contextUsers, currentUser]);
+
+    // Filtered share users based on real-time search query
+    const filteredShareUsers = useMemo(() => {
+        if (!shareUserSearchQuery.trim()) return allShareEligibleUsers;
+        const q = shareUserSearchQuery.toLowerCase().trim();
+        return allShareEligibleUsers.filter(u => 
+            (u.fullName || '').toLowerCase().includes(q) ||
+            (u.employeeId || '').toLowerCase().includes(q) ||
+            (u.designation || '').toLowerCase().includes(q) ||
+            (u.department || '').toLowerCase().includes(q)
+        );
+    }, [allShareEligibleUsers, shareUserSearchQuery]);
+
     // Scroll-wise progressive loading hooks
     const { visibleCount: visiblePostCount, resetVisibleCount: resetPostCount } = useScrollLoading(sortedPosts.length, 6, 6);
     const { visibleCount: visibleMemberCount, resetVisibleCount: resetMemberCount } = useScrollLoading(filteredMembers.length, 12, 12);
@@ -2913,14 +3210,16 @@ export default function CommunityView() {
                             </button>
                         ) : (
                             <div className="flex items-center gap-2 shrink-0">
-                                <button 
-                                    onClick={handleSubscribeAction} 
-                                    className="h-10 px-3.5 bg-white/20 hover:bg-white/30 text-white font-bold rounded-xl transition-colors backdrop-blur-md border border-white/20 flex items-center justify-center gap-1.5 text-xs cursor-pointer shrink-0"
-                                    title="Subscribe as View-Only (FR-CM-06)"
-                                >
-                                    <span className="material-symbols-outlined text-[18px] shrink-0">visibility</span>
-                                    <span className="truncate">Subscribe (View Only)</span>
-                                </button>
+                                {community.type !== 'Private' && (
+                                    <button 
+                                        onClick={handleSubscribeAction} 
+                                        className="h-10 px-3.5 bg-white/20 hover:bg-white/30 text-white font-bold rounded-xl transition-colors backdrop-blur-md border border-white/20 flex items-center justify-center gap-1.5 text-xs cursor-pointer shrink-0"
+                                        title="Subscribe as View-Only (FR-CM-06)"
+                                    >
+                                        <span className="material-symbols-outlined text-[18px] shrink-0">visibility</span>
+                                        <span className="truncate">Subscribe (View Only)</span>
+                                    </button>
+                                )}
                                 <button 
                                     onClick={handleJoinAction} 
                                     className="w-44 h-10 px-3 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl transition-colors shadow-lg shadow-indigo-500/30 flex items-center justify-center gap-1.5 text-xs cursor-pointer shrink-0"
@@ -2939,6 +3238,23 @@ export default function CommunityView() {
                         >
                             <span className="material-symbols-outlined text-[18px]">share</span>
                         </button>
+
+                        {/* Add Members Button for Community / System Admins */}
+                        {isAdmin && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSelectedNewMemberIds([]);
+                                    setAddMemberSearch('');
+                                    setIsAddMembersModalOpen(true);
+                                }}
+                                className="h-10 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-1.5 text-xs cursor-pointer shrink-0 ml-1"
+                                title="Add colleagues to this Community"
+                            >
+                                <span className="material-symbols-outlined text-[18px] shrink-0">person_add</span>
+                                <span className="truncate">Add Members</span>
+                            </button>
+                        )}
 
                         {isSysAdmin && (
                             <button 
@@ -3122,22 +3438,44 @@ export default function CommunityView() {
                                 </div>
                             ) : (
                                 <div className="p-4 bg-slate-100 dark:bg-slate-800/60 rounded-2xl text-center text-slate-500 text-xs font-bold border border-slate-200 dark:border-slate-700">
-                                    🔒 You are in <span className="text-indigo-500">Subscriber Mode (View-Only)</span>. Click <strong>"Upgrade to Member"</strong> above to post and comment in this community.
+                                    {community.type === 'Private' ? (
+                                        <>🔒 This is a <span className="text-indigo-500">Private Community</span>. Click <strong>"Request to Join"</strong> above to request membership and view discussions.</>
+                                    ) : (
+                                        <>🔒 You are in <span className="text-indigo-500">Subscriber Mode (View-Only)</span>. Click <strong>"Upgrade to Member"</strong> above to post and comment in this community.</>
+                                    )}
                                 </div>
                             )}
 
 
                             {/* FR-CM-08: Posts Feed & Pinned Content */}
-                            {sortedPosts.slice(0, visiblePostCount).map(post => {
-                                const authorName = typeof post.author === 'string' 
-                                    ? post.author 
-                                    : (post.author?.name || post.author?.fullName || post.authorName || 'Member');
-                                const authorRole = typeof post.author === 'object' && post.author?.role 
-                                    ? post.author.role 
-                                    : (post.role || post.authorRole || 'Member');
-                                const rawAvatar = (typeof post.author === 'object' ? post.author?.avatar : null) || post.authorAvatar || post.avatar;
-                                const authorAvatar = rawAvatar ? resolveMediaUrl(rawAvatar) : null;
-                                const authorInitial = (authorName || 'M').charAt(0).toUpperCase();
+                            {community.type === 'Private' && membershipStatus !== 'joined' && !isAdmin ? (
+                                <div className="glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 text-center space-y-3 shadow-sm">
+                                    <div className="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto border border-indigo-200/60 dark:border-indigo-800/40">
+                                        <span className="material-symbols-outlined text-[28px]">lock</span>
+                                    </div>
+                                    <h4 className="font-black text-slate-900 dark:text-white text-base">Private Community Discussions</h4>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto leading-relaxed">
+                                        Posts and discussions in <strong>"{community.name}"</strong> are visible only to approved members. {membershipStatus === 'requested' ? 'Your join request is currently pending administrator approval.' : 'Submit a join request above to gain full access to discussions and resources.'}
+                                    </p>
+                                </div>
+                            ) : sortedPosts.length === 0 ? (
+                                <div className="glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 text-center text-slate-400">
+                                    <span className="material-symbols-outlined text-4xl mb-2 text-slate-300 dark:text-slate-600">chat_bubble_outline</span>
+                                    <p className="text-sm font-semibold">No discussions yet in this community.</p>
+                                    <p className="text-xs text-slate-400 mt-1">Be the first to share an update or start a conversation!</p>
+                                </div>
+                            ) : (
+                                sortedPosts.slice(0, visiblePostCount).map(post => {
+                                    const authorName = typeof post.author === 'string' 
+                                        ? post.author 
+                                        : (post.author?.name || post.author?.fullName || post.authorName || 'Member');
+                                    const authorRole = typeof post.author === 'object' && post.author?.role 
+                                        ? post.author.role 
+                                        : (post.role || post.authorRole || 'Member');
+                                    const rawAvatar = (typeof post.author === 'object' ? post.author?.avatar : null) || post.authorAvatar || post.avatar;
+                                    const authorAvatar = rawAvatar ? resolveMediaUrl(rawAvatar) : null;
+                                    const authorInitial = (authorName || 'M').charAt(0).toUpperCase();
+                                    const target = resolveSharedTarget(post);
 
                                 const isWelcomePost = Boolean(
                                     post.isWelcome ||
@@ -3201,24 +3539,33 @@ export default function CommunityView() {
                                     {(() => {
                                         const targetComm = resolveTargetCommunityFromPost(post);
                                         const postUrlMatch = (post.content || '').match(/(?:https?:\/\/[^\s]+)?\/posts\?id=([a-zA-Z0-9_-]+)/i);
-                                        const extractedPostId = post.sharedPostId || (postUrlMatch ? postUrlMatch[1] : null) || post.sharedContent?.id || null;
-                                        const sharedPostTitleMatch = (post.content || '').match(/Shared Post:\s*"([^"]+)"/i)
-                                            || (post.title || '').match(/Shared Post:\s*"([^"]+)"/i);
+                                        const extractedPostId = target?.id || post.sharedPostId || (postUrlMatch ? postUrlMatch[1] : null) || post.sharedContent?.id || null;
+                                        const sharedPostTitleMatch = (post.content || '').match(/Shared (?:Post|Article|Video|Podcast|Profile):\s*"([^"]+)"/i)
+                                            || (post.title || '').match(/Shared (?:Post|Article|Video|Podcast|Profile):\s*"([^"]+)"/i);
                                         let sharedPostTitle = post.sharedContent?.title
                                             || (sharedPostTitleMatch ? sharedPostTitleMatch[1] : null);
-                                        if (!sharedPostTitle && post.title && !post.title.startsWith('Shared Post:')) {
+                                        if (!sharedPostTitle && post.title && !post.title.startsWith('Shared ')) {
                                             sharedPostTitle = post.title;
                                         }
                                         if (!sharedPostTitle && extractedPostId) {
-                                            sharedPostTitle = `Post #${extractedPostId}`;
+                                            sharedPostTitle = `${target?.label || 'Post'} #${extractedPostId}`;
                                         }
 
+                                        const hasExplicitArticleCard = Boolean(post.sharedArticle || post.type === 'article_share' || (post.content && (post.content.includes('Shared Article:') || post.content.includes('/article-view'))));
+                                        const hasExplicitPodcastCard = Boolean(post.sharedPodcast || post.type === 'podcast_share' || (post.content && (post.content.includes('Shared Podcast:') || post.content.includes('/podcasts'))));
+                                        const hasExplicitVideoCard = Boolean(post.sharedVideo || post.type === 'video_share' || post.videoUrl || (post.content && (post.content.includes('Shared Video:') || post.content.includes('📹'))));
+                                        const hasExplicitProfileCard = Boolean(post.sharedProfile || post.isProfileShare || (post.content && post.content.includes('Shared Profile:')));
+
                                         const isSharedPost = Boolean(
-                                            extractedPostId || 
-                                            (post.content && post.content.includes('Shared Post:')) ||
-                                            (post.title && post.title.startsWith('Shared Post:')) ||
-                                            post.type === 'post_share' ||
-                                            post.sharedContent
+                                            !hasExplicitArticleCard && !hasExplicitPodcastCard && !hasExplicitVideoCard && !hasExplicitProfileCard &&
+                                            (
+                                                target ||
+                                                extractedPostId || 
+                                                (post.content && (post.content.includes('Shared Post:') || post.content.includes('Shared Article:') || post.content.includes('Shared Video:'))) ||
+                                                (post.title && (post.title.startsWith('Shared Post:') || post.title.startsWith('Shared Article:'))) ||
+                                                post.type === 'post_share' ||
+                                                post.sharedContent
+                                            )
                                         );
 
                                         // Clean user commentary if this is a shared post, article, video, or profile:
@@ -3341,16 +3688,32 @@ export default function CommunityView() {
                                                     <div 
                                                         onClick={(e) => {
                                                             e.stopPropagation();
+                                                            if (target?.url) {
+                                                                navigate(target.url);
+                                                                return;
+                                                            }
                                                             const targetId = extractedPostId || post.id || post.postId;
                                                             if (targetId) navigate(`/posts?id=${targetId}`);
                                                         }}
-                                                        className="mb-4 p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/60 hover:bg-slate-100/90 dark:hover:bg-slate-850 border border-slate-200/90 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-500/60 transition-all cursor-pointer group shadow-xs hover:shadow-md"
+                                                        className={`mb-4 p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/60 hover:bg-slate-100/90 dark:hover:bg-slate-850 border border-slate-200/90 dark:border-slate-800 transition-all cursor-pointer group shadow-xs hover:shadow-md ${
+                                                            target?.type === 'Article' ? 'hover:border-emerald-400 dark:hover:border-emerald-500/60' :
+                                                            target?.type === 'Video' ? 'hover:border-rose-400 dark:hover:border-rose-500/60' :
+                                                            target?.type === 'Podcast' ? 'hover:border-pink-400 dark:hover:border-pink-500/60' :
+                                                            target?.type === 'Profile' ? 'hover:border-indigo-400 dark:hover:border-indigo-500/60' :
+                                                            'hover:border-blue-400 dark:hover:border-blue-500/60'
+                                                        }`}
                                                     >
                                                         <div className="flex items-center justify-between gap-3 mb-2.5">
                                                             <div className="flex items-center gap-2 flex-wrap">
-                                                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-arial text-[11px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60">
-                                                                    <span className="material-symbols-outlined text-[13px]">repeat</span>
-                                                                    Shared Post
+                                                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-arial text-[11px] font-bold ${
+                                                                    target?.type === 'Article' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60' :
+                                                                    target?.type === 'Video' ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200/80 dark:border-rose-800/60' :
+                                                                    target?.type === 'Podcast' ? 'bg-pink-50 text-pink-700 dark:bg-pink-950/60 dark:text-pink-300 border border-pink-200/80 dark:border-pink-800/60' :
+                                                                    target?.type === 'Profile' ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/60' :
+                                                                    'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60'
+                                                                }`}>
+                                                                    <span className="material-symbols-outlined text-[13px]">{target?.icon || 'repeat'}</span>
+                                                                    {target?.label || 'Shared Post'}
                                                                 </span>
                                                                 {extractedPostId && (
                                                                     <span className="font-arial text-[11px] text-slate-400 dark:text-slate-500 font-mono font-medium">
@@ -3363,14 +3726,26 @@ export default function CommunityView() {
                                                                     </span>
                                                                 )}
                                                             </div>
-                                                            <div className="flex items-center gap-1 font-source-sans text-[12px] font-bold text-blue-600 dark:text-blue-400 group-hover:text-blue-700 dark:group-hover:text-blue-300 group-hover:translate-x-0.5 transition-all shrink-0">
-                                                                <span>Open Post</span>
+                                                            <div className={`flex items-center gap-1 font-source-sans text-[12px] font-bold group-hover:translate-x-0.5 transition-all shrink-0 ${
+                                                                target?.type === 'Article' ? 'text-emerald-600 dark:text-emerald-400 group-hover:text-emerald-700 dark:group-hover:text-emerald-300' :
+                                                                target?.type === 'Video' ? 'text-rose-600 dark:text-rose-400 group-hover:text-rose-700 dark:group-hover:text-rose-300' :
+                                                                target?.type === 'Podcast' ? 'text-pink-600 dark:text-pink-400 group-hover:text-pink-700 dark:group-hover:text-pink-300' :
+                                                                target?.type === 'Profile' ? 'text-indigo-600 dark:text-indigo-400 group-hover:text-indigo-700 dark:group-hover:text-indigo-300' :
+                                                                'text-blue-600 dark:text-blue-400 group-hover:text-blue-700 dark:group-hover:text-blue-300'
+                                                            }`}>
+                                                                <span>{target?.actionText || 'Open Post'}</span>
                                                                 <span className="material-symbols-outlined text-[15px]">arrow_outward</span>
                                                             </div>
                                                         </div>
 
                                                         {/* Quote Box Body with Georgia Italic voice font */}
-                                                        <div className="border-l-3 border-blue-500/70 dark:border-blue-400/70 pl-3.5 py-1.5 bg-white/70 dark:bg-slate-950/40 rounded-r-xl">
+                                                        <div className={`border-l-3 pl-3.5 py-1.5 bg-white/70 dark:bg-slate-950/40 rounded-r-xl ${
+                                                            target?.type === 'Article' ? 'border-emerald-500/70 dark:border-emerald-400/70' :
+                                                            target?.type === 'Video' ? 'border-rose-500/70 dark:border-rose-400/70' :
+                                                            target?.type === 'Podcast' ? 'border-pink-500/70 dark:border-pink-400/70' :
+                                                            target?.type === 'Profile' ? 'border-indigo-500/70 dark:border-indigo-400/70' :
+                                                            'border-blue-500/70 dark:border-blue-400/70'
+                                                        }`}>
                                                             <p 
                                                                 className="font-georgia-italic text-[16px] text-slate-800 dark:text-slate-100 leading-relaxed group-hover:text-blue-950 dark:group-hover:text-white transition-colors line-clamp-3"
                                                                 style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif', fontStyle: 'italic' }}
@@ -3378,8 +3753,18 @@ export default function CommunityView() {
                                                                 "{sharedPostTitle || 'Original Post'}"
                                                             </p>
                                                             <p className="font-arial text-[11px] text-slate-500 dark:text-slate-400 mt-2 flex items-center gap-1.5">
-                                                                <span className="material-symbols-outlined text-[14px] text-blue-500/70">chat_bubble</span>
-                                                                Click to open post details, discussions & full comments
+                                                                <span className={`material-symbols-outlined text-[14px] ${
+                                                                    target?.type === 'Article' ? 'text-emerald-500/70' :
+                                                                    target?.type === 'Video' ? 'text-rose-500/70' :
+                                                                    target?.type === 'Podcast' ? 'text-pink-500/70' :
+                                                                    target?.type === 'Profile' ? 'text-indigo-500/70' :
+                                                                    'text-blue-500/70'
+                                                                }`}>{target?.icon || 'chat_bubble'}</span>
+                                                                {target?.type === 'Article' ? 'Click to open and read full article' :
+                                                                 target?.type === 'Video' ? 'Click to open and watch full video' :
+                                                                 target?.type === 'Podcast' ? 'Click to listen to podcast' :
+                                                                 target?.type === 'Profile' ? 'Click to view employee profile' :
+                                                                 'Click to open post details, discussions & full comments'}
                                                             </p>
                                                         </div>
                                                     </div>
@@ -3500,32 +3885,34 @@ export default function CommunityView() {
                                                             };
                                                             const vUrl = vidObj.sourceUrl || vidObj.videoUrl || post.videoUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
                                                             const isYT = vUrl && (vUrl.includes('youtube.com') || vUrl.includes('youtu.be'));
+                                                            const thumb = vidObj.thumbnail || getVideoThumbnail(vidObj);
 
                                                             return (
                                                                 <div className="flex flex-col">
-                                                                    <div className="relative aspect-video w-full bg-black overflow-hidden group">
-                                                                        {isYT ? (
-                                                                            <iframe
-                                                                                src={vUrl.includes('embed') ? vUrl : `https://www.youtube.com/embed/${(vUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=))((\w|-){11})/) || [])[1] || ''}`}
-                                                                                className="w-full h-full border-0"
-                                                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                                                                                title={vidObj.title}
+                                                                    <div 
+                                                                        onClick={() => navigate(`/videos?id=${vidObj.id || ''}&title=${encodeURIComponent(vidObj.title || '')}&url=${encodeURIComponent(vUrl)}`)}
+                                                                        className="relative aspect-video w-full bg-slate-950 overflow-hidden group cursor-pointer"
+                                                                    >
+                                                                        {thumb ? (
+                                                                            <img 
+                                                                                src={thumb} 
+                                                                                alt={vidObj.title} 
+                                                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
                                                                             />
                                                                         ) : (
-                                                                            <video
-                                                                                src={resolveMediaUrl(vUrl) || vUrl}
-                                                                                poster={getVideoThumbnail(vidObj) || undefined}
-                                                                                preload="metadata"
-                                                                                controls
-                                                                                controlsList="nodownload"
-                                                                                className="w-full h-full object-contain"
-                                                                                onError={(e) => {
-                                                                                    if (e.target && !e.target.src.includes('BigBuckBunny.mp4')) {
-                                                                                        e.target.src = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
-                                                                                    }
-                                                                                }}
-                                                                            />
+                                                                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-indigo-950 to-black">
+                                                                                <span className="material-symbols-outlined text-slate-700 text-6xl">movie</span>
+                                                                            </div>
                                                                         )}
+                                                                        <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-all flex items-center justify-center">
+                                                                            <div className="w-16 h-16 rounded-full bg-indigo-600/90 group-hover:bg-indigo-500 text-white flex items-center justify-center shadow-xl shadow-indigo-500/40 group-hover:scale-110 transition-transform">
+                                                                                <span className="material-symbols-outlined text-3xl ml-1">play_arrow</span>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="absolute bottom-2.5 left-2.5 px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-sm text-[11px] font-semibold text-white flex items-center gap-1.5">
+                                                                            <span className="material-symbols-outlined text-[14px] text-cyan-400">open_in_full</span>
+                                                                            <span>Click to watch on large screen</span>
+                                                                        </div>
                                                                     </div>
                                                                     <div className="p-3.5 bg-slate-900 flex items-center justify-between gap-3 border-t border-slate-800">
                                                                         <div className="min-w-0">
@@ -3541,8 +3928,8 @@ export default function CommunityView() {
                                                                             onClick={() => navigate(`/videos?id=${vidObj.id || ''}&title=${encodeURIComponent(vidObj.title || '')}&url=${encodeURIComponent(vUrl)}`)}
                                                                             className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-600 hover:to-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shrink-0 transition-all shadow-md shadow-cyan-500/20 cursor-pointer"
                                                                         >
-                                                                            <span className="material-symbols-outlined text-[16px]">play_arrow</span>
-                                                                            <span>Play Full Video</span>
+                                                                            <span className="material-symbols-outlined text-[16px]">open_in_full</span>
+                                                                            <span>Watch on Large Screen</span>
                                                                         </button>
                                                                     </div>
                                                                 </div>
@@ -3678,14 +4065,20 @@ export default function CommunityView() {
                                                 <span>{post.shares || 0} {post.shares === 1 ? 'Share' : 'Shares'}</span>
                                             </button>
 
-                                            {/* Open Post Action Button */}
+                                            {/* Open Content Action Button (Article / Video / Podcast / Profile / Post) */}
                                             <button 
                                                 onClick={() => handleOpenPost(post)}
-                                                className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400 font-bold text-xs transition-all shadow-xs hover:shadow-sm cursor-pointer"
-                                                title="Open Post in full view"
+                                                className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold text-xs transition-all shadow-xs hover:shadow-sm cursor-pointer ${
+                                                    target?.type === 'Article' ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400' :
+                                                    target?.type === 'Video' ? 'bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/50 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400' :
+                                                    target?.type === 'Podcast' ? 'bg-pink-50 hover:bg-pink-100 dark:bg-pink-950/50 dark:hover:bg-pink-900/60 text-pink-600 dark:text-pink-400' :
+                                                    target?.type === 'Profile' ? 'bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400' :
+                                                    'bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900/60 text-blue-600 dark:text-blue-400'
+                                                }`}
+                                                title={target ? `Open ${target.label} in full view` : "Open Post in full view"}
                                             >
-                                                <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                                                <span>Open Post</span>
+                                                <span className="material-symbols-outlined text-[16px]">{target?.icon === 'menu_book' ? 'menu_book' : target?.icon === 'smart_display' ? 'smart_display' : target?.icon === 'podcasts' ? 'podcasts' : target?.icon === 'person' ? 'person' : 'open_in_new'}</span>
+                                                <span>{target?.actionText || 'Open Post'}</span>
                                             </button>
                                         </div>
                                     )}
@@ -3759,7 +4152,8 @@ export default function CommunityView() {
                                     )}
                                 </div>
                             );
-                        })}
+                        })
+                    )}
                             <ScrollLoadingIndicator isVisible={visiblePostCount < sortedPosts.length} text="Loading more community posts on scroll..." />
                         </div>
                     )}
@@ -3788,10 +4182,19 @@ export default function CommunityView() {
                                     </div>
                                 </div>
 
-                                <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                                    {filteredMembers
-                                        .slice(0, visibleMemberCount)
-                                        .map(m => {
+                                {community.type === 'Private' && membershipStatus !== 'joined' && !isAdmin ? (
+                                    <div className="p-12 text-center text-slate-500 dark:text-slate-400 space-y-2">
+                                        <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 flex items-center justify-center mx-auto mb-3">
+                                            <span className="material-symbols-outlined text-2xl">lock</span>
+                                        </div>
+                                        <p className="font-bold text-sm text-slate-800 dark:text-slate-200">Member Directory Restricted</p>
+                                        <p className="text-xs max-w-sm mx-auto">The full member directory for this private community is visible only to approved members.</p>
+                                    </div>
+                                ) : (
+                                    <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                                        {filteredMembers
+                                            .slice(0, visibleMemberCount)
+                                            .map(m => {
                                             const badgeBg = m.isCommAdmin 
                                                 ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300 border-purple-200 dark:border-purple-800' 
                                                 : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800';
@@ -3816,11 +4219,11 @@ export default function CommunityView() {
                                                             {/* Name + Employee ID + Role Badge */}
                                                             <div className="flex items-center gap-1.5 min-w-0">
                                                                 <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate" title={m.displayName}>
-                                                                    {m.displayName}
+                                                                    <HighlightText text={m.displayName} query={memberSearchQuery} />
                                                                 </h4>
                                                                 {m.displayEmpId && (
                                                                     <span className="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200/70 dark:border-slate-700/60 shrink-0">
-                                                                        {m.displayEmpId}
+                                                                        <HighlightText text={m.displayEmpId} query={memberSearchQuery} />
                                                                     </span>
                                                                 )}
                                                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 flex items-center gap-0.5 ${badgeBg}`}>
@@ -3830,9 +4233,13 @@ export default function CommunityView() {
                                                             </div>
                                                             {/* Designation & Department */}
                                                             <p className="text-[11px] sm:text-[12px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
-                                                                <span className="font-medium text-slate-600 dark:text-slate-300">{m.displayDesignation}</span>
+                                                                <span className="font-medium text-slate-600 dark:text-slate-300">
+                                                                    <HighlightText text={m.displayDesignation} query={memberSearchQuery} />
+                                                                </span>
                                                                 <span className="mx-1 text-slate-300 dark:text-slate-600">•</span>
-                                                                <span>{m.displayDepartment}</span>
+                                                                <span>
+                                                                    <HighlightText text={m.displayDepartment} query={memberSearchQuery} />
+                                                                </span>
                                                             </p>
                                                         </div>
                                                     </div>
@@ -3881,7 +4288,8 @@ export default function CommunityView() {
                                                 </div>
                                             );
                                         })}
-                                </div>
+                                    </div>
+                                )}
                                 <ScrollLoadingIndicator isVisible={visibleMemberCount < filteredMembers.length} text="Loading more community members on scroll..." />
                             </div>
                         </div>
@@ -3893,7 +4301,7 @@ export default function CommunityView() {
                             {/* Filter Bar & Upload Action */}
                             <div className="glass bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
                                 <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-                                    {['All', 'Document', 'Image', 'Archive', 'Code', 'Video'].map(cat => (
+                                    {['All', 'Document', 'Image', 'Video'].map(cat => (
                                         <button
                                             key={cat}
                                             onClick={() => setFileCategoryFilter(cat)}
@@ -3903,7 +4311,7 @@ export default function CommunityView() {
                                                     : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
                                             }`}
                                         >
-                                            {cat === 'All' ? '📁 All Files' : cat === 'Document' ? '📄 Documents' : cat === 'Image' ? '🖼️ Images' : cat === 'Archive' ? '📦 Archives' : cat === 'Code' ? '💻 Code' : '🎬 Videos'}
+                                            {cat === 'All' ? '📁 All Files' : cat === 'Document' ? '📄 Documents' : cat === 'Image' ? '🖼️ Images' : '🎬 Videos'}
                                         </button>
                                     ))}
                                 </div>
@@ -3938,11 +4346,19 @@ export default function CommunityView() {
                             </div>
 
                             {/* Files Grid */}
-                            {filteredFiles.length === 0 ? (
+                            {community.type === 'Private' && membershipStatus !== 'joined' && !isAdmin ? (
+                                <div className="p-12 text-center glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm flex flex-col items-center gap-2">
+                                    <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 flex items-center justify-center mx-auto mb-1">
+                                        <span className="material-symbols-outlined text-2xl">lock</span>
+                                    </div>
+                                    <p className="font-bold text-slate-800 dark:text-slate-200">Files & Media Restricted</p>
+                                    <p className="text-xs text-slate-400 max-w-sm mx-auto">Shared files, documents, and media for this private community are accessible only to approved members.</p>
+                                </div>
+                            ) : filteredFiles.length === 0 ? (
                                 <div className="p-12 text-center glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm flex flex-col items-center gap-2">
                                     <span className="material-symbols-outlined text-[36px] text-slate-400">folder_off</span>
                                     <p className="font-bold">No files found matching filter.</p>
-                                    <p className="text-xs text-slate-400">Click "Upload File" above to share documents, images, or archives with this community.</p>
+                                    <p className="text-xs text-slate-400">Click "Upload File" above to share documents, images, or media with this community.</p>
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -3961,7 +4377,7 @@ export default function CommunityView() {
                                                 </div>
 
                                                 <h4 className="font-bold text-sm text-slate-900 dark:text-white line-clamp-1 group-hover:text-indigo-500 transition-colors mb-1" title={file.name}>
-                                                    {file.name}
+                                                    <HighlightText text={file.name} query={fileSearchQuery} />
                                                 </h4>
                                                 <div className="flex items-center gap-2 text-[11px] text-slate-500 mb-3">
                                                     <span>{file.size}</span>
@@ -3973,7 +4389,9 @@ export default function CommunityView() {
                                                     <div className="w-5 h-5 rounded-full bg-indigo-500 text-white flex items-center justify-center text-[10px] font-bold">
                                                         {(file.uploadedBy || 'U').charAt(0)}
                                                     </div>
-                                                    <span className="truncate max-w-[100px]">{file.uploadedBy}</span>
+                                                    <span className="truncate max-w-[100px]">
+                                                        <HighlightText text={file.uploadedBy} query={fileSearchQuery} />
+                                                    </span>
                                                 </div>
 
                                                 <div className="flex items-center gap-1">
@@ -4491,8 +4909,6 @@ export default function CommunityView() {
                                 >
                                     <option value="Document">📄 Document (PDF, DOCX, TXT)</option>
                                     <option value="Image">🖼️ Image (PNG, JPG, SVG)</option>
-                                    <option value="Archive">📦 Archive (ZIP, RAR, 7Z)</option>
-                                    <option value="Code">💻 Code / Script (JS, CS, PY, SQL)</option>
                                     <option value="Video">🎬 Video / Audio</option>
                                 </select>
                             </div>
@@ -4834,62 +5250,173 @@ export default function CommunityView() {
                             {shareTab === 'users' && (
                                 <form onSubmit={handleShareToUsersSubmit} className="space-y-4">
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                                            Select MPOnline Team Members *
-                                        </label>
-                                        <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-xl p-2 bg-slate-50 dark:bg-slate-800">
-                                             {(contextUsers || [])
-                                                 .filter(u => String(u.userId || u.id) !== String(currentUser?.userId || currentUser?.id))
-                                                 .map(userItem => {
-                                                     const uId = userItem.id || userItem.userId;
-                                                     const isSelected = shareSelectedUsers.includes(uId);
-                                                     const uName = userItem.name || userItem.fullName || 'User';
-                                                     const uRole = userItem.roleName || userItem.designation || userItem.role || 'Employee';
-                                                     const uEmp = userItem.employeeId || '';
-                                                     const uAvatar = resolveMediaUrl(userItem.avatar || userItem.profilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(uName)}&background=6366f1&color=fff&bold=true`;
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
+                                                Select MPOnline Team Members *
+                                            </label>
+                                            <span className="text-[11px] font-bold text-purple-600 dark:text-purple-400">
+                                                {shareSelectedUsers.length > 0 ? `${shareSelectedUsers.length} selected` : `${filteredShareUsers.length} employees`}
+                                            </span>
+                                        </div>
 
-                                                     return (
-                                                         <div
-                                                             key={uId}
-                                                             onClick={() => {
-                                                                 if (isSelected) {
-                                                                     setShareSelectedUsers(prev => prev.filter(id => id !== uId));
-                                                                 } else {
-                                                                     setShareSelectedUsers(prev => [...prev, uId]);
-                                                                 }
-                                                             }}
-                                                             className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-all border ${
-                                                                 isSelected 
-                                                                     ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800/60 text-purple-600 dark:text-purple-300' 
-                                                                     : 'hover:bg-slate-100 dark:hover:bg-slate-700/50 border-transparent text-slate-700 dark:text-slate-300'
-                                                             }`}
-                                                         >
-                                                             <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
-                                                                 <img src={uAvatar} alt={uName} className="w-7 h-7 rounded-full object-cover shrink-0" />
-                                                                 <div className="min-w-0 flex-1">
-                                                                     <div className="flex items-center gap-1.5">
-                                                                         <span className="font-bold text-slate-900 dark:text-white truncate">{uName}</span>
-                                                                         {uEmp && <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-semibold">{uEmp}</span>}
-                                                                     </div>
-                                                                     <div className="text-[11px] text-slate-400 truncate">{uRole}</div>
-                                                                 </div>
-                                                             </div>
+                                        {/* Search Filter Bar */}
+                                        <div className="relative mb-2.5">
+                                            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
+                                            <input
+                                                type="text"
+                                                value={shareUserSearchQuery}
+                                                onChange={(e) => setShareUserSearchQuery(e.target.value)}
+                                                placeholder="Search employees by name, employee ID, designation, department..."
+                                                className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 placeholder:text-slate-400"
+                                                autoFocus
+                                            />
+                                            {shareUserSearchQuery && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShareUserSearchQuery('')}
+                                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-0.5"
+                                                    title="Clear search"
+                                                >
+                                                    <span className="material-symbols-outlined text-[16px]">close</span>
+                                                </button>
+                                            )}
+                                        </div>
 
-                                                             <div className={`w-4 h-4 rounded flex items-center justify-center border transition-all shrink-0 ${
-                                                                 isSelected 
-                                                                     ? 'bg-purple-600 border-purple-600 text-white' 
-                                                                     : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700'
-                                                             }`}>
-                                                                 {isSelected && (
-                                                                     <svg className="w-3 h-3 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="3" stroke="currentColor">
-                                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                                                     </svg>
-                                                                 )}
-                                                             </div>
-                                                         </div>
-                                                     );
-                                                 })}
-                                         </div>
+                                        {/* Quick Select / Deselect Bar */}
+                                        {filteredShareUsers.length > 0 && (
+                                            <div className="flex items-center justify-between px-1 mb-2 text-[11px]">
+                                                <span className="text-slate-500">
+                                                    Showing {filteredShareUsers.length} employee{filteredShareUsers.length !== 1 ? 's' : ''}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const targetIds = filteredShareUsers.map(u => u.id || u.userId);
+                                                        const allSelected = targetIds.length > 0 && targetIds.every(id => shareSelectedUsers.some(sel => String(sel) === String(id)));
+                                                        if (allSelected) {
+                                                            setShareSelectedUsers(prev => prev.filter(id => !targetIds.some(tId => String(tId) === String(id))));
+                                                        } else {
+                                                            const next = [...shareSelectedUsers];
+                                                            targetIds.forEach(tId => {
+                                                                if (!next.some(id => String(id) === String(tId))) {
+                                                                    next.push(tId);
+                                                                }
+                                                            });
+                                                            setShareSelectedUsers(next);
+                                                        }
+                                                    }}
+                                                    className="font-bold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
+                                                >
+                                                    {(() => {
+                                                        const targetIds = filteredShareUsers.map(u => u.id || u.userId);
+                                                        const allSelected = targetIds.length > 0 && targetIds.every(id => shareSelectedUsers.some(sel => String(sel) === String(id)));
+                                                        return allSelected ? 'Deselect All' : `Select All (${targetIds.length})`;
+                                                    })()}
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {/* Selected Users Chips (if any selected) */}
+                                        {shareSelectedUsers.length > 0 && (
+                                            <div className="flex flex-wrap gap-1.5 p-2 mb-2 bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/60 dark:border-purple-800/40 rounded-xl max-h-20 overflow-y-auto custom-scrollbar">
+                                                {shareSelectedUsers.map(selId => {
+                                                    const uObj = allShareEligibleUsers.find(u => String(u.id || u.userId) === String(selId));
+                                                    return (
+                                                        <span key={selId} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-600 text-white text-[11px] font-bold shadow-xs">
+                                                            {uObj?.fullName || uObj?.name || `Employee ${selId}`}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setShareSelectedUsers(prev => prev.filter(id => id !== selId))}
+                                                                className="hover:text-red-200 cursor-pointer ml-0.5"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[13px]">close</span>
+                                                            </button>
+                                                        </span>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+
+                                        {/* Employee List */}
+                                        <div className="space-y-1.5 max-h-56 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-xl p-2 bg-slate-50 dark:bg-slate-800">
+                                            {filteredShareUsers.length === 0 ? (
+                                                <div className="py-8 text-center text-slate-400 text-xs">
+                                                    <span className="material-symbols-outlined text-2xl text-slate-300 dark:text-slate-600 mb-1">person_search</span>
+                                                    <p className="font-bold">No team members found</p>
+                                                    <p className="text-[11px] mt-0.5">Try a different search term or check spelling.</p>
+                                                </div>
+                                            ) : (
+                                                filteredShareUsers.map(userItem => {
+                                                    const uId = userItem.id || userItem.userId;
+                                                    const isSelected = shareSelectedUsers.some(id => String(id) === String(uId));
+                                                    const uName = userItem.fullName || userItem.name || 'User';
+                                                    const uRole = userItem.designation || userItem.roleName || userItem.role || 'Employee';
+                                                    const uDept = userItem.department || 'MPOnline';
+                                                    const uEmp = userItem.employeeId || '';
+                                                    const uAvatar = resolveMediaUrl(userItem.avatar || userItem.profilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(uName)}&background=6366f1&color=fff&bold=true`;
+
+                                                    return (
+                                                        <div
+                                                            key={uId}
+                                                            onClick={() => {
+                                                                if (isSelected) {
+                                                                    setShareSelectedUsers(prev => prev.filter(id => String(id) !== String(uId)));
+                                                                } else {
+                                                                    setShareSelectedUsers(prev => [...prev, uId]);
+                                                                }
+                                                            }}
+                                                            className={`flex items-center justify-between p-2 rounded-xl cursor-pointer text-xs transition-all border ${
+                                                                isSelected 
+                                                                    ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800/60 text-purple-700 dark:text-purple-300 shadow-xs' 
+                                                                    : 'hover:bg-slate-100 dark:hover:bg-slate-700/50 border-transparent text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/60'
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
+                                                                <img
+                                                                    src={uAvatar}
+                                                                    alt={uName}
+                                                                    onError={(e) => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(uName)}&background=6366f1&color=fff&bold=true`; }}
+                                                                    className="w-8 h-8 rounded-full object-cover shrink-0 shadow-xs"
+                                                                />
+                                                                <div className="min-w-0 flex-1">
+                                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                                        <span className="font-bold text-slate-900 dark:text-white truncate">
+                                                                            <HighlightText text={uName} query={shareUserSearchQuery} />
+                                                                        </span>
+                                                                        {uEmp && (
+                                                                            <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold">
+                                                                                <HighlightText text={uEmp} query={shareUserSearchQuery} />
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                                                        <HighlightText text={uRole} query={shareUserSearchQuery} />
+                                                                        {uDept && (
+                                                                            <>
+                                                                                <span className="mx-1 text-slate-300 dark:text-slate-600">•</span>
+                                                                                <HighlightText text={uDept} query={shareUserSearchQuery} />
+                                                                            </>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all shrink-0 ${
+                                                                isSelected 
+                                                                    ? 'bg-purple-600 border-purple-600 text-white' 
+                                                                    : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700'
+                                                            }`}>
+                                                                {isSelected && (
+                                                                    <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="3" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                                    </svg>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            )}
+                                        </div>
                                     </div>
 
                                     <div>
@@ -4908,7 +5435,10 @@ export default function CommunityView() {
                                     <div className="pt-3 flex justify-end gap-2 border-t border-slate-100 dark:border-slate-800">
                                         <button
                                             type="button"
-                                            onClick={() => setShareTab('menu')}
+                                            onClick={() => {
+                                                setShareTab('menu');
+                                                setShareUserSearchQuery('');
+                                            }}
                                             className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
                                         >
                                             Back
@@ -5156,28 +5686,209 @@ export default function CommunityView() {
                 </div>
             )}
 
-            {/* Universal Share Modal for Community Posts */}
-            {sharingPost && (
-                <ArticleShareModal 
-                    isOpen={isPostShareModalOpen} 
-                    onClose={() => {
-                        setIsPostShareModalOpen(false);
-                        setSharingPost(null);
-                    }} 
-                    post={sharingPost}
-                    contentType="Post"
-                    onShared={(type, count) => {
-                        const pid = String(sharingPost.id || sharingPost.postId);
-                        setPosts(prev => prev.map(p => {
-                            if (String(p.id) === pid || String(p.postId) === pid) {
-                                const next = Number(p.shares || p.sharesCount || 0) + (count || 1);
-                                return { ...p, shares: next, sharesCount: next };
-                            }
-                            return p;
-                        }));
-                    }}
-                />
+            {/* Add Members Modal (FR-CM-03 / Admin Enrolling Colleagues) */}
+            {isAddMembersModalOpen && (
+                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+                                    <span className="material-symbols-outlined text-[20px]">person_add</span>
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-slate-900 dark:text-white text-base">Add Members</h3>
+                                    <p className="text-xs text-slate-500">Enroll colleagues into {community?.name}</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsAddMembersModalOpen(false);
+                                    setSelectedNewMemberIds([]);
+                                    setAddMemberSearch('');
+                                }}
+                                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                            >
+                                <span className="material-symbols-outlined text-[20px]">close</span>
+                            </button>
+                        </div>
+
+                        {/* Search & Actions Bar */}
+                        <div className="p-4 border-b border-slate-100 dark:border-slate-800 space-y-3 bg-white dark:bg-slate-900">
+                            <div className="relative">
+                                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
+                                <input
+                                    type="text"
+                                    value={addMemberSearch}
+                                    onChange={(e) => setAddMemberSearch(e.target.value)}
+                                    placeholder="Search by name, designation, employee ID..."
+                                    className="w-full bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-8 py-2 text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                                    autoFocus
+                                />
+                                {addMemberSearch && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setAddMemberSearch('')}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                                    >
+                                        <span className="material-symbols-outlined text-[16px]">close</span>
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="flex items-center justify-between text-xs text-slate-500">
+                                <span>
+                                    {selectedNewMemberIds.length > 0 ? (
+                                        <strong className="text-indigo-600 dark:text-indigo-400">{selectedNewMemberIds.length} selected</strong>
+                                    ) : (
+                                        `${filteredCandidates.length} eligible colleague(s)`
+                                    )}
+                                </span>
+                                {filteredCandidates.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const candIds = filteredCandidates.map(c => Number(c.userId || c.id));
+                                            const allSelected = candIds.every(id => selectedNewMemberIds.includes(id));
+                                            if (allSelected) {
+                                                setSelectedNewMemberIds(prev => prev.filter(id => !candIds.includes(id)));
+                                            } else {
+                                                setSelectedNewMemberIds(prev => Array.from(new Set([...prev, ...candIds])));
+                                            }
+                                        }}
+                                        className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                                    >
+                                        {filteredCandidates.every(c => selectedNewMemberIds.includes(Number(c.userId || c.id))) ? 'Deselect All' : 'Select All'}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Candidates List */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2 max-h-96">
+                            {filteredCandidates.length === 0 ? (
+                                <div className="py-8 text-center text-slate-400 text-xs">
+                                    <span className="material-symbols-outlined text-3xl mb-1 text-slate-300 dark:text-slate-600">person_search</span>
+                                    <p className="font-bold">No eligible colleagues found</p>
+                                    <p className="mt-0.5">All matching employees may already be members of this community.</p>
+                                </div>
+                            ) : (
+                                filteredCandidates.map(c => {
+                                    const cId = Number(c.userId || c.id);
+                                    const isSelected = selectedNewMemberIds.includes(cId);
+                                    return (
+                                        <div
+                                            key={cId}
+                                            onClick={() => {
+                                                setSelectedNewMemberIds(prev => 
+                                                    prev.includes(cId) ? prev.filter(id => id !== cId) : [...prev, cId]
+                                                );
+                                            }}
+                                            className={`p-3 rounded-xl border flex items-center justify-between gap-3 cursor-pointer transition-all ${
+                                                isSelected 
+                                                    ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 shadow-xs' 
+                                                    : 'bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <div className="w-9 h-9 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center shrink-0 overflow-hidden">
+                                                    {c.avatar || c.profilePhotoUrl ? (
+                                                        <img src={c.avatar || c.profilePhotoUrl} alt={c.fullName} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        (c.fullName || c.name || 'U').charAt(0).toUpperCase()
+                                                    )}
+                                                </div>
+                                                <div className="min-w-0">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                                                            {c.fullName || c.name}
+                                                        </span>
+                                                        {c.employeeId && (
+                                                            <span className="text-[10px] font-mono px-1.5 py-0.2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded font-semibold">
+                                                                {c.employeeId}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                                                        {c.designation || 'Employee'} • {c.department || 'MPOnline'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all shrink-0 ${
+                                                isSelected 
+                                                    ? 'bg-indigo-600 border-indigo-600 text-white' 
+                                                    : 'border-slate-300 dark:border-slate-600'
+                                            }`}>
+                                                {isSelected && <span className="material-symbols-outlined text-[14px]">check</span>}
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 flex items-center justify-end gap-2.5">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setIsAddMembersModalOpen(false);
+                                    setSelectedNewMemberIds([]);
+                                    setAddMemberSearch('');
+                                }}
+                                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                disabled={selectedNewMemberIds.length === 0 || isSubmittingMembers}
+                                onClick={handleAddSelectedMembers}
+                                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                            >
+                                {isSubmittingMembers ? (
+                                    <>
+                                        <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
+                                        <span>Adding...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="material-symbols-outlined text-[16px]">person_add</span>
+                                        <span>Add {selectedNewMemberIds.length > 0 ? `${selectedNewMemberIds.length} ` : ''}Member{selectedNewMemberIds.length !== 1 ? 's' : ''}</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
+
+            {/* Universal Share Modal for Community Posts */}
+            {sharingPost && (() => {
+                const shareTarget = resolveSharedTarget(sharingPost);
+                return (
+                    <ArticleShareModal 
+                        isOpen={isPostShareModalOpen} 
+                        onClose={() => {
+                            setIsPostShareModalOpen(false);
+                            setSharingPost(null);
+                        }} 
+                        post={sharingPost}
+                        contentType={shareTarget?.type || "Post"}
+                        onShared={(type, count) => {
+                            const pid = String(sharingPost.id || sharingPost.postId);
+                            setPosts(prev => prev.map(p => {
+                                if (String(p.id) === pid || String(p.postId) === pid) {
+                                    const next = Number(p.shares || p.sharesCount || 0) + (count || 1);
+                                    return { ...p, shares: next, sharesCount: next };
+                                }
+                                return p;
+                            }));
+                        }}
+                    />
+                );
+            })()}
 
             {/* Fullscreen Image Lightbox */}
             {lightboxImages && (

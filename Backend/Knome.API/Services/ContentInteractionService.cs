@@ -232,11 +232,12 @@ public class ContentInteractionService : IContentInteractionService
         var commenterName = commenter?.FullName ?? "Someone";
 
         var authorId = await _repo.GetContentAuthorUserIdAsync(contentType, contentId);
+        Comment? parentComment = null;
 
         if (dto.ParentCommentId.HasValue)
         {
             // --- REPLY TO AN EXISTING COMMENT ---
-            var parentComment = await _repo.GetCommentByIdAsync(dto.ParentCommentId.Value);
+            parentComment = await _repo.GetCommentByIdAsync(dto.ParentCommentId.Value);
             if (parentComment != null)
             {
                 // 1. Notify the author of the comment that was replied to (jiske comments par reply kiya hai)
@@ -302,6 +303,39 @@ public class ContentInteractionService : IContentInteractionService
                     notifText,
                     relatedContentType: contentType,
                     relatedContentId: contentId);
+            }
+        }
+
+        // --- @MENTIONS IN COMMENT ---
+        if (!string.IsNullOrWhiteSpace(dto.CommentText))
+        {
+            var mentionMatches = System.Text.RegularExpressions.Regex.Matches(dto.CommentText, @"@([a-zA-Z0-9._-]+)");
+            if (mentionMatches.Count > 0)
+            {
+                var tokens = mentionMatches.Select(m => m.Groups[1].Value).Distinct().ToList();
+                var mentionedUsers = await _db.Users
+                    .Where(u => u.IsActive && u.UserId != userId && (
+                        tokens.Contains(u.EmployeeId) ||
+                        tokens.Contains(u.FullName) ||
+                        tokens.Contains(u.Email)
+                    ))
+                    .ToListAsync();
+
+                foreach (var mu in mentionedUsers)
+                {
+                    if ((parentComment != null && mu.UserId == parentComment.UserId) ||
+                        (authorId.HasValue && mu.UserId == authorId.Value))
+                    {
+                        continue;
+                    }
+
+                    await _notificationService.PublishAsync(
+                        mu.UserId,
+                        NotificationTypes.Mention,
+                        $"{commenterName} mentioned you in a comment on a {contentType.ToLowerInvariant()}.",
+                        relatedContentType: contentType,
+                        relatedContentId: contentId);
+                }
             }
         }
 
@@ -816,6 +850,10 @@ public class ContentInteractionService : IContentInteractionService
         {
             viewsDict = await _db.Podcasts.AsNoTracking().Where(p => idList.Contains(p.PodcastId)).ToDictionaryAsync(p => p.PodcastId, p => p.ViewCount);
         }
+        else if (contentType == ContentTypes.Post)
+        {
+            viewsDict = await _db.Posts.AsNoTracking().Where(p => idList.Contains(p.PostId)).ToDictionaryAsync(p => p.PostId, p => p.ViewCount);
+        }
 
         // Assemble all summaries in-memory with zero extra database calls
         foreach (var cid in idList)
@@ -902,6 +940,33 @@ public class ContentInteractionService : IContentInteractionService
         report.ActionDate = KnomeTime.Now;
 
         await _repo.UpdateReportAsync(report);
+
+        // Moderation advisory notification to the content creator if action was taken or resolved
+        try
+        {
+            var authorId = await _repo.GetContentAuthorUserIdAsync(report.ContentType, report.ContentId);
+            if (authorId.HasValue && authorId.Value != moderatorUserId)
+            {
+                var actionText = !string.IsNullOrWhiteSpace(report.ActionTaken)
+                    ? report.ActionTaken
+                    : (dto.Status == ReportStatuses.Resolved ? "Reviewed and resolved by moderators" : null);
+
+                if (!string.IsNullOrEmpty(actionText))
+                {
+                    await _notificationService.PublishAsync(
+                        authorId.Value,
+                        NotificationTypes.HrAnnouncement,
+                        $"Your {report.ContentType.ToLowerInvariant()} was reviewed by moderation: {actionText}.",
+                        relatedContentType: report.ContentType,
+                        relatedContentId: report.ContentId);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to send moderation notice to content author for report {ReportId}", reportId);
+        }
+
         var enriched = await EnrichReportsAsync(new List<ModerationReport> { report });
         return enriched.FirstOrDefault() ?? _mapper.Map<ModerationReportDto>(report);
     }
@@ -1035,5 +1100,17 @@ public class ContentInteractionService : IContentInteractionService
         }
 
         return dtos;
+    }
+
+    public async Task<long> RecordViewAsync(string contentType, long contentId, int userId)
+    {
+        ValidateContentType(contentType);
+        return await _repo.RecordUniqueViewAsync(contentType, contentId, userId);
+    }
+
+    public async Task<bool> HasUserViewedAsync(string contentType, long contentId, int userId)
+    {
+        ValidateContentType(contentType);
+        return await _repo.HasUserViewedAsync(contentType, contentId, userId);
     }
 }

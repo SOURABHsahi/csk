@@ -77,4 +77,12 @@ public class PostController : KnomeControllerBase
         await _postService.DeletePostAsync(postId, GetCurrentUserId());
         return Ok(ApiResponse.SuccessResponse(200, "Post deleted successfully."));
     }
+
+    [HttpPost("{postId:long}/view")]
+    [ProducesResponseType(typeof(ApiResponse<int>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RecordView(long postId)
+    {
+        var newCount = await _postService.IncrementViewCountAsync(postId, GetCurrentUserId());
+        return Ok(ApiResponse<int>.SuccessResponse(200, "Post view recorded.", newCount));
+    }
 }

@@ -170,13 +170,11 @@ export default function ArticleView() {
             setNewComment('');
             setViews(Number(article.views || 0));
 
-            // Record article view in backend
+            // Record article view in backend (strictly 1 unique view per user)
             recordArticleView(article.id).then(res => {
-                const count = res?.viewCount ?? res?.views ?? res?.data?.viewCount ?? res?.data?.views;
+                const count = (typeof res === 'number') ? res : (res?.viewCount ?? res?.data?.viewCount ?? res?.data);
                 if (typeof count === 'number') {
                     setViews(count);
-                } else {
-                    setViews(v => Math.max(v, Number(article.views || 0)) + 1);
                 }
             }).catch(() => {});
             
@@ -400,8 +398,11 @@ export default function ArticleView() {
     const displayAttachments = (article?.attachments || []).filter((file, idx, arr) => {
         const mediaUrl = resolveMediaUrl(file.url || file.rawUrl);
         const fileName = (file.name || file.url || file.rawUrl || '').toLowerCase();
-        const isDoc = file.isDoc || file.fileType === 'Document' || !!fileName.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)(\?.*)?$/i);
-        const isImage = !isDoc && (file.isImage || file.fileType === 'Image' || !!fileName.match(/\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?.*)?$/i));
+        const isAudio = file.isAudio || 
+                        file.fileType === 'Audio' || 
+                        !!fileName.match(/\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i);
+        const isDoc = !isAudio && (file.isDoc || file.fileType === 'Document' || !!fileName.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)(\?.*)?$/i));
+        const isImage = !isAudio && !isDoc && (file.isImage || file.fileType === 'Image' || !!fileName.match(/\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?.*)?$/i));
 
         // If it's an image and already displayed as the main Cover photo, don't show it again
         if (isImage && coverMediaUrl && (mediaUrl === coverMediaUrl || (file.rawUrl && coverMediaUrl.includes(file.rawUrl)))) {
@@ -560,25 +561,31 @@ export default function ArticleView() {
                     
                     {/* Attached Documents & Media */}
                     {displayAttachments && displayAttachments.length > 0 && (
-                        <div className="mt-12 mb-10 p-6 bg-slate-50 dark:bg-slate-800/40 rounded-3xl border border-slate-200 dark:border-slate-800">
-                            <h3 className="text-base font-extrabold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
-                                <span className="material-symbols-outlined text-blue-500 text-[24px]">attachment</span>
+                        <div className="mt-10 mb-8 p-5 bg-slate-50/80 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-800">
+                            <h3 className="text-sm font-extrabold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                                <span className="material-symbols-outlined text-indigo-500 text-[20px]">attachment</span>
                                 Attached Documents & Media ({displayAttachments.length})
                             </h3>
-                            <div className="space-y-6">
+                            <div className="space-y-3.5">
                                 {displayAttachments.map((file, idx) => {
                                     const fileName = (file.name || file.url || file.rawUrl || '').toLowerCase();
-                                    const isDoc = file.isDoc || 
-                                                  file.fileType === 'Document' || 
-                                                  !!fileName.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)(\?.*)?$/i);
+                                    const isAudio = file.isAudio || 
+                                                    file.fileType === 'Audio' || 
+                                                    !!fileName.match(/\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i);
 
-                                    const isImage = !isDoc && (
+                                    const isDoc = !isAudio && (
+                                        file.isDoc || 
+                                        file.fileType === 'Document' || 
+                                        !!fileName.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)(\?.*)?$/i)
+                                    );
+
+                                    const isImage = !isAudio && !isDoc && (
                                         file.isImage || 
                                         file.fileType === 'Image' || 
                                         !!fileName.match(/\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?.*)?$/i)
                                     );
 
-                                    const isVideo = !isDoc && !isImage && (
+                                    const isVideo = !isAudio && !isDoc && !isImage && (
                                         file.isVideo || 
                                         file.fileType === 'Video' || 
                                         !!fileName.match(/\.(mp4|webm|ogg|mov|m4v|mkv)(\?.*)?$/i)
@@ -586,31 +593,68 @@ export default function ArticleView() {
 
                                     const mediaUrl = resolveMediaUrl(file.url || file.rawUrl);
 
+                                    if (isAudio) {
+                                        return (
+                                            <div key={idx} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3.5 shadow-xs hover:border-violet-300 dark:hover:border-violet-800/50 transition-all">
+                                                <div className="flex items-center gap-3 min-w-0 mb-2.5">
+                                                    <div className="w-9 h-9 rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400 flex items-center justify-center shrink-0">
+                                                        <span className="material-symbols-outlined text-[20px]">
+                                                            audiotrack
+                                                        </span>
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate" title={file.name}>
+                                                            {file.name || 'Attached Audio'}
+                                                        </p>
+                                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                                            <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-violet-500/10 text-violet-600 dark:text-violet-400 border border-violet-500/20 uppercase tracking-wider">
+                                                                Audio
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Native HTML5 Audio Player */}
+                                                <div className="rounded-lg p-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60">
+                                                    <audio
+                                                        controls
+                                                        controlsList="nodownload"
+                                                        preload="metadata"
+                                                        src={mediaUrl}
+                                                        className="w-full h-8 accent-violet-600"
+                                                    >
+                                                        Your browser does not support HTML5 audio playback.
+                                                    </audio>
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+
                                     if (isImage) {
                                         return (
-                                            <div key={idx} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white min-w-0">
-                                                        <span className="material-symbols-outlined text-indigo-500 text-[20px] shrink-0">image</span>
-                                                        <span className="truncate">{file.name || 'Attached Photo'}</span>
+                                            <div key={idx} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3.5 shadow-xs hover:border-indigo-300 dark:hover:border-indigo-800/50 transition-all">
+                                                <div className="flex items-center gap-3 min-w-0 mb-2.5">
+                                                    <div className="w-9 h-9 rounded-lg bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                                                        <span className="material-symbols-outlined text-[20px]">image</span>
                                                     </div>
-                                                    <a
-                                                        href={mediaUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="px-3 py-1 bg-indigo-500/10 hover:bg-indigo-500 hover:text-white text-indigo-600 dark:text-indigo-400 text-xs font-bold rounded-lg transition-colors flex items-center gap-1 shrink-0"
-                                                    >
-                                                        <span className="material-symbols-outlined text-[14px]">open_in_new</span>
-                                                        Open Full
-                                                    </a>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate" title={file.name}>
+                                                            {file.name || 'Attached Photo'}
+                                                        </p>
+                                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                                            <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 uppercase tracking-wider">
+                                                                Image
+                                                            </span>
+                                                        </div>
+                                                    </div>
                                                 </div>
 
                                                 {/* Image Preview Container */}
-                                                <div className="relative rounded-xl overflow-hidden bg-slate-950/5 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 flex items-center justify-center p-1">
+                                                <div className="relative rounded-lg overflow-hidden bg-slate-950/5 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 flex items-center justify-center p-1">
                                                     <img
                                                         src={mediaUrl}
                                                         alt={file.name || 'Attached Image'}
-                                                        className="max-h-[550px] w-auto max-w-full rounded-lg object-contain shadow-sm"
+                                                        className="max-h-[500px] w-auto max-w-full rounded-md object-contain shadow-xs"
                                                     />
                                                 </div>
                                             </div>
@@ -619,25 +663,25 @@ export default function ArticleView() {
 
                                     if (isVideo) {
                                         return (
-                                            <div key={idx} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm space-y-4">
-                                                <div className="flex items-center justify-between">
-                                                    <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white min-w-0">
-                                                        <span className="material-symbols-outlined text-rose-500 text-[20px] shrink-0">play_circle</span>
-                                                        <span className="truncate">{file.name || 'Uploaded Video Media'}</span>
+                                            <div key={idx} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3.5 shadow-xs hover:border-rose-300 dark:hover:border-rose-800/50 transition-all">
+                                                <div className="flex items-center gap-3 min-w-0 mb-2.5">
+                                                    <div className="w-9 h-9 rounded-lg bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                                                        <span className="material-symbols-outlined text-[20px]">play_circle</span>
                                                     </div>
-                                                    <a
-                                                        href={mediaUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="px-3 py-1 bg-rose-500/10 hover:bg-rose-500 hover:text-white text-rose-600 dark:text-rose-400 text-xs font-bold rounded-lg transition-colors flex items-center gap-1 shrink-0"
-                                                    >
-                                                        <span className="material-symbols-outlined text-[14px]">open_in_new</span>
-                                                        Open Full Video
-                                                    </a>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate" title={file.name}>
+                                                            {file.name || 'Uploaded Video'}
+                                                        </p>
+                                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                                            <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 uppercase tracking-wider">
+                                                                Video
+                                                            </span>
+                                                        </div>
+                                                    </div>
                                                 </div>
 
                                                 {/* Native HTML5 Video Player */}
-                                                <div className="relative rounded-xl overflow-hidden bg-slate-950 aspect-video border border-slate-200 dark:border-slate-800 shadow-inner">
+                                                <div className="relative rounded-lg overflow-hidden bg-slate-950 aspect-video max-h-[420px] w-full border border-slate-200 dark:border-slate-800 shadow-inner">
                                                     <video
                                                         controls
                                                         controlsList="nodownload"
@@ -654,37 +698,33 @@ export default function ArticleView() {
                                         );
                                     }
 
-                                    const docContainerId = `doc-viewer-container-${idx}`;
-
                                     return (
-                                        <div key={idx} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-md space-y-4">
-                                            <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
+                                        <div key={idx} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3.5 shadow-xs hover:border-blue-300 dark:hover:border-blue-800/50 transition-all">
+                                            <div className="flex items-center justify-between flex-wrap gap-2.5">
                                                 <div className="flex items-center gap-3 min-w-0">
-                                                    <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
-                                                        <span className="material-symbols-outlined text-2xl">
+                                                    <div className="w-9 h-9 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                                                        <span className="material-symbols-outlined text-[20px]">
                                                             description
                                                         </span>
                                                     </div>
                                                     <div className="min-w-0">
-                                                        <p className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                                                            {file.name}
+                                                        <p className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate" title={file.name}>
+                                                            {file.name || 'Attached Document'}
                                                         </p>
-                                                        <div className="flex items-center gap-2 text-[11px] text-slate-500 font-medium mt-0.5">
-                                                            <span className="uppercase font-bold text-blue-500">
+                                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                                            <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 uppercase tracking-wider">
                                                                 Document
                                                             </span>
-                                                            <span>•</span>
-                                                            <span>Read-Only Protected</span>
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-2 shrink-0">
                                                     <button 
                                                         type="button"
                                                         onClick={() => setActiveDocViewer({ name: file.name, url: mediaUrl })}
-                                                        className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer active:scale-95"
+                                                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer active:scale-95"
                                                     >
-                                                        <span className="material-symbols-outlined text-[18px]">visibility</span>
+                                                        <span className="material-symbols-outlined text-[15px]">visibility</span>
                                                         View Document
                                                     </button>
                                                 </div>
@@ -863,6 +903,7 @@ export default function ArticleView() {
                 isOpen={!!sharingArticleModal}
                 onClose={() => setSharingArticleModal(null)}
                 article={sharingArticleModal}
+                contentType="Article"
             />
 
             {/* Document Viewer Modal */}

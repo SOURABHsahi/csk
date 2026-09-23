@@ -318,9 +318,15 @@ export default function Sidebar() {
 
     return (
         <>
-            {/* 1. Desktop Sticky Sidebar */}
-            <aside className="w-64 sticky top-24 hidden md:flex flex-col gap-3 shrink-0" style={{width: '260px'}}>
-                {renderSidebarContent(false)}
+            {/* 1. Desktop Sticky Sidebar — fixed to viewport while main content scrolls */}
+            <aside
+                className="hidden md:flex flex-col shrink-0 sticky top-24"
+                style={{ width: '260px', height: 'calc(100vh - 7rem)', overflowY: 'auto', overflowX: 'hidden' }}
+            >
+                {/* Inner wrapper with gap — scrollable when sidebar is taller than screen */}
+                <div className="flex flex-col gap-3 pb-4 pr-0.5 custom-scrollbar">
+                    {renderSidebarContent(false)}
+                </div>
             </aside>
 
             {/* 2. Mobile Slide-Out Drawer (Accessible via Hamburger & Bottom Bar) */}

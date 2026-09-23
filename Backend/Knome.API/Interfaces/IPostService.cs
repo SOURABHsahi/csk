@@ -13,4 +13,5 @@ public interface IPostService
     Task<PostDto> CreatePostAsync(int currentUserId, CreatePostDto dto);
     Task<PostDto> UpdatePostAsync(long postId, int currentUserId, UpdatePostDto dto);
     Task DeletePostAsync(long postId, int currentUserId);
+    Task<int> IncrementViewCountAsync(long postId, int currentUserId = 0);
 }

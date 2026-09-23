@@ -37,7 +37,12 @@ public class VideoService : IVideoService
         if (video.UploaderUserId == currentUserId) return;
 
         var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
-        if (user == null || !user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.CommunityAdmin))
+        if (user == null || !user.Roles.Any(r => 
+            r.RoleName == Roles.SystemAdmin || r.RoleCode == "SYSADM" ||
+            r.RoleName == Roles.HRAdmin || r.RoleCode == "HRADM" ||
+            r.RoleName == Roles.CommunityAdmin || r.RoleCode == "CADM" ||
+            (r.RoleName != null && r.RoleName.Contains("Admin")) ||
+            (r.RoleCode != null && r.RoleCode.Contains("ADM"))))
         {
             throw new UnauthorizedException("You must be the uploader of this video or an Administrator to modify/delete it.");
         }
@@ -49,7 +54,11 @@ public class VideoService : IVideoService
         if (video == null)
             throw new NotFoundException($"Video ID {videoId} not found.");
 
-        await _repo.IncrementViewCountAsync(videoId);
+        if (currentUserId > 0)
+        {
+            var authoritativeViews = await _interactionService.RecordViewAsync(ContentTypes.Video, videoId, currentUserId);
+            video.ViewCount = (int)authoritativeViews;
+        }
 
         var dto = _mapper.Map<VideoDto>(video);
         dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Video, videoId, currentUserId);
@@ -197,5 +206,15 @@ public class VideoService : IVideoService
 
         await CheckIsUploaderOrAdminAsync(video, currentUserId);
         await _repo.DeleteVideoAsync(video);
+    }
+
+    public async Task<int> IncrementViewCountAsync(long videoId, int currentUserId = 0)
+    {
+        var video = await _repo.GetVideoByIdAsync(videoId);
+        if (video == null)
+            throw new NotFoundException($"Video ID {videoId} not found.");
+
+        var count = await _interactionService.RecordViewAsync(ContentTypes.Video, videoId, currentUserId);
+        return (int)count;
     }
 }
