@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { useUser, getUserStatusConfig, deduplicateMembers } from '../components/contexts/UserContext';
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
-import { interactionsApi, adminApi, postsApi, podcastsApi, articlesApi, communitiesApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages, DEFAULT_ENTERPRISE_COMMUNITIES } from '../utils/apiService';
+import { interactionsApi, adminApi, postsApi, podcastsApi, articlesApi, communitiesApi, mediaApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages, DEFAULT_ENTERPRISE_COMMUNITIES } from '../utils/apiService';
 import { apiClient } from '../utils/apiClient';
 import * as XLSX from 'xlsx';
 
@@ -650,7 +650,17 @@ export default function AdminConsole() {
         }
     });
 
-    const refreshPendingMedia = () => {
+    const refreshPendingMedia = async () => {
+        try {
+            const res = await mediaApi.getPendingApprovals();
+            if (Array.isArray(res)) {
+                setPendingMediaApprovals(res);
+                localStorage.setItem('knome_pending_media_approvals', JSON.stringify(res));
+                return;
+            }
+        } catch (e) {
+            console.warn("Backend media pending fetch fallback:", e);
+        }
         try {
             const stored = JSON.parse(localStorage.getItem('knome_pending_media_approvals') || '[]');
             setPendingMediaApprovals(stored.length > 0 ? stored : DEFAULT_SEED_PENDING_MEDIA);
@@ -662,8 +672,20 @@ export default function AdminConsole() {
     useEffect(() => {
         refreshPendingMedia();
         const handleStorage = () => refreshPendingMedia();
+        const handlePendingUpdate = () => refreshPendingMedia();
         window.addEventListener('storage', handleStorage);
-        return () => window.removeEventListener('storage', handleStorage);
+        window.addEventListener('pending-media-updated', handlePendingUpdate);
+        window.addEventListener('focus', handlePendingUpdate);
+
+        // Auto-poll every 3 seconds so submissions from other windows/browsers appear in real-time
+        const interval = setInterval(refreshPendingMedia, 3000);
+
+        return () => {
+            window.removeEventListener('storage', handleStorage);
+            window.removeEventListener('pending-media-updated', handlePendingUpdate);
+            window.removeEventListener('focus', handlePendingUpdate);
+            clearInterval(interval);
+        };
     }, []);
 
     // ── COMMUNITY APPROVALS STATE & HANDLERS ──
@@ -920,6 +942,12 @@ export default function AdminConsole() {
             }
 
 
+            try {
+                await mediaApi.removePendingApproval(mediaItem.id);
+            } catch (errRem) {
+                console.warn("Failed removing media from backend queue:", errRem);
+            }
+
             const updated = pendingMediaApprovals.filter(m => m.id !== mediaItem.id);
             setPendingMediaApprovals(updated);
             localStorage.setItem('knome_pending_media_approvals', JSON.stringify(updated));
@@ -974,7 +1002,13 @@ export default function AdminConsole() {
         }
     };
 
-    const handleRejectMedia = (mediaItem) => {
+    const handleRejectMedia = async (mediaItem) => {
+        try {
+            await mediaApi.removePendingApproval(mediaItem.id);
+        } catch (errRem) {
+            console.warn("Failed removing rejected media from backend queue:", errRem);
+        }
+
         const updated = pendingMediaApprovals.filter(m => m.id !== mediaItem.id);
         setPendingMediaApprovals(updated);
         localStorage.setItem('knome_pending_media_approvals', JSON.stringify(updated));
@@ -1000,14 +1034,27 @@ export default function AdminConsole() {
         showToast(`Rejected ${mediaItem.mediaType} "${mediaItem.title}"`);
     };
 
-    const handleBatchApproveMedia = () => {
+    const handleBatchApproveMedia = async () => {
         if (pendingMediaApprovals.length === 0) {
             showToast('No pending media submissions to approve.');
             return;
         }
         const count = pendingMediaApprovals.length;
+        const currentList = [...pendingMediaApprovals];
         setPendingMediaApprovals([]);
         localStorage.setItem('knome_pending_media_approvals', JSON.stringify([]));
+
+        for (const m of currentList) {
+            try {
+                if (m.mediaType === 'Video' && m.dto) {
+                    const postDto = { ...m.dto, uploaderUserId: m.authorId || m.dto?.uploaderUserId };
+                    await apiClient.post('/videos', postDto).catch(() => {});
+                }
+                await mediaApi.removePendingApproval(m.id).catch(() => {});
+            } catch (e) {}
+        }
+        window.dispatchEvent(new CustomEvent('video-published'));
+
         showToast(`Successfully batch-approved all ${count} pending media submission${count === 1 ? '' : 's'}.`);
         setAuditTrail(prev => [
             {
@@ -1026,7 +1073,7 @@ export default function AdminConsole() {
     const handleRefreshAll = async () => {
         setIsRefreshing(true);
         setLastUpdatedTime(new Date().toLocaleTimeString());
-        await Promise.all([fetchReports(), fetchUsers(), fetchAuditLogs(), fetchRoleRequests(), fetchCommunities()]);
+        await Promise.all([fetchReports(), fetchUsers(), fetchAuditLogs(), fetchRoleRequests(), fetchCommunities(), refreshPendingMedia()]);
         setTimeout(() => setIsRefreshing(false), 500);
         showToast('Console data refreshed successfully.');
     };

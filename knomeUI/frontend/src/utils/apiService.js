@@ -716,8 +716,18 @@ export const mediaApi = {
             xhr.onerror = () => reject(new Error('Network error during upload'));
             xhr.send(formData);
         });
-    }
+    },
+
+    /** GET /api/media/pending */
+    getPendingApprovals: () => apiClient.get('/media/pending'),
+
+    /** POST /api/media/pending */
+    addPendingApproval: (item) => apiClient.post('/media/pending', item),
+
+    /** DELETE /api/media/pending/{id} */
+    removePendingApproval: (id) => apiClient.delete(`/media/pending/${encodeURIComponent(id)}`),
 };
+
 
 
 

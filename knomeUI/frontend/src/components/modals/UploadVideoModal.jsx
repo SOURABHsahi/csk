@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { apiClient } from '../../utils/apiClient';
+import { mediaApi } from '../../utils/apiService';
 import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
 import { checkRestrictedContent } from '../../utils/restrictedWords';
@@ -381,8 +382,15 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                     dto: dto
                 };
 
+                try {
+                    await mediaApi.addPendingApproval(pendingItem);
+                } catch (apiErr) {
+                    console.warn("Backend media pending submission fallback:", apiErr);
+                }
+
                 const existingPending = JSON.parse(localStorage.getItem('knome_pending_media_approvals') || '[]');
                 localStorage.setItem('knome_pending_media_approvals', JSON.stringify([pendingItem, ...existingPending]));
+                window.dispatchEvent(new CustomEvent('pending-media-updated', { detail: pendingItem }));
 
                 const adminNotif = {
                     id: `notif_approval_${Date.now()}`,
