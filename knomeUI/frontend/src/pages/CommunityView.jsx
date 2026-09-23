@@ -1005,6 +1005,9 @@ export default function CommunityView() {
                 // Resolve Persistent Members for this Community (FR-CM-06)
                 const savedMembersKey = `knome_community_members_${commData.communityId}`;
                 const localMembersApi = JSON.parse(localStorage.getItem(savedMembersKey) || '[]');
+                const removedMembersList = JSON.parse(localStorage.getItem(`knome_community_removed_${commData.communityId}`) || '[]');
+                const removedSet = new Set(removedMembersList.map(x => String(x).toLowerCase()));
+
                 const defaultCreator = {
                     userId: commData.creatorUserId || 1,
                     fullName: commData.createdBy || 'Community Creator',
@@ -1017,6 +1020,11 @@ export default function CommunityView() {
                 const rawList = (Array.isArray(rawMembers) && rawMembers.length > 0 
                     ? rawMembers 
                     : (localMembersApi.length > 0 ? localMembersApi : [defaultCreator]))
+                    .filter(m => {
+                        const uid = String(m?.userId || m?.id || '').toLowerCase();
+                        const empId = String(m?.employeeId || m?.empId || '').toLowerCase();
+                        return !(removedSet.has(uid) || (empId && removedSet.has(empId)));
+                    })
                     .map(m => (m.memberType === 'Moderator' ? { ...m, memberType: 'Admin' } : m));
                 let resolvedMembers = deduplicateMembers(rawList, contextUsers);
                 localStorage.setItem(savedMembersKey, JSON.stringify(resolvedMembers));
@@ -1026,7 +1034,7 @@ export default function CommunityView() {
                     name: commData.name,
                     type: commData.communityType || 'Public',
                     category: commData.categoryName || 'Technology',
-                    membersCount: Math.max(commData.membersCount || 1, resolvedMembers.length),
+                    membersCount: resolvedMembers.length > 0 ? resolvedMembers.length : (commData.membersCount || 1),
                     adminContact: commData.createdByUserName || 'Admin',
                     banner: localMatch?.banner || localMatch?.bannerUrl || resolveMediaUrl(commData.bannerUrl || commData.bannerImageUrl) || imgs.banner,
                     thumbnail: localMatch?.thumbnail || localMatch?.avatar || localMatch?.thumbnailUrl || resolveMediaUrl(commData.thumbnailUrl) || imgs.thumbnail,
@@ -2010,10 +2018,24 @@ export default function CommunityView() {
         const member = removeModalMember;
         const memberId = member.userId || member.id;
         const memberName = member.fullName || member.name || 'Member';
-        const isTargetAdmin = member.memberType === 'Admin' || member.memberType === 'Moderator' || member.memberType === 'Community Administrator';
+        const isTargetAdmin = member.memberType === 'Admin' || member.memberType === 'Moderator' || member.memberType === 'Community Administrator' || member.memberType === 'Community Admin';
         const targetId = communityId || community?.id || 101;
 
-        if (isTargetAdmin) {
+        // 1. Call Backend API to remove member from SQL database
+        const numId = Number(targetId);
+        const numMemberId = Number(memberId);
+        if (!isNaN(numId) && numId > 0 && numId < 1000000000 && !isNaN(numMemberId) && numMemberId > 0) {
+            try {
+                await communitiesApi.removeMember(numId, numMemberId);
+            } catch (apiErr) {
+                console.warn('Backend remove member API warning:', apiErr);
+                if (isTargetAdmin) {
+                    try {
+                        await communitiesApi.removeAdmin(numId, numMemberId).catch(() => null);
+                    } catch (e) {}
+                }
+            }
+        } else if (isTargetAdmin) {
             try {
                 await communitiesApi.removeAdmin(targetId, memberId).catch(() => null);
             } catch (err) {
@@ -2021,6 +2043,17 @@ export default function CommunityView() {
             }
         }
 
+        // 2. Track tombstone in localStorage so refresh never restores removed member
+        const removedKey = `knome_community_removed_${targetId}`;
+        const currentRemoved = JSON.parse(localStorage.getItem(removedKey) || '[]');
+        const updatedRemoved = Array.from(new Set([
+            ...currentRemoved,
+            String(memberId),
+            ...(member.employeeId ? [String(member.employeeId).toUpperCase()] : [])
+        ]));
+        localStorage.setItem(removedKey, JSON.stringify(updatedRemoved));
+
+        // 3. Remove from community members local state & cache
         setMembersList(prev => {
             const updated = prev.filter(m => String(m.userId || m.id) !== String(memberId));
             localStorage.setItem(`knome_community_members_${targetId}`, JSON.stringify(updated));
@@ -2029,6 +2062,8 @@ export default function CommunityView() {
             window.dispatchEvent(new CustomEvent('community-joined-change'));
             return updated;
         });
+
+        // 4. Update community object members count
         setCommunity(prev => ({ ...prev, membersCount: Math.max(1, (prev.membersCount || 1) - 1) }));
         showToast(`${memberName} has been removed from this community.`, 'info');
         setRemoveModalMember(null);

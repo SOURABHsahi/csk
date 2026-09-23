@@ -123,6 +123,14 @@ public class CommunityController : KnomeControllerBase
         return Ok(ApiResponse<CommunityMemberDto>.SuccessResponse(200, $"Membership status updated to {dto.Status}.", member));
     }
 
+    [HttpDelete("{communityId}/members/{targetUserId}")]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RemoveMember(int communityId, int targetUserId)
+    {
+        await _communityService.RemoveMemberAsync(communityId, targetUserId, GetCurrentUserId());
+        return Ok(ApiResponse.SuccessResponse(200, "Member removed successfully from community."));
+    }
+
     [HttpPost("{communityId}/admins/{targetUserId}")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> AddAdmin(int communityId, int targetUserId)

@@ -425,6 +425,48 @@ public class CommunityService : ICommunityService
         return _mapper.Map<CommunityMemberDto>(member);
     }
 
+    public async Task RemoveMemberAsync(int communityId, int targetUserId, int currentUserId)
+    {
+        await CheckIsAdminOrSysAdminAsync(communityId, currentUserId);
+
+        var community = await _repo.GetCommunityByIdAsync(communityId);
+        if (community == null)
+            throw new NotFoundException($"Community ID {communityId} not found.");
+
+        if (community.CommunityType == CommunityTypes.Default || community.CommunityType == CommunityTypes.Org)
+            throw new BadRequestException("Members cannot be removed from an Org/Default system community (FR-CM-04).");
+
+        var isTargetAdmin = await _repo.IsCommunityAdminAsync(communityId, targetUserId);
+        if (isTargetAdmin)
+        {
+            var adminsCount = await _repo.GetCommunityAdminsCountAsync(communityId);
+            if (adminsCount <= 1)
+                throw new BadRequestException("Cannot remove the sole remaining Community Admin. Assign another admin first.");
+
+            await _repo.RemoveCommunityAdminAsync(communityId, targetUserId);
+        }
+
+        var member = await _repo.GetMemberAsync(communityId, targetUserId);
+        if (member != null)
+        {
+            await _repo.RemoveMemberAsync(member);
+        }
+
+        try
+        {
+            await _notificationService.PublishAsync(
+                targetUserId,
+                NotificationTypes.CommunityJoin,
+                $"You have been removed from {community.Name}.",
+                relatedContentType: NotificationContentTypes.Community,
+                relatedContentId: communityId);
+        }
+        catch
+        {
+            // Non-critical notification delivery failure
+        }
+    }
+
     // --- Admin Delegation ---
     public async Task AddAdminAsync(int communityId, int targetUserId, int currentUserId)
     {

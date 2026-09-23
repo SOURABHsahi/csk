@@ -298,6 +298,7 @@ export const communitiesApi = {
     togglePinPost: (communityId, postId, isPinned) => apiClient.put(`/Communities/${communityId}/posts/${postId}/pin`, { isPinned }),
     addAdmin: (communityId, targetUserId) => apiClient.post(`/Communities/${communityId}/admins/${targetUserId}`),
     removeAdmin: (communityId, targetUserId) => apiClient.delete(`/Communities/${communityId}/admins/${targetUserId}`),
+    removeMember: (communityId, targetUserId) => apiClient.delete(`/Communities/${communityId}/members/${targetUserId}`),
     decideMembership: (communityId, targetUserId, status) => apiClient.put(`/Communities/${communityId}/members/${targetUserId}/decide`, { status }),
 };
 

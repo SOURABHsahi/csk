@@ -172,6 +172,8 @@ public class CommunityRepository : ICommunityRepository
 
         if (!string.IsNullOrWhiteSpace(status))
             query = query.Where(m => m.Status == status);
+        else
+            query = query.Where(m => m.Status == CommunityMemberStatuses.Approved || m.Status == "Active");
 
         return await query
             .OrderByDescending(m => m.RequestedDate)

@@ -12,7 +12,7 @@ public class CommunityProfile : Profile
         CreateMap<Community, CommunityDto>()
             .ForMember(dest => dest.CategoryName, opt => opt.MapFrom(src => src.Category != null ? src.Category.Name : null))
             .ForMember(dest => dest.CreatedByUserName, opt => opt.MapFrom(src => src.CreatedByUser != null ? src.CreatedByUser.FullName : "Unknown"))
-            .ForMember(dest => dest.MembersCount, opt => opt.MapFrom(src => src.CommunityMembers != null ? src.CommunityMembers.Count(m => m.Status == "Approved") : 0))
+            .ForMember(dest => dest.MembersCount, opt => opt.MapFrom(src => src.CommunityMembers != null ? src.CommunityMembers.Count(m => m.Status == "Approved" || m.Status == "Active") : 0))
             .ForMember(dest => dest.PostsCount, opt => opt.MapFrom(src => src.CommunityPosts != null ? src.CommunityPosts.Count : 0))
             .ForMember(dest => dest.CurrentUserMembershipStatus, opt => opt.Ignore()) // Populated dynamically per request context
             .ForMember(dest => dest.IsCurrentUserAdmin, opt => opt.Ignore()); // Populated dynamically per request context
