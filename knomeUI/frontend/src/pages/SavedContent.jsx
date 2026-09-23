@@ -90,6 +90,7 @@ export default function SavedContent() {
         { id: 'Articles', label: 'Articles', countKey: 'articlesCount' },
         { id: 'Videos', label: 'Videos', countKey: 'videosCount' },
         { id: 'Podcasts', label: 'Audio', countKey: 'podcastsCount' },
+        { id: 'Documents', label: 'Documents', countKey: 'documentsCount' },
     ];
 
     // Load counts
@@ -155,7 +156,8 @@ export default function SavedContent() {
                     if (tab === 'posts') return type === 'post';
                     if (tab === 'articles') return type === 'article';
                     if (tab === 'videos') return type === 'video';
-                    if (tab === 'podcasts') return type === 'podcast';
+                    if (tab === 'podcasts' || tab === 'audio') return type === 'podcast' || type === 'audio';
+                    if (tab === 'documents') return type === 'document';
                     return true;
                 })
                 .map(s => ({
@@ -392,7 +394,7 @@ export default function SavedContent() {
             {/* Filter Tabs & Search / Sort Controls */}
             <div className="glass rounded-2xl border border-slate-200 dark:border-slate-800 p-3 bg-white dark:bg-slate-900 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
                 {/* Content Type Tabs */}
-                <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar whitespace-nowrap">
+                <div className="flex flex-wrap items-center gap-2">
                     {tabs.map((tab) => {
                         const count = counts[tab.countKey] || 0;
                         const isActive = activeTab === tab.id;
