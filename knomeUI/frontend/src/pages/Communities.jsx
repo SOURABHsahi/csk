@@ -93,8 +93,17 @@ export default function Communities() {
             const deletedIds = new Set(JSON.parse(localStorage.getItem('knome_deleted_community_ids') || '[]').map(String));
 
             if (data && Array.isArray(data) && data.length > 0) {
+                // Remove any active database community IDs from stale local deletion tombstone
+                const activeDbIds = new Set(data.filter(c => c.isActive === undefined || c.isActive === true || c.isActive === 1).map(c => String(c.communityId)));
+                const remainingDeleted = Array.from(deletedIds).filter(id => !activeDbIds.has(id));
+                if (remainingDeleted.length !== deletedIds.size) {
+                    localStorage.setItem('knome_deleted_community_ids', JSON.stringify(remainingDeleted));
+                    deletedIds.clear();
+                    remainingDeleted.forEach(id => deletedIds.add(id));
+                }
+
                 const apiMapped = data
-                    .filter(c => !deletedIds.has(String(c.communityId)) && (c.isActive === undefined || c.isActive === true || c.isActive === 1))
+                    .filter(c => c.isActive === undefined || c.isActive === true || c.isActive === 1)
                     .map(c => {
                         const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${c.communityId}`) || '[]');
                         const count = localMembers.length > 0 ? deduplicateMembers(localMembers).length : (c.membersCount || 1);
@@ -569,8 +578,12 @@ export default function Communities() {
         if (filterCategory !== 'All' && c.category && c.category !== filterCategory) return false;
         // Search filter
         if (searchQuery.trim()) {
-            const q = searchQuery.toLowerCase();
-            if (!c.name?.toLowerCase().includes(q) && !c.description?.toLowerCase().includes(q)) return false;
+            const q = searchQuery.toLowerCase().trim();
+            const nameMatch = c.name?.toLowerCase().includes(q);
+            const descMatch = c.description?.toLowerCase().includes(q);
+            const catMatch = c.category?.toLowerCase().includes(q);
+            const typeMatch = c.type?.toLowerCase().includes(q);
+            if (!nameMatch && !descMatch && !catMatch && !typeMatch) return false;
         }
         return true;
     });

@@ -270,7 +270,7 @@ export const podcastsApi = {
 //  COMMUNITIES
 // ─────────────────────────────────────────────
 export const communitiesApi = {
-    getAll: () => apiClient.get('/Communities'),
+    getAll: (pageSize = 500) => apiClient.get(`/Communities?pageSize=${pageSize}`),
     getMyCommunities: () => apiClient.get('/Communities/my'),
     getByUserId: (userId) => apiClient.get(`/Communities/user/${userId}`),
     getById: (id) => apiClient.get(`/Communities/${id}`),

@@ -37,8 +37,9 @@ public class CommunityController : KnomeControllerBase
 
     [HttpGet]
     [ProducesResponseType(typeof(ApiResponse<List<CommunityDto>>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetCommunities([FromQuery] int? categoryId, [FromQuery] string? type, [FromQuery] string? search, [FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 20)
+    public async Task<IActionResult> GetCommunities([FromQuery] int? categoryId, [FromQuery] string? type, [FromQuery] string? search, [FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 500)
     {
+        if (pageSize <= 0) pageSize = 500;
         var dtos = await _communityService.GetCommunitiesAsync(categoryId, type, search, pageNumber, pageSize, GetCurrentUserId());
         return Ok(ApiResponse<List<CommunityDto>>.SuccessResponse(200, "Communities retrieved successfully.", dtos));
     }

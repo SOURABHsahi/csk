@@ -1084,6 +1084,16 @@ export default function AdminConsole() {
             const deletedIds = new Set(JSON.parse(localStorage.getItem('knome_deleted_community_ids') || '[]').map(String));
             const res = await communitiesApi.getAll().catch(() => null);
             const apiData = res?.data || (Array.isArray(res) ? res : (res?.items || []));
+
+            if (Array.isArray(apiData)) {
+                const activeDbIds = new Set(apiData.filter(c => c.isActive === undefined || c.isActive === true || c.isActive === 1).map(c => String(c.communityId || c.id)));
+                const remainingDeleted = Array.from(deletedIds).filter(id => !activeDbIds.has(id));
+                if (remainingDeleted.length !== deletedIds.size) {
+                    localStorage.setItem('knome_deleted_community_ids', JSON.stringify(remainingDeleted));
+                    deletedIds.clear();
+                    remainingDeleted.forEach(id => deletedIds.add(id));
+                }
+            }
             
             setCommunityChannels(() => {
                 const existingMap = new Map();
@@ -1093,7 +1103,7 @@ export default function AdminConsole() {
                     apiData.forEach(item => {
                         const cId = String(item.communityId || item.id);
                         const isActive = item.isActive === undefined || item.isActive === true || item.isActive === 1;
-                        if (!deletedIds.has(cId) && isActive) {
+                        if (isActive) {
                             const commType = (item.communityType || item.type || '').toLowerCase();
                             const isOrg = item.isDefaultOrgCommunity || commType.includes('org') || commType.includes('default');
                             const isPriv = item.isPrivate || commType.includes('private');
