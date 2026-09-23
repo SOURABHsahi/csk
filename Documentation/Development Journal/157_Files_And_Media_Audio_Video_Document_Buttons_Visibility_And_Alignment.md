@@ -22,17 +22,11 @@ The user reported:
 ## 2. Solution & Architectural Changes
 
 ### A. Community Files Filter Bar Layout & Alignment (`CommunityView.jsx`)
-- Replaced the single-row overflow clipping with a responsive two-tiered layout:
-  `className="glass bg-white dark:bg-slate-900 p-4 md:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4"`
-- Updated the filter category buttons container to `className="flex flex-wrap items-center gap-2"`.
-- Explicitly rendered buttons for:
-  - 📁 **All Files** (with live count badge)
-  - 📄 **Documents** (with live count badge)
-  - 🎵 **Audio** (with live count badge)
-  - 🎬 **Videos** (with live count badge)
-  - 🖼️ **Images** (with live count badge)
-- Added dynamic, reactive category counting via `useMemo(() => { ... }, [filesList])` so count pills accurately update as files are filtered and uploaded.
-- Set `shrink-0` on every button with rounded-xl pills and active indigo/slate states, completely eliminating clipping and horizontal scrollbars.
+- Reorganized the filter toolbar into a clean two-tiered card layout:
+  - **Tier 1 (Category Navigation Strip)**: A dedicated horizontal pill strip (`flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 whitespace-nowrap`). All 5 buttons (`All Files`, `Documents`, `Audio`, `Videos`, `Images`) now sit side-by-side on a single, continuous horizontal row with zero risk of wrapping into an awkward vertical column.
+  - **Tier 2 (Search & Upload Actions)**: A full-width search bar with focus ring and clear button, paired with the prominent `Upload File` CTA button, separated by a clean top border.
+- **Conditional Count Badges**: Only renders the count badge when `count > 0` (`{cat.count > 0 && ...}`), eliminating repetitive, cluttered `0` badges when a community has no files yet.
+- **Interactive Empty State**: Upgraded the zero-file empty state with the active category's Material Symbols icon, helpful status messaging, and a "Clear Search Filter" button when a query is active.
 
 ### B. First-Class Audio Support in Community Files
 - **Detection**: Enhanced `detectFileTypeAndCategory` to recognize Audio (`mp3`, `wav`, `aac`, `flac`, `ogg`, `m4a`, `wma`) distinct from Video.

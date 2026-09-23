@@ -4345,48 +4345,59 @@ export default function CommunityView() {
                     {activeTab === 'files' && (
                         <div className="space-y-6">
                             {/* Filter Bar & Upload Action */}
-                            <div className="glass bg-white dark:bg-slate-900 p-4 md:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                                <div className="flex flex-wrap items-center gap-2">
+                            <div className="glass bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col gap-4">
+                                {/* Row 1: Category Filter Navigation (Never stacks vertically) */}
+                                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5 whitespace-nowrap">
                                     {[
                                         { id: 'All', label: 'All Files', icon: 'folder', count: fileCategoryCounts.All },
                                         { id: 'Document', label: 'Documents', icon: 'description', count: fileCategoryCounts.Document },
                                         { id: 'Audio', label: 'Audio', icon: 'audiotrack', count: fileCategoryCounts.Audio },
                                         { id: 'Video', label: 'Videos', icon: 'videocam', count: fileCategoryCounts.Video },
                                         { id: 'Image', label: 'Images', icon: 'image', count: fileCategoryCounts.Image }
-                                    ].map(cat => (
-                                        <button
-                                            key={cat.id}
-                                            type="button"
-                                            onClick={() => setFileCategoryFilter(cat.id)}
-                                            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                                                fileCategoryFilter === cat.id
-                                                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-500/20'
-                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white'
-                                            }`}
-                                        >
-                                            <span className="material-symbols-outlined text-[16px]">{cat.icon}</span>
-                                            <span>{cat.label}</span>
-                                            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                                                fileCategoryFilter === cat.id ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
-                                            }`}>
-                                                {cat.count}
-                                            </span>
-                                        </button>
-                                    ))}
+                                    ].map(cat => {
+                                        const isActive = fileCategoryFilter === cat.id;
+                                        return (
+                                            <button
+                                                key={cat.id}
+                                                type="button"
+                                                onClick={() => setFileCategoryFilter(cat.id)}
+                                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 shrink-0 ${
+                                                    isActive
+                                                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 ring-2 ring-indigo-500/20'
+                                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white'
+                                                }`}
+                                            >
+                                                <span className="material-symbols-outlined text-[17px]">{cat.icon}</span>
+                                                <span>{cat.label}</span>
+                                                {cat.count > 0 && (
+                                                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                                                        isActive ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
+                                                    }`}>
+                                                        {cat.count}
+                                                    </span>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
                                 </div>
 
-                                <div className="flex items-center gap-3 shrink-0">
-                                    <div className="relative flex-1 sm:w-64">
-                                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
+                                {/* Row 2: Search Input & Upload Action */}
+                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                                    <div className="relative flex-1">
+                                        <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
                                         <input
                                             type="text"
                                             value={fileSearchQuery}
                                             onChange={(e) => setFileSearchQuery(e.target.value)}
-                                            placeholder="Search files..."
-                                            className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                                            placeholder="Search files by title, author, or extension..."
+                                            className="w-full pl-10 pr-9 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500"
                                         />
                                         {fileSearchQuery && (
-                                            <button onClick={() => setFileSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                                            <button 
+                                                onClick={() => setFileSearchQuery('')} 
+                                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
+                                                title="Clear search"
+                                            >
                                                 <span className="material-symbols-outlined text-[16px]">close</span>
                                             </button>
                                         )}
@@ -4396,7 +4407,7 @@ export default function CommunityView() {
                                         <button
                                             type="button"
                                             onClick={() => setIsUploadModalOpen(true)}
-                                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-indigo-600/20 flex items-center gap-1.5 shrink-0 cursor-pointer"
+                                            className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1.5 shrink-0 cursor-pointer active:scale-98"
                                         >
                                             <span className="material-symbols-outlined text-[18px]">upload_file</span>
                                             <span>Upload File</span>
@@ -4415,10 +4426,36 @@ export default function CommunityView() {
                                     <p className="text-xs text-slate-400 max-w-sm mx-auto">Shared files, documents, and media for this private community are accessible only to approved members.</p>
                                 </div>
                             ) : filteredFiles.length === 0 ? (
-                                <div className="p-12 text-center glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm flex flex-col items-center gap-2">
-                                    <span className="material-symbols-outlined text-[36px] text-slate-400">folder_off</span>
-                                    <p className="font-bold">No files found matching filter.</p>
-                                    <p className="text-xs text-slate-400">Click "Upload File" above to share documents, images, or media with this community.</p>
+                                <div className="p-12 text-center glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm flex flex-col items-center justify-center gap-3">
+                                    <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 flex items-center justify-center mx-auto shadow-inner">
+                                        <span className="material-symbols-outlined text-[32px]">
+                                            {fileCategoryFilter === 'Document' ? 'description' :
+                                             fileCategoryFilter === 'Audio' ? 'audiotrack' :
+                                             fileCategoryFilter === 'Video' ? 'videocam' :
+                                             fileCategoryFilter === 'Image' ? 'image' : 'folder_off'}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-slate-800 dark:text-slate-200 text-sm">
+                                            No {fileCategoryFilter === 'All' ? 'files' : fileCategoryFilter.toLowerCase() + ' files'} found
+                                        </p>
+                                        <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">
+                                            {fileSearchQuery 
+                                                ? `No files matching "${fileSearchQuery}". Try clearing your search.` 
+                                                : membershipStatus === 'joined'
+                                                    ? `Click "Upload File" above to share documents, audio, videos, or images with this community.`
+                                                    : `No ${fileCategoryFilter === 'All' ? 'files' : fileCategoryFilter.toLowerCase() + 's'} uploaded to this community yet.`}
+                                        </p>
+                                    </div>
+                                    {fileSearchQuery && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setFileSearchQuery('')}
+                                            className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 transition-colors"
+                                        >
+                                            Clear Search Filter
+                                        </button>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
