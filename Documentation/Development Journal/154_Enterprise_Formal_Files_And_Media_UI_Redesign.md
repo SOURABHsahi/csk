@@ -4,27 +4,24 @@
 - **Context & Problem**: The "Files & Media" tab inside the community view (`http://localhost:5173/community/view`) previously used casual emoji pills (`📁 All Files`, `📄 Documents`, `🖼️ Images`, `📦 Archives`, etc.), lacked executive repository statistics, offered only a basic card view with minimal metadata, and had an upload modal lacking modern drag-and-drop feedback, file size limits, or enterprise information classification notes.
 - **Goal**: Elevate the UI/UX to a formal, corporate, enterprise-grade standard fitting MPOnline Limited governmental and corporate requirements.
 - **Solution Delivered**:
-  1. **Executive Metrics Summary Bar**: Added a 4-metric executive header card row:
-     - **Total Assets**: Count of published files in community.
-     - **Storage Volume**: Consolidated storage consumed (calculated dynamically in KB/MB).
-     - **Official Docs**: Count of PDF, Word, Excel, and Text institutional files.
-     - **Rich Media & Code**: Consolidated count of imagery, digital videos, archives, and scripts.
-  2. **Enterprise Control Toolbar**:
+  1. **Full-Width Expansive Layout (Sidebar Removed)**: Removed the right sidebar (`w-full lg:w-80`) and expanded the main content container to 100% full width (`max-w-7xl mx-auto`). This eliminated cramped layouts, horizontal scrollbar artifacts, and gave the document directory table and cards full breathing room.
+  2. **Clean Minimalist Presentation (Metric Cards Removed)**: Removed the 4 metric summary cards (`Total Assets`, `Storage Volume`, etc.) per user feedback, allowing the document management tools, search, and table to sit directly at the top of the tab without visual clutter.
+  3. **Enterprise Control Toolbar**:
      - Category filter pills with crisp Material Symbols (`inventory_2`, `description`, `image`, `movie`, `folder_zip`, `code`) and live counter badges.
      - Real-time search with clear button supporting file name, extension, and uploader query matching.
      - Sort dropdown selector (`Newest First`, `Oldest First`, `Name A-Z`, `Size Largest`).
      - Dual-view switcher allowing users to toggle between **Directory Table View** and **Card Grid View**.
      - Primary `+ Upload Document` button.
-  3. **Enterprise Directory Table View**:
+  4. **Enterprise Directory Table View**:
      - Formally styled institutional document grid with sortable columns: Document Name with format icon, Category badge, File Size, Uploader with avatar initials, Date Added, and Fast Action icons (Quick Play for video, Document Preview, Direct Download, Delete if owner/admin).
-  4. **Card Grid View**:
+  5. **Card Grid View**:
      - Clean, elevated cards with format-specific color badges (PDF crimson, Word blue, Excel emerald, PowerPoint amber, Code cyan, Images purple, Video indigo, Archive yellow), clean metadata chips, uploader identification, and action controls.
-  5. **Enterprise Document Upload Modal**:
+  6. **Enterprise Document Upload Modal**:
      - Modern interactive drag-and-drop dropzone with format indicators (`PDF`, `DOCX`, `XLSX`, `PPTX`, `PNG/JPG`, `MP4`, `ZIP`, `CODE`) and 50 MB threshold note.
      - Selected file preview chip with format badge, size, and one-click file replacement.
      - Clean Title/Description and Classification dropdown.
      - Formal governance callout: *"Uploaded documents are indexed and made available to authorized members of this community in compliance with MPOnline Limited enterprise information governance standards."*
-  6. **Zero Regression / Full State Retention**:
+  7. **Zero Regression / Full State Retention**:
      - Preserved all IndexedDB file storage fallbacks, in-browser document previews (PDF, Images, Video, Audio, Summary), download functionality, and scroll loading progressive pagination.
 
 ---

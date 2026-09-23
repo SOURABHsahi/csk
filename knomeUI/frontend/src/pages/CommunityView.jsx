@@ -3240,10 +3240,10 @@ export default function CommunityView() {
                     </div>
                 </div>
             ) : (
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 flex flex-col lg:flex-row gap-8">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
                 
                 {/* Main Content Area */}
-                <div className="flex-1 min-w-0">
+                <div className="w-full">
                     
                     {/* Navigation Tabs */}
                     <div className="flex border-b border-slate-200 dark:border-slate-800 mb-6 overflow-x-auto">
@@ -4211,54 +4211,7 @@ export default function CommunityView() {
                     {/* Files & Media Tab - Enterprise Document Management */}
                     {activeTab === 'files' && (
                         <div className="space-y-6">
-                            {/* 1. Executive Metrics Summary Bar */}
-                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                <div className="glass bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm flex items-center gap-3.5">
-                                    <div className="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-900/40">
-                                        <span className="material-symbols-outlined text-[26px]">inventory_2</span>
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Assets</p>
-                                        <h4 className="text-xl font-black text-slate-900 dark:text-white leading-tight">{filesList.length}</h4>
-                                        <p className="text-[11px] text-slate-400 truncate">Published to repository</p>
-                                    </div>
-                                </div>
-
-                                <div className="glass bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm flex items-center gap-3.5">
-                                    <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-100 dark:border-emerald-900/40">
-                                        <span className="material-symbols-outlined text-[26px]">database</span>
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Storage Volume</p>
-                                        <h4 className="text-xl font-black text-slate-900 dark:text-white leading-tight">{totalStorageDisplay}</h4>
-                                        <p className="text-[11px] text-slate-400 truncate">Consolidated file size</p>
-                                    </div>
-                                </div>
-
-                                <div className="glass bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm flex items-center gap-3.5">
-                                    <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-100 dark:border-blue-900/40">
-                                        <span className="material-symbols-outlined text-[26px]">description</span>
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Official Docs</p>
-                                        <h4 className="text-xl font-black text-slate-900 dark:text-white leading-tight">{fileCategoryCounts.Document || 0}</h4>
-                                        <p className="text-[11px] text-slate-400 truncate">PDF, Word, Sheets</p>
-                                    </div>
-                                </div>
-
-                                <div className="glass bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm flex items-center gap-3.5">
-                                    <div className="w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 border border-purple-100 dark:border-purple-900/40">
-                                        <span className="material-symbols-outlined text-[26px]">perm_media</span>
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Rich Media & Code</p>
-                                        <h4 className="text-xl font-black text-slate-900 dark:text-white leading-tight">{(fileCategoryCounts.Image || 0) + (fileCategoryCounts.Video || 0) + (fileCategoryCounts.Code || 0)}</h4>
-                                        <p className="text-[11px] text-slate-400 truncate">Visuals, clips & source</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* 2. Enterprise Toolbar & Filter System */}
+                            {/* Enterprise Toolbar & Filter System */}
                             <div className="glass bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm space-y-4">
                                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                                     {/* Category Filter Pills with Badges */}
@@ -4909,132 +4862,6 @@ export default function CommunityView() {
                         </div>
                     )}
                 </div>
-
-                {/* Right Sidebar (FR-CM-08: Full stats) */}
-                <div className="w-full lg:w-80 shrink-0 space-y-6">
-                    {/* About */}
-                    <div className="glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5">
-                        <h3 className="font-bold text-slate-900 dark:text-white mb-4 text-[15px]">About Community</h3>
-                        
-                        <div className="space-y-3.5">
-                            {/* Members count — clickable to tab */}
-                            <div 
-                                onClick={() => setActiveTab('members')}
-                                className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300 cursor-pointer hover:text-indigo-500 transition-colors group"
-                            >
-                                <span className="material-symbols-outlined text-[20px] text-indigo-500 group-hover:scale-110 transition-transform">group</span>
-                                <div className="flex items-center gap-1.5">
-                                    <span className="font-black text-slate-900 dark:text-white">{membersList.length || community.membersCount}</span>
-                                    <span className="text-slate-500">Members</span>
-                                </div>
-                            </div>
-
-                            {/* Subscriber count */}
-                            <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-                                <span className="material-symbols-outlined text-[20px] text-blue-500">visibility</span>
-                                <div className="flex items-center gap-1.5">
-                                    <span className="font-black text-slate-900 dark:text-white">{subscribersList.length}</span>
-                                    <span className="text-slate-500">Subscribers (View-Only)</span>
-                                </div>
-                            </div>
-
-                            {/* Online indicator */}
-                            <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-                                <span className="relative flex items-center justify-center w-5 h-5">
-                                    <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-emerald-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                                </span>
-                                <div className="flex items-center gap-1.5">
-                                    <span className="font-black text-emerald-600">{Math.max(1, Math.min(membersList.length, Math.floor(membersList.length * 0.4) || 1))}</span>
-                                    <span className="text-slate-500">Online now</span>
-                                </div>
-                            </div>
-
-                            {/* Category */}
-                            <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-                                <span className="material-symbols-outlined text-[20px] text-indigo-500">category</span>
-                                <span className="font-medium">{community.category}</span>
-                            </div>
-
-                            {/* Type */}
-                            <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-                                <span className="material-symbols-outlined text-[20px] text-indigo-500">public</span>
-                                <span className="font-medium">{community.type}</span>
-                                {community.type === 'Private' && <span className="text-[10px] font-black text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">Approval Required</span>}
-                            </div>
-
-                            {/* Created date */}
-                            {community.createdDate && (
-                                <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-                                    <span className="material-symbols-outlined text-[20px] text-indigo-500">calendar_today</span>
-                                    <span className="text-slate-500">Created {new Date(community.createdDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                                </div>
-                            )}
-
-                            {/* Admin */}
-                            <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-                                <span className="material-symbols-outlined text-[20px] text-indigo-500">shield_person</span>
-                                <span>Admin: <span className="font-bold text-indigo-500">{communityAdminDisplay}</span></span>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Rules (FR-CM-08) */}
-                    <div className="glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-bold text-slate-900 dark:text-white text-[15px] flex items-center gap-2">
-                                <span className="material-symbols-outlined text-indigo-500">gavel</span>
-                                Community Rules
-                            </h3>
-                            {isAdmin && (
-                                <button
-                                    onClick={() => setActiveTab('admin')}
-                                    className="text-[12px] font-bold text-indigo-500 hover:text-indigo-600 flex items-center gap-1 cursor-pointer transition-colors"
-                                    title="Edit rules in Admin Tools"
-                                >
-                                    <span className="material-symbols-outlined text-[15px]">edit</span>
-                                    Edit
-                                </button>
-                            )}
-                        </div>
-                        <ul className="space-y-3">
-                            {community.rules.map((rule, idx) => (
-                                <li key={idx} className="text-[13px] text-slate-600 dark:text-slate-300 leading-relaxed">
-                                    {rule}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-
-                    {/* FAQ (FR-CM-08) */}
-                    <div className="glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-bold text-slate-900 dark:text-white text-[15px] flex items-center gap-2">
-                                <span className="material-symbols-outlined text-indigo-500">help</span>
-                                Frequently Asked Questions
-                            </h3>
-                            {isAdmin && (
-                                <button
-                                    onClick={() => setActiveTab('admin')}
-                                    className="text-[12px] font-bold text-indigo-500 hover:text-indigo-600 flex items-center gap-1 cursor-pointer transition-colors"
-                                    title="Edit FAQs in Admin Tools"
-                                >
-                                    <span className="material-symbols-outlined text-[15px]">edit</span>
-                                    Edit
-                                </button>
-                            )}
-                        </div>
-                        <div className="space-y-4">
-                            {community.faq.map((item, idx) => (
-                                <div key={idx}>
-                                    <h4 className="text-[13px] font-bold text-slate-900 dark:text-white mb-1">{item.q}</h4>
-                                    <p className="text-[12px] text-slate-500 leading-relaxed">{item.a}</p>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-
             </div>
             )}
 
