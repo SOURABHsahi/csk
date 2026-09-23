@@ -246,6 +246,8 @@ export default function CommunityView() {
     const [filesList, setFilesList] = useState([]);
     const [fileCategoryFilter, setFileCategoryFilter] = useState('All');
     const [fileSearchQuery, setFileSearchQuery] = useState('');
+    const [fileViewMode, setFileViewMode] = useState('table'); // 'table' | 'grid'
+    const [fileSortBy, setFileSortBy] = useState('newest'); // 'newest' | 'oldest' | 'name' | 'size'
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
     const [selectedUploadFile, setSelectedUploadFile] = useState(null);
     const [uploadFileName, setUploadFileName] = useState('');
@@ -830,8 +832,136 @@ export default function CommunityView() {
             return { category: 'Video', ext: ext || 'mp3' };
         }
 
-        // 3. Document (PDF, Word, Excel, PowerPoint, Text, etc.)
+        // 3. Archives
+        if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2'].includes(ext)) {
+            return { category: 'Archive', ext: ext || 'zip' };
+        }
+
+        // 4. Code & Scripts
+        if (['js', 'jsx', 'ts', 'tsx', 'cs', 'py', 'java', 'html', 'css', 'sql', 'json', 'xml', 'yaml', 'yml', 'sh', 'bat', 'ps1'].includes(ext)) {
+            return { category: 'Code', ext: ext || 'code' };
+        }
+
+        // 5. Document (PDF, Word, Excel, PowerPoint, Text, etc.)
         return { category: 'Document', ext: ext || 'pdf' };
+    };
+
+    const getFileFormatConfig = (file) => {
+        const ext = (file?.extension || (file?.name ? file.name.split('.').pop() : '') || '').toLowerCase();
+        const cat = file?.category || 'Document';
+
+        if (['pdf'].includes(ext)) {
+            return {
+                badge: 'PDF',
+                label: 'Adobe PDF Document',
+                icon: 'picture_as_pdf',
+                color: 'text-rose-600 dark:text-rose-400',
+                border: 'border-rose-200 dark:border-rose-800/60',
+                bg: 'bg-rose-50 dark:bg-rose-950/40',
+                badgeBg: 'bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+            };
+        }
+        if (['doc', 'docx'].includes(ext)) {
+            return {
+                badge: 'DOCX',
+                label: 'Microsoft Word Document',
+                icon: 'description',
+                color: 'text-blue-600 dark:text-blue-400',
+                border: 'border-blue-200 dark:border-blue-800/60',
+                bg: 'bg-blue-50 dark:bg-blue-950/40',
+                badgeBg: 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+            };
+        }
+        if (['xls', 'xlsx', 'csv'].includes(ext)) {
+            return {
+                badge: ext.toUpperCase(),
+                label: 'Excel Spreadsheet',
+                icon: 'table_chart',
+                color: 'text-emerald-600 dark:text-emerald-400',
+                border: 'border-emerald-200 dark:border-emerald-800/60',
+                bg: 'bg-emerald-50 dark:bg-emerald-950/40',
+                badgeBg: 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+            };
+        }
+        if (['ppt', 'pptx'].includes(ext)) {
+            return {
+                badge: 'PPTX',
+                label: 'PowerPoint Presentation',
+                icon: 'slideshow',
+                color: 'text-amber-600 dark:text-amber-400',
+                border: 'border-amber-200 dark:border-amber-800/60',
+                bg: 'bg-amber-50 dark:bg-amber-950/40',
+                badgeBg: 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+            };
+        }
+        if (cat === 'Image' || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) {
+            return {
+                badge: (ext || 'IMG').toUpperCase(),
+                label: 'Graphic Asset',
+                icon: 'image',
+                color: 'text-purple-600 dark:text-purple-400',
+                border: 'border-purple-200 dark:border-purple-800/60',
+                bg: 'bg-purple-50 dark:bg-purple-950/40',
+                badgeBg: 'bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+            };
+        }
+        if (cat === 'Video' || ['mp4', 'webm', 'mov', 'm4v', 'mkv', 'avi'].includes(ext)) {
+            return {
+                badge: (ext || 'MP4').toUpperCase(),
+                label: 'Digital Video',
+                icon: 'movie',
+                color: 'text-indigo-600 dark:text-indigo-400',
+                border: 'border-indigo-200 dark:border-indigo-800/60',
+                bg: 'bg-indigo-50 dark:bg-indigo-950/40',
+                badgeBg: 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+            };
+        }
+        if (cat === 'Archive' || ['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
+            return {
+                badge: (ext || 'ZIP').toUpperCase(),
+                label: 'Archive Package',
+                icon: 'folder_zip',
+                color: 'text-amber-600 dark:text-amber-400',
+                border: 'border-amber-200 dark:border-amber-800/60',
+                bg: 'bg-amber-50 dark:bg-amber-950/40',
+                badgeBg: 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+            };
+        }
+        if (cat === 'Code' || ['js', 'jsx', 'ts', 'tsx', 'cs', 'py', 'java', 'sql', 'json', 'html', 'css'].includes(ext)) {
+            return {
+                badge: (ext || 'SRC').toUpperCase(),
+                label: 'Code / Script',
+                icon: 'terminal',
+                color: 'text-cyan-600 dark:text-cyan-400',
+                border: 'border-cyan-200 dark:border-cyan-800/60',
+                bg: 'bg-cyan-50 dark:bg-cyan-950/40',
+                badgeBg: 'bg-cyan-100 dark:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800'
+            };
+        }
+        return {
+            badge: (ext || 'DOC').toUpperCase(),
+            label: 'Institutional Document',
+            icon: 'article',
+            color: 'text-slate-600 dark:text-slate-400',
+            border: 'border-slate-200 dark:border-slate-700',
+            bg: 'bg-slate-50 dark:bg-slate-800/60',
+            badgeBg: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+        };
+    };
+
+    const formatFileDate = (dateVal) => {
+        if (!dateVal) return 'Recently';
+        try {
+            const d = new Date(dateVal);
+            if (isNaN(d.getTime())) return 'Recently';
+            return d.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+        } catch {
+            return 'Recently';
+        }
     };
 
     const handleFileUploadSubmit = async (e) => {
@@ -2703,13 +2833,69 @@ export default function CommunityView() {
         setPreviewModalFile(file);
     };
 
-    const filteredFiles = filesList.filter(f => {
-        const matchesCat = fileCategoryFilter === 'All' || f.category === fileCategoryFilter;
-        const matchesQuery = !fileSearchQuery.trim() || 
-            f.name.toLowerCase().includes(fileSearchQuery.toLowerCase()) || 
-            (f.uploadedBy && f.uploadedBy.toLowerCase().includes(fileSearchQuery.toLowerCase()));
-        return matchesCat && matchesQuery;
-    });
+    const fileCategoryCounts = useMemo(() => {
+        const counts = { All: filesList.length, Document: 0, Image: 0, Video: 0, Archive: 0, Code: 0 };
+        filesList.forEach(f => {
+            if (counts[f.category] !== undefined) {
+                counts[f.category]++;
+            } else {
+                counts.Document++;
+            }
+        });
+        return counts;
+    }, [filesList]);
+
+    const totalStorageDisplay = useMemo(() => {
+        let totalBytes = 0;
+        filesList.forEach(f => {
+            const sz = String(f.size || '').trim().toLowerCase();
+            if (sz.endsWith('mb')) {
+                totalBytes += (parseFloat(sz) || 0) * 1024 * 1024;
+            } else if (sz.endsWith('kb')) {
+                totalBytes += (parseFloat(sz) || 0) * 1024;
+            } else if (sz.endsWith('bytes') || sz.endsWith('b')) {
+                totalBytes += (parseFloat(sz) || 0);
+            } else {
+                totalBytes += 250 * 1024; // fallback estimation
+            }
+        });
+        if (totalBytes >= 1024 * 1024) {
+            return `${(totalBytes / (1024 * 1024)).toFixed(1)} MB`;
+        }
+        return `${Math.round(totalBytes / 1024)} KB`;
+    }, [filesList]);
+
+    const filteredFiles = useMemo(() => {
+        let list = filesList.filter(f => {
+            const matchesCat = fileCategoryFilter === 'All' || f.category === fileCategoryFilter;
+            const q = fileSearchQuery.trim().toLowerCase();
+            const matchesQuery = !q || 
+                (f.name && f.name.toLowerCase().includes(q)) || 
+                (f.uploadedBy && f.uploadedBy.toLowerCase().includes(q)) ||
+                (f.extension && f.extension.toLowerCase().includes(q));
+            return matchesCat && matchesQuery;
+        });
+
+        return [...list].sort((a, b) => {
+            if (fileSortBy === 'name') {
+                return (a.name || '').localeCompare(b.name || '');
+            }
+            if (fileSortBy === 'oldest') {
+                return new Date(a.uploadedAt || 0) - new Date(b.uploadedAt || 0);
+            }
+            if (fileSortBy === 'size') {
+                const parseSz = (s) => {
+                    const str = String(s || '').toLowerCase();
+                    if (str.endsWith('mb')) return parseFloat(str) * 1024 * 1024;
+                    if (str.endsWith('kb')) return parseFloat(str) * 1024;
+                    return parseFloat(str) || 0;
+                };
+                return parseSz(b.size) - parseSz(a.size);
+            }
+            // default: newest first
+            return new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0);
+        });
+    }, [filesList, fileCategoryFilter, fileSearchQuery, fileSortBy]);
 
     // Sort pinned posts first (FR-CM-08)
     const resolveTargetCommunityFromPost = (p) => {
@@ -2802,7 +2988,7 @@ export default function CommunityView() {
 
     useEffect(() => {
         resetFileCount();
-    }, [fileCategoryFilter, fileSearchQuery]);
+    }, [fileCategoryFilter, fileSearchQuery, fileSortBy, fileViewMode]);
 
     if (isLoading || !community) {
         return (
@@ -4022,136 +4208,391 @@ export default function CommunityView() {
                         </div>
                     )}
 
-                    {/* Files & Media Tab */}
+                    {/* Files & Media Tab - Enterprise Document Management */}
                     {activeTab === 'files' && (
                         <div className="space-y-6">
-                            {/* Filter Bar & Upload Action */}
-                            <div className="glass bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-                                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-                                    {['All', 'Document', 'Image', 'Archive', 'Code', 'Video'].map(cat => (
-                                        <button
-                                            key={cat}
-                                            onClick={() => setFileCategoryFilter(cat)}
-                                            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                                                fileCategoryFilter === cat
-                                                    ? 'bg-indigo-500 text-white shadow-md shadow-indigo-500/20'
-                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                                            }`}
-                                        >
-                                            {cat === 'All' ? '📁 All Files' : cat === 'Document' ? '📄 Documents' : cat === 'Image' ? '🖼️ Images' : cat === 'Archive' ? '📦 Archives' : cat === 'Code' ? '💻 Code' : '🎬 Videos'}
-                                        </button>
-                                    ))}
+                            {/* 1. Executive Metrics Summary Bar */}
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div className="glass bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm flex items-center gap-3.5">
+                                    <div className="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-100 dark:border-indigo-900/40">
+                                        <span className="material-symbols-outlined text-[26px]">inventory_2</span>
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Assets</p>
+                                        <h4 className="text-xl font-black text-slate-900 dark:text-white leading-tight">{filesList.length}</h4>
+                                        <p className="text-[11px] text-slate-400 truncate">Published to repository</p>
+                                    </div>
                                 </div>
 
-                                <div className="flex items-center gap-3">
-                                    <div className="relative flex-1 md:w-64">
-                                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
-                                        <input
-                                            type="text"
-                                            value={fileSearchQuery}
-                                            onChange={(e) => setFileSearchQuery(e.target.value)}
-                                            placeholder="Search files..."
-                                            className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
-                                        />
-                                        {fileSearchQuery && (
-                                            <button onClick={() => setFileSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                                                <span className="material-symbols-outlined text-[16px]">close</span>
-                                            </button>
-                                        )}
+                                <div className="glass bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm flex items-center gap-3.5">
+                                    <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-100 dark:border-emerald-900/40">
+                                        <span className="material-symbols-outlined text-[26px]">database</span>
                                     </div>
+                                    <div className="min-w-0">
+                                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Storage Volume</p>
+                                        <h4 className="text-xl font-black text-slate-900 dark:text-white leading-tight">{totalStorageDisplay}</h4>
+                                        <p className="text-[11px] text-slate-400 truncate">Consolidated file size</p>
+                                    </div>
+                                </div>
 
-                                    {membershipStatus === 'joined' && (
-                                        <button
-                                            onClick={() => setIsUploadModalOpen(true)}
-                                            className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-indigo-500/20 flex items-center gap-1.5 shrink-0 cursor-pointer"
-                                        >
-                                            <span className="material-symbols-outlined text-[18px]">upload_file</span>
-                                            Upload File
-                                        </button>
-                                    )}
+                                <div className="glass bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm flex items-center gap-3.5">
+                                    <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-100 dark:border-blue-900/40">
+                                        <span className="material-symbols-outlined text-[26px]">description</span>
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Official Docs</p>
+                                        <h4 className="text-xl font-black text-slate-900 dark:text-white leading-tight">{fileCategoryCounts.Document || 0}</h4>
+                                        <p className="text-[11px] text-slate-400 truncate">PDF, Word, Sheets</p>
+                                    </div>
+                                </div>
+
+                                <div className="glass bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm flex items-center gap-3.5">
+                                    <div className="w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0 border border-purple-100 dark:border-purple-900/40">
+                                        <span className="material-symbols-outlined text-[26px]">perm_media</span>
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Rich Media & Code</p>
+                                        <h4 className="text-xl font-black text-slate-900 dark:text-white leading-tight">{(fileCategoryCounts.Image || 0) + (fileCategoryCounts.Video || 0) + (fileCategoryCounts.Code || 0)}</h4>
+                                        <p className="text-[11px] text-slate-400 truncate">Visuals, clips & source</p>
+                                    </div>
                                 </div>
                             </div>
 
-                            {/* Files Grid */}
-                            {community.type === 'Private' && membershipStatus !== 'joined' && !isAdmin ? (
-                                <div className="p-12 text-center glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm flex flex-col items-center gap-2">
-                                    <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 flex items-center justify-center mx-auto mb-1">
-                                        <span className="material-symbols-outlined text-2xl">lock</span>
+                            {/* 2. Enterprise Toolbar & Filter System */}
+                            <div className="glass bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm space-y-4">
+                                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                                    {/* Category Filter Pills with Badges */}
+                                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 custom-scrollbar">
+                                        {[
+                                            { id: 'All', label: 'All Assets', icon: 'inventory_2', count: fileCategoryCounts.All },
+                                            { id: 'Document', label: 'Documents', icon: 'description', count: fileCategoryCounts.Document },
+                                            { id: 'Image', label: 'Images', icon: 'image', count: fileCategoryCounts.Image },
+                                            { id: 'Video', label: 'Videos', icon: 'movie', count: fileCategoryCounts.Video },
+                                            { id: 'Archive', label: 'Archives', icon: 'folder_zip', count: fileCategoryCounts.Archive },
+                                            { id: 'Code', label: 'Code & Scripts', icon: 'code', count: fileCategoryCounts.Code },
+                                        ].map(cat => {
+                                            const isSelected = fileCategoryFilter === cat.id;
+                                            return (
+                                                <button
+                                                    key={cat.id}
+                                                    onClick={() => setFileCategoryFilter(cat.id)}
+                                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 border ${
+                                                        isSelected
+                                                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                                                            : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200/70 dark:border-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+                                                    }`}
+                                                >
+                                                    <span className="material-symbols-outlined text-[16px]">{cat.icon}</span>
+                                                    <span>{cat.label}</span>
+                                                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                                                        isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                                    }`}>
+                                                        {cat.count || 0}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
                                     </div>
-                                    <p className="font-bold text-slate-800 dark:text-slate-200">Files & Media Restricted</p>
-                                    <p className="text-xs text-slate-400 max-w-sm mx-auto">Shared files, documents, and media for this private community are accessible only to approved members.</p>
+
+                                    {/* Action Controls: Search, Sort, View Toggle, Upload */}
+                                    <div className="flex flex-wrap items-center gap-2.5">
+                                        {/* Search Input */}
+                                        <div className="relative flex-1 sm:w-56 md:w-64">
+                                            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
+                                            <input
+                                                type="text"
+                                                value={fileSearchQuery}
+                                                onChange={(e) => setFileSearchQuery(e.target.value)}
+                                                placeholder="Filter by name or ext..."
+                                                className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                                            />
+                                            {fileSearchQuery && (
+                                                <button onClick={() => setFileSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                                                    <span className="material-symbols-outlined text-[15px]">close</span>
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Sort By Dropdown */}
+                                        <div className="relative">
+                                            <select
+                                                value={fileSortBy}
+                                                onChange={(e) => setFileSortBy(e.target.value)}
+                                                className="py-2 pl-3 pr-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none cursor-pointer focus:ring-2 focus:ring-indigo-500 appearance-none"
+                                            >
+                                                <option value="newest">Newest First</option>
+                                                <option value="oldest">Oldest First</option>
+                                                <option value="name">Name (A-Z)</option>
+                                                <option value="size">Size (Largest)</option>
+                                            </select>
+                                            <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[16px] pointer-events-none">expand_more</span>
+                                        </div>
+
+                                        {/* View Switcher: Table vs Grid */}
+                                        <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1 border border-slate-200 dark:border-slate-700">
+                                            <button
+                                                onClick={() => setFileViewMode('table')}
+                                                className={`p-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center ${
+                                                    fileViewMode === 'table'
+                                                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                                                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+                                                }`}
+                                                title="Directory Table View"
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">table_rows</span>
+                                            </button>
+                                            <button
+                                                onClick={() => setFileViewMode('grid')}
+                                                className={`p-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center ${
+                                                    fileViewMode === 'grid'
+                                                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                                                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+                                                }`}
+                                                title="Card Grid View"
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">grid_view</span>
+                                            </button>
+                                        </div>
+
+                                        {/* Upload Button */}
+                                        {(membershipStatus === 'joined' || isAdmin) && (
+                                            <button
+                                                onClick={() => setIsUploadModalOpen(true)}
+                                                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-all shadow-sm shadow-indigo-600/30 flex items-center gap-1.5 shrink-0 cursor-pointer"
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">upload_file</span>
+                                                <span>Upload Document</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 3. Restricted State for Private Communities */}
+                            {community.type === 'Private' && membershipStatus !== 'joined' && !isAdmin ? (
+                                <div className="p-12 text-center glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm flex flex-col items-center gap-3">
+                                    <div className="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto mb-1 border border-indigo-200 dark:border-indigo-800/60">
+                                        <span className="material-symbols-outlined text-[28px]">lock</span>
+                                    </div>
+                                    <p className="font-bold text-slate-900 dark:text-white text-base">Community Repository Restricted</p>
+                                    <p className="text-xs text-slate-500 max-w-sm mx-auto">Shared files, institutional documents, and media for this private community are accessible only to approved community members.</p>
                                 </div>
                             ) : filteredFiles.length === 0 ? (
-                                <div className="p-12 text-center glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm flex flex-col items-center gap-2">
-                                    <span className="material-symbols-outlined text-[36px] text-slate-400">folder_off</span>
-                                    <p className="font-bold">No files found matching filter.</p>
-                                    <p className="text-xs text-slate-400">Click "Upload File" above to share documents, images, or media with this community.</p>
+                                /* 4. Formal Empty State */
+                                <div className="p-12 text-center glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm flex flex-col items-center gap-3">
+                                    <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto border border-slate-200 dark:border-slate-700">
+                                        <span className="material-symbols-outlined text-[32px]">folder_off</span>
+                                    </div>
+                                    <p className="font-bold text-slate-900 dark:text-white text-base">No Assets Found</p>
+                                    <p className="text-xs text-slate-400 max-w-sm">No files in this repository match your current category or search criteria.</p>
+                                    {(membershipStatus === 'joined' || isAdmin) && (
+                                        <button
+                                            onClick={() => setIsUploadModalOpen(true)}
+                                            className="mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-indigo-600/20"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">upload_file</span>
+                                            Upload First Document
+                                        </button>
+                                    )}
+                                </div>
+                            ) : fileViewMode === 'table' ? (
+                                /* 5. Enterprise Directory Table View */
+                                <div className="overflow-x-auto rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
+                                    <table className="w-full text-left text-sm border-collapse">
+                                        <thead>
+                                            <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                                <th className="py-3.5 px-4">Document / Asset</th>
+                                                <th className="py-3.5 px-4 hidden md:table-cell">Category</th>
+                                                <th className="py-3.5 px-4 hidden sm:table-cell">Size</th>
+                                                <th className="py-3.5 px-4 hidden lg:table-cell">Uploaded By</th>
+                                                <th className="py-3.5 px-4 hidden sm:table-cell">Date Added</th>
+                                                <th className="py-3.5 px-4 text-right">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                                            {filteredFiles.slice(0, visibleFileCount).map(file => {
+                                                const cfg = getFileFormatConfig(file);
+                                                const isVideoFile = file.category === 'Video' || ['mp4', 'webm', 'mov'].includes(file.extension?.toLowerCase());
+                                                return (
+                                                    <tr key={file.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors group">
+                                                        <td className="py-3.5 px-4">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${cfg.bg} ${cfg.border} ${cfg.color}`}>
+                                                                    <span className="material-symbols-outlined text-[22px]">{cfg.icon}</span>
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <button 
+                                                                        onClick={() => setPreviewModalFile(file)}
+                                                                        className="font-bold text-slate-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors truncate max-w-xs sm:max-w-md block text-left text-sm cursor-pointer"
+                                                                        title={file.name}
+                                                                    >
+                                                                        <HighlightText text={file.name} query={fileSearchQuery} />
+                                                                    </button>
+                                                                    <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+                                                                        <span className={`px-1.5 py-0.2 rounded font-bold uppercase text-[9px] ${cfg.badgeBg}`}>{cfg.badge}</span>
+                                                                        <span>•</span>
+                                                                        <span>{cfg.label}</span>
+                                                                        <span className="sm:hidden">• {file.size}</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-3.5 px-4 hidden md:table-cell">
+                                                            <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                                                {file.category}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-3.5 px-4 hidden sm:table-cell text-xs font-mono text-slate-600 dark:text-slate-400">
+                                                            {file.size}
+                                                        </td>
+                                                        <td className="py-3.5 px-4 hidden lg:table-cell">
+                                                            <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                                                                <div className="w-6 h-6 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold flex items-center justify-center text-[10px] shrink-0 border border-indigo-500/20">
+                                                                    {(file.uploadedBy || 'U').charAt(0).toUpperCase()}
+                                                                </div>
+                                                                <span className="truncate max-w-[140px] font-medium">
+                                                                    <HighlightText text={file.uploadedBy || 'Member'} query={fileSearchQuery} />
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-3.5 px-4 hidden sm:table-cell text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                                                            {formatFileDate(file.uploadedAt)}
+                                                        </td>
+                                                        <td className="py-3.5 px-4 text-right">
+                                                            <div className="flex items-center justify-end gap-1">
+                                                                {isVideoFile && (
+                                                                    <button
+                                                                        onClick={() => setPreviewModalFile(file)}
+                                                                        className="px-2.5 py-1 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-600 hover:text-white rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                                                                        title="Play Video Media"
+                                                                    >
+                                                                        <span className="material-symbols-outlined text-[16px]">play_circle</span>
+                                                                        <span className="hidden xl:inline">Play</span>
+                                                                    </button>
+                                                                )}
+                                                                <button
+                                                                    onClick={() => setPreviewModalFile(file)}
+                                                                    className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors cursor-pointer"
+                                                                    title="Preview Document"
+                                                                >
+                                                                    <span className="material-symbols-outlined text-[18px]">visibility</span>
+                                                                </button>
+                                                                {file.url && (
+                                                                    <a
+                                                                        href={file.url}
+                                                                        download={file.name}
+                                                                        className="p-1.5 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition-colors cursor-pointer"
+                                                                        title="Download File"
+                                                                    >
+                                                                        <span className="material-symbols-outlined text-[18px]">download</span>
+                                                                    </a>
+                                                                )}
+                                                                {(isAdmin || String(file.uploadedBy) === String(currentUser?.name)) && (
+                                                                    <button
+                                                                        onClick={() => handleDeleteFile(file.id, file.name)}
+                                                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+                                                                        title="Delete File"
+                                                                    >
+                                                                        <span className="material-symbols-outlined text-[18px]">delete</span>
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
                                 </div>
                             ) : (
+                                /* 6. Enterprise Grid / Card View */
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                                    {filteredFiles.slice(0, visibleFileCount).map(file => (
-                                        <div key={file.id} className="glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 flex flex-col justify-between hover:border-indigo-300 dark:hover:border-indigo-700/50 transition-all group">
-                                            <div onClick={() => setPreviewModalFile(file)} className="cursor-pointer">
-                                                <div className="flex items-start justify-between gap-3 mb-3">
-                                                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-bold text-xl shadow-inner bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500">
-                                                        <span className="material-symbols-outlined text-[26px]">
-                                                            {file.category === 'Image' ? 'image' : file.category === 'Archive' ? 'folder_zip' : file.category === 'Video' ? 'video_file' : file.category === 'Code' ? 'code' : 'description'}
+                                    {filteredFiles.slice(0, visibleFileCount).map(file => {
+                                        const cfg = getFileFormatConfig(file);
+                                        const isVideoFile = file.category === 'Video' || ['mp4', 'webm', 'mov'].includes(file.extension?.toLowerCase());
+                                        return (
+                                            <div key={file.id} className="glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm p-5 flex flex-col justify-between hover:border-indigo-400 dark:hover:border-indigo-600/60 hover:shadow-md transition-all group">
+                                                <div onClick={() => setPreviewModalFile(file)} className="cursor-pointer">
+                                                    {/* Top Row: Format Badge & Category Tag */}
+                                                    <div className="flex items-start justify-between gap-3 mb-4">
+                                                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border ${cfg.bg} ${cfg.border} ${cfg.color} shadow-sm group-hover:scale-105 transition-transform`}>
+                                                            <span className="material-symbols-outlined text-[28px]">{cfg.icon}</span>
+                                                        </div>
+                                                        <div className="flex flex-col items-end gap-1">
+                                                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${cfg.badgeBg}`}>
+                                                                {cfg.badge}
+                                                            </span>
+                                                            <span className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">
+                                                                {cfg.label}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Title & Metadata */}
+                                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors mb-2 leading-snug" title={file.name}>
+                                                        <HighlightText text={file.name} query={fileSearchQuery} />
+                                                    </h4>
+                                                    
+                                                    <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 mb-4">
+                                                        <span className="font-mono bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-[11px] font-medium">{file.size}</span>
+                                                        <span>•</span>
+                                                        <span>{formatFileDate(file.uploadedAt)}</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Card Footer: Uploader & Action Icons */}
+                                                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 min-w-0">
+                                                        <div className="w-6 h-6 rounded-full bg-indigo-500 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                                                            {(file.uploadedBy || 'U').charAt(0).toUpperCase()}
+                                                        </div>
+                                                        <span className="truncate max-w-[110px] font-medium">
+                                                            <HighlightText text={file.uploadedBy || 'Member'} query={fileSearchQuery} />
                                                         </span>
                                                     </div>
-                                                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                                                        {file.category}
-                                                    </span>
-                                                </div>
 
-                                                <h4 className="font-bold text-sm text-slate-900 dark:text-white line-clamp-1 group-hover:text-indigo-500 transition-colors mb-1" title={file.name}>
-                                                    <HighlightText text={file.name} query={fileSearchQuery} />
-                                                </h4>
-                                                <div className="flex items-center gap-2 text-[11px] text-slate-500 mb-3">
-                                                    <span>{file.size}</span>
-                                                </div>
-                                            </div>
-
-                                            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                                                <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                                                    <div className="w-5 h-5 rounded-full bg-indigo-500 text-white flex items-center justify-center text-[10px] font-bold">
-                                                        {(file.uploadedBy || 'U').charAt(0)}
-                                                    </div>
-                                                    <span className="truncate max-w-[100px]">
-                                                        <HighlightText text={file.uploadedBy} query={fileSearchQuery} />
-                                                    </span>
-                                                </div>
-
-                                                <div className="flex items-center gap-1">
-                                                    {(file.category === 'Video' || ['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(file.extension?.toLowerCase()) || (file.name && file.name.toLowerCase().endsWith('.mp4'))) && (
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                        {isVideoFile && (
+                                                            <button
+                                                                onClick={() => setPreviewModalFile(file)}
+                                                                className="px-2 py-1 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-600 hover:text-white rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                                                                title="Play Video Media"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[16px]">play_circle</span>
+                                                                <span>Play</span>
+                                                            </button>
+                                                        )}
                                                         <button
                                                             onClick={() => setPreviewModalFile(file)}
-                                                            className="px-2 py-1 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-500 hover:text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1 font-bold text-xs"
-                                                            title="Play Video"
+                                                            className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors cursor-pointer"
+                                                            title="Preview Document"
                                                         >
-                                                            <span className="material-symbols-outlined text-[16px]">play_circle</span>
-                                                            <span>Play</span>
+                                                            <span className="material-symbols-outlined text-[18px]">visibility</span>
                                                         </button>
-                                                    )}
-                                                    <button
-                                                        onClick={() => setPreviewModalFile(file)}
-                                                        className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors cursor-pointer"
-                                                        title="View File Preview"
-                                                    >
-                                                        <span className="material-symbols-outlined text-[18px]">visibility</span>
-                                                    </button>
-                                                    {(isAdmin || String(file.uploadedBy) === String(currentUser?.name)) && (
-                                                        <button
-                                                            onClick={() => handleDeleteFile(file.id, file.name)}
-                                                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors cursor-pointer"
-                                                            title="Delete File"
-                                                        >
-                                                            <span className="material-symbols-outlined text-[18px]">delete</span>
-                                                        </button>
-                                                    )}
+                                                        {file.url && (
+                                                            <a
+                                                                href={file.url}
+                                                                download={file.name}
+                                                                className="p-1.5 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition-colors cursor-pointer"
+                                                                title="Download File"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[18px]">download</span>
+                                                            </a>
+                                                        )}
+                                                        {(isAdmin || String(file.uploadedBy) === String(currentUser?.name)) && (
+                                                            <button
+                                                                onClick={() => handleDeleteFile(file.id, file.name)}
+                                                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+                                                                title="Delete File"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[18px]">delete</span>
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
                             <ScrollLoadingIndicator isVisible={visibleFileCount < filteredFiles.length} text="Loading more community files on scroll..." />
@@ -4597,92 +5038,195 @@ export default function CommunityView() {
             </div>
             )}
 
-            {/* Upload File Modal */}
+            {/* Upload File Modal - Enterprise Grade */}
             {isUploadModalOpen && (
-                <div className="fixed inset-0 z-[300] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50">
-                            <h3 className="font-black text-slate-900 dark:text-white flex items-center gap-2 text-base">
-                                <span className="material-symbols-outlined text-indigo-500">upload_file</span>
-                                Upload Community File
-                            </h3>
-                            <button onClick={() => setIsUploadModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <div className="fixed inset-0 z-[300] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        {/* Modal Header */}
+                        <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/50">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center border border-indigo-100 dark:border-indigo-900/40">
+                                    <span className="material-symbols-outlined text-[24px]">drive_folder_upload</span>
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-slate-900 dark:text-white text-base leading-tight">
+                                        Upload Community Document / Asset
+                                    </h3>
+                                    <p className="text-[12px] text-slate-400">Publish reference files, reports, and media for community members</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => {
+                                    setIsUploadModalOpen(false);
+                                    setSelectedUploadFile(null);
+                                    setUploadFileName('');
+                                }} 
+                                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                            >
                                 <span className="material-symbols-outlined text-[20px]">close</span>
                             </button>
                         </div>
 
+                        {/* Modal Form */}
                         <form onSubmit={handleFileUploadSubmit} className="p-6 space-y-4">
+                            {/* Drag & Drop File Upload Zone */}
                             <div>
-                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                                    File Title / Description *
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">
+                                    File Attachment *
+                                </label>
+
+                                {selectedUploadFile ? (
+                                    <div className="p-4 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 bg-indigo-50/50 dark:bg-indigo-950/30 flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-11 h-11 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 font-black text-xs shadow-sm">
+                                                {(selectedUploadFile.name.split('.').pop() || 'FILE').toUpperCase()}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <p className="text-xs font-bold text-slate-900 dark:text-white truncate" title={selectedUploadFile.name}>
+                                                    {selectedUploadFile.name}
+                                                </p>
+                                                <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                                                    {selectedUploadFile.size > 1048576 
+                                                        ? `${(selectedUploadFile.size / 1048576).toFixed(1)} MB` 
+                                                        : `${Math.round(selectedUploadFile.size / 1024)} KB`} • {uploadFileCategory}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <label className="px-3 py-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold cursor-pointer shrink-0 transition-colors">
+                                            Change
+                                            <input
+                                                type="file"
+                                                className="hidden"
+                                                onChange={(e) => {
+                                                    if (e.target.files && e.target.files[0]) {
+                                                        const file = e.target.files[0];
+                                                        setSelectedUploadFile(file);
+                                                        const detected = detectFileTypeAndCategory(file);
+                                                        setUploadFileCategory(detected.category);
+                                                        setUploadFileName(file.name);
+                                                    }
+                                                }}
+                                            />
+                                        </label>
+                                    </div>
+                                ) : (
+                                    <label
+                                        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                        onDrop={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                                const file = e.dataTransfer.files[0];
+                                                setSelectedUploadFile(file);
+                                                const detected = detectFileTypeAndCategory(file);
+                                                setUploadFileCategory(detected.category);
+                                                setUploadFileName(file.name);
+                                            }
+                                        }}
+                                        className="border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-indigo-500 dark:hover:border-indigo-500 rounded-2xl p-6 text-center flex flex-col items-center justify-center gap-2 cursor-pointer bg-slate-50/50 dark:bg-slate-800/30 transition-all hover:bg-indigo-50/20 group"
+                                    >
+                                        <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center group-hover:scale-105 transition-transform border border-indigo-100 dark:border-indigo-900/40">
+                                            <span className="material-symbols-outlined text-[28px]">cloud_upload</span>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                                Click to browse files or drag & drop here
+                                            </p>
+                                            <p className="text-[11px] text-slate-400 mt-0.5">
+                                                Institutional documents, presentations, archives & media up to 50 MB
+                                            </p>
+                                        </div>
+                                        <div className="flex flex-wrap items-center justify-center gap-1.5 mt-1">
+                                            {['PDF', 'DOCX', 'XLSX', 'PPTX', 'PNG/JPG', 'MP4', 'ZIP', 'CODE'].map(tag => (
+                                                <span key={tag} className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                                                    {tag}
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <input
+                                            type="file"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                if (e.target.files && e.target.files[0]) {
+                                                    const file = e.target.files[0];
+                                                    setSelectedUploadFile(file);
+                                                    const detected = detectFileTypeAndCategory(file);
+                                                    setUploadFileCategory(detected.category);
+                                                    setUploadFileName(file.name);
+                                                }
+                                            }}
+                                        />
+                                    </label>
+                                )}
+                            </div>
+
+                            {/* Title / Description */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                                    Document Title / Display Name *
                                 </label>
                                 <input
                                     type="text"
                                     value={uploadFileName}
                                     onChange={(e) => setUploadFileName(e.target.value)}
-                                    placeholder="e.g. System_Architecture_v2.pdf"
-                                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="e.g. Q3_Technology_Roadmap_Final.pdf"
+                                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 font-medium"
                                 />
                             </div>
 
+                            {/* Category Selector */}
                             <div>
-                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                                    Category
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                                    Asset Classification
                                 </label>
                                 <select
                                     value={uploadFileCategory}
                                     onChange={(e) => setUploadFileCategory(e.target.value)}
-                                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 font-medium cursor-pointer"
                                 >
-                                    <option value="Document">📄 Document (PDF, DOCX, TXT)</option>
-                                    <option value="Image">🖼️ Image (PNG, JPG, SVG)</option>
-                                    <option value="Archive">📦 Archive (ZIP, RAR, 7Z)</option>
-                                    <option value="Code">💻 Code / Script (JS, CS, PY, SQL)</option>
-                                    <option value="Video">🎬 Video / Audio</option>
+                                    <option value="Document">Institutional Document (PDF, Word, TXT)</option>
+                                    <option value="Image">Graphic & Visual Asset (PNG, JPG, SVG, WebP)</option>
+                                    <option value="Video">Digital Media & Recording (MP4, WebM, Audio)</option>
+                                    <option value="Archive">Compressed Archive (ZIP, RAR, 7Z, TAR)</option>
+                                    <option value="Code">Source Code / Script (C#, JS, Python, SQL)</option>
                                 </select>
                             </div>
 
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                                    Choose File from Disk
-                                </label>
-                                <input
-                                    type="file"
-                                    onChange={(e) => {
-                                        if (e.target.files && e.target.files[0]) {
-                                            const file = e.target.files[0];
-                                            setSelectedUploadFile(file);
-                                            const detected = detectFileTypeAndCategory(file);
-                                            setUploadFileCategory(detected.category);
-                                            setUploadFileName(file.name);
-                                        }
-                                    }}
-                                    className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 cursor-pointer"
-                                />
+                            {/* Compliance / Information Classification Callout */}
+                            <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700/60 flex items-start gap-2.5">
+                                <span className="material-symbols-outlined text-[16px] text-indigo-500 shrink-0 mt-0.5">verified_user</span>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                                    Uploaded documents are indexed and made available to authorized members of this community in compliance with MPOnline Limited enterprise information governance standards.
+                                </p>
                             </div>
 
-                            <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
+                            {/* Action Buttons */}
+                            <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-slate-100 dark:border-slate-800">
                                 <button
                                     type="button"
-                                    onClick={() => setIsUploadModalOpen(false)}
-                                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                    onClick={() => {
+                                        setIsUploadModalOpen(false);
+                                        setSelectedUploadFile(null);
+                                        setUploadFileName('');
+                                    }}
+                                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={isUploadingFile}
-                                    className="px-6 py-2.5 rounded-xl text-xs font-bold bg-indigo-500 hover:bg-indigo-600 text-white shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                    disabled={isUploadingFile || !uploadFileName.trim()}
+                                    className="px-5 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {isUploadingFile ? (
                                         <>
                                             <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
-                                            Uploading...
+                                            Uploading Document...
                                         </>
                                     ) : (
                                         <>
                                             <span className="material-symbols-outlined text-[16px]">cloud_upload</span>
-                                            Upload Now
+                                            Publish to Community
                                         </>
                                     )}
                                 </button>
