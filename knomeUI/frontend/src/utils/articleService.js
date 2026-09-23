@@ -22,16 +22,18 @@ export function mapArticle(art) {
     const rawAttachments = (art.attachments && art.attachments.length > 0)
         ? art.attachments.map(att => {
             const fileUrl = (att.fileUrl || '').toLowerCase();
-            const isDoc = Boolean(fileUrl.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)$/i) || att.fileType === 'Document');
-            const isImage = Boolean(fileUrl.match(/\.(jpeg|jpg|gif|png|webp|svg|bmp)$/i) || att.fileType === 'Image');
-            const isVideo = !isDoc && !isImage && Boolean(fileUrl.match(/\.(mp4|webm|ogg|mov|m4v|mkv)$/i) || att.fileType === 'Video' || fileUrl.includes('/uploads/videos/'));
+            const isAudio = Boolean(fileUrl.match(/\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i) || att.fileType === 'Audio');
+            const isDoc = !isAudio && Boolean(fileUrl.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)(\?.*)?$/i) || att.fileType === 'Document');
+            const isImage = !isAudio && !isDoc && Boolean(fileUrl.match(/\.(jpeg|jpg|gif|png|webp|svg|bmp)(\?.*)?$/i) || att.fileType === 'Image');
+            const isVideo = !isAudio && !isDoc && !isImage && Boolean(fileUrl.match(/\.(mp4|webm|mov|m4v|mkv)$/i) || att.fileType === 'Video' || fileUrl.includes('/uploads/videos/'));
 
             return {
                 url: resolveMediaUrl(att.fileUrl),
                 rawUrl: att.fileUrl,
                 name: att.fileName || att.fileUrl.split('/').pop() || 'Attached File',
-                fileType: att.fileType,
+                fileType: isAudio ? 'Audio' : (att.fileType || (isDoc ? 'Document' : isImage ? 'Image' : isVideo ? 'Video' : 'File')),
                 publishedDate: att.publishedDate || art.publishedDate,
+                isAudio,
                 isDoc,
                 isImage,
                 isVideo,
@@ -39,15 +41,18 @@ export function mapArticle(art) {
           })
         : (art.attachmentUrls || []).map(url => {
             const rawUrl = (url || '').toLowerCase();
-            const isDoc = Boolean(rawUrl.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)$/i));
-            const isImage = Boolean(rawUrl.match(/\.(jpeg|jpg|gif|png|webp|svg|bmp)$/i));
-            const isVideo = !isDoc && !isImage && Boolean(rawUrl.match(/\.(mp4|webm|ogg|mov|m4v|mkv)$/i) || rawUrl.includes('/uploads/videos/'));
+            const isAudio = Boolean(rawUrl.match(/\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i));
+            const isDoc = !isAudio && Boolean(rawUrl.match(/\.(pdf|docx|doc|txt|xls|xlsx|ppt|pptx)(\?.*)?$/i));
+            const isImage = !isAudio && !isDoc && Boolean(rawUrl.match(/\.(jpeg|jpg|gif|png|webp|svg|bmp)(\?.*)?$/i));
+            const isVideo = !isAudio && !isDoc && !isImage && Boolean(rawUrl.match(/\.(mp4|webm|mov|m4v|mkv)$/i) || rawUrl.includes('/uploads/videos/'));
 
             return {
                 url: resolveMediaUrl(url),
                 rawUrl: url,
                 name: url.split('/').pop() || 'Attached File',
                 publishedDate: art.publishedDate || art.createdDate,
+                fileType: isAudio ? 'Audio' : (isDoc ? 'Document' : (isImage ? 'Image' : (isVideo ? 'Video' : 'File'))),
+                isAudio,
                 isDoc,
                 isImage,
                 isVideo,

@@ -22,6 +22,9 @@ export const authApi = {
     /** POST /Auth/logout */
     logout: (refreshToken) =>
         apiClient.post('/Auth/logout', { refreshToken }),
+
+    /** GET /auth/me — get current user claims & identity */
+    getMe: () => apiClient.get('/auth/me'),
 };
 
 // ─────────────────────────────────────────────
@@ -147,7 +150,7 @@ export const dashboardApi = {
     getTrendingPosts: () => apiClient.get('/feed/widgets/trending-posts'),
     getInternalJobs: () => apiClient.get('/feed/widgets/internal-jobs'),
     getKarmaLeaderboard: () => apiClient.get('/Karma/leaderboard'),
-    getAnnouncements: () => apiClient.get('/notifications').catch(() => []),
+    getAnnouncements: () => apiClient.get('/notifications/broadcasts').then(res => res?.data || res || []).catch(() => []),
 };
 
 // ─────────────────────────────────────────────
@@ -168,6 +171,7 @@ export const postsApi = {
     create: (data) => apiClient.post('/posts', data),
     update: (id, data) => apiClient.put(`/posts/${id}`, data),
     delete: (id) => apiClient.delete(`/posts/${id}`),
+    recordView: (id) => apiClient.post(`/posts/${id}/view`),
 };
 
 // ─────────────────────────────────────────────
@@ -235,6 +239,9 @@ export const videosApi = {
 
     /** DELETE /Videos/{id} */
     delete: (id) => apiClient.delete(`/Videos/${id}`),
+
+    /** POST /Videos/{id}/view */
+    recordView: (id) => apiClient.post(`/Videos/${id}/view`),
 };
 
 // ─────────────────────────────────────────────
@@ -291,7 +298,9 @@ export const communitiesApi = {
     togglePinPost: (communityId, postId, isPinned) => apiClient.put(`/Communities/${communityId}/posts/${postId}/pin`, { isPinned }),
     addAdmin: (communityId, targetUserId) => apiClient.post(`/Communities/${communityId}/admins/${targetUserId}`),
     removeAdmin: (communityId, targetUserId) => apiClient.delete(`/Communities/${communityId}/admins/${targetUserId}`),
+    removeMember: (communityId, targetUserId) => apiClient.delete(`/Communities/${communityId}/members/${targetUserId}`),
     decideMembership: (communityId, targetUserId, status) => apiClient.put(`/Communities/${communityId}/members/${targetUserId}/decide`, { status }),
+    addMembers: (communityId, userIds) => apiClient.post(`/Communities/${communityId}/members/bulk`, userIds),
 };
 
 /** Helper to resolve high-res cover banner & avatar photo for enterprise communities */
@@ -360,153 +369,8 @@ export const getCommunityImages = (name = '', category = '') => {
     };
 };
 
-/** Unified Enterprise Community Channels shared across Communities catalog and Admin Console */
-export const DEFAULT_ENTERPRISE_COMMUNITIES = [
-    {
-        id: 'ec-1',
-        communityId: 'ec-1',
-        name: 'Engineering & Tech',
-        category: 'Technology & Architecture',
-        categoryName: 'Technology & Architecture',
-        type: 'Public',
-        communityType: 'Public',
-        members: '1 member',
-        membersCount: 1,
-        activity: '5 posts',
-        postsCount: 5,
-        description: 'Core engineering, architecture standards, and tech innovation discussions.',
-        mod: 'Loveneesh Sharma',
-        status: 'Strict',
-        filterKey: 'Engineering',
-        icon: 'developer_board'
-    },
-    {
-        id: 'ec-2',
-        communityId: 'ec-2',
-        name: 'HR & People Ops',
-        category: 'Human Resources & Governance',
-        categoryName: 'Human Resources & Governance',
-        type: 'Org',
-        communityType: 'Org',
-        members: '6 members',
-        membersCount: 6,
-        activity: '3 posts',
-        postsCount: 3,
-        description: 'Human resources, talent management, company policies, and workplace governance.',
-        mod: 'Sourabh Sahu',
-        status: 'Standard',
-        filterKey: 'HR',
-        icon: 'groups'
-    },
-    {
-        id: 'ec-3',
-        communityId: 'ec-3',
-        name: 'Product Design & UX',
-        category: 'UI/UX & Design Systems',
-        categoryName: 'UI/UX & Design Systems',
-        type: 'Public',
-        communityType: 'Public',
-        members: '6 members',
-        membersCount: 6,
-        activity: '2 posts',
-        postsCount: 2,
-        description: 'UI/UX guidelines, design systems, usability research, and creative prototypes.',
-        mod: 'Mayur Verma',
-        status: 'Standard',
-        filterKey: 'Product',
-        icon: 'palette'
-    },
-    {
-        id: 'ec-4',
-        communityId: 'ec-4',
-        name: 'AI & Data Science Lab',
-        category: 'AI Research & Data Science',
-        categoryName: 'AI Research & Data Science',
-        type: 'Private',
-        communityType: 'Private',
-        members: '4 members',
-        membersCount: 4,
-        activity: '4 posts',
-        postsCount: 4,
-        description: 'Machine learning, predictive models, big data pipelines, and AI experiments.',
-        mod: 'Vishendra Sharma',
-        status: 'Strict',
-        filterKey: 'AI',
-        icon: 'psychology'
-    },
-    {
-        id: 'ec-5',
-        communityId: 'ec-5',
-        name: 'Finance & Accounting',
-        category: 'Finance, Audit & Payroll',
-        categoryName: 'Finance, Audit & Payroll',
-        type: 'Org',
-        communityType: 'Org',
-        members: '5 members',
-        membersCount: 5,
-        activity: '1 post',
-        postsCount: 1,
-        description: 'Payroll, financial planning, budget guidelines, and corporate audit coordination.',
-        mod: 'Sourabh Sahu',
-        status: 'Standard',
-        filterKey: 'Finance',
-        icon: 'account_balance'
-    },
-    {
-        id: 'ec-6',
-        communityId: 'ec-6',
-        name: 'Marketing & Brand Strategy',
-        category: 'Marketing, PR & Events',
-        categoryName: 'Marketing, PR & Events',
-        type: 'Public',
-        communityType: 'Public',
-        members: '3 members',
-        membersCount: 3,
-        activity: '1 post',
-        postsCount: 1,
-        description: 'Brand assets, public relations, event management, and corporate outreach.',
-        mod: 'Meghna Tiwari',
-        status: 'Standard',
-        filterKey: 'Marketing',
-        icon: 'campaign'
-    },
-    {
-        id: 'ec-7',
-        communityId: 'ec-7',
-        name: 'CTO Leadership Circle',
-        category: 'Executive Leadership & Strategy',
-        categoryName: 'Executive Leadership & Strategy',
-        type: 'Private',
-        communityType: 'Private',
-        members: '2 members',
-        membersCount: 2,
-        activity: '0 posts',
-        postsCount: 0,
-        description: 'Executive technology decisions, strategic roadmap, and architectural oversight.',
-        mod: 'Loveneesh Sharma',
-        status: 'Strict',
-        filterKey: 'CTO',
-        icon: 'military_tech'
-    },
-    {
-        id: 'ec-8',
-        communityId: 'ec-8',
-        name: 'General Discussion',
-        category: 'Company Open Lounge',
-        categoryName: 'Company Open Lounge',
-        type: 'Public',
-        communityType: 'Public',
-        members: '8 members',
-        membersCount: 8,
-        activity: '2 posts',
-        postsCount: 2,
-        description: 'Open employee forum for casual conversations, team highlights, and general chatter.',
-        mod: 'System Admin',
-        status: 'Relaxed',
-        filterKey: 'General',
-        icon: 'forum'
-    }
-];
+/** Unified Enterprise Community Channels - now purely dynamic from backend API */
+export const DEFAULT_ENTERPRISE_COMMUNITIES = [];
 
 // ─────────────────────────────────────────────
 //  INTERACTIONS (Comments, Reactions, Bookmarks, Shares)
@@ -563,10 +427,18 @@ export const notificationsApi = {
     delete: (notificationId) => apiClient.delete(`/notifications/${notificationId}`),
 
     /** GET /notifications/preferences */
-    getPreferences: () => apiClient.get('/notifications/preferences'),
+    getPreferences: () => apiClient.get('/notifications/preferences', { noCache: true }),
 
     /** PUT /notifications/preferences */
     updatePreferences: (data) => apiClient.put('/notifications/preferences', data),
+
+    /** Organization Broadcasts */
+    broadcasts: {
+        getAll: () => apiClient.get('/notifications/broadcasts').then(res => res?.data || res || []).catch(() => []),
+        send: (data) => apiClient.post('/notifications/broadcast', data),
+        update: (id, data) => apiClient.put(`/notifications/broadcast/${id}`, data),
+        delete: (id) => apiClient.delete(`/notifications/broadcast/${id}`),
+    },
 };
 
 // ─────────────────────────────────────────────
@@ -759,14 +631,17 @@ export const adminApi = {
         return `${base}/audit/system-logs/download${logFile ? `?logFile=${encodeURIComponent(logFile)}` : ''}`;
     },
 
-    /** GET /notifications/user */
-    getAnnouncements: () => apiClient.get('/notifications').catch(() => []),
+    /** GET /notifications/broadcasts */
+    getAnnouncements: () => apiClient.get('/notifications/broadcasts').then(res => res?.data || res || []).catch(() => []),
 
     /** POST /notifications/broadcast */
     createAnnouncement: (data) => apiClient.post('/notifications/broadcast', data),
 
-    /** DELETE /notifications/{id} */
-    deleteAnnouncement: (id) => apiClient.delete(`/notifications/{id}`),
+    /** PUT /notifications/broadcast/{id} */
+    updateAnnouncement: (id, data) => apiClient.put(`/notifications/broadcast/${id}`, data),
+
+    /** DELETE /notifications/broadcast/{id} */
+    deleteAnnouncement: (id) => apiClient.delete(`/notifications/broadcast/${id}`),
 };
 
 // ─────────────────────────────────────────────
@@ -829,7 +704,14 @@ export const mediaApi = {
                         reject(new Error('Invalid JSON response'));
                     }
                 } else {
-                    reject(new Error(`Failed to upload file: ${xhr.statusText}`));
+                    let errMsg = xhr.statusText;
+                    try {
+                        const errJson = JSON.parse(xhr.responseText);
+                        errMsg = errJson.message || errJson.title || errJson.error || xhr.statusText;
+                    } catch (_) {
+                        if (xhr.responseText) errMsg = xhr.responseText;
+                    }
+                    reject(new Error(`Failed to upload file: ${errMsg}`));
                 }
             };
 
@@ -1505,5 +1387,104 @@ export const getPersonalizedRecommendations = (items = [], currentUser = null) =
 
     return scored.sort((a, b) => b.recommendationScore - a.recommendationScore);
 };
+
+export const resolveSharedTarget = (post) => {
+    if (!post) return null;
+    const content = post.content || post.contentText || '';
+    const title = post.title || '';
+    const typeStr = (post.type || '').toLowerCase();
+    const contentTypeStr = (post.contentType || '').toLowerCase();
+
+    // 1. Article Check
+    const articleUrlMatch = content.match(/(?:https?:\/\/[^\s]+)?\/article-view\?id=([a-zA-Z0-9_-]+)/i);
+    const isArticleType = typeStr === 'article_share' || typeStr === 'article' || contentTypeStr === 'article' || post.sharedContent?.type?.toLowerCase() === 'article';
+    const isArticleText = content.includes('Shared Article:') || title.startsWith('Shared Article:');
+    
+    // Heuristic: If title or content mentions "Best Practices for Building Scalable REST APIs with ASP.NET Core" or id 10050
+    const isKnownArticle = String(post.sharedPostId) === '10050' || 
+                           content.includes('/posts?id=10050') ||
+                           content.includes('/article-view?id=10050') ||
+                           title.includes('Best Practices for Building Scalable REST APIs with ASP.NET Core') ||
+                           content.includes('Best Practices for Building Scalable REST APIs with ASP.NET Core');
+
+    if (post.sharedArticle || articleUrlMatch || isArticleType || isArticleText || isKnownArticle || post.articleId) {
+        const id = post.sharedArticle?.id || post.articleId || (articleUrlMatch ? articleUrlMatch[1] : null) || (isKnownArticle ? '10050' : null) || post.sharedContent?.id || post.contentId;
+        return {
+            type: 'Article',
+            id: id,
+            url: id ? `/article-view?id=${id}` : '/articles',
+            label: 'Shared Article',
+            actionText: 'Read Article',
+            icon: 'menu_book'
+        };
+    }
+
+    // 2. Video Check
+    const videoUrlMatch = content.match(/(?:https?:\/\/[^\s]+)?\/videos\?id=([a-zA-Z0-9_-]+)/i);
+    const isVideoType = typeStr === 'video_share' || typeStr === 'video' || contentTypeStr === 'video' || post.sharedContent?.type?.toLowerCase() === 'video';
+    const isVideoText = content.includes('Shared Video:') || title.startsWith('Shared Video:') || post.videoUrl;
+    if (post.sharedVideo || videoUrlMatch || isVideoType || isVideoText || post.videoId) {
+        const id = post.sharedVideo?.id || post.videoId || (videoUrlMatch ? videoUrlMatch[1] : null) || post.sharedContent?.id || post.contentId;
+        return {
+            type: 'Video',
+            id: id,
+            url: id ? `/videos?id=${id}` : '/videos',
+            label: 'Shared Video',
+            actionText: 'Watch Video',
+            icon: 'smart_display'
+        };
+    }
+
+    // 3. Podcast Check
+    const podUrlMatch = content.match(/(?:https?:\/\/[^\s]+)?\/podcasts\?id=([a-zA-Z0-9_-]+)/i);
+    const isPodType = typeStr === 'podcast_share' || typeStr === 'podcast' || contentTypeStr === 'podcast' || post.sharedContent?.type?.toLowerCase() === 'podcast';
+    const isPodText = content.includes('Shared Podcast:') || title.startsWith('Shared Podcast:');
+    if (post.sharedPodcast || podUrlMatch || isPodType || isPodText || post.podcastId) {
+        const id = post.sharedPodcast?.id || post.podcastId || (podUrlMatch ? podUrlMatch[1] : null) || post.sharedContent?.id || post.contentId;
+        return {
+            type: 'Podcast',
+            id: id,
+            url: id ? `/podcasts?id=${id}` : '/podcasts',
+            label: 'Shared Podcast',
+            actionText: 'Listen Podcast',
+            icon: 'podcasts'
+        };
+    }
+
+    // 4. Profile Check
+    const profUrlMatch = content.match(/(?:https?:\/\/[^\s]+)?\/profile\?id=([a-zA-Z0-9_-]+)/i);
+    const isProfType = typeStr === 'profile_share' || typeStr === 'profile' || contentTypeStr === 'profile' || post.sharedContent?.type?.toLowerCase() === 'profile';
+    const isProfText = content.includes('Shared Profile:') || title.startsWith('Shared Profile:') || content.includes("profile with the community");
+    if (post.sharedProfile || post.isProfileShare || profUrlMatch || isProfType || isProfText) {
+        const id = post.sharedProfile?.id || post.sharedProfile?.userId || (profUrlMatch ? profUrlMatch[1] : null) || (content.includes('Loveneesh Sharma') ? 1 : null);
+        return {
+            type: 'Profile',
+            id: id,
+            url: id ? `/profile?id=${id}` : '/profile',
+            label: 'Shared Profile',
+            actionText: 'View Profile',
+            icon: 'person'
+        };
+    }
+
+    // 5. Post Check (Shared Post)
+    const postUrlMatch = content.match(/(?:https?:\/\/[^\s]+)?\/posts\?id=([a-zA-Z0-9_-]+)/i);
+    const isPostType = typeStr === 'post_share' || (typeStr === 'post' && (post.sharedPostId || postUrlMatch)) || post.sharedContent?.type?.toLowerCase() === 'post';
+    const isPostText = content.includes('Shared Post:') || title.startsWith('Shared Post:');
+    if (post.sharedPostId || postUrlMatch || isPostType || isPostText) {
+        const id = post.sharedPostId || (postUrlMatch ? postUrlMatch[1] : null) || post.sharedContent?.id;
+        return {
+            type: 'Post',
+            id: id,
+            url: id ? `/posts?id=${id}` : '/posts',
+            label: 'Shared Post',
+            actionText: 'Open Post',
+            icon: 'repeat'
+        };
+    }
+
+    return null;
+};
+
 
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useUser } from '../contexts/UserContext';
 import PageLoader from './PageLoader';
+import SuspendedAlertModal from '../modals/SuspendedAlertModal';
 
 /**
  * AuthGuard wraps all protected routes.
@@ -47,56 +48,69 @@ export default function AuthGuard({ children }) {
     }
 
     // Strict Account Suspension Guard — Block Posts, Articles, Videos, Podcasts & Community Access
-    const isSuspended = currentUser && (
-        currentUser.isActive === false ||
-        currentUser.isSuspended === true ||
-        currentUser.isPermanentlySuspended === true ||
-        currentUser.status === 'Suspended' ||
-        (currentUser.suspendedUntil && new Date(currentUser.suspendedUntil) > new Date())
-    );
+    const checkSuspension = () => {
+        if (!currentUser) {
+            try {
+                const savedEmpId = (localStorage.getItem('knome_employeeId') || '').toUpperCase();
+                const suspendedMap = JSON.parse(localStorage.getItem('knome_suspended_accounts') || '{}');
+                if (savedEmpId && suspendedMap[savedEmpId]) {
+                    return true;
+                }
+            } catch {}
+            return false;
+        }
+        if (
+            currentUser.isActive === false ||
+            currentUser.isSuspended === true ||
+            currentUser.isPermanentlySuspended === true ||
+            currentUser.status === 'Suspended' ||
+            (currentUser.suspendedUntil && new Date(currentUser.suspendedUntil) > new Date())
+        ) {
+            return true;
+        }
+        try {
+            const uid = String(currentUser.userId || currentUser.id || '');
+            const empId = (currentUser.employeeId || '').toUpperCase();
+            const suspendedMap = JSON.parse(localStorage.getItem('knome_suspended_accounts') || '{}');
+            if ((uid && suspendedMap[uid]) || (empId && suspendedMap[empId])) {
+                return true;
+            }
+        } catch {}
+        return false;
+    };
+
+    const isSuspended = checkSuspension();
 
     if (isSuspended) {
         return (
-            <div className="min-h-screen flex items-center justify-center p-6 bg-slate-950 text-white">
-                <div className="max-w-md w-full bg-slate-900 border border-rose-500/40 rounded-3xl p-8 shadow-2xl text-center space-y-6 animate-in fade-in zoom-in duration-300">
-                    <div className="w-20 h-20 rounded-2xl bg-rose-500/20 text-rose-500 flex items-center justify-center mx-auto shadow-inner border border-rose-500/30">
-                        <span className="material-symbols-outlined text-4xl">person_off</span>
-                    </div>
-                    <div>
-                        <span className="text-[11px] font-extrabold uppercase tracking-wider px-3 py-1 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 inline-block mb-3">
-                            Access Denied
-                        </span>
-                        <h2 className="text-2xl sm:text-3xl font-black text-rose-500 tracking-tight leading-snug">
-                            Your account is suspended by system admin
-                        </h2>
-                    </div>
-                    <p className="text-sm text-slate-300 leading-relaxed bg-slate-800/80 p-4 rounded-xl border border-slate-700/50">
-                        Your account <strong className="text-white">({currentUser.name || currentUser.fullName || 'Employee'})</strong> has been suspended by System Admin. You cannot access the Knome platform at this time. Please contact System Administration / HR for assistance.
-                    </p>
-                    <div className="text-xs text-rose-300 font-semibold bg-rose-500/10 p-3 rounded-xl border border-rose-500/20 text-left space-y-1">
-                        <div className="font-black text-rose-400 mb-1 uppercase tracking-wider">Restricted Modules:</div>
-                        <div>⛔ Posts & Feeds Viewing / Creation</div>
-                        <div>⛔ Knowledge Articles & Blogs</div>
-                        <div>⛔ Video Streaming & Uploads</div>
-                        <div>⛔ Podcasts & Audio Recordings</div>
-                        <div>⛔ Enterprise Communities & Channels</div>
-                    </div>
-                    <div className="pt-2 flex flex-col gap-3">
-                        <button
-                            onClick={logout}
-                            className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm rounded-xl transition-all border border-slate-700 cursor-pointer shadow-lg"
-                        >
-                            Log Out & Return to MPO Employee Hub
-                        </button>
-                    </div>
-                </div>
+            <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4">
+                <SuspendedAlertModal
+                    isOpen={true}
+                    user={currentUser || { employeeId: localStorage.getItem('knome_employeeId') }}
+                    onOk={logout}
+                />
             </div>
         );
     }
 
     if (!isAuthenticated || !currentUser) {
-        // Direct Open Knome: Never lock user out with a login screen
-        return children;
+        // Enforce MPO Employee Hub Login: Route unauthenticated visits through /login with client registration
+        window.location.href = '/login';
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white p-6">
+                <div className="flex flex-col items-center gap-4 text-center">
+                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg bg-indigo-600 animate-pulse">
+                        <span className="material-symbols-outlined text-white text-[32px]">lock</span>
+                    </div>
+                    <p className="text-base font-bold text-slate-200">
+                        Redirecting to MPO Employee Hub Login...
+                    </p>
+                    <p className="text-xs text-slate-400">
+                        Please authenticate via official MPO Employee Hub to access Knome.
+                    </p>
+                </div>
+            </div>
+        );
     }
 
     // Role Pending Guard — only applies if explicitly marked PENDING (never for standard new users)

@@ -7,6 +7,7 @@ import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 import { useScrollLoading } from '../hooks/useScrollLoading';
 import HotPostsWidget from '../components/widgets/HotPostsWidget';
 import TrendingTagsWidget from '../components/widgets/TrendingTagsWidget';
+import HighlightText from '../components/ui/HighlightText';
 import { postsApi, mapPost, getPersonalizedRecommendations } from '../utils/apiService';
 
 export default function Posts() {
@@ -151,7 +152,7 @@ export default function Posts() {
     // Get all unique tags for filter dropdown
     const rawUniqueTags = [...new Set([
         ...posts.flatMap(post => post.tags || []),
-        ...(selectedTag !== 'All' && !['⏰ Scheduled', '✨ Recommended'].includes(selectedTag) ? [selectedTag] : [])
+        ...(selectedTag !== 'All' && selectedTag !== '⏰ Scheduled' ? [selectedTag] : [])
     ])].filter(Boolean);
     const filteredAvailableTags = rawUniqueTags.filter(t => t.toLowerCase().includes(tagSearch.toLowerCase()));
 
@@ -165,16 +166,14 @@ export default function Posts() {
         const matchesTag = selectedTag === 'All' || 
                            selectedTag === '🔥 Hot Posts' ||
                            (selectedTag === '⏰ Scheduled' ? (post.status === 'Scheduled' || post.isScheduledFuture) : 
-                           (selectedTag === '✨ Recommended' ? true : (
+                           (
                                (post.tags && post.tags.some(t => t.toLowerCase() === selectedTag.toLowerCase())) ||
                                ((post.content || '').toLowerCase().includes('#' + selectedTag.toLowerCase()))
-                           )));
+                           ));
         return matchesSearch && matchesTag;
     });
 
-    const filteredPosts = (selectedTag === '✨ Recommended'
-        ? getPersonalizedRecommendations(rawPosts, currentUser)
-        : selectedTag === '🔥 Hot Posts'
+    const filteredPosts = (selectedTag === '🔥 Hot Posts'
         ? [...rawPosts].sort((a, b) => {
             const scoreA = Number(a.likesCount || a.likes || 0) * 2 + Number(a.commentsCount || a.comments || 0) * 3 + Number(a.sharesCount || a.shares || 0) * 4;
             const scoreB = Number(b.likesCount || b.likes || 0) * 2 + Number(b.commentsCount || b.comments || 0) * 3 + Number(b.sharesCount || b.shares || 0) * 4;
@@ -235,13 +234,13 @@ export default function Posts() {
                     <button 
                         onClick={() => setShowFilterBar(prev => !prev)}
                         className={`w-full sm:w-auto px-5 py-3 font-bold rounded-xl transition-all flex items-center justify-center gap-2 border cursor-pointer ${
-                            showFilterBar || searchQuery || (selectedTag !== 'All' && selectedTag !== '✨ Recommended')
+                            showFilterBar || searchQuery || selectedTag !== 'All'
                                 ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20'
                                 : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
                         }`}
                     >
                         <span className="material-symbols-outlined text-[18px]">filter_list</span>
-                        Filter { (searchQuery || (selectedTag !== 'All' && selectedTag !== '✨ Recommended')) && '• Active' }
+                        Filter { (searchQuery || selectedTag !== 'All') && '• Active' }
                     </button>
                     {currentUser.role !== 'SYSADM' && (
                         <button 
@@ -256,7 +255,7 @@ export default function Posts() {
             </div>
 
             {/* Search & Topic Filter Bar (Collapsible via Filter button) */}
-            {(showFilterBar || searchQuery || (selectedTag !== 'All' && selectedTag !== '✨ Recommended')) && (
+            {(showFilterBar || searchQuery || selectedTag !== 'All') && (
                 <div className={`p-4 sm:p-5 rounded-2xl border border-blue-500/30 bg-white dark:bg-slate-900 shadow-xl mb-2 animate-in fade-in slide-in-from-top-4 duration-200 flex flex-col gap-3.5 relative ${isFilterOpen ? 'z-40' : 'z-10'}`}>
                     <div className="flex items-center gap-3">
                         <div className="relative flex-1">
@@ -283,7 +282,7 @@ export default function Posts() {
                             <button
                                 onClick={() => setIsFilterOpen(!isFilterOpen)}
                                 className={`flex items-center gap-2 px-4 py-2.5 sm:py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-xs ${
-                                    isFilterOpen || (selectedTag !== 'All' && selectedTag !== '✨ Recommended')
+                                    isFilterOpen || selectedTag !== 'All'
                                         ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20'
                                         : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
                                 }`}
@@ -291,7 +290,7 @@ export default function Posts() {
                             >
                                 <span className="material-symbols-outlined text-[18px]">tune</span>
                                 <span className="hidden sm:inline">Topics</span>
-                                {selectedTag !== 'All' && selectedTag !== '✨ Recommended' && (
+                                {selectedTag !== 'All' && (
                                     <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
                                 )}
                             </button>
@@ -353,7 +352,9 @@ export default function Posts() {
                                                                 : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
                                                         }`}
                                                     >
-                                                        <span className="truncate">#{tag}</span>
+                                                        <span className="truncate">
+                                                            <HighlightText text={`#${tag}`} query={tagSearch} />
+                                                        </span>
                                                         <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
                                                             {count}
                                                         </span>
@@ -395,17 +396,6 @@ export default function Posts() {
                         <span>🔥</span>
                         <span>Hot Posts</span>
                     </button>
-                    <button
-                        onClick={() => setSelectedTag('✨ Recommended')}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer ${
-                            selectedTag === '✨ Recommended'
-                                ? 'bg-blue-500/15 border-blue-500/40 text-blue-700 dark:text-blue-400 shadow-xs'
-                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-                        }`}
-                    >
-                        <span>✨</span>
-                        <span>Recommended</span>
-                    </button>
                     {authorScheduledCount > 0 && (
                         <button
                             onClick={() => setSelectedTag('⏰ Scheduled')}
@@ -427,7 +417,7 @@ export default function Posts() {
                 </div>
 
                 {/* Active Selected Filter Badge */}
-                {selectedTag !== 'All' && selectedTag !== '✨ Recommended' && selectedTag !== '⏰ Scheduled' && selectedTag !== '🔥 Hot Posts' && (
+                {selectedTag !== 'All' && selectedTag !== '⏰ Scheduled' && selectedTag !== '🔥 Hot Posts' && (
                     <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-xl animate-in fade-in duration-150">
                         <span>Topic: #{selectedTag}</span>
                         <button 
@@ -453,7 +443,7 @@ export default function Posts() {
                     ) : filteredPosts.length > 0 ? (
                         <>
                             {filteredPosts.slice(0, visibleCount).map(post => (
-                                <PostCard key={post.id} post={post} onPostDeleted={(deletedId) => {
+                                <PostCard key={post.id} post={post} searchQuery={searchQuery} onPostDeleted={(deletedId) => {
                                     if (deletedId) setPosts(prev => prev.filter(p => p.id !== deletedId && p.postId !== deletedId));
                                     loadPosts();
                                 }} />

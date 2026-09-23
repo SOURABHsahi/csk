@@ -77,14 +77,14 @@ public class PostRepository : IPostRepository
             .ToListAsync();
     }
 
-    public async Task<int> PublishDueScheduledPostsAsync()
+    public async Task<List<Post>> PublishDueScheduledPostsAsync()
     {
         var nowIst = Knome.API.Common.KnomeTime.Now;
         var duePosts = await _db.Posts
             .Where(p => p.Status == "Scheduled" && (p.ScheduledDate == null || p.ScheduledDate <= nowIst))
             .ToListAsync();
 
-        if (!duePosts.Any()) return 0;
+        if (!duePosts.Any()) return new List<Post>();
 
         foreach (var post in duePosts)
         {
@@ -92,7 +92,8 @@ public class PostRepository : IPostRepository
             post.PublishedDate = post.ScheduledDate ?? nowIst;
         }
 
-        return await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync();
+        return duePosts;
     }
 
     public async Task<List<Post>> GetMyPostsAsync(int authorUserId, int pageNumber = 1, int pageSize = 20)

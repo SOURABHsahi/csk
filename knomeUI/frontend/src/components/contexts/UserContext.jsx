@@ -26,28 +26,32 @@ export const KNOWN_ROSTER_NAMES = {
     'MPO104': 'Rishikesh Ugle',
     'MPO105': 'Meghna Tiwari',
     'MPO106': 'Mayur Verma',
-    'MPO107': 'Vilash Deshmukh',
+    'MPO107': 'Ankit Sharma',
     'MPO108': 'Pooja Sharma',
     'MPO089': 'Vilash Deshmukh',
-    'MPO109': 'Suresh verma',
-    'MPO110': 'Kabir singh',
-    'MPO111': 'Mayur bansal',
+    'MPO109': 'Suresh Verma',
+    'MPO110': 'Kabir Singh',
+    'MPO111': 'Mayur Bansal',
     'MPO112': 'Anup',
-    'MPO113': 'Mahesh sharma',
-    'MPO114': 'Ramesh sharma',
+    'MPO113': 'Mahesh Sharma',
+    'MPO114': 'Ramesh Sharma',
     'MPO115': 'Aishwary',
     'MPO116': 'Meghna',
+    'MPO117': 'Lovnesh Sharma',
     'MPO118': 'Raman Kumar',
     'MPO119': 'Rishabh Pandey',
-    'MPO120': 'krisha dabhi',
+    'MPO120': 'Krisha Dabhi',
     'MPO121': 'Mahi Rathore',
     'MPO122': 'Satendra Singh',
     'MPO652': 'Deepak Simrodia',
+    'MPO664': 'Ramesh Patel',
+    'MP0664': 'Vishendra Sharma',
     'EMP001': 'Aarav Sharma',
     'EMP002': 'Priya Patel',
     'EMP003': 'Rohan Verma',
     'EMP004': 'Neha Gupta'
 };
+
 
 export const resolveEmployeeName = (rawName, empId) => {
     const cleaned = String(rawName || '').trim();
@@ -180,6 +184,12 @@ export const deduplicateMembers = (members = [], contextUsers = []) => {
  */
 export const resolveUserStatus = (user) => {
     if (!user) return 'Active';
+    try {
+        const savedSusp = JSON.parse(localStorage.getItem('knome_suspended_accounts') || '{}');
+        const uidStr = String(user.userId || user.id || '');
+        const empStr = String(user.employeeId || '').toUpperCase();
+        if ((uidStr && savedSusp[uidStr]) || (empStr && savedSusp[empStr])) return 'Suspended';
+    } catch {}
     if (typeof user.status === 'string') {
         const s = user.status.trim().toLowerCase();
         if (s === 'suspended') return 'Suspended';
@@ -281,10 +291,11 @@ export const UserProvider = ({ children }) => {
     // Default administrator user Loveneesh Sharma (MP0108) — ensures Knome opens directly without login barrier
     const defaultAdminUser = INITIAL_USERS.find(u => u.employeeId === 'MP0108' || u.employeeId === 'MPO101') || INITIAL_USERS[0];
     const savedEmpId = typeof window !== 'undefined' ? localStorage.getItem('knome_employeeId') : null;
+    const hasSavedSession = typeof window !== 'undefined' && Boolean(localStorage.getItem('knome_employeeId') || localStorage.getItem('knome_jwt'));
     const initialUser = (savedEmpId && INITIAL_USERS.find(u => u.employeeId?.toUpperCase() === savedEmpId.toUpperCase())) || defaultAdminUser;
 
     const [currentUser, setCurrentUser] = useState(initialUser);
-    const [isAuthLoading, setIsAuthLoading] = useState(false);
+    const [isAuthLoading, setIsAuthLoading] = useState(hasSavedSession);
     const [isAuthenticated, setIsAuthenticated] = useState(true);
 
     // ── Reactive users list — changes here cause Navbar Switch User to re-render ──
@@ -440,17 +451,18 @@ export const UserProvider = ({ children }) => {
             if (isSuspended) {
                 localStorage.removeItem('knome_jwt');
                 localStorage.removeItem('knome_refresh');
-                localStorage.removeItem('knome_employeeId');
+                if (finalUser?.employeeId) {
+                    localStorage.setItem('knome_employeeId', finalUser.employeeId);
+                }
                 setCurrentUser({
                     ...finalUser,
                     isActive: false,
                     isSuspended: true,
                     status: 'Suspended'
                 });
-                setIsAuthenticated(false);
-                const suspendErr = new Error('This account has been suspended by System Administrator. Please contact HR.');
-                suspendErr.isSuspended = true;
-                throw suspendErr;
+                setIsAuthenticated(true);
+                setIsAuthLoading(false);
+                return;
             }
 
             setCurrentUser(finalUser);
@@ -461,17 +473,18 @@ export const UserProvider = ({ children }) => {
             if (isSuspendedError) {
                 localStorage.removeItem('knome_jwt');
                 localStorage.removeItem('knome_refresh');
-                localStorage.removeItem('knome_employeeId');
+                if (localUser?.employeeId) {
+                    localStorage.setItem('knome_employeeId', localUser.employeeId);
+                }
                 setCurrentUser({
                     ...localUser,
                     isActive: false,
                     isSuspended: true,
                     status: 'Suspended'
                 });
-                setIsAuthenticated(false);
-                const suspendErr = new Error(error?.message || 'This account has been suspended by System Administrator. Please contact HR.');
-                suspendErr.isSuspended = true;
-                throw suspendErr;
+                setIsAuthenticated(true);
+                setIsAuthLoading(false);
+                return;
             }
             console.warn('Backend login warning, retaining active session:', error?.message || error);
             // Auto-fallback: retain localUser so Knome remains directly accessible
@@ -546,15 +559,13 @@ export const UserProvider = ({ children }) => {
             // Combined param lookup (checks search params first, then hash params)
             const getParam = (key) => searchParams.get(key) || hashParams.get(key);
 
-            // DEBUG: Log received SSO parameters
-            if (window.location.search || window.location.hash) {
-                console.info('[SSO Debug] Search params:', Object.fromEntries(searchParams.entries()));
-                console.info('[SSO Debug] Hash params:', Object.fromEntries(hashParams.entries()));
-                console.info('[SSO Debug] Full URL:', window.location.href);
-            }
-
             const ssoToken = getParam('token') || getParam('access_token') || getParam('sso_token') || getParam('id_token') || getParam('code');
             let ssoEmpId = getParam('employeeId') || getParam('employee_id') || getParam('empId') || getParam('emp_id') || getParam('email') || getParam('user') || getParam('username') || getParam('sub');
+
+            // Log ONLY when actual SSO token or employee credentials are present
+            if (ssoToken || ssoEmpId) {
+                console.info('[SSO] Incoming SSO authentication parameters detected:', { hasToken: Boolean(ssoToken), ssoEmpId });
+            }
 
             // If token is present, decode JWT claims (email / employeeId / sub)
             if (ssoToken && !ssoEmpId) {
@@ -565,7 +576,7 @@ export const UserProvider = ({ children }) => {
                         const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
                         const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
                         const payload = JSON.parse(jsonPayload);
-                        console.info('[SSO Debug] Decoded JWT Claims:', payload);
+                        console.info('[SSO] Decoded JWT Claims:', payload);
 
                         // Priority 1: Specific employee ID claims
                         const extractedEmpId = payload.employeeId || 
@@ -588,7 +599,7 @@ export const UserProvider = ({ children }) => {
                         ssoEmpId = extractedEmpId || extractedEmail || cleanSub || payload.sub;
                     }
                 } catch (e) {
-                    console.warn('[SSO Debug] JWT decode note:', e?.message || e);
+                    console.warn('[SSO] JWT decode note:', e?.message || e);
                 }
             }
 
@@ -634,15 +645,54 @@ export const UserProvider = ({ children }) => {
                     }
 
                     try {
-                        // Remove the SSO token before authenticating — Knome backend will issue its own JWT
-                        localStorage.removeItem('knome_jwt');
-                        localStorage.removeItem('accessToken');
-                        await authenticateUser(localUser);
-                        // Sync users list now that we have a valid Knome JWT
-                        syncUsersList();
-                        
+                        // Fetch full profile and RBAC permissions from backend using the SSO token
+                        let profile = null;
+                        try {
+                            profile = await profileApi.getMe();
+                        } catch (e) {
+                            try {
+                                const res = await authApi.getMe();
+                                profile = res?.data || res;
+                            } catch {
+                                // If direct profile fetch failed, try authenticateUser fallback
+                                if (localUser) {
+                                    await authenticateUser(localUser);
+                                }
+                            }
+                        }
+
+                        if (profile) {
+                            const merged = mergeProfile(localUser, profile);
+                            setCurrentUser(merged);
+                            setIsAuthenticated(true);
+                            setIsAuthLoading(false);
+                            syncUsersList();
+                        } else if (!isAuthenticated) {
+                            setCurrentUser(localUser);
+                            setIsAuthenticated(true);
+                            setIsAuthLoading(false);
+                            syncUsersList();
+                        }
+
+                        let isSuspendedUser = false;
+                        try {
+                            const suspendedMap = JSON.parse(localStorage.getItem('knome_suspended_accounts') || '{}');
+                            const empKey = (ssoEmpId || localUser.employeeId || '').toUpperCase();
+                            const uidKey = String(localUser.userId || localUser.id || '');
+                            if (suspendedMap[empKey] || (uidKey && suspendedMap[uidKey])) {
+                                isSuspendedUser = true;
+                            }
+                        } catch {}
+
+                        if (localUser.isSuspended || localUser.isActive === false || isSuspendedUser) {
+                            setIsAuthLoading(false);
+                            return;
+                        }
+
                         // Force browser navigation to the return URL so React Router initializes properly on it
-                        window.location.href = ssoReturnUrl;
+                        if (window.location.pathname === '/login') {
+                            window.location.href = ssoReturnUrl;
+                        }
                     } catch (err) {
                         console.error('SSO authentication failed:', err?.message || err);
                         localStorage.removeItem('knome_jwt');
@@ -690,7 +740,17 @@ export const UserProvider = ({ children }) => {
                     };
                 }
 
-                const isLocalSuspended = localUser.isActive === false || localUser.isSuspended === true || localUser.isPermanentlySuspended === true || localUser.status === 'Suspended';
+                let isSuspendedMapHit = false;
+                try {
+                    const suspendedMap = JSON.parse(localStorage.getItem('knome_suspended_accounts') || '{}');
+                    const uidStr = String(localUser.userId || localUser.id || '');
+                    const empStr = String(savedEmployeeId || localUser.employeeId || '').toUpperCase();
+                    if ((uidStr && suspendedMap[uidStr]) || (empStr && suspendedMap[empStr])) {
+                        isSuspendedMapHit = true;
+                    }
+                } catch {}
+
+                const isLocalSuspended = isSuspendedMapHit || resolveUserStatus(localUser) === 'Suspended' || localUser.isActive === false || localUser.isSuspended === true || localUser.isPermanentlySuspended === true || localUser.status === 'Suspended';
                 if (isLocalSuspended) {
                     localStorage.removeItem('knome_jwt');
                     localStorage.removeItem('knome_refresh');
@@ -768,19 +828,10 @@ export const UserProvider = ({ children }) => {
                 }
             }
 
-            // If no active session, auto-authenticate with default user Loveneesh Sharma (MP0108)
-            // so Knome opens immediately without getting blocked
-            const defaultUser = INITIAL_USERS.find(u => u.employeeId === 'MP0108' || u.employeeId === 'MPO101') || INITIAL_USERS[0];
-            try {
-                localStorage.setItem('knome_employeeId', defaultUser.employeeId);
-                await authenticateUser(defaultUser);
-                syncUsersList(defaultUser.roles || [defaultUser.roleName]);
-            } catch (fallbackErr) {
-                console.warn('Default auto-login fallback:', fallbackErr);
-                setCurrentUser(defaultUser);
-                setIsAuthenticated(true);
-                setIsAuthLoading(false);
-            }
+            // If no active session, require user to log in via MPO Employee Hub
+            setCurrentUser(null);
+            setIsAuthenticated(false);
+            setIsAuthLoading(false);
         };
 
         restoreSession();
@@ -883,17 +934,26 @@ export const UserProvider = ({ children }) => {
         try {
             if (refreshToken) await authApi.logout(refreshToken);
         } catch { /* ignore logout errors */ }
+
+        // 1. Destroy local application storage
         localStorage.removeItem('knome_jwt');
         localStorage.removeItem('accessToken');
         localStorage.removeItem('userProfile');
         localStorage.removeItem('knome_refresh');
-        const defaultAdmin = INITIAL_USERS.find(u => u.employeeId === 'MP0108') || INITIAL_USERS[0];
-        localStorage.setItem('knome_employeeId', defaultAdmin.employeeId);
-        setCurrentUser(defaultAdmin);
-        setIsAuthenticated(true);
+        localStorage.removeItem('knome_employeeId');
+        setCurrentUser(null);
+        setIsAuthenticated(false);
+
         if (customRedirectUrl === false) {
             return;
         }
+
+        const host = window.location.hostname || 'localhost';
+        const isIis = window.location.port === '8080';
+        const knomePort = window.location.port || (isIis ? '8080' : '5173');
+        const knomeBase = `${window.location.protocol}//${host}${knomePort ? `:${knomePort}` : ''}`;
+
+        // 2. After clearing session, redirect directly to MPO Employee Hub applications portal
         const targetUrl = customRedirectUrl || 'https://counselling-1.mponline.demo.gov.in:3001/applications';
         window.location.href = targetUrl;
     }, []);
@@ -902,7 +962,15 @@ export const UserProvider = ({ children }) => {
      * Switch user (dev/demo shortcut — kept for the user switcher in Navbar).
      */
     const switchUser = useCallback(async (user) => {
-        const isSuspended = user.isActive === false || user.isSuspended === true || user.isPermanentlySuspended === true || user.status === 'Suspended';
+        let isSuspended = user.isActive === false || user.isSuspended === true || user.isPermanentlySuspended === true || user.status === 'Suspended';
+        try {
+            const suspendedMap = JSON.parse(localStorage.getItem('knome_suspended_accounts') || '{}');
+            const uidStr = String(user.userId || user.id || '');
+            const empStr = String(user.employeeId || '').toUpperCase();
+            if ((uidStr && suspendedMap[uidStr]) || (empStr && suspendedMap[empStr])) {
+                isSuspended = true;
+            }
+        } catch {}
         if (isSuspended) {
             localStorage.removeItem('knome_jwt');
             localStorage.removeItem('knome_refresh');
@@ -1120,11 +1188,38 @@ export const UserProvider = ({ children }) => {
         return awardRuleKarma(userId, 'CUSTOM', { overridePoints: points, customTitle: reason });
     }, [awardRuleKarma]);
 
-    const toggleUserActiveStatus = useCallback((userId, isActive) => {
+    const toggleUserActiveStatus = useCallback((userId, isActive, reason = '') => {
+        try {
+            const savedSuspended = JSON.parse(localStorage.getItem('knome_suspended_accounts') || '{}');
+            if (!isActive) {
+                savedSuspended[String(userId)] = {
+                    suspendedAt: new Date().toISOString(),
+                    reason: reason || 'Suspended by System Administrator'
+                };
+            } else {
+                delete savedSuspended[String(userId)];
+            }
+            localStorage.setItem('knome_suspended_accounts', JSON.stringify(savedSuspended));
+        } catch (e) {}
+
         setUsersList(prev => prev.map(u => {
             const matchById = u.userId && String(u.userId) === String(userId);
             const matchBySeedId = u.id && String(u.id) === String(userId);
             if (matchById || matchBySeedId) {
+                if (u.employeeId) {
+                    try {
+                        const savedSuspended = JSON.parse(localStorage.getItem('knome_suspended_accounts') || '{}');
+                        if (!isActive) {
+                            savedSuspended[u.employeeId.toUpperCase()] = {
+                                suspendedAt: new Date().toISOString(),
+                                reason: reason || 'Suspended by System Administrator'
+                            };
+                        } else {
+                            delete savedSuspended[u.employeeId.toUpperCase()];
+                        }
+                        localStorage.setItem('knome_suspended_accounts', JSON.stringify(savedSuspended));
+                    } catch (e) {}
+                }
                 return { 
                     ...u, 
                     isActive: isActive,

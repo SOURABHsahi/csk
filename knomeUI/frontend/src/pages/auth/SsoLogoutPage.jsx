@@ -32,11 +32,11 @@ export default function SsoLogoutPage() {
             }
 
             let returnUrl = searchParams.get('returnUrl') || 'https://counselling-1.mponline.demo.gov.in:3001/applications';
-            if (returnUrl === '/login' || returnUrl.includes('localhost:5173/login')) {
+            if (returnUrl === '/login' || returnUrl.includes('localhost:5173/login') || returnUrl.includes('login?logout=true')) {
                 returnUrl = 'https://counselling-1.mponline.demo.gov.in:3001/applications';
             }
 
-            window.location.href = `https://counselling-1.mponline.demo.gov.in:3001/sso-logout?returnUrl=${encodeURIComponent(returnUrl)}&source=knome`;
+            window.location.href = `https://counselling-1.mponline.demo.gov.in:3001/applications`;
         };
 
         doLogout();

@@ -38,7 +38,7 @@ export default function VideoPlayerModal({ isOpen, onClose, video, onVideoDelete
     // Share Modal States
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [shareTab, setShareTab] = useState('menu'); // 'menu' | 'community' | 'users'
-    const [selectedCommunityId, setSelectedCommunityId] = useState('1');
+    const [selectedCommunityId, setSelectedCommunityId] = useState('');
     const [shareMessageNote, setShareMessageNote] = useState('');
     const [userSearchQuery, setUserSearchQuery] = useState('');
     const [selectedUserIds, setSelectedUserIds] = useState([]);

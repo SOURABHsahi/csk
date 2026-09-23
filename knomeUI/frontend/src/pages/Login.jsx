@@ -3,26 +3,31 @@ import { useNavigate } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import knomeLogoDark from '../assets/knome_logo_dark.png';
 
+const getSsoUrls = () => {
+    const host = window.location.hostname || 'localhost';
+    const isIis = window.location.port === '8080';
+    const ehPort = isIis ? '8081' : '5001';
+    const knomePort = window.location.port || (isIis ? '8080' : '5173');
+    const knomeBase = `${window.location.protocol}//${host}${knomePort ? `:${knomePort}` : ''}`;
+
+    const isLocal = host === 'localhost' || host === '127.0.0.1';
+    const ehBase = isLocal ? `http://${host}:${ehPort}` : 'https://counselling-1.mponline.demo.gov.in:3001';
+    const hubLoginUrl = `${ehBase}/login`;
+
+    return { ehBase, hubLoginUrl, knomeBase };
+};
+
 export default function Login() {
     const { login, currentUser, isAuthenticated } = useUser();
     const navigate = useNavigate();
 
     useEffect(() => {
-        // Direct Open Knome — immediately authenticate as default admin and open Dashboard
-        const openKnomeDirectly = async () => {
-            if (isAuthenticated && currentUser) {
-                navigate('/', { replace: true });
-                return;
-            }
-            try {
-                await login('MP0108');
-            } catch {
-                /* fallback handled in UserContext */
-            }
-            navigate('/', { replace: true });
-        };
-        openKnomeDirectly();
-    }, [isAuthenticated, currentUser, login, navigate]);
+        const { hubLoginUrl, knomeBase } = getSsoUrls();
+        const returnUrl = encodeURIComponent(`${knomeBase}/login`);
+
+        // Redirect to central MPO Hub login with registered client_id & returnUrl
+        window.location.href = `${hubLoginUrl}?client_id=Knome-2026&returnUrl=${returnUrl}&redirect_uri=${encodeURIComponent(knomeBase)}`;
+    }, []);
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white p-6 relative overflow-hidden">

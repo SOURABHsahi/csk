@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { formatNotificationDate } from '../../utils/notificationHelpers';
 
 export default function NotificationToast({ notification, onClose }) {
     const navigate = useNavigate();
@@ -42,7 +43,7 @@ export default function NotificationToast({ notification, onClose }) {
                         {notification.title || 'New Notification'}
                     </h4>
                     <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full whitespace-nowrap">
-                        {notification.time || (notification.createdDate ? `${String(new Date(notification.createdDate).getDate()).padStart(2, '0')}-${String(new Date(notification.createdDate).getMonth() + 1).padStart(2, '0')}-${new Date(notification.createdDate).getFullYear()}` : `${String(new Date().getDate()).padStart(2, '0')}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${new Date().getFullYear()}`)}
+                        {formatNotificationDate(notification.createdDate || notification.createdAt || notification.time)}
                     </span>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-snug">

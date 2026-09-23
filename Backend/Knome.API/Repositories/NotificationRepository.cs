@@ -130,4 +130,71 @@ public class NotificationRepository : INotificationRepository
 
         return existingUserIds.Where(id => !disabled.Contains(id)).ToList();
     }
+
+    public async Task<List<Notification>> GetRecentBroadcastsAsync(int take = 10)
+    {
+        var cutoff = Knome.API.Common.KnomeTime.Now.AddDays(-30);
+        return await _db.Notifications
+            .Where(n => (n.EventType == Constants.NotificationTypes.HrAnnouncement || n.EventType == "AdminBroadcast") && n.CreatedDate >= cutoff)
+            .OrderByDescending(n => n.CreatedDate)
+            .Take(take > 0 ? take : 10)
+            .ToListAsync();
+    }
+
+    public async Task<int> UpdateBroadcastMessageAsync(long notificationId, string newMessage)
+    {
+        var target = await _db.Notifications.FirstOrDefaultAsync(n => n.NotificationId == notificationId);
+        if (target == null) return 0;
+
+        var oldMessage = target.Message;
+        var eventType = target.EventType;
+        var targetDate = target.CreatedDate;
+        var windowStart = targetDate.AddMinutes(-30);
+        var windowEnd = targetDate.AddMinutes(30);
+
+        var siblings = await _db.Notifications
+            .Where(n => n.EventType == eventType && n.Message == oldMessage && n.CreatedDate >= windowStart && n.CreatedDate <= windowEnd)
+            .ToListAsync();
+
+        if (siblings.Count == 0)
+        {
+            target.Message = newMessage;
+            await _db.SaveChangesAsync();
+            return 1;
+        }
+
+        foreach (var s in siblings)
+        {
+            s.Message = newMessage;
+        }
+        await _db.SaveChangesAsync();
+        return siblings.Count;
+    }
+
+    public async Task<int> DeleteBroadcastBatchAsync(long notificationId)
+    {
+        var target = await _db.Notifications.FirstOrDefaultAsync(n => n.NotificationId == notificationId);
+        if (target == null) return 0;
+
+        var oldMessage = target.Message;
+        var eventType = target.EventType;
+        var targetDate = target.CreatedDate;
+        var windowStart = targetDate.AddMinutes(-30);
+        var windowEnd = targetDate.AddMinutes(30);
+
+        var siblings = await _db.Notifications
+            .Where(n => n.EventType == eventType && n.Message == oldMessage && n.CreatedDate >= windowStart && n.CreatedDate <= windowEnd)
+            .ToListAsync();
+
+        if (siblings.Count == 0)
+        {
+            _db.Notifications.Remove(target);
+            await _db.SaveChangesAsync();
+            return 1;
+        }
+
+        _db.Notifications.RemoveRange(siblings);
+        await _db.SaveChangesAsync();
+        return siblings.Count;
+    }
 }

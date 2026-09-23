@@ -17,4 +17,7 @@ public interface INotificationRepository
     Task DeleteAsync(long notificationId);
     Task ReplacePreferencesAsync(int userId, List<NotificationPreference> preferences);
     Task<List<int>> GetEligibleRecipientIdsAsync(string eventType, List<int> candidateUserIds);
+    Task<List<Notification>> GetRecentBroadcastsAsync(int take = 10);
+    Task<int> UpdateBroadcastMessageAsync(long notificationId, string newMessage);
+    Task<int> DeleteBroadcastBatchAsync(long notificationId);
 }

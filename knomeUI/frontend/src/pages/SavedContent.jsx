@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { savedContentApi, resolveMediaUrl } from '../utils/apiService';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
+import HighlightText from '../components/ui/HighlightText';
 import { useScrollLoading } from '../hooks/useScrollLoading';
 import * as signalR from '@microsoft/signalr';
 
@@ -88,7 +89,7 @@ export default function SavedContent() {
         { id: 'Posts', label: 'Posts', countKey: 'postsCount' },
         { id: 'Articles', label: 'Articles', countKey: 'articlesCount' },
         { id: 'Videos', label: 'Videos', countKey: 'videosCount' },
-        { id: 'Podcasts', label: 'Podcasts', countKey: 'podcastsCount' },
+        { id: 'Podcasts', label: 'Audio', countKey: 'podcastsCount' },
     ];
 
     // Load counts
@@ -315,6 +316,7 @@ export default function SavedContent() {
         switch (type?.toLowerCase()) {
             case 'article': return 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20';
             case 'video': return 'bg-rose-500/10 text-rose-500 border-rose-500/20';
+            case 'audio':
             case 'podcast': return 'bg-purple-500/10 text-purple-500 border-purple-500/20';
             case 'job':
             case 'document': return 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20';
@@ -326,7 +328,8 @@ export default function SavedContent() {
         switch (type?.toLowerCase()) {
             case 'article': return 'article';
             case 'video': return 'play_circle';
-            case 'podcast': return 'podcasts';
+            case 'audio':
+            case 'podcast': return 'audiotrack';
             case 'job':
             case 'document': return 'description';
             default: return 'dynamic_feed';
@@ -616,12 +619,12 @@ export default function SavedContent() {
                                         </div>
 
                                         <h3 className="text-sm md:text-base font-bold text-slate-900 dark:text-white mb-1 leading-snug group-hover:text-amber-500 transition-colors line-clamp-2">
-                                            {extractText(item.title)}
+                                            <HighlightText text={extractText(item.title)} query={searchQuery} />
                                         </h3>
 
                                         {isAvailable ? (
                                             <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mb-2">
-                                                {extractText(item.summary || item.contentText)}
+                                                <HighlightText text={extractText(item.summary || item.contentText)} query={searchQuery} />
                                             </p>
                                         ) : (
                                             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-rose-500/10 text-rose-500 border border-rose-500/20 text-xs font-semibold mb-2">
@@ -646,7 +649,7 @@ export default function SavedContent() {
                                                 </div>
                                             )}
                                             <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                                                {extractText(item.authorName || item.authorFullName || 'Knome Member')}
+                                                <HighlightText text={extractText(item.authorName || item.authorFullName || 'Knome Member')} query={searchQuery} />
                                             </span>
                                             {item.authorRole && (
                                                 <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">

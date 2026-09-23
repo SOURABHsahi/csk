@@ -91,6 +91,14 @@ public class NotificationsController : KnomeControllerBase
         return Ok(ApiResponse<bool>.SuccessResponse(200, "Preferences updated successfully.", true));
     }
 
+    [HttpGet("broadcasts")]
+    [ProducesResponseType(typeof(ApiResponse<List<BroadcastItemDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetBroadcasts()
+    {
+        var result = await _notificationService.GetBroadcastAnnouncementsAsync();
+        return Ok(ApiResponse<List<BroadcastItemDto>>.SuccessResponse(200, "Broadcast announcements retrieved successfully.", result));
+    }
+
     [HttpPost("broadcast")]
     [Authorize(Roles = Roles.HRAdmin + "," + Roles.SystemAdmin)]
     [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
@@ -99,13 +107,47 @@ public class NotificationsController : KnomeControllerBase
         var activeIds = await _userRepository.GetAllActiveUserIdsAsync();
         if (activeIds.Count > 0)
         {
+            var fullMessage = !string.IsNullOrWhiteSpace(dto.Title)
+                ? $"{dto.Title.Trim()} | {dto.Message.Trim()}"
+                : dto.Message.Trim();
+
             await _notificationService.PublishBroadcastAsync(
                 Constants.NotificationTypes.HrAnnouncement,
-                dto.Message,
+                fullMessage,
                 dto.RelatedContentType,
                 dto.RelatedContentId,
                 activeIds);
         }
         return Ok(ApiResponse<bool>.SuccessResponse(200, "Broadcast announcement sent successfully.", true));
+    }
+
+    [HttpPut("broadcast/{id:long}")]
+    [Authorize(Roles = Roles.HRAdmin + "," + Roles.SystemAdmin)]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UpdateBroadcast(long id, [FromBody] UpdateBroadcastDto dto)
+    {
+        var fullMessage = !string.IsNullOrWhiteSpace(dto.Title)
+            ? $"{dto.Title.Trim()} | {dto.Message.Trim()}"
+            : dto.Message.Trim();
+
+        var success = await _notificationService.UpdateBroadcastAsync(id, fullMessage);
+        if (!success)
+        {
+            return NotFound(ApiResponse<bool>.FailureResponse(404, "Broadcast announcement not found or could not be updated."));
+        }
+        return Ok(ApiResponse<bool>.SuccessResponse(200, "Broadcast announcement updated successfully.", true));
+    }
+
+    [HttpDelete("broadcast/{id:long}")]
+    [Authorize(Roles = Roles.HRAdmin + "," + Roles.SystemAdmin)]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DeleteBroadcast(long id)
+    {
+        var success = await _notificationService.DeleteBroadcastAsync(id);
+        if (!success)
+        {
+            return NotFound(ApiResponse<bool>.FailureResponse(404, "Broadcast announcement not found or could not be removed."));
+        }
+        return Ok(ApiResponse<bool>.SuccessResponse(200, "Broadcast announcement removed successfully.", true));
     }
 }

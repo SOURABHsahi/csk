@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { interactionsApi, searchApi, communitiesApi, adminApi, postsApi, notificationsApi, resolveMediaUrl, getCommunityImages } from '../../utils/apiService';
 import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
+import HighlightText from '../ui/HighlightText';
 
 export default function ArticleShareModal({ isOpen, onClose, article, post, item: propItem, contentType: propContentType, onShared }) {
     const { currentUser, users: contextUsers } = useUser();
@@ -26,14 +27,19 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
 
     // Detect Content Type
     const contentTypeStr = propContentType || (
-        item?.audioUrl || item?.series || item?.podcastId || item?.type === 'Podcast' ? 'Podcast' :
-        item?.videoUrl || item?.sourceUrl || item?.type === 'video_share' || item?.type === 'Video' ? 'Video' :
-        item?.type === 'Community' || (item?.memberCount !== undefined && item?.rules) ? 'Community' :
+        item?.audioUrl || item?.series || item?.podcastId || item?.type === 'Podcast' || item?.type === 'podcast' || item?.type === 'podcast_share' ? 'Podcast' :
+        item?.videoUrl || item?.sourceUrl || item?.type === 'video_share' || item?.type === 'Video' || item?.type === 'video' ? 'Video' :
+        item?.type === 'Community' || item?.type === 'community' || (item?.memberCount !== undefined && item?.rules) ? 'Community' :
+        item?.articleId || item?.type === 'article' || item?.type === 'Article' || item?.type === 'article_share' || item?.contentType === 'Article' || item?.sharedArticle ? 'Article' :
         item?.content && !item?.body ? 'Post' :
         'Article'
     );
 
-    const contentId = item?.id || item?.postId || item?.articleId || item?.videoId || item?.podcastId || item?.communityId || 1;
+    const contentId = (
+        item?.articleId || item?.videoId || item?.podcastId || item?.sharedPostId || 
+        item?.sharedArticle?.id || item?.sharedVideo?.id || item?.sharedPodcast?.id || item?.sharedContent?.id ||
+        item?.contentId || item?.postId || item?.id || item?.communityId || 1
+    );
     const itemTitle = item?.title || item?.name || (item?.content ? (item.content.length > 50 ? item.content.substring(0, 50) + '...' : item.content) : contentTypeStr);
     const itemThumbnail = (
         item?.thumbnail || item?.thumbnailUrl || item?.coverImage || item?.coverUrl || item?.banner ||
@@ -51,6 +57,7 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
             setSelectedUsers([]);
             setSearchQuery('');
             setCommunitySearchQuery('');
+            setSelectedCommunityId('');
 
             const loadCommunities = async () => {
                 try {
@@ -114,12 +121,11 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
                     });
 
                     setCommunities(combinedList);
-                    if (combinedList.length > 0) {
-                        setSelectedCommunityId(prev => {
-                            const exists = combinedList.some(c => String(c.communityId || c.id) === String(prev));
-                            return exists ? prev : String(combinedList[0].communityId || combinedList[0].id);
-                        });
-                    }
+                    setSelectedCommunityId(prev => {
+                        if (!prev) return '';
+                        const exists = combinedList.some(c => String(c.communityId || c.id) === String(prev));
+                        return exists ? prev : '';
+                    });
                 } catch (err) {
                     console.error('Failed to load communities for sharing', err);
                 }
@@ -619,7 +625,7 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
                                             return (
                                                 <div
                                                     key={cId}
-                                                    onClick={() => setSelectedCommunityId(cId)}
+                                                    onClick={() => setSelectedCommunityId(prev => String(prev) === cId ? '' : cId)}
                                                     className={`p-2.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 group ${
                                                         isSelected 
                                                             ? 'border-blue-500 bg-blue-50/80 dark:bg-blue-950/40 ring-2 ring-blue-500/20 shadow-sm' 
@@ -641,11 +647,11 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
                                                         <div className="min-w-0 flex-1">
                                                             <div className="flex items-center gap-2">
                                                                 <h4 className={`text-xs font-bold truncate ${isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-slate-900 dark:text-white'}`}>
-                                                                    {c.name}
+                                                                    <HighlightText text={c.name} query={communitySearchQuery} />
                                                                 </h4>
                                                                 {c.category && (
                                                                     <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-200/70 dark:bg-slate-700/70 text-slate-600 dark:text-slate-300 shrink-0">
-                                                                        {c.category}
+                                                                        <HighlightText text={c.category} query={communitySearchQuery} />
                                                                     </span>
                                                                 )}
                                                             </div>
@@ -656,7 +662,7 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
                                                                 </span>
                                                                 {c.description && (
                                                                     <span className="truncate max-w-[170px] hidden sm:inline text-slate-400 text-[10px]">
-                                                                        • {c.description}
+                                                                        • <HighlightText text={c.description} query={communitySearchQuery} />
                                                                     </span>
                                                                 )}
                                                             </div>
@@ -691,7 +697,7 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
                             <button
                                 onClick={handleShareToCommunity}
                                 disabled={isSharing || !selectedCommunityId}
-                                className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 cursor-pointer"
+                                className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-sm rounded-xl transition-all shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2 cursor-pointer"
                             >
                                 <span className="material-symbols-outlined text-[18px]">send</span>
                                 {isSharing ? 'Sharing to Community...' : `Share ${contentTypeStr} to Community`}
@@ -758,11 +764,11 @@ export default function ArticleShareModal({ isOpen, onClose, article, post, item
                                                     <div className="min-w-0 flex-1">
                                                         <div className="flex items-center gap-1.5">
                                                             <p className="text-xs font-bold leading-tight text-slate-900 dark:text-white truncate">
-                                                                {u.name || u.fullName}
+                                                                <HighlightText text={u.name || u.fullName} query={searchQuery} />
                                                             </p>
                                                         </div>
                                                         <p className="text-[10px] text-slate-400 truncate mt-0.5">
-                                                            {u.roleName || u.role || u.designation || 'Employee'} • {u.department || 'MPOnline'}
+                                                            <HighlightText text={`${u.roleName || u.role || u.designation || 'Employee'} • ${u.department || 'MPOnline'}`} query={searchQuery} />
                                                         </p>
                                                     </div>
                                                 </div>

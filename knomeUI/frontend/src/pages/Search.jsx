@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { searchApi, resolveMediaUrl, saveRecentSearch, getLocalRecentSearches, clearLocalRecentSearches } from '../utils/apiService';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
+import HighlightText from '../components/ui/HighlightText';
 
 function useQuery() {
     return new URLSearchParams(useLocation().search);
@@ -15,31 +16,8 @@ const CATEGORIES = [
     { id: 'Video', label: 'Videos', icon: 'videocam' },
     { id: 'Community', label: 'Communities', icon: 'group' },
     { id: 'Hashtags', label: 'Hashtags', icon: 'tag' },
-    { id: 'Podcast', label: 'Podcasts', icon: 'podcasts' },
+    { id: 'Podcast', label: 'Audio', icon: 'audiotrack' },
 ];
-
-function HighlightText({ text, query }) {
-    if (!text) return null;
-    if (!query || !query.trim()) return <span>{text}</span>;
-
-    const tokens = query.trim().split(/\s+/).filter(t => t.length > 0);
-    const pattern = new RegExp(`(${tokens.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
-    const parts = text.split(pattern);
-
-    return (
-        <span>
-            {parts.map((part, i) =>
-                tokens.some(t => t.toLowerCase() === part.toLowerCase()) ? (
-                    <mark key={i} className="bg-amber-300/40 dark:bg-amber-500/30 text-amber-900 dark:text-amber-200 px-0.5 rounded font-bold">
-                        {part}
-                    </mark>
-                ) : (
-                    <span key={i}>{part}</span>
-                )
-            )}
-        </span>
-    );
-}
 
 export default function Search() {
     const navigate = useNavigate();
@@ -273,7 +251,7 @@ export default function Search() {
                         </span>
                     </h1>
                     <p className="text-slate-600 dark:text-slate-400 text-sm md:text-[15px] font-medium leading-relaxed max-w-2xl">
-                        Instantly find people, articles, posts, videos, podcasts, and communities across Knome.
+                        Instantly find people, articles, posts, videos, audio, and communities across Knome.
                     </p>
                 </div>
             </div>
@@ -438,13 +416,13 @@ export default function Search() {
                                                         {isUser ? (
                                                             res.departmentName && (
                                                                 <p className="text-[11px] font-semibold text-slate-400 mt-1">
-                                                                    Department: {res.departmentName}
+                                                                    Department: <HighlightText text={res.departmentName} query={searchQuery} />
                                                                 </p>
                                                             )
                                                         ) : (
                                                             res.authorFullName && (
                                                                 <p className="text-[11px] font-semibold text-slate-400 mt-1">
-                                                                    By {res.authorFullName} • {new Date(res.createdDate).toLocaleDateString()}
+                                                                    By <HighlightText text={res.authorFullName} query={searchQuery} /> • {new Date(res.createdDate).toLocaleDateString()}
                                                                 </p>
                                                             )
                                                         )}

@@ -162,11 +162,15 @@ public static class ServiceCollectionExtensions
                     "https://counselling-1.mponline.demo.gov.in",
                     "https://counselling-1.mponline.demo.gov.in/",
                     "http://api:8080",
-                    "http://api:8080/"
+                    "http://api:8080/",
+                    jwtSettings.Issuer,
+                    "EmployeeHub.Identity",
+                    "Knome.API"
                 },
                 ValidateAudience = false,
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(key),
                 ClockSkew = TimeSpan.Zero,
                 NameClaimType = "sub",
                 RoleClaimType = "role"
@@ -191,13 +195,17 @@ public static class ServiceCollectionExtensions
                 },
                 OnTokenValidated = async context =>
                 {
-                    var email = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
-                             ?? context.Principal?.FindFirst("email")?.Value
+                    var email = context.Principal?.FindFirst("email")?.Value
+                             ?? context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
                              ?? context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
                              ?? context.Principal?.FindFirst("name")?.Value;
 
                     var sub = context.Principal?.FindFirst("sub")?.Value
                            ?? context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+                    var empId = context.Principal?.FindFirst("employeeId")?.Value
+                             ?? context.Principal?.FindFirst("employee_id")?.Value
+                             ?? context.Principal?.FindFirst("empId")?.Value;
 
                     if (context.Principal?.Identity is System.Security.Claims.ClaimsIdentity identity)
                     {
@@ -208,14 +216,15 @@ public static class ServiceCollectionExtensions
                             .AsNoTracking()
                             .FirstOrDefaultAsync(u =>
                                 (!string.IsNullOrEmpty(email) && u.Email.ToLower() == email.ToLower()) ||
+                                (!string.IsNullOrEmpty(empId) && u.EmployeeId.ToLower() == empId.ToLower()) ||
                                 (!string.IsNullOrEmpty(sub) && (u.EmployeeId.ToLower() == sub.ToLower() || (u.Email != null && u.Email.ToLower() == sub.ToLower()))));
 
-                        if (user == null && (!string.IsNullOrEmpty(email) || !string.IsNullOrEmpty(sub)))
+                        if (user == null && (!string.IsNullOrEmpty(email) || !string.IsNullOrEmpty(empId) || !string.IsNullOrEmpty(sub)))
                         {
                             try
                             {
                                 var authService = context.HttpContext.RequestServices.GetRequiredService<IAuthService>();
-                                var searchId = !string.IsNullOrEmpty(email) ? email : sub!;
+                                var searchId = !string.IsNullOrEmpty(email) ? email : (!string.IsNullOrEmpty(empId) ? empId : sub!);
                                 var currentUserDto = await authService.GetCurrentUserByIdentifierAsync(searchId);
                                 if (currentUserDto != null)
                                 {
@@ -263,7 +272,7 @@ public static class ServiceCollectionExtensions
                         else
                         {
                             // Default fallback claims for brand new identity
-                            var fallbackId = !string.IsNullOrEmpty(email) ? email.Split('@')[0] : (sub ?? "EMP");
+                            var fallbackId = !string.IsNullOrEmpty(email) ? email.Split('@')[0] : (!string.IsNullOrEmpty(empId) ? empId : (sub ?? "EMP"));
                             if (!identity.HasClaim(c => c.Type == "employeeId"))
                                 identity.AddClaim(new System.Security.Claims.Claim("employeeId", fallbackId));
                             if (!identity.HasClaim(c => c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == "Employee"))
@@ -277,19 +286,30 @@ public static class ServiceCollectionExtensions
         })
         .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
         {
-            // LEGACY / SYMMETRIC: Knome-issued tokens
+            // Symmetric Knome and MPO Hub tokens
             options.TokenValidationParameters = new TokenValidationParameters
             {
                 ValidateIssuer = true,
-                ValidateAudience = true,
+                ValidateAudience = false,
                 ValidateLifetime = true,
                 ValidateIssuerSigningKey = true,
-                ValidIssuer = jwtSettings.Issuer,
-                ValidAudience = jwtSettings.Audience,
+                ValidIssuers = new[]
+                {
+                    mpoAuthority,
+                    mpoAuthority.TrimEnd('/') + "/",
+                    mpoAuthority.TrimEnd('/'),
+                    "https://counselling-1.mponline.demo.gov.in:3001",
+                    "https://counselling-1.mponline.demo.gov.in:3001/",
+                    "https://counselling-1.mponline.demo.gov.in",
+                    "https://counselling-1.mponline.demo.gov.in/",
+                    jwtSettings.Issuer,
+                    "EmployeeHub.Identity",
+                    "Knome.API"
+                },
                 IssuerSigningKey = new SymmetricSecurityKey(key),
                 ClockSkew = TimeSpan.Zero,
-                NameClaimType = System.Security.Claims.ClaimTypes.NameIdentifier,
-                RoleClaimType = System.Security.Claims.ClaimTypes.Role
+                NameClaimType = "sub",
+                RoleClaimType = "role"
             };
             options.Events = new JwtBearerEvents
             {
@@ -300,6 +320,63 @@ public static class ServiceCollectionExtensions
                     if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
                         context.Token = accessToken;
                     return Task.CompletedTask;
+                },
+                OnTokenValidated = async context =>
+                {
+                    var email = context.Principal?.FindFirst("email")?.Value
+                             ?? context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+                             ?? context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
+                             ?? context.Principal?.FindFirst("name")?.Value;
+
+                    var sub = context.Principal?.FindFirst("sub")?.Value
+                           ?? context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+                    var empId = context.Principal?.FindFirst("employeeId")?.Value
+                             ?? context.Principal?.FindFirst("employee_id")?.Value
+                             ?? context.Principal?.FindFirst("empId")?.Value;
+
+                    if (context.Principal?.Identity is System.Security.Claims.ClaimsIdentity identity)
+                    {
+                        var dbContext = context.HttpContext.RequestServices.GetRequiredService<KnomeDbContext>();
+
+                        var user = await dbContext.Users
+                            .Include(u => u.Roles)
+                            .AsNoTracking()
+                            .FirstOrDefaultAsync(u =>
+                                (!string.IsNullOrEmpty(email) && u.Email.ToLower() == email.ToLower()) ||
+                                (!string.IsNullOrEmpty(empId) && u.EmployeeId.ToLower() == empId.ToLower()) ||
+                                (!string.IsNullOrEmpty(sub) && (u.EmployeeId.ToLower() == sub.ToLower() || (u.Email != null && u.Email.ToLower() == sub.ToLower()))));
+
+                        if (user != null)
+                        {
+                            if (!identity.HasClaim(c => c.Type == "uid"))
+                                identity.AddClaim(new System.Security.Claims.Claim("uid", user.UserId.ToString()));
+                            if (!identity.HasClaim(c => c.Type == "employeeId"))
+                                identity.AddClaim(new System.Security.Claims.Claim("employeeId", user.EmployeeId));
+                            if (!identity.HasClaim(c => c.Type == "username"))
+                                identity.AddClaim(new System.Security.Claims.Claim("username", user.EmployeeId));
+                            if (!identity.HasClaim(c => c.Type == System.Security.Claims.ClaimTypes.NameIdentifier))
+                                identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, user.UserId.ToString()));
+
+                            var hasRole = false;
+                            foreach (var role in user.Roles)
+                            {
+                                hasRole = true;
+                                if (!identity.HasClaim(c => c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == role.RoleName))
+                                    identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, role.RoleName));
+                                if (!identity.HasClaim(c => c.Type == "role" && c.Value == role.RoleName))
+                                    identity.AddClaim(new System.Security.Claims.Claim("role", role.RoleName));
+                            }
+
+                            if (!hasRole)
+                            {
+                                if (!identity.HasClaim(c => c.Type == System.Security.Claims.ClaimTypes.Role && c.Value == "Employee"))
+                                    identity.AddClaim(new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, "Employee"));
+                                if (!identity.HasClaim(c => c.Type == "role" && c.Value == "Employee"))
+                                    identity.AddClaim(new System.Security.Claims.Claim("role", "Employee"));
+                            }
+                        }
+                    }
                 }
             };
         });

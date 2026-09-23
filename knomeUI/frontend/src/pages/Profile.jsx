@@ -409,6 +409,7 @@ export default function Profile() {
                         }
                         break;
                     }
+                    case 'Audio':
                     case 'Podcasts': {
                         const podcastsRes = isOwnProfile
                             ? await podcastsApi.getMyPodcasts(1, 50)
@@ -499,7 +500,7 @@ export default function Profile() {
         activeTab === 'Posts' ? tabData.posts.length :
         activeTab === 'Articles' ? tabData.articles.length :
         activeTab === 'Videos' ? tabData.videos.length :
-        activeTab === 'Podcasts' ? tabData.podcasts.length :
+        (activeTab === 'Podcasts' || activeTab === 'Audio') ? tabData.podcasts.length :
         activeTab === 'Communities' ? tabData.communities.length :
         activeTab === 'Network' ? activeNetworkList.length : 0;
 
@@ -536,7 +537,7 @@ export default function Profile() {
 
     const tabs = isSysAdmin 
         ? ['About', 'Communities', 'Network'] 
-        : ['About', 'Posts', 'Articles', 'Videos', 'Podcasts', 'Communities', 'Network', 'Karma'];
+        : ['About', 'Posts', 'Articles', 'Videos', 'Audio', 'Communities', 'Network', 'Karma'];
 
     const avatarSource = resolveImageUrl(displayUser?.avatar || displayUser?.profilePhotoUrl, displayUser?.name || displayUser?.fullName);
 
@@ -1253,14 +1254,14 @@ export default function Profile() {
                     </div>
                 )}
 
-                {activeTab === 'Podcasts' && (
+                {(activeTab === 'Podcasts' || activeTab === 'Audio') && (
                     <div className="flex flex-col gap-4">
                         {isTabLoading ? (
-                            <p className="text-slate-500 font-medium text-center py-8">Loading podcasts...</p>
+                            <p className="text-slate-500 font-medium text-center py-8">Loading audio...</p>
                         ) : tabData.podcasts.length === 0 ? (
                             <div className="text-center py-12 glass rounded-2xl border border-slate-200 dark:border-slate-800">
-                                <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">podcasts</span>
-                                <p className="text-slate-600 dark:text-slate-400 font-bold">No podcasts uploaded yet</p>
+                                <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">audiotrack</span>
+                                <p className="text-slate-600 dark:text-slate-400 font-bold">No audio uploaded yet</p>
                             </div>
                         ) : (
                             <>

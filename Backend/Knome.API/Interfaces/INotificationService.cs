@@ -36,4 +36,7 @@ public interface INotificationService
     Task<NotificationDto?> CreateNotificationAsync(CreateNotificationDto dto, int senderUserId);
     Task<List<NotificationPreferenceDto>> GetPreferencesAsync(int userId);
     Task UpdatePreferencesAsync(int userId, List<UpdateNotificationPreferenceDto> preferences);
+    Task<List<BroadcastItemDto>> GetBroadcastAnnouncementsAsync();
+    Task<bool> UpdateBroadcastAsync(long id, string newMessage);
+    Task<bool> DeleteBroadcastAsync(long id);
 }

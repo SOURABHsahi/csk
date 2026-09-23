@@ -496,7 +496,12 @@ public class ContentInteractionRepository : IContentInteractionRepository
     public async Task<long> GetContentViewCountAsync(string contentType, long contentId)
     {
         var norm = ContentTypes.Normalize(contentType);
-        if (norm == ContentTypes.Video)
+        if (norm == ContentTypes.Post)
+        {
+            var post = await _db.Posts.AsNoTracking().FirstOrDefaultAsync(p => p.PostId == contentId);
+            return post?.ViewCount ?? 0;
+        }
+        else if (norm == ContentTypes.Video)
         {
             var video = await _db.Videos.AsNoTracking().FirstOrDefaultAsync(v => v.VideoId == contentId);
             return video?.ViewCount ?? 0;
@@ -512,5 +517,98 @@ public class ContentInteractionRepository : IContentInteractionRepository
             return podcast?.ViewCount ?? 0;
         }
         return 0;
+    }
+
+    public async Task<bool> HasUserViewedAsync(string contentType, long contentId, int userId)
+    {
+        if (userId <= 0) return false;
+        var norm = ContentTypes.Normalize(contentType);
+        return await _db.ContentViews.AnyAsync(cv => cv.ContentType == norm && cv.ContentId == contentId && cv.UserId == userId);
+    }
+
+    public async Task<long> RecordUniqueViewAsync(string contentType, long contentId, int userId)
+    {
+        var norm = ContentTypes.Normalize(contentType);
+
+        // 1. If valid userId, check if user already viewed this content
+        if (userId > 0)
+        {
+            var alreadyViewed = await _db.ContentViews
+                .AnyAsync(cv => cv.ContentType == norm && cv.ContentId == contentId && cv.UserId == userId);
+
+            if (alreadyViewed)
+            {
+                // User has already viewed: strictly return existing view count without incrementing
+                return await GetContentViewCountAsync(norm, contentId);
+            }
+
+            // Record the unique view
+            try
+            {
+                _db.ContentViews.Add(new ContentView
+                {
+                    ContentType = norm,
+                    ContentId = contentId,
+                    UserId = userId,
+                    ViewedDate = DateTime.UtcNow
+                });
+            }
+            catch
+            {
+                // Handled gracefully in case of race condition
+            }
+        }
+
+        // 2. Increment view count on the corresponding entity
+        long newCount = 0;
+        if (norm == ContentTypes.Post)
+        {
+            var post = await _db.Posts.FindAsync(contentId);
+            if (post != null)
+            {
+                post.ViewCount++;
+                newCount = post.ViewCount;
+            }
+        }
+        else if (norm == ContentTypes.Article)
+        {
+            var article = await _db.Articles.FindAsync(contentId);
+            if (article != null)
+            {
+                article.ViewCount++;
+                article.UniqueReadCount++;
+                newCount = article.ViewCount;
+            }
+        }
+        else if (norm == ContentTypes.Video)
+        {
+            var video = await _db.Videos.FindAsync(contentId);
+            if (video != null)
+            {
+                video.ViewCount++;
+                newCount = video.ViewCount;
+            }
+        }
+        else if (norm == ContentTypes.Podcast)
+        {
+            var podcast = await _db.Podcasts.FindAsync(contentId);
+            if (podcast != null)
+            {
+                podcast.ViewCount++;
+                newCount = podcast.ViewCount;
+            }
+        }
+
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            // Unique constraint hit concurrently — return current authoritative view count
+            return await GetContentViewCountAsync(norm, contentId);
+        }
+
+        return newCount > 0 ? newCount : await GetContentViewCountAsync(norm, contentId);
     }
 }

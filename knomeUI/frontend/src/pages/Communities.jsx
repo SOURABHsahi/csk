@@ -7,6 +7,7 @@ import CreateCommunityModal from '../components/modals/CreateCommunityModal';
 import { communitiesApi, getCommunityImages, resolveMediaUrl, DEFAULT_ENTERPRISE_COMMUNITIES } from '../utils/apiService';
 import { useScrollLoading } from '../hooks/useScrollLoading';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
+import HighlightText from '../components/ui/HighlightText';
 
 const defaultSeeds = [];
 
@@ -169,28 +170,6 @@ export default function Communities() {
                 }
             });
 
-            // Merge Default Enterprise Channels so Communities catalog and Admin Console are 100% in sync
-            (DEFAULT_ENTERPRISE_COMMUNITIES || []).forEach(ec => {
-                const cleanName = (ec.name || '').toLowerCase().trim();
-                if (!deletedIds.has(String(ec.id)) && !existingIds.has(String(ec.id)) && !existingNames.has(cleanName)) {
-                    existingNames.add(cleanName);
-                    existingIds.add(String(ec.id));
-                    const imgs = getCommunityImages(ec.name, ec.category);
-                    combinedList.push({
-                        id: ec.id,
-                        name: ec.name,
-                        type: formatCommunityType(ec.type),
-                        category: ec.category || 'General',
-                        members: ec.members || '6 members',
-                        activity: ec.activity || '0 posts',
-                        description: ec.description || 'Enterprise collaboration community.',
-                        banner: imgs.banner,
-                        thumbnail: imgs.thumbnail,
-                        avatar: imgs.thumbnail,
-                        membershipStatus: getStatus(ec.id, null, ec.type)
-                    });
-                }
-            });
 
             // Display all communities without restrictive whitelist
             setCommunities(combinedList);
@@ -906,8 +885,12 @@ export default function Communities() {
                                                 </div>
                                             </div>
                                             <div className="p-3 sm:p-3.5 flex flex-col flex-1">
-                                                <h3 className="font-extrabold text-[13px] sm:text-[14px] text-slate-900 dark:text-white mb-1 line-clamp-1" title={c.name}>{c.name}</h3>
-                                                <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed mb-2 flex-1">{c.description}</p>
+                                                <h3 className="font-extrabold text-[13px] sm:text-[14px] text-slate-900 dark:text-white mb-1 line-clamp-1" title={c.name}>
+                                                    <HighlightText text={c.name} query={searchQuery} />
+                                                </h3>
+                                                <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed mb-2 flex-1">
+                                                    <HighlightText text={c.description} query={searchQuery} />
+                                                </p>
                                                 <div className="pt-2 mt-auto border-t border-slate-100 dark:border-slate-800 text-[10px] text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1 whitespace-nowrap">
                                                     <span className="material-symbols-outlined text-[13px]">schedule</span>
                                                     Awaiting HR clearance
@@ -978,7 +961,7 @@ export default function Communities() {
                                     <div className="p-3 sm:p-3.5 flex flex-col flex-1">
                                         <div className="flex justify-between items-start gap-1.5 mb-1.5">
                                             <h3 className="font-bold text-[13px] sm:text-[14px] text-slate-900 dark:text-white group-hover:text-indigo-500 transition-colors leading-snug line-clamp-1 flex-1" title={community.name}>
-                                                {community.name}
+                                                <HighlightText text={community.name} query={searchQuery} />
                                             </h3>
                                             <div className="flex items-center gap-1 shrink-0">
                                                 {/* FR-CM-01/FR-CM-09: Card action buttons */}
@@ -1053,7 +1036,7 @@ export default function Communities() {
                                         </div>
 
                                         <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mb-2 flex-1">
-                                            {community.description || 'No description provided.'}
+                                            <HighlightText text={community.description || 'No description provided.'} query={searchQuery} />
                                         </p>
 
                                         {/* Footer Metadata & DELETE BUTTON IN BOTTOM RIGHT OF BOX */}
@@ -1064,7 +1047,7 @@ export default function Communities() {
                                             </div>
                                             {community.category && (
                                                 <span className="text-[9px] font-extrabold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.5 rounded-full truncate max-w-[80px]" title={community.category}>
-                                                    {community.category}
+                                                    <HighlightText text={community.category} query={searchQuery} />
                                                 </span>
                                             )}
                                             <div className="flex items-center gap-1.5 ml-auto shrink-0">

@@ -8,9 +8,10 @@ import CommentsSection from '../components/video/CommentsSection';
 import ArticleShareModal from '../components/modals/ArticleShareModal';
 import { getVideos, getPlaylists, savePlaylist, deletePlaylist, importYouTubePlaylist } from '../utils/videoService';
 
-import { savedContentApi, getPersonalizedRecommendations, resolveMediaUrl } from '../utils/apiService';
+import { savedContentApi, getPersonalizedRecommendations, resolveMediaUrl, videosApi } from '../utils/apiService';
 import { useScrollLoading } from '../hooks/useScrollLoading';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
+import HighlightText from '../components/ui/HighlightText';
 
 const ENTERPRISE_COMMUNITIES = [
     { id: 1, name: 'Engineering & Tech', icon: 'developer_board' },
@@ -119,7 +120,7 @@ export default function Videos() {
     const [shareCount, setShareCount] = useState(0);
     const [showSharePanel, setShowSharePanel] = useState(false);
     const [shareTab, setShareTab] = useState('menu');
-    const [selectedCommunityId, setSelectedCommunityId] = useState('1');
+    const [selectedCommunityId, setSelectedCommunityId] = useState('');
     const [shareMessageNote, setShareMessageNote] = useState('');
     const [userSearchQuery, setUserSearchQuery] = useState('');
     const [selectedUserIds, setSelectedUserIds] = useState([]);
@@ -157,7 +158,7 @@ export default function Videos() {
         return video.views || '0';
     };
 
-    const filters = ['All', '✨ For You', 'Training & Tutorials', 'Townhalls', 'Engineering Tech Talks', 'Leadership Updates'];
+    const filters = ['All', 'Training & Tutorials', 'Townhalls', 'Engineering Tech Talks', 'Leadership Updates'];
 
     const fetchVideos = async () => {
         setIsLoading(true);
@@ -460,20 +461,34 @@ export default function Videos() {
         const authorKey = activeVideo.authorId ? `user_${activeVideo.authorId}` : `author_${activeVideo.author}`;
         setIsFollowing(localStorage.getItem(`knome_following_${authorKey}`) === 'true');
 
-        // Dynamic views tracking — persist to localStorage and update viewsMap
-        const savedViews = localStorage.getItem(`knome_video_views_${activeVideo.id}`);
-        let count = 0;
-        if (savedViews) {
-            count = parseInt(savedViews, 10) + 1;
+        // Unique user view tracking — one view per user only
+        const rawViews = String(activeVideo.views || '0').replace(/[^0-9.]/g, '');
+        const parsed = parseFloat(rawViews);
+        const baseCount = isNaN(parsed) ? 0 : Math.round(parsed * (String(activeVideo.views || '').includes('k') ? 1000 : 1));
+        const initialCount = baseCount || 0;
+        setCurrentViews(initialCount);
+
+        const currentUid = currentUser?.userId || currentUser?.id || 'anon';
+        const userViewKey = `knome_user_viewed_video_${currentUid}_${activeVideo.id}`;
+        const hasViewedLocally = localStorage.getItem(userViewKey) === 'true';
+
+        // Authoritative unique record in backend
+        if (/^\d+$/.test(String(activeVideo.id))) {
+            videosApi.recordView(activeVideo.id)
+                .then(res => {
+                    const authoritative = res?.data ?? res?.viewCount ?? res;
+                    if (typeof authoritative === 'number') {
+                        setCurrentViews(authoritative);
+                        setViewsMap(prev => ({ ...prev, [activeVideo.id]: authoritative }));
+                        localStorage.setItem(userViewKey, 'true');
+                    }
+                })
+                .catch(() => {});
         } else {
-            const rawViews = String(activeVideo.views || '0').replace(/[^0-9.]/g, '');
-            const parsed = parseFloat(rawViews);
-            count = isNaN(parsed) || parsed === 0 ? 1 : Math.round(parsed * (String(activeVideo.views || '').includes('k') ? 1000 : 1)) + 1;
+            if (!hasViewedLocally) {
+                localStorage.setItem(userViewKey, 'true');
+            }
         }
-        localStorage.setItem(`knome_video_views_${activeVideo.id}`, count.toString());
-        setCurrentViews(count);
-        // Update viewsMap so cards reflect the new count immediately
-        setViewsMap(prev => ({ ...prev, [activeVideo.id]: count }));
 
         const savedLikes = (() => {
             const raw = localStorage.getItem(`knome_video_likes_${activeVideo.id}`);
@@ -674,10 +689,10 @@ export default function Videos() {
 
 
     const rawFiltered = videos.filter(v =>
-        (activeFilter === 'All' || activeFilter === '✨ For You' || v.category === activeFilter) &&
+        (activeFilter === 'All' || v.category === activeFilter) &&
         (!searchQuery || v.title?.toLowerCase().includes(searchQuery.toLowerCase()) || (v.tags || []).some(t => t.toLowerCase().includes(searchQuery.toLowerCase())))
     );
-    const filteredVideos = activeFilter === '✨ For You' ? getPersonalizedRecommendations(rawFiltered, currentUser) : rawFiltered;
+    const filteredVideos = rawFiltered;
 
     const { visibleCount, reset: resetScrollLoading } = useScrollLoading(filteredVideos.length, 8, 8);
 
@@ -1376,8 +1391,12 @@ export default function Videos() {
                                         </div>
                                         {/* Info */}
                                         <div className="p-3">
-                                            <h3 className="font-bold text-[13px] text-slate-900 dark:text-white line-clamp-2 group-hover:text-cyan-500 transition-colors leading-snug mb-1.5">{video.title}</h3>
-                                            <p className="text-[12px] text-slate-500 dark:text-slate-400 font-semibold">{video.author || 'Creator'}</p>
+                                            <h3 className="font-bold text-[13px] text-slate-900 dark:text-white line-clamp-2 group-hover:text-cyan-500 transition-colors leading-snug mb-1.5">
+                                                <HighlightText text={video.title} query={searchQuery} />
+                                            </h3>
+                                            <p className="text-[12px] text-slate-500 dark:text-slate-400 font-semibold">
+                                                <HighlightText text={video.author || 'Creator'} query={searchQuery} />
+                                            </p>
                                             <p className="text-[11px] text-slate-400 mt-0.5">{getDisplayViews(video)} views · {video.likes || 0} likes · {video.date}</p>
                                         </div>
                                     </div>

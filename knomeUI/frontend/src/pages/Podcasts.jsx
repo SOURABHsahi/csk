@@ -11,6 +11,7 @@ import { podcastsApi, savedContentApi, interactionsApi, resolveMediaUrl, getPers
 import { checkRestrictedContent } from '../utils/restrictedWords';
 import { useScrollLoading } from '../hooks/useScrollLoading';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
+import HighlightText from '../components/ui/HighlightText';
 
 // Helper function to recursively insert a new reply into a nested comments tree
 function addReplyToTree(items, targetId, newReply) {
@@ -401,10 +402,35 @@ export default function Podcasts() {
     useEffect(() => {
         fetchPodcastsData();
         
-        const handleRefresh = () => fetchPodcastsData();
+        const handleRefresh = (e) => {
+            if (e?.detail?.newPodcast) {
+                const p = e.detail.newPodcast;
+                const newEpisode = {
+                    id: p.podcastId || Date.now(),
+                    title: p.title,
+                    description: p.description || '',
+                    series: p.seriesTitle || 'Standalone Episode',
+                    category: p.categoryName || 'General',
+                    durationSeconds: p.durationSeconds || 0,
+                    duration: p.durationSeconds ? `${Math.floor(p.durationSeconds / 60)}:${(p.durationSeconds % 60).toString().padStart(2, '0')}` : '00:00',
+                    date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                    author: p.uploaderFullName || currentUser?.fullName || currentUser?.name || 'Employee',
+                    authorId: p.uploaderUserId || currentUser?.id,
+                    thumbnail: p.coverImageUrl ? resolveMediaUrl(p.coverImageUrl) : 'https://images.unsplash.com/photo-1557804506-669a67965ba0?auto=format&fit=crop&q=90&w=1600&h=1600',
+                    audioUrl: p.audioUrl,
+                    likes: 0,
+                    isLiked: false,
+                    comments: 0,
+                    shares: 0,
+                    views: 0
+                };
+                setPodcastEpisodes(prev => [newEpisode, ...prev.filter(x => x.id !== newEpisode.id)]);
+            }
+            fetchPodcastsData();
+        };
         window.addEventListener('podcast-published', handleRefresh);
         return () => window.removeEventListener('podcast-published', handleRefresh);
-    }, []);
+    }, [currentUser]);
 
     const isAdmin = currentUser?.role === 'SYSADM' || currentUser?.role === 'CADM' || currentUser?.role === 'HRADM';
 
@@ -435,8 +461,6 @@ export default function Podcasts() {
                 if (currentUser?.name && !ep.author?.toLowerCase().includes(currentUser.name.toLowerCase())) {
                     return false;
                 }
-            } else if (activeTab === '✨ Recommended for You') {
-                // Return true, handled by recommendation engine below
             } else if (activeTab === 'General' || activeTab === 'Tech' || activeTab === 'Leadership' || activeTab === 'Engineering') {
                 if (ep.category.toLowerCase() !== activeTab.toLowerCase()) {
                     return false;
@@ -461,13 +485,11 @@ export default function Podcasts() {
             return true;
         });
 
-    const displayedEpisodes = activeTab === '✨ Recommended for You'
-        ? getPersonalizedRecommendations(rawEpisodes, currentUser)
-        : rawEpisodes.sort((a, b) => {
-            if (filterSort === 'Oldest First') return a.id - b.id;
-            if (filterSort === 'Duration (Longest)') return b.durationSeconds - a.durationSeconds;
-            return b.id - a.id; // Newest First
-        });
+    const displayedEpisodes = rawEpisodes.sort((a, b) => {
+        if (filterSort === 'Oldest First') return a.id - b.id;
+        if (filterSort === 'Duration (Longest)') return b.durationSeconds - a.durationSeconds;
+        return b.id - a.id; // Newest First
+    });
 
     const { visibleCount, reset: resetScrollLoading } = useScrollLoading(displayedEpisodes.length, 6, 6);
 
@@ -510,7 +532,7 @@ export default function Podcasts() {
                         </h1>
 
                         <p className="text-slate-600 dark:text-slate-400 text-sm md:text-[15px] font-medium leading-relaxed max-w-2xl">
-                            Discover audio sessions, tech talks, and leadership updates built for the next generation — anytime, anywhere.
+                            Discover podcasts, tech talks, and leadership updates built for the next generation — anytime, anywhere.
                         </p>
                     </div>
 
@@ -532,8 +554,8 @@ export default function Podcasts() {
                                 onClick={() => setIsUploadOpen(true)}
                                 className="w-full sm:w-auto px-6 py-3 bg-pink-500 text-white font-bold rounded-xl hover:bg-pink-600 transition-colors shadow-lg shadow-pink-500/30 flex items-center justify-center gap-2"
                             >
-                                <span className="material-symbols-outlined text-[20px]">mic</span>
-                                Publish Episode
+                                <span className="material-symbols-outlined text-[20px]">podcasts</span>
+                                Publish Podcast
                             </button>
                         )}
                     </div>
@@ -601,7 +623,7 @@ export default function Podcasts() {
 
                 {/* Tabs */}
                 <div className="flex border-b border-slate-200 dark:border-slate-800 overflow-x-auto custom-scrollbar">
-                    {['All Episodes', '✨ Recommended for You', 'General', 'Tech', 'Leadership', 'Engineering', 'My Podcasts'].map(tab => (
+                    {['All Episodes', 'General', 'Tech', 'Leadership', 'Engineering', 'My Podcasts'].map(tab => (
                         <button 
                             key={tab}
                             onClick={() => {
@@ -658,7 +680,9 @@ export default function Podcasts() {
                                                 
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex flex-wrap items-center gap-2 mb-1">
-                                                        <span className="text-[10px] font-black text-pink-500 bg-pink-50 dark:bg-pink-900/20 px-2 py-0.5 rounded uppercase tracking-wider">{ep.series}</span>
+                                                        <span className="text-[10px] font-black text-pink-500 bg-pink-50 dark:bg-pink-900/20 px-2 py-0.5 rounded uppercase tracking-wider">
+                                                            <HighlightText text={ep.series} query={filterKeyword} />
+                                                        </span>
                                                         <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider border ${
                                                             ep.category === 'Tech' ? 'text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/30 border-cyan-200 dark:border-cyan-800' :
                                                             ep.category === 'Leadership' ? 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 border-purple-200 dark:border-purple-800' :
@@ -669,10 +693,15 @@ export default function Podcasts() {
                                                         </span>
                                                         <span className="text-[12px] font-bold text-slate-400">{ep.date}</span>
                                                     </div>
-                                                    <h3 className="font-bold text-[15px] text-slate-900 dark:text-white truncate mb-1">{ep.title}</h3>
+                                                    <h3 className="font-bold text-[15px] text-slate-900 dark:text-white truncate mb-1">
+                                                        <HighlightText text={ep.title} query={filterKeyword} />
+                                                    </h3>
                                                     <div className="flex flex-wrap items-center gap-3 text-[12px] font-bold text-slate-500">
                                                         <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">schedule</span> {ep.duration}</span>
-                                                        <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[14px]">person</span> {ep.author}</span>
+                                                        <span className="flex items-center gap-1">
+                                                            <span className="material-symbols-outlined text-[14px]">person</span>
+                                                            <HighlightText text={ep.author} query={filterKeyword} />
+                                                        </span>
                                                         <span className="flex items-center gap-1 text-cyan-600 dark:text-cyan-400 font-bold" title="Views / Listens"><span className="material-symbols-outlined text-[14px]">visibility</span> {ep.views || 0}</span>
                                                         <span className="flex items-center gap-1 text-rose-500/90 dark:text-rose-400"><span className="material-symbols-outlined text-[14px]" style={{ fontVariationSettings: ep.isLiked ? "'FILL' 1" : "'FILL' 0" }}>favorite</span> {ep.likes || 0}</span>
                                                         <span className="flex items-center gap-1 text-indigo-500/90 dark:text-indigo-400"><span className="material-symbols-outlined text-[14px]">chat_bubble</span> {ep.comments || 0}</span>

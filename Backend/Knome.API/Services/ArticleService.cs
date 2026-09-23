@@ -60,10 +60,11 @@ public class ArticleService : IArticleService
         if (article == null)
             throw new NotFoundException($"Article ID {articleId} not found.");
 
-        await _repo.IncrementViewCountAsync(articleId);
-
-        // Reload or update ViewCount property locally for DTO representation
-        article.ViewCount++;
+        if (currentUserId > 0)
+        {
+            var updatedViews = await _interactionService.RecordViewAsync(ContentTypes.Article, articleId, currentUserId);
+            article.ViewCount = (int)updatedViews;
+        }
 
         var dto = _mapper.Map<ArticleDetailDto>(article);
         dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Article, articleId, currentUserId);
@@ -297,14 +298,14 @@ public class ArticleService : IArticleService
         };
     }
 
-    public async Task<int> IncrementViewCountAsync(long articleId)
+    public async Task<int> IncrementViewCountAsync(long articleId, int currentUserId = 0)
     {
         var article = await _repo.GetArticleByIdAsync(articleId);
         if (article == null)
             throw new NotFoundException($"Article ID {articleId} not found.");
 
-        await _repo.IncrementViewCountAsync(articleId);
-        return article.ViewCount + 1;
+        var count = await _interactionService.RecordViewAsync(ContentTypes.Article, articleId, currentUserId);
+        return (int)count;
     }
 }
 

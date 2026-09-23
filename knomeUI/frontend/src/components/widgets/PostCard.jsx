@@ -9,8 +9,9 @@ import SaveToCategoryModal from '../modals/SaveToCategoryModal';
 import DocumentViewerModal from '../modals/DocumentViewerModal';
 import ArticleShareModal from '../modals/ArticleShareModal';
 import ReactionsModal from '../modals/ReactionsModal';
+import HighlightText from '../ui/HighlightText';
 
-import { interactionsApi, postsApi, notificationsApi, searchApi, communitiesApi, resolveMediaUrl, getVideoThumbnail, formatToDDMMYYYY } from '../../utils/apiService';
+import { interactionsApi, postsApi, notificationsApi, searchApi, communitiesApi, resolveMediaUrl, getVideoThumbnail, formatToDDMMYYYY, resolveSharedTarget } from '../../utils/apiService';
 import { checkRestrictedContent } from '../../utils/restrictedWords';
 
 // Available reactions (FR-CI-01)
@@ -125,6 +126,155 @@ export function ImageLightbox({ images, startIndex, onClose }) {
                     ))}
                 </div>
             )}
+        </div>,
+        document.body
+    );
+}
+
+// ─── Large Screen Video Modal (Badi Screen Video Player) ─────────
+export function LargeVideoModal({ video, onClose }) {
+    const modalRef = useRef(null);
+    const videoRef = useRef(null);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+
+    useEffect(() => {
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.body.style.overflow = '';
+        };
+    }, []);
+
+    useEffect(() => {
+        const onKey = (e) => {
+            if (e.key === 'Escape') {
+                if (isFullscreen) {
+                    if (document.fullscreenElement) {
+                        document.exitFullscreen?.().catch(() => {});
+                    }
+                    setIsFullscreen(false);
+                } else {
+                    onClose();
+                }
+            }
+        };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [isFullscreen, onClose]);
+
+    if (!video) return null;
+
+    const url = video.url || video.sourceUrl || '';
+    const title = video.title || 'Video Playback';
+    const isYT = video.isYT || (url.includes('youtube.com') || url.includes('youtu.be'));
+    const isVimeo = url.includes('vimeo.com');
+
+    const getEmbedUrl = (u) => {
+        if (!u) return '';
+        const ytMatch = u.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=))((\w|-){11})/);
+        if (ytMatch && ytMatch[1]) {
+            return `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1`;
+        }
+        const vimeoMatch = u.match(/vimeo\.com\/(\d+)/);
+        if (vimeoMatch && vimeoMatch[1]) {
+            return `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1`;
+        }
+        return u;
+    };
+
+    const toggleFullscreen = () => {
+        const elem = modalRef.current;
+        if (!elem) return;
+        if (!document.fullscreenElement) {
+            elem.requestFullscreen?.().then(() => setIsFullscreen(true)).catch(() => {});
+        } else {
+            document.exitFullscreen?.().then(() => setIsFullscreen(false)).catch(() => {});
+        }
+    };
+
+    return createPortal(
+        <div
+            ref={modalRef}
+            className={`fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/92 backdrop-blur-xl animate-fade-in ${
+                isFullscreen ? 'p-0' : 'p-3 sm:p-5 md:p-8'
+            }`}
+            onClick={(e) => {
+                if (e.target === modalRef.current) onClose();
+            }}
+        >
+            <div 
+                className={`relative w-full bg-slate-950 border border-slate-800 shadow-2xl flex flex-col overflow-hidden transition-all duration-200 ${
+                    isFullscreen ? 'w-screen h-screen rounded-none border-0' : 'max-w-5xl max-h-[94vh] rounded-2xl'
+                }`}
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Modal Header */}
+                <div className="px-4 sm:px-6 py-3.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+                    <div className="flex items-center gap-3 overflow-hidden min-w-0">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0">
+                            <span className="material-symbols-outlined text-[22px]">play_circle</span>
+                        </div>
+                        <div className="min-w-0">
+                            <h3 className="text-sm sm:text-base font-bold text-white truncate max-w-sm sm:max-w-md md:max-w-lg" title={title}>
+                                {title}
+                            </h3>
+                            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-400">
+                                <span className="font-bold uppercase tracking-wider text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                    VIDEO
+                                </span>
+                                <span>•</span>
+                                <span className="text-emerald-400 flex items-center gap-1 font-semibold">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                    Large Screen Playback
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button
+                            type="button"
+                            onClick={toggleFullscreen}
+                            className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                            title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+                        >
+                            <span className="material-symbols-outlined text-[20px]">
+                                {isFullscreen ? 'fullscreen_exit' : 'fullscreen'}
+                            </span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                            title="Close Video"
+                        >
+                            <span className="material-symbols-outlined text-[22px]">close</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Player Body */}
+                <div className="flex-1 bg-black flex items-center justify-center overflow-hidden min-h-[320px] max-h-[78vh]">
+                    {isYT || isVimeo ? (
+                        <iframe
+                            src={getEmbedUrl(url)}
+                            className="w-full h-full aspect-video border-0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                            title={title}
+                        />
+                    ) : (
+                        <video
+                            ref={videoRef}
+                            src={url}
+                            controls
+                            autoPlay
+                            controlsList="nodownload"
+                            disablePictureInPicture
+                            onContextMenu={(e) => e.preventDefault()}
+                            className="w-full h-full max-h-[78vh] object-contain"
+                        />
+                    )}
+                </div>
+            </div>
         </div>,
         document.body
     );
@@ -397,7 +547,7 @@ const setCachedPostInteraction = (postId, updates) => {
     }
 };
 
-export default function PostCard({ post, onPostDeleted }) {
+export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
     const { currentUser, awardRuleKarma } = useUser();
     const { addToast } = useToast();
     const confirm = useConfirm();
@@ -478,9 +628,10 @@ export default function PostCard({ post, onPostDeleted }) {
     const [loadingCommunities, setLoadingCommunities] = useState(false);
     const [isSharingToCommunity, setIsSharingToCommunity] = useState(false);
 
-    // Lightbox & Document Viewer state
+    // Lightbox & Document Viewer & Large Video Modal state
     const [lightboxIndex, setLightboxIndex] = useState(null);
     const [activeDocViewer, setActiveDocViewer] = useState(null);
+    const [activeVideoModal, setActiveVideoModal] = useState(null);
     
     // Menu & Report (FR-SM-02)
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -1350,7 +1501,9 @@ export default function PostCard({ post, onPostDeleted }) {
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
                         <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5">
-                            <button onClick={() => navigate('/profile', { state: { user: post.author } })} className="font-source-sans font-bold text-[15px] text-[#0F172A] dark:text-white leading-tight hover:underline cursor-pointer">{post.author?.name || post.authorName || 'Employee'}</button>
+                            <button onClick={() => navigate('/profile', { state: { user: post.author } })} className="font-source-sans font-bold text-[15px] text-[#0F172A] dark:text-white leading-tight hover:underline cursor-pointer">
+                                <HighlightText text={post.author?.name || post.authorName || 'Employee'} query={searchQuery} />
+                            </button>
                             {post.author?.isVerified && <span className="material-symbols-outlined text-[13px] text-blue-500" style={{fontVariationSettings: "'FILL' 1"}}>verified</span>}
                             <span className="text-slate-300 dark:text-slate-700 text-[11px]">•</span>
                             <span className="font-arial text-slate-500 dark:text-slate-400 text-[12px] font-semibold uppercase tracking-wider">{post.author?.role || post.authorRole || 'Contributor'}</span>
@@ -1397,14 +1550,23 @@ export default function PostCard({ post, onPostDeleted }) {
                                 <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="text-slate-400 hover:text-blue-600 transition-colors p-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800">
                                     <span className="material-symbols-outlined text-[18px]">more_horiz</span>
                                 </button>
-                                {isMenuOpen && (
-                                    <div className="absolute right-0 mt-1 w-48 bg-theme-60-surface border border-theme-30 rounded-xl shadow-lg py-1 z-10 animate-in fade-in zoom-in-95 duration-100">
-                                        <button 
-                                            onClick={() => { setIsMenuOpen(false); navigate('/posts?id=' + (post.id || post.postId)); }}
-                                            className="w-full text-left px-4 py-2 font-source-sans text-[13px] font-bold text-blue-600 dark:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
-                                        >
-                                            <span className="material-symbols-outlined text-[16px]">open_in_new</span> Open Post
-                                        </button>
+                                {isMenuOpen && (() => {
+                                    const menuTarget = resolveSharedTarget(post);
+                                    return (
+                                        <div className="absolute right-0 mt-1 w-48 bg-theme-60-surface border border-theme-30 rounded-xl shadow-lg py-1 z-10 animate-in fade-in zoom-in-95 duration-100">
+                                            <button 
+                                                onClick={() => { 
+                                                    setIsMenuOpen(false); 
+                                                    if (menuTarget?.url) {
+                                                        navigate(menuTarget.url);
+                                                    } else {
+                                                        navigate('/posts?id=' + (post.id || post.postId));
+                                                    }
+                                                }}
+                                                className="w-full text-left px-4 py-2 font-source-sans text-[13px] font-bold text-blue-600 dark:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">{menuTarget?.icon || 'open_in_new'}</span> {menuTarget?.actionText || 'Open Post'}
+                                            </button>
                                         <button 
                                             onClick={() => { setIsMenuOpen(false); navigate('/profile', { state: { user: post.author } }); }}
                                             className="w-full text-left px-4 py-2 font-source-sans text-[13px] font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
@@ -1442,7 +1604,8 @@ export default function PostCard({ post, onPostDeleted }) {
                                             </button>
                                         )}
                                     </div>
-                                )}
+                                );
+                            })()}
                             </div>
                         </div>
                     </div>
@@ -1485,37 +1648,47 @@ export default function PostCard({ post, onPostDeleted }) {
                     </div>
                 )}
                 {(() => {
+                    const target = resolveSharedTarget(post);
                     // Match any internal post share url (/posts?id=...) with numeric or alphanumeric id
                     const postUrlMatch = (post.content || '').match(/(?:https?:\/\/[^\s]+)?\/posts\?id=([a-zA-Z0-9_-]+)/i);
-                    const extractedPostId = post.sharedPostId || (postUrlMatch ? postUrlMatch[1] : null) || post.sharedContent?.id || null;
+                    const extractedPostId = target?.id || post.sharedPostId || (postUrlMatch ? postUrlMatch[1] : null) || post.sharedContent?.id || null;
 
                     // Match shared post quoted title from content or post.title
-                    const sharedPostTitleMatch = (post.content || '').match(/Shared Post:\s*"([^"]+)"/i) 
-                        || (post.title || '').match(/Shared Post:\s*"([^"]+)"/i);
+                    const sharedPostTitleMatch = (post.content || '').match(/Shared (?:Post|Article|Video|Podcast|Profile):\s*"([^"]+)"/i) 
+                        || (post.title || '').match(/Shared (?:Post|Article|Video|Podcast|Profile):\s*"([^"]+)"/i);
                     let sharedPostTitle = post.sharedContent?.title 
                         || (sharedPostTitleMatch ? sharedPostTitleMatch[1] : null);
-                    if (!sharedPostTitle && post.title && !post.title.startsWith('Shared Post:')) {
+                    if (!sharedPostTitle && post.title && !post.title.startsWith('Shared ')) {
                         sharedPostTitle = post.title;
                     }
                     if (!sharedPostTitle && extractedPostId) {
-                        sharedPostTitle = `Post #${extractedPostId}`;
+                        sharedPostTitle = `${target?.label || 'Post'} #${extractedPostId}`;
                     }
 
+                    const hasExplicitArticleCard = Boolean(post.sharedArticle || post.type === 'article_share' || (post.content && (post.content.includes('Shared Article:') || post.content.includes('/article-view'))));
+                    const hasExplicitPodcastCard = Boolean(post.sharedPodcast || post.type === 'podcast_share' || (post.content && (post.content.includes('Shared Podcast:') || post.content.includes('/podcasts'))));
+                    const hasExplicitVideoCard = Boolean(post.sharedVideo || post.type === 'video_share' || post.videoUrl || (post.content && (post.content.includes('Shared Video:') || post.content.includes('📹'))));
+                    const hasExplicitProfileCard = Boolean(post.sharedProfile || post.isProfileShare || (post.content && post.content.includes('Shared Profile:')));
+
                     const isSharedPost = Boolean(
-                        extractedPostId || 
-                        (post.content && post.content.includes('Shared Post:')) ||
-                        (post.title && post.title.startsWith('Shared Post:')) ||
-                        post.type === 'post_share' ||
-                        post.sharedContent
+                        !hasExplicitArticleCard && !hasExplicitPodcastCard && !hasExplicitVideoCard && !hasExplicitProfileCard &&
+                        (
+                            target ||
+                            extractedPostId || 
+                            (post.content && (post.content.includes('Shared Post:') || post.content.includes('Shared Article:') || post.content.includes('Shared Video:'))) ||
+                            (post.title && (post.title.startsWith('Shared Post:') || post.title.startsWith('Shared Article:'))) ||
+                            post.type === 'post_share' ||
+                            post.sharedContent
+                        )
                     );
 
-                    // Clean user commentary if this is a shared post, article, or video:
+                    // Clean user commentary if this is a shared post, article, video, or profile:
                     // Strip the automated template strings and internal URLs from rendered body
                     let userCommentary = post.content || '';
-                    if (isSharedPost || (post.content && (post.content.includes('Shared Article:') || post.content.includes('Shared Video:')))) {
+                    if (isSharedPost || (post.content && (post.content.includes('Shared Article:') || post.content.includes('Shared Video:') || post.content.includes('Shared Profile:')))) {
                         userCommentary = userCommentary
-                            .replace(/Shared\s+(?:Post|Article|Video):\s*"[^"]*"/gi, '')
-                            .replace(/(?:https?:\/\/[^\s]+)?\/(?:posts|article-view|videos)\?[^\s]+/gi, '')
+                            .replace(/Shared\s+(?:Post|Article|Video|Profile):\s*"[^"]*"/gi, '')
+                            .replace(/(?:https?:\/\/[^\s]+)?\/(?:posts|article-view|videos|profile)\?[^\s]+/gi, '')
                             .trim();
                     }
 
@@ -1565,11 +1738,11 @@ export default function PostCard({ post, onPostDeleted }) {
                                             className="text-indigo-600 dark:text-indigo-400 font-bold hover:underline cursor-pointer transition-colors"
                                             title={`Search posts tagged with ${subPart}`}
                                         >
-                                            {subPart}
+                                            <HighlightText text={subPart} query={searchQuery} />
                                         </span>
                                     );
                                 }
-                                return subPart;
+                                return <HighlightText key={`${index}-${subIdx}`} text={subPart} query={searchQuery} />;
                             });
                         });
                     };
@@ -1660,16 +1833,32 @@ export default function PostCard({ post, onPostDeleted }) {
                                 <div 
                                     onClick={(e) => {
                                         e.stopPropagation();
+                                        if (target?.url) {
+                                            navigate(target.url);
+                                            return;
+                                        }
                                         const targetId = extractedPostId || post.id || post.postId;
                                         if (targetId) navigate(`/posts?id=${targetId}`);
                                     }}
-                                    className="mt-2 mb-2 p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/60 hover:bg-slate-100/90 dark:hover:bg-slate-850 border border-slate-200/90 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-500/60 transition-all cursor-pointer group shadow-xs hover:shadow-md"
+                                    className={`mt-2 mb-2 p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/60 hover:bg-slate-100/90 dark:hover:bg-slate-850 border border-slate-200/90 dark:border-slate-800 transition-all cursor-pointer group shadow-xs hover:shadow-md ${
+                                        target?.type === 'Article' ? 'hover:border-emerald-400 dark:hover:border-emerald-500/60' :
+                                        target?.type === 'Video' ? 'hover:border-rose-400 dark:hover:border-rose-500/60' :
+                                        target?.type === 'Podcast' ? 'hover:border-pink-400 dark:hover:border-pink-500/60' :
+                                        target?.type === 'Profile' ? 'hover:border-indigo-400 dark:hover:border-indigo-500/60' :
+                                        'hover:border-blue-400 dark:hover:border-blue-500/60'
+                                    }`}
                                 >
                                     <div className="flex items-center justify-between gap-3 mb-2.5">
                                         <div className="flex items-center gap-2 flex-wrap">
-                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-arial text-[11px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60">
-                                                <span className="material-symbols-outlined text-[13px]">repeat</span>
-                                                Shared Post
+                                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full font-arial text-[11px] font-bold ${
+                                                target?.type === 'Article' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/60' :
+                                                target?.type === 'Video' ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200/80 dark:border-rose-800/60' :
+                                                target?.type === 'Podcast' ? 'bg-pink-50 text-pink-700 dark:bg-pink-950/60 dark:text-pink-300 border border-pink-200/80 dark:border-pink-800/60' :
+                                                target?.type === 'Profile' ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/60' :
+                                                'bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/60'
+                                            }`}>
+                                                <span className="material-symbols-outlined text-[13px]">{target?.icon || 'repeat'}</span>
+                                                {target?.label || 'Shared Post'}
                                             </span>
                                             {extractedPostId && (
                                                 <span className="font-arial text-[11px] text-slate-400 dark:text-slate-500 font-mono font-medium">
@@ -1682,14 +1871,26 @@ export default function PostCard({ post, onPostDeleted }) {
                                                 </span>
                                             )}
                                         </div>
-                                        <div className="flex items-center gap-1 font-source-sans text-[12px] font-bold text-blue-600 dark:text-blue-400 group-hover:text-blue-700 dark:group-hover:text-blue-300 group-hover:translate-x-0.5 transition-all shrink-0">
-                                            <span>Open Post</span>
+                                        <div className={`flex items-center gap-1 font-source-sans text-[12px] font-bold group-hover:translate-x-0.5 transition-all shrink-0 ${
+                                            target?.type === 'Article' ? 'text-emerald-600 dark:text-emerald-400 group-hover:text-emerald-700 dark:group-hover:text-emerald-300' :
+                                            target?.type === 'Video' ? 'text-rose-600 dark:text-rose-400 group-hover:text-rose-700 dark:group-hover:text-rose-300' :
+                                            target?.type === 'Podcast' ? 'text-pink-600 dark:text-pink-400 group-hover:text-pink-700 dark:group-hover:text-pink-300' :
+                                            target?.type === 'Profile' ? 'text-indigo-600 dark:text-indigo-400 group-hover:text-indigo-700 dark:group-hover:text-indigo-300' :
+                                            'text-blue-600 dark:text-blue-400 group-hover:text-blue-700 dark:group-hover:text-blue-300'
+                                        }`}>
+                                            <span>{target?.actionText || 'Open Post'}</span>
                                             <span className="material-symbols-outlined text-[15px]">arrow_outward</span>
                                         </div>
                                     </div>
 
                                     {/* Quote Box Body with Georgia Italic voice/accent font */}
-                                    <div className="border-l-3 border-blue-500/70 dark:border-blue-400/70 pl-3.5 py-1.5 bg-white/70 dark:bg-slate-950/40 rounded-r-xl">
+                                    <div className={`border-l-3 pl-3.5 py-1.5 bg-white/70 dark:bg-slate-950/40 rounded-r-xl ${
+                                        target?.type === 'Article' ? 'border-emerald-500/70 dark:border-emerald-400/70' :
+                                        target?.type === 'Video' ? 'border-rose-500/70 dark:border-rose-400/70' :
+                                        target?.type === 'Podcast' ? 'border-pink-500/70 dark:border-pink-400/70' :
+                                        target?.type === 'Profile' ? 'border-indigo-500/70 dark:border-indigo-400/70' :
+                                        'border-blue-500/70 dark:border-blue-400/70'
+                                    }`}>
                                         <p 
                                             className="font-georgia-italic text-[16px] text-slate-800 dark:text-slate-100 leading-relaxed group-hover:text-blue-950 dark:group-hover:text-white transition-colors line-clamp-3" 
                                             style={{ fontFamily: 'Georgia, Cambria, "Times New Roman", Times, serif', fontStyle: 'italic' }}
@@ -1697,8 +1898,18 @@ export default function PostCard({ post, onPostDeleted }) {
                                             "{sharedPostTitle || 'Original Post'}"
                                         </p>
                                         <p className="font-arial text-[11px] text-slate-500 dark:text-slate-400 mt-2 flex items-center gap-1.5">
-                                            <span className="material-symbols-outlined text-[14px] text-blue-500/70">chat_bubble</span>
-                                            Click to open post details, discussions & full comments
+                                            <span className={`material-symbols-outlined text-[14px] ${
+                                                target?.type === 'Article' ? 'text-emerald-500/70' :
+                                                target?.type === 'Video' ? 'text-rose-500/70' :
+                                                target?.type === 'Podcast' ? 'text-pink-500/70' :
+                                                target?.type === 'Profile' ? 'text-indigo-500/70' :
+                                                'text-blue-500/70'
+                                            }`}>{target?.icon || 'chat_bubble'}</span>
+                                            {target?.type === 'Article' ? 'Click to open and read full article' :
+                                             target?.type === 'Video' ? 'Click to open and watch full video' :
+                                             target?.type === 'Podcast' ? 'Click to listen to podcast' :
+                                             target?.type === 'Profile' ? 'Click to view employee profile' :
+                                             'Click to open post details, discussions & full comments'}
                                         </p>
                                     </div>
                                 </div>
@@ -1786,32 +1997,35 @@ export default function PostCard({ post, onPostDeleted }) {
                             };
                             const vUrl = vidObj.sourceUrl || vidObj.videoUrl || post.videoUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
                             const isYT = vUrl && (vUrl.includes('youtube.com') || vUrl.includes('youtu.be'));
+                            const thumb = vidObj.thumbnail || getVideoThumbnail(vidObj);
 
                             return (
                                 <div className="flex flex-col">
-                                    <div className="relative aspect-video w-full bg-black overflow-hidden group">
-                                        {isYT ? (
-                                            <iframe
-                                                src={vUrl.includes('embed') ? vUrl : `https://www.youtube.com/embed/${(vUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=))((\w|-){11})/) || [])[1] || ''}`}
-                                                className="w-full h-full border-0"
-                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                                                title={vidObj.title}
+                                    {/* Video preview thumbnail with Play button overlay */}
+                                    <div 
+                                        onClick={() => setActiveVideoModal({ url: resolveMediaUrl(vUrl) || vUrl, title: vidObj.title, isYT })}
+                                        className="relative aspect-video w-full bg-slate-950 overflow-hidden group cursor-pointer"
+                                    >
+                                        {thumb ? (
+                                            <img 
+                                                src={thumb} 
+                                                alt={vidObj.title} 
+                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
                                             />
                                         ) : (
-                                            <video
-                                                src={resolveMediaUrl(vUrl) || vUrl}
-                                                poster={getVideoThumbnail(vidObj) || undefined}
-                                                preload="metadata"
-                                                controls
-                                                controlsList="nodownload"
-                                                className="w-full h-full object-contain"
-                                                onError={(e) => {
-                                                    if (e.target && !e.target.src.includes('BigBuckBunny.mp4')) {
-                                                        e.target.src = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
-                                                    }
-                                                }}
-                                            />
+                                            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-indigo-950 to-black">
+                                                <span className="material-symbols-outlined text-slate-700 text-6xl">movie</span>
+                                            </div>
                                         )}
+                                        <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-all flex items-center justify-center">
+                                            <div className="w-16 h-16 rounded-full bg-indigo-600/90 group-hover:bg-indigo-500 text-white flex items-center justify-center shadow-xl shadow-indigo-500/40 group-hover:scale-110 transition-transform">
+                                                <span className="material-symbols-outlined text-3xl ml-1">play_arrow</span>
+                                            </div>
+                                        </div>
+                                        <div className="absolute bottom-2.5 left-2.5 px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-sm text-[11px] font-semibold text-white flex items-center gap-1.5">
+                                            <span className="material-symbols-outlined text-[14px] text-cyan-400">open_in_full</span>
+                                            <span>Click to watch on large screen</span>
+                                        </div>
                                     </div>
                                     <div className="p-3.5 bg-slate-900 flex items-center justify-between gap-3 border-t border-slate-800">
                                         <div className="min-w-0">
@@ -1824,11 +2038,11 @@ export default function PostCard({ post, onPostDeleted }) {
                                             </h5>
                                         </div>
                                         <button
-                                            onClick={() => navigate(`/videos?id=${vidObj.id || ''}&title=${encodeURIComponent(vidObj.title || '')}&url=${encodeURIComponent(vUrl)}`)}
+                                            onClick={() => setActiveVideoModal({ url: resolveMediaUrl(vUrl) || vUrl, title: vidObj.title, isYT })}
                                             className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-600 hover:to-indigo-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shrink-0 transition-all shadow-md shadow-cyan-500/20 cursor-pointer"
                                         >
-                                            <span className="material-symbols-outlined text-[16px]">play_arrow</span>
-                                            <span>Play Full Video</span>
+                                            <span className="material-symbols-outlined text-[16px]">open_in_full</span>
+                                            <span>Watch on Large Screen</span>
                                         </button>
                                     </div>
                                 </div>
@@ -1880,17 +2094,36 @@ export default function PostCard({ post, onPostDeleted }) {
                         else if (rawType === 'document') effectiveType = 'doc';
 
                         if (effectiveType === 'video') {
+                            const displayName = (att.name && att.name !== 'attachment') ? att.name : (rawUrl.split('/').pop()?.split('?')[0] || 'Video');
                             return (
-                                <div key={att.id || rawUrl} className="overflow-hidden bg-black rounded-xl border border-slate-200 dark:border-slate-800">
-                                    <video 
-                                        src={resolvedUrl} 
-                                        controls 
-                                        controlsList="nodownload" 
-                                        disablePictureInPicture 
-                                        onContextMenu={(e) => e.preventDefault()} 
-                                        className="w-full" 
-                                        style={{ maxHeight: '460px' }} 
-                                    />
+                                <div 
+                                    key={att.id || rawUrl} 
+                                    onClick={() => setActiveVideoModal({ url: resolvedUrl, title: displayName })}
+                                    className="mx-5 mb-3 p-3.5 bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl flex items-center justify-between gap-4 shadow-sm hover:shadow-md transition-all group cursor-pointer"
+                                >
+                                    <div className="flex items-center gap-3.5 overflow-hidden min-w-0">
+                                        <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-sm transition-transform group-hover:scale-105 bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
+                                            <span className="material-symbols-outlined text-[24px]">play_circle</span>
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" title={displayName}>{displayName}</p>
+                                            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                                                <span className="font-semibold uppercase tracking-wider text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
+                                                    VIDEO
+                                                </span>
+                                                <span>Click to open in large screen</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                        <button 
+                                            onClick={() => setActiveVideoModal({ url: resolvedUrl, title: displayName })}
+                                            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-500/20 active:scale-95 cursor-pointer"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">open_in_full</span>
+                                            <span>Watch Video</span>
+                                        </button>
+                                    </div>
                                 </div>
                             );
                         } else if (effectiveType === 'audio') {
@@ -1936,12 +2169,12 @@ export default function PostCard({ post, onPostDeleted }) {
                                                 }`}>
                                                     {isPdf ? 'PDF' : isTxt ? 'TXT' : 'DOC'}
                                                 </span>
-                                                <span>Document</span>
+                                                <span>Click to open in large screen</span>
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                        {resolvedUrl && (
+                                    {resolvedUrl && (
+                                        <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                                             <a
                                                 href={resolvedUrl}
                                                 target="_blank"
@@ -1951,15 +2184,8 @@ export default function PostCard({ post, onPostDeleted }) {
                                             >
                                                 <span className="material-symbols-outlined text-[18px]">open_in_new</span>
                                             </a>
-                                        )}
-                                        <button 
-                                            onClick={() => setActiveDocViewer({ ...att, name: displayName, url: resolvedUrl })}
-                                            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-500/20 active:scale-95 cursor-pointer"
-                                        >
-                                            <span className="material-symbols-outlined text-[16px]">visibility</span>
-                                            View File
-                                        </button>
-                                    </div>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         }
@@ -1973,6 +2199,14 @@ export default function PostCard({ post, onPostDeleted }) {
                 <DocumentViewerModal 
                     document={activeDocViewer} 
                     onClose={() => setActiveDocViewer(null)} 
+                />
+            )}
+
+            {/* ── Large Screen Video Modal ── */}
+            {activeVideoModal && (
+                <LargeVideoModal 
+                    video={activeVideoModal} 
+                    onClose={() => setActiveVideoModal(null)} 
                 />
             )}
 
@@ -2172,7 +2406,7 @@ export default function PostCard({ post, onPostDeleted }) {
                         isOpen={isShareOpen}
                         onClose={() => setIsShareOpen(false)}
                         post={post}
-                        contentType="Post"
+                        contentType={resolveSharedTarget(post)?.type || (post.type === 'video' ? 'Video' : post.type === 'podcast' ? 'Podcast' : post.type === 'article' ? 'Article' : 'Post')}
                         onShared={(type, count) => {
                             setShareCount(prev => prev + (count || 1));
                             if (awardRuleKarma && (post.userId || post.authorId)) {

@@ -235,6 +235,11 @@ public class NotificationService : INotificationService
                 dto.TargetUrl = "/network?tab=Requests";
             }
         }
+        else if (dto.EventType == "AdminBroadcast" || dto.RelatedContentType == "RoleRequest" || (dto.Message?.Contains("Admin Console", StringComparison.OrdinalIgnoreCase) == true))
+        {
+            dto.Title = "Administrative Alert";
+            dto.TargetUrl = "/admin";
+        }
         else if (!string.IsNullOrEmpty(dto.RelatedContentType) && dto.RelatedContentId.HasValue)
         {
             var type = dto.RelatedContentType.ToLower();
@@ -247,10 +252,11 @@ public class NotificationService : INotificationService
                 "article" => $"/article-view?id={id}",
                 "video" => $"/videos?id={id}",
                 "podcast" => $"/podcasts?id={id}",
+                "audio" => $"/podcasts?id={id}",
                 "community" => $"/community/view?id={id}",
                 "user" => $"/profile?id={id}",
                 "job" => $"/jobs?id={id}",
-                "badge" => $"/karma-history",
+                "badge" => "/karma-history",
                 _ => null
             };
         }
@@ -262,5 +268,106 @@ public class NotificationService : INotificationService
         {
             await EnrichNotificationDtoAsync(dto);
         }
+    }
+
+    public async Task<List<BroadcastItemDto>> GetBroadcastAnnouncementsAsync()
+    {
+        var raw = await _repository.GetRecentBroadcastsAsync(50);
+        if (raw.Count == 0) return new List<BroadcastItemDto>();
+
+        var seenMessages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<BroadcastItemDto>();
+
+        foreach (var item in raw)
+        {
+            var msg = item.Message?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(msg) || seenMessages.Contains(msg))
+                continue;
+
+            // Exclude regular user post/article notifications
+            if (!string.IsNullOrEmpty(item.RelatedContentType) && 
+                (item.RelatedContentType.Equals("post", StringComparison.OrdinalIgnoreCase) || 
+                 item.RelatedContentType.Equals("article", StringComparison.OrdinalIgnoreCase)) &&
+                msg.Contains("published a new", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            seenMessages.Add(msg);
+
+            string title = "Organization Announcement";
+            string content = msg;
+
+            if (msg.Contains('|'))
+            {
+                var parts = msg.Split('|', 2);
+                title = parts[0].Trim();
+                content = parts.Length > 1 ? parts[1].Trim() : parts[0].Trim();
+            }
+
+            result.Add(new BroadcastItemDto
+            {
+                Id = item.NotificationId,
+                Title = title,
+                Message = msg,
+                Content = content,
+                CreatedDate = item.CreatedDate,
+                Sender = "HR Administration",
+                EventType = item.EventType
+            });
+        }
+
+        return result;
+    }
+
+    public async Task<bool> UpdateBroadcastAsync(long id, string newMessage)
+    {
+        var affected = await _repository.UpdateBroadcastMessageAsync(id, newMessage);
+        if (affected > 0)
+        {
+            try
+            {
+                string title = "Organization Announcement";
+                string content = newMessage;
+                if (newMessage.Contains('|'))
+                {
+                    var parts = newMessage.Split('|', 2);
+                    title = parts[0].Trim();
+                    content = parts.Length > 1 ? parts[1].Trim() : parts[0].Trim();
+                }
+
+                await _hubContext.Clients.All.SendAsync("BroadcastUpdated", new
+                {
+                    Id = id,
+                    Title = title,
+                    Message = newMessage,
+                    Content = content
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to broadcast real-time BroadcastUpdated SignalR event.");
+            }
+            return true;
+        }
+        return false;
+    }
+
+    public async Task<bool> DeleteBroadcastAsync(long id)
+    {
+        var affected = await _repository.DeleteBroadcastBatchAsync(id);
+        if (affected > 0)
+        {
+            try
+            {
+                await _hubContext.Clients.All.SendAsync("BroadcastDeleted", new { Id = id });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to broadcast real-time BroadcastDeleted SignalR event.");
+            }
+            return true;
+        }
+        return false;
     }
 }

@@ -26,6 +26,7 @@ public class PostDto
     public DateTime? ScheduledDate { get; set; }
     public DateTime? PublishedDate { get; set; }
     public DateTime CreatedDate { get; set; }
+    public int ViewCount { get; set; }
     public List<string> AttachmentUrls { get; set; } = new();
     public List<PostAttachmentDto> Attachments { get; set; } = new();
     public List<MentionedUserDto> MentionedUsers { get; set; } = new();

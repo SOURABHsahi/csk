@@ -13,4 +13,5 @@ public interface IVideoService
     Task<VideoDto> CreateVideoAsync(int currentUserId, CreateVideoDto dto);
     Task<VideoDto> UpdateVideoAsync(long videoId, int currentUserId, UpdateVideoDto dto);
     Task DeleteVideoAsync(long videoId, int currentUserId);
+    Task<int> IncrementViewCountAsync(long videoId, int currentUserId = 0);
 }

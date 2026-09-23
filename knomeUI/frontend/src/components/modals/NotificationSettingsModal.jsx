@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
+import { notificationsApi } from '../../utils/apiService';
 
 export const DEFAULT_NOTIF_PREFERENCES = {
     comments: true,
@@ -16,7 +17,9 @@ export default function NotificationSettingsModal({ isOpen, onClose }) {
     const { currentUser } = useUser();
     const { addToast } = useToast();
     
-    const storageKey = `knome_notif_prefs_${currentUser?.userId || currentUser?.id || 'default'}`;
+    // Resolve user ID with fallbacks to guarantee consistency across components and reloads
+    const resolvedUid = currentUser?.userId || currentUser?.id || localStorage.getItem('knome_userId') || localStorage.getItem('knome_employeeId') || 'default';
+    const storageKey = `knome_notif_prefs_${resolvedUid}`;
 
     const [preferences, setPreferences] = useState(() => {
         try {
@@ -25,6 +28,7 @@ export default function NotificationSettingsModal({ isOpen, onClose }) {
         } catch (_) {}
         return DEFAULT_NOTIF_PREFERENCES;
     });
+    const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
@@ -34,6 +38,27 @@ export default function NotificationSettingsModal({ isOpen, onClose }) {
                     setPreferences({ ...DEFAULT_NOTIF_PREFERENCES, ...JSON.parse(saved) });
                 }
             } catch (_) {}
+
+            // Sync from backend if user is authenticated
+            notificationsApi.getPreferences().then(res => {
+                const list = res?.data || res;
+                if (Array.isArray(list) && list.length > 0) {
+                    setPreferences(prev => {
+                        const updated = { ...prev };
+                        list.forEach(p => {
+                            if (p.eventType === 'Comment') updated.comments = p.bellEnabled;
+                            if (p.eventType === 'Reaction') updated.reactions = p.bellEnabled;
+                            if (p.eventType === 'Follower' || p.eventType === 'ConnectionRequest') updated.followers = p.bellEnabled;
+                            if (p.eventType === 'CommunityInvite' || p.eventType === 'CommunityJoin') updated.communityInvites = p.bellEnabled;
+                            if (p.eventType === 'Mention') updated.mentions = p.bellEnabled;
+                            if (p.eventType === 'Community') updated.communityPosts = p.bellEnabled;
+                            if (p.eventType === 'Job') updated.jobPostings = p.bellEnabled;
+                        });
+                        localStorage.setItem(storageKey, JSON.stringify(updated));
+                        return updated;
+                    });
+                }
+            }).catch(() => {});
         }
     }, [isOpen, storageKey]);
 
@@ -70,15 +95,41 @@ export default function NotificationSettingsModal({ isOpen, onClose }) {
         });
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
+        setIsSaving(true);
         try {
+            // 1. Immediately persist locally and broadcast in real-time to active navbar and listeners
             localStorage.setItem(storageKey, JSON.stringify(preferences));
             window.dispatchEvent(new CustomEvent('notification-preferences-updated', { detail: preferences }));
-            addToast && addToast('Notification preferences saved successfully!', 'success');
+
+            // 2. Persist to SQL Server backend via API so backend stops delivering disabled real-time SignalR notifications
+            const backendPayload = [
+                { eventType: 'Comment', bellEnabled: preferences.comments !== false, emailEnabled: true },
+                { eventType: 'Reaction', bellEnabled: preferences.reactions !== false, emailEnabled: true },
+                { eventType: 'Follower', bellEnabled: preferences.followers !== false, emailEnabled: true },
+                { eventType: 'ConnectionRequest', bellEnabled: preferences.followers !== false, emailEnabled: true },
+                { eventType: 'CommunityInvite', bellEnabled: preferences.communityInvites !== false, emailEnabled: true },
+                { eventType: 'CommunityJoin', bellEnabled: preferences.communityInvites !== false, emailEnabled: true },
+                { eventType: 'Mention', bellEnabled: preferences.mentions !== false, emailEnabled: true },
+                { eventType: 'Community', bellEnabled: preferences.communityPosts !== false, emailEnabled: true },
+                { eventType: 'Job', bellEnabled: preferences.jobPostings !== false, emailEnabled: true },
+            ];
+            await notificationsApi.updatePreferences(backendPayload);
+
+            // 3. Re-verify localStorage is in sync
+            localStorage.setItem(storageKey, JSON.stringify(preferences));
+            window.dispatchEvent(new CustomEvent('notification-preferences-updated', { detail: preferences }));
+
+            addToast && addToast('Notification preferences saved and applied in real-time!', 'success');
+            onClose();
         } catch (e) {
             console.error('Failed to save notification preferences', e);
+            // Even if backend had a network hiccup, local preferences are preserved
+            addToast && addToast('Notification preferences saved locally!', 'info');
+            onClose();
+        } finally {
+            setIsSaving(false);
         }
-        onClose();
     };
 
     const eventTypes = [
@@ -225,16 +276,25 @@ export default function NotificationSettingsModal({ isOpen, onClose }) {
                         <button 
                             type="button"
                             onClick={onClose} 
-                            className="px-5 py-2.5 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                            disabled={isSaving}
+                            className="px-5 py-2.5 rounded-xl font-bold text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-50"
                         >
                             Cancel
                         </button>
                         <button 
                             type="button"
                             onClick={handleSave} 
-                            className="px-6 py-2.5 rounded-xl font-bold text-xs text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-all hover:scale-105 cursor-pointer"
+                            disabled={isSaving}
+                            className="px-6 py-2.5 rounded-xl font-bold text-xs text-white bg-blue-600 hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-all hover:scale-105 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                         >
-                            Save Preferences
+                            {isSaving ? (
+                                <>
+                                    <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                                    <span>Saving...</span>
+                                </>
+                            ) : (
+                                <span>Save Preferences</span>
+                            )}
                         </button>
                     </div>
                 </div>

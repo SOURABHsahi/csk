@@ -6,28 +6,42 @@ import { userApi, searchApi, resolveMediaUrl } from '../utils/apiService';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useScrollLoading } from '../hooks/useScrollLoading';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
+import HighlightText from '../components/ui/HighlightText';
 
 const KNOWN_ROSTER_NAMES = {
     'EMP001': 'Aarav Sharma',
     'EMP002': 'Priya Patel',
     'EMP003': 'Rohan Verma',
     'EMP004': 'Neha Gupta',
+    'MP0108': 'Loveneesh Sharma',
     'MPO101': 'Loveneesh Sharma',
     'MPO102': 'Vishendra Sharma',
     'MPO103': 'Sourabh Sahu',
     'MPO104': 'Rishikesh Ugle',
     'MPO105': 'Meghna Tiwari',
     'MPO106': 'Mayur Verma',
-    'MPO107': 'Vilash Deshmukh',
+    'MPO107': 'Ankit Sharma',
     'MPO108': 'Pooja Sharma',
     'MPO089': 'Vilash Deshmukh',
+    'MPO109': 'Suresh Verma',
+    'MPO110': 'Kabir Singh',
+    'MPO111': 'Mayur Bansal',
+    'MPO112': 'Anup',
+    'MPO113': 'Mahesh Sharma',
+    'MPO114': 'Ramesh Sharma',
+    'MPO115': 'Aishwary',
+    'MPO116': 'Meghna',
+    'MPO117': 'Lovnesh Sharma',
     'MPO118': 'Raman Kumar',
     'MPO119': 'Rishabh Pandey',
-    'MPO120': 'krisha dabhi',
+    'MPO120': 'Krisha Dabhi',
     'MPO121': 'Mahi Rathore',
     'MPO122': 'Satendra Singh',
-    'MPO652': 'Deepak Simrodia'
+    'MPO652': 'Deepak Simrodia',
+    'MPO664': 'Ramesh Patel',
+    'MP0664': 'Vishendra Sharma',
 };
+
 
 const KNOWN_ROSTER_ROLES = {
     'EMP001': { role: 'Employee', designation: 'Senior Software Engineer' },
@@ -598,9 +612,14 @@ export default function Network() {
             
             {/* Hero Header */}
             <div className="relative rounded-3xl overflow-hidden shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col md:flex-row items-start md:items-center justify-between text-left px-6 py-8 md:px-10 md:py-8 gap-6">
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_left,_var(--tw-gradient-stops))] from-blue-100/50 dark:from-blue-900/20 via-transparent to-transparent pointer-events-none"></div>
                 <div className="absolute top-1/2 left-0 -translate-y-1/2 w-[500px] h-32 bg-blue-500/10 dark:bg-blue-500/15 blur-[80px] pointer-events-none"></div>
                 
                 <div className="relative z-10 flex flex-col items-start max-w-3xl">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-blue-500/30 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-[11px] font-bold mb-3 backdrop-blur-md uppercase tracking-wider">
+                        ✨ Connecting MPOnline Colleagues
+                    </div>
+                    
                     <h1 className="text-3xl md:text-4xl lg:text-[40px] font-black tracking-tight mb-3 text-slate-900 dark:text-white" style={{ lineHeight: '1.2' }}>
                         <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-sky-600 to-cyan-600 dark:from-blue-400 dark:via-sky-400 dark:to-cyan-400">
                             People Network & Connections
@@ -668,7 +687,7 @@ export default function Network() {
                     }`}
                 >
                     <span className="material-symbols-outlined text-[18px]">group</span>
-                    My 1st-Degree Connections ({connectionsList.length})
+                    My Connections ({connectionsList.length})
                     {activeTab === 'Connections' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 dark:bg-cyan-400 rounded-t-full"></div>}
                 </button>
             </div>
@@ -695,6 +714,7 @@ export default function Network() {
                                             <PersonCard 
                                                 key={`sug-${person.id}`} 
                                                 person={person} 
+                                                searchQuery={searchQuery}
                                                 onConnect={() => handleConnect(person)}
                                                 onCancel={() => handleCancelRequest(person)}
                                                 onAccept={() => handleAcceptRequest(person)}
@@ -706,32 +726,7 @@ export default function Network() {
                                 </section>
                             )}
 
-                            <section>
-                                <div className="flex items-center gap-2 mb-6">
-                                    <span className="material-symbols-outlined text-blue-500 text-[24px]">contacts</span>
-                                    <h2 className="text-xl font-black text-slate-900 dark:text-white">Directory</h2>
-                                </div>
-                                
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                    {visibleDirectory.slice(0, visibleCount).map(person => (
-                                        <PersonCard 
-                                            key={`dir-${person.id}`} 
-                                            person={person} 
-                                            onConnect={() => handleConnect(person)}
-                                            onCancel={() => handleCancelRequest(person)}
-                                            onAccept={() => handleAcceptRequest(person)}
-                                            onReject={() => handleRejectRequest(person)}
-                                            onRemove={() => handleRemoveConnection(person)}
-                                        />
-                                    ))}
-                                    <ScrollLoadingIndicator isVisible={visibleCount < visibleDirectory.length} text="Loading more colleagues on scroll..." />
-                                    {visibleDirectory.length === 0 && (
-                                        <div className="col-span-full py-12 text-center text-slate-500 font-medium">
-                                            {searchQuery.trim() ? `No colleagues found matching "${searchQuery}"` : "All discovered colleagues are shown in suggestions above."}
-                                        </div>
-                                    )}
-                                </div>
-                            </section>
+
                         </div>
                     )}
 
@@ -791,6 +786,7 @@ export default function Network() {
                                             <PersonCard 
                                                 key={`req-${person.id}`} 
                                                 person={person} 
+                                                searchQuery={searchQuery}
                                                 onAccept={() => handleAcceptRequest(person)}
                                                 onReject={() => handleRejectRequest(person)}
                                             />
@@ -817,6 +813,7 @@ export default function Network() {
                                             <PersonCard 
                                                 key={`sent-${person.id}`} 
                                                 person={person} 
+                                                searchQuery={searchQuery}
                                                 onCancel={() => handleCancelRequest(person)}
                                             />
                                         ))}
@@ -835,7 +832,7 @@ export default function Network() {
                     {activeTab === 'Connections' && (
                         <section>
                             <h2 className="text-lg font-black text-slate-900 dark:text-white mb-6">
-                                Your 1st-Degree Network ({connectionsList.length})
+                                Your Connections ({connectionsList.length})
                             </h2>
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -843,6 +840,7 @@ export default function Network() {
                                     <PersonCard 
                                         key={`conn-${person.id}`} 
                                         person={person} 
+                                        searchQuery={searchQuery}
                                         onRemove={() => handleRemoveConnection(person)}
                                     />
                                 ))}
@@ -905,7 +903,7 @@ function NetworkAvatar({ avatar, name, size = 'w-20 h-20', textSize = 'text-xl' 
     );
 }
 
-function PersonCard({ person, onConnect, onCancel, onAccept, onReject, onRemove }) {
+function PersonCard({ person, searchQuery = '', onConnect, onCancel, onAccept, onReject, onRemove }) {
     const navigate = useNavigate();
     const [showMenu, setShowMenu] = useState(false);
     const status = person.connectionStatus || 'NotConnected';
@@ -942,7 +940,7 @@ function PersonCard({ person, onConnect, onCancel, onAccept, onReject, onRemove 
                 onClick={handleOpenProfile} 
                 className="font-bold text-[16px] text-slate-900 dark:text-white group-hover:text-blue-500 transition-colors leading-tight mb-2 whitespace-normal break-words text-center max-w-full cursor-pointer hover:underline"
             >
-                {person.name}
+                <HighlightText text={person.name} query={searchQuery} />
             </button>
 
             {/* Assigned Role Badge */}
@@ -953,21 +951,24 @@ function PersonCard({ person, onConnect, onCancel, onAccept, onReject, onRemove 
                             key={idx} 
                             className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wide border shadow-xs ${getRoleBadgeStyle(r)}`}
                         >
-                            {r}
+                            <HighlightText text={r} query={searchQuery} />
                         </span>
                     ))
                 ) : (
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wide border bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700">
-                        {person.role || 'Employee'}
+                        <HighlightText text={person.role || 'Employee'} query={searchQuery} />
                     </span>
                 )}
             </div>
 
             {/* Designation & Department Subtitle */}
             <p className="text-[12px] text-slate-500 dark:text-slate-400 mb-3 truncate max-w-full font-medium">
-                {person.designation 
-                    ? (person.department ? `${person.designation} · ${person.department}` : person.designation)
-                    : (person.department || 'General')}
+                <HighlightText 
+                    text={person.designation 
+                        ? (person.department ? `${person.designation} · ${person.department}` : person.designation)
+                        : (person.department || 'General')} 
+                    query={searchQuery} 
+                />
             </p>
 
             {/* Mutual Connections Stack */}

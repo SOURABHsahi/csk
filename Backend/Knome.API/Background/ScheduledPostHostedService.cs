@@ -31,17 +31,56 @@ public class ScheduledPostHostedService : BackgroundService
             {
                 using var scope = _scopeFactory.CreateScope();
                 var postRepo = scope.ServiceProvider.GetRequiredService<IPostRepository>();
-                var publishedCount = await postRepo.PublishDueScheduledPostsAsync();
-                if (publishedCount > 0)
+                var notifService = scope.ServiceProvider.GetService<INotificationService>();
+                var publishedPosts = await postRepo.PublishDueScheduledPostsAsync();
+                if (publishedPosts.Count > 0)
                 {
-                    _logger.LogInformation("ScheduledContentPublisher: auto-published {Count} scheduled post(s) to live feed.", publishedCount);
+                    _logger.LogInformation("ScheduledContentPublisher: auto-published {Count} scheduled post(s) to live feed.", publishedPosts.Count);
+                    if (notifService != null)
+                    {
+                        foreach (var post in publishedPosts)
+                        {
+                            try
+                            {
+                                await notifService.PublishAsync(
+                                    post.AuthorUserId,
+                                    Constants.NotificationTypes.HrAnnouncement,
+                                    "Your scheduled post has successfully gone live.",
+                                    relatedContentType: Constants.ContentTypes.Post,
+                                    relatedContentId: post.PostId);
+                            }
+                            catch (Exception notifEx)
+                            {
+                                _logger.LogWarning(notifEx, "Failed to send live notification for scheduled post {PostId}", post.PostId);
+                            }
+                        }
+                    }
                 }
 
                 var articleRepo = scope.ServiceProvider.GetRequiredService<IArticleRepository>();
-                var publishedArticleCount = await articleRepo.PublishDueScheduledArticlesAsync();
-                if (publishedArticleCount > 0)
+                var publishedArticles = await articleRepo.PublishDueScheduledArticlesAsync();
+                if (publishedArticles.Count > 0)
                 {
-                    _logger.LogInformation("ScheduledContentPublisher: auto-published {Count} scheduled article(s) to live platform.", publishedArticleCount);
+                    _logger.LogInformation("ScheduledContentPublisher: auto-published {Count} scheduled article(s) to live platform.", publishedArticles.Count);
+                    if (notifService != null)
+                    {
+                        foreach (var article in publishedArticles)
+                        {
+                            try
+                            {
+                                await notifService.PublishAsync(
+                                    article.AuthorUserId,
+                                    Constants.NotificationTypes.HrAnnouncement,
+                                    $"Your scheduled article \"{article.Title}\" has successfully gone live.",
+                                    relatedContentType: Constants.ContentTypes.Article,
+                                    relatedContentId: article.ArticleId);
+                            }
+                            catch (Exception notifEx)
+                            {
+                                _logger.LogWarning(notifEx, "Failed to send live notification for scheduled article {ArticleId}", article.ArticleId);
+                            }
+                        }
+                    }
                 }
             }
             catch (Exception ex)

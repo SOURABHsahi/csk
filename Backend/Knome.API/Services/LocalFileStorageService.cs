@@ -119,14 +119,35 @@ public class LocalFileStorageService : IFileStorageService
         if (file.Length > maxMediaSize)
             throw new BadRequestException("Media size exceeds the maximum limit of 500 MB.");
 
-        var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+        var extension = Path.GetExtension(file.FileName)?.ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(extension))
+        {
+            extension = file.ContentType?.ToLowerInvariant() switch
+            {
+                "audio/webm" => ".webm",
+                "audio/mpeg" or "audio/mp3" => ".mp3",
+                "audio/wav" or "audio/x-wav" => ".wav",
+                "audio/aac" => ".aac",
+                "audio/ogg" => ".ogg",
+                "audio/m4a" or "audio/x-m4a" => ".m4a",
+                "audio/flac" => ".flac",
+                "video/mp4" => ".mp4",
+                "video/webm" => ".webm",
+                "image/jpeg" => ".jpg",
+                "image/png" => ".png",
+                "image/webp" => ".webp",
+                "image/gif" => ".gif",
+                _ => (mediaType?.ToLowerInvariant() == "audio" || mediaType?.ToLowerInvariant() == "podcast") ? ".webm" : ""
+            };
+        }
+
         string[] allowedMediaExtensions = mediaType?.ToLowerInvariant() switch
         {
             "image" => new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp" },
-            "video" => new[] { ".mp4", ".mov", ".avi" },
-            "audio" => new[] { ".mp3", ".wav", ".aac" },
+            "video" => new[] { ".mp4", ".mov", ".avi", ".webm", ".mkv" },
+            "audio" or "podcast" => new[] { ".mp3", ".wav", ".aac", ".ogg", ".m4a", ".webm", ".flac" },
             "doc" or "document" => new[] { ".pdf", ".doc", ".docx", ".txt", ".xls", ".xlsx", ".ppt", ".pptx", ".zip" },
-            _ => new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".mov", ".avi", ".mp3", ".wav", ".aac", ".pdf", ".doc", ".docx", ".txt", ".xls", ".xlsx", ".ppt", ".pptx", ".zip" }
+            _ => new[] { ".jpg", ".jpeg", ".png", ".gif", ".webp", ".mp4", ".mov", ".avi", ".webm", ".mkv", ".mp3", ".wav", ".aac", ".ogg", ".m4a", ".webm", ".flac", ".pdf", ".doc", ".docx", ".txt", ".xls", ".xlsx", ".ppt", ".pptx", ".zip" }
         };
 
         if (!allowedMediaExtensions.Contains(extension))

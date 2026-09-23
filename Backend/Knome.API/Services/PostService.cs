@@ -58,6 +58,12 @@ public class PostService : IPostService
         if (post == null)
             throw new NotFoundException($"Post ID {postId} not found.");
 
+        if (currentUserId > 0)
+        {
+            var authoritativeViews = await _interactionService.RecordViewAsync(ContentTypes.Post, postId, currentUserId);
+            post.ViewCount = (int)authoritativeViews;
+        }
+
         var dto = _mapper.Map<PostDto>(post);
         dto.EngagementSummary = await _interactionService.GetContentSummaryAsync(ContentTypes.Post, postId, currentUserId);
         return dto;
@@ -199,14 +205,16 @@ public class PostService : IPostService
         // 2. Specific Connections / Targeted users Notifications
         if (allTargetedUserIds.Any() && finalStatus == PostStatuses.Published)
         {
+            var mentionedSet = (dto.MentionedUserIds ?? new List<int>()).ToHashSet();
             foreach (var targetUserId in allTargetedUserIds.Where(id => id != currentUserId))
             {
+                var isMention = mentionedSet.Contains(targetUserId);
                 await _notificationService.PublishAsync(
                     targetUserId,
-                    NotificationTypes.Share,
-                    dto.AudienceType == "Connections" || dto.AudienceType == "SpecificConnections"
-                        ? $"{authorName} shared a post with you: \"{snippet}\""
-                        : $"You were mentioned in a post by {authorName}: \"{snippet}\"",
+                    isMention ? NotificationTypes.Mention : NotificationTypes.Share,
+                    isMention
+                        ? $"You were mentioned in a post by {authorName}: \"{snippet}\""
+                        : $"{authorName} shared a post with you: \"{snippet}\"",
                     relatedContentType: ContentTypes.Post,
                     relatedContentId: savedPost.PostId);
             }
@@ -313,5 +321,15 @@ public class PostService : IPostService
 
         await CheckIsAuthorOrAdminAsync(post, currentUserId);
         await _repo.DeletePostAsync(post);
+    }
+
+    public async Task<int> IncrementViewCountAsync(long postId, int currentUserId = 0)
+    {
+        var post = await _repo.GetPostByIdAsync(postId);
+        if (post == null)
+            throw new NotFoundException($"Post ID {postId} not found.");
+
+        var count = await _interactionService.RecordViewAsync(ContentTypes.Post, postId, currentUserId);
+        return (int)count;
     }
 }

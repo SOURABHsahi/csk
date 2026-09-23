@@ -121,7 +121,8 @@ export const apiClient = {
             const resourceGroup = cleanEndpoint.split('/')[0]?.toLowerCase();
             if (resourceGroup) {
                 for (const key of responseCache.keys()) {
-                    if (key.toLowerCase().includes(`/${resourceGroup}`)) {
+                    const lowKey = key.toLowerCase();
+                    if (lowKey.includes(`/${resourceGroup}`) || lowKey.startsWith(resourceGroup)) {
                         responseCache.delete(key);
                     }
                 }
@@ -194,8 +195,8 @@ export const apiClient = {
 
     async handleResponse(response, retryConfig) {
         if (response.status === 401) {
-            // Try silent re-auth once before giving up
-            if (!reauthPromise && retryConfig && localStorage.getItem('knome_employeeId')) {
+            // Try silent re-auth once before giving up (all concurrent 401s await the same deduplicated promise)
+            if (retryConfig && localStorage.getItem('knome_employeeId')) {
                 const freshToken = await silentReauth();
 
                 if (freshToken) {

@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import NotificationSettingsModal, { DEFAULT_NOTIF_PREFERENCES } from '../modals/NotificationSettingsModal';
 import RoleFaqModal from '../modals/RoleFaqModal';
 import NotificationToast from '../ui/NotificationToast';
+import HighlightText from '../ui/HighlightText';
 import knomeLogo from '../../assets/knome_logo.png';
 import knomeLogoDark from '../../assets/knome_logo_dark.png';
 import { notificationsApi, profileApi, searchApi, karmaApi, resolveMediaUrl, saveRecentSearch, getLocalRecentSearches, clearLocalRecentSearches } from '../../utils/apiService';
@@ -256,7 +257,7 @@ export default function Navbar() {
     // Notification Preferences State (Loaded from localStorage per user)
     const [notifPreferences, setNotifPreferences] = useState(() => {
         try {
-            const uid = currentUser?.userId || currentUser?.id || 'default';
+            const uid = currentUser?.userId || currentUser?.id || localStorage.getItem('knome_userId') || localStorage.getItem('knome_employeeId') || 'default';
             const saved = localStorage.getItem(`knome_notif_prefs_${uid}`);
             if (saved) return { ...DEFAULT_NOTIF_PREFERENCES, ...JSON.parse(saved) };
         } catch (_) {}
@@ -269,7 +270,7 @@ export default function Navbar() {
     }, [notifPreferences]);
 
     useEffect(() => {
-        const uid = currentUser?.userId || currentUser?.id || 'default';
+        const uid = currentUser?.userId || currentUser?.id || localStorage.getItem('knome_userId') || localStorage.getItem('knome_employeeId') || 'default';
         const loadPrefs = () => {
             try {
                 const saved = localStorage.getItem(`knome_notif_prefs_${uid}`);
@@ -346,16 +347,34 @@ export default function Navbar() {
 
     const playChimeSound = () => {
         try {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = ctx.createOscillator();
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass) return;
+            const ctx = new AudioContextClass();
+            if (ctx.state === 'suspended') {
+                ctx.resume().catch(() => {});
+            }
+            const now = ctx.currentTime;
+            const osc1 = ctx.createOscillator();
+            const osc2 = ctx.createOscillator();
             const gain = ctx.createGain();
-            osc.connect(gain);
+
+            osc1.type = 'sine';
+            osc2.type = 'triangle';
+            osc1.frequency.setValueAtTime(880, now);
+            osc2.frequency.setValueAtTime(1320, now + 0.08);
+
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.18, now + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
+
+            osc1.connect(gain);
+            osc2.connect(gain);
             gain.connect(ctx.destination);
-            osc.frequency.setValueAtTime(587.33, ctx.currentTime);
-            gain.gain.setValueAtTime(0.15, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.5);
-            osc.start();
-            osc.stop(ctx.currentTime + 0.5);
+
+            osc1.start(now);
+            osc1.stop(now + 0.12);
+            osc2.start(now + 0.08);
+            osc2.stop(now + 0.55);
         } catch (e) {
             // Audio context blocked or unsupported
         }
@@ -486,11 +505,13 @@ export default function Navbar() {
         const dateFormatted = formatNotificationDate(dateVal);
         const parsed = parseNotificationContent({ senderName, message: n.message || n.text || n.title });
 
+        const isAccepted = msg.includes('accepted');
+
         return {
             id: n.notificationId || n.id,
             category,
-            type: isConnectionReq ? 'follow_request' : (isFollow ? 'follow' : type),
-            title: n.title || (isFollow ? 'New Follower' : (isConnectionReq ? 'Connection Request' : 'Notification')),
+            type: (isConnectionReq && !isAccepted) ? 'follow_request' : (isConnectionReq && isAccepted ? 'connection_accepted' : (isFollow ? 'follow' : type)),
+            title: n.title || (isAccepted ? 'Connection Accepted' : (isFollow ? 'New Follower' : (isConnectionReq ? 'Connection Request' : 'Notification'))),
             text: n.message || n.text,
             message: n.message || n.text,
             parsedSender: parsed.sender,
@@ -508,8 +529,8 @@ export default function Navbar() {
             senderUserId: n.senderUserId || n.actorUserId,
             senderName,
             senderAvatar,
-            handled: n.isRead,
-            status: 'pending'
+            handled: n.isRead || isAccepted,
+            status: isAccepted ? 'approved' : 'pending'
         };
     };
 
@@ -803,13 +824,16 @@ export default function Navbar() {
         const token = localStorage.getItem('knome_jwt');
         if (!token) return;
 
+        const protocol = (typeof window !== 'undefined' && window.location.protocol === 'https:') ? 'https:' : 'http:';
         const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : 'localhost';
+        const hubUrl = `${protocol}//${host}:5095/hubs/notifications`;
+
         const connection = new signalR.HubConnectionBuilder()
-            .withUrl(`http://${host}:5095/hubs/notifications`, {
+            .withUrl(hubUrl, {
                 accessTokenFactory: () => token
             })
-            .configureLogging(signalR.LogLevel.None)
-            .withAutomaticReconnect()
+            .configureLogging(signalR.LogLevel.Warning)
+            .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
             .build();
 
         connection.on("ReceiveNotification", (notification) => {
@@ -1317,8 +1341,12 @@ export default function Navbar() {
                                                             </div>
                                                         )}
                                                         <div className="flex-1 min-w-0">
-                                                            <p className="text-[13px] font-bold truncate leading-tight" style={{color: 'var(--text-primary)'}}>{item.title}</p>
-                                                            <p className="text-[11px] text-slate-400 truncate">{item.subtitle}</p>
+                                                            <p className="text-[13px] font-bold truncate leading-tight" style={{color: 'var(--text-primary)'}}>
+                                                                <HighlightText text={item.title} query={searchQuery} />
+                                                            </p>
+                                                            <p className="text-[11px] text-slate-400 truncate">
+                                                                <HighlightText text={item.subtitle} query={searchQuery} />
+                                                            </p>
                                                         </div>
                                                         <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
                                                             {item.contentType}
@@ -1456,13 +1484,13 @@ export default function Navbar() {
                         >
                             <span className="material-symbols-outlined text-[19px] text-theme-30-text" style={{fontVariationSettings:"'FILL' 1"}}>notifications</span>
                             {unreadCount > 0 && (
-                                <span className="absolute -top-1 -right-1 rounded-full flex items-center justify-center text-[9px] font-black text-white px-1"
+                                <span className="absolute -top-1 -right-1 rounded-full flex items-center justify-center text-[9px] font-black text-white px-1.5 animate-pulse shadow-md select-none pointer-events-none"
                                     style={{
                                         background: 'linear-gradient(135deg, #f43f5e, #fb923c)',
                                         minWidth: '18px', height: '18px',
-                                        boxShadow: '0 0 10px rgba(244,63,94,0.7)'
+                                        boxShadow: '0 0 12px rgba(244,63,94,0.75)'
                                     }}>
-                                    {unreadCount}
+                                    {unreadCount > 99 ? '99+' : unreadCount}
                                 </span>
                             )}
                         </button>
@@ -1488,11 +1516,7 @@ export default function Navbar() {
                                     </div>
                                     <div className="flex items-center gap-2.5">
                                         {allowedNotifs.length > 0 && (
-                                            <>
-                                                <button onClick={markAllRead} className="text-[11px] font-bold text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors cursor-pointer">Mark read</button>
-                                                <span className="text-slate-300 dark:text-slate-700 text-xs">•</span>
-                                                <button onClick={clearAllNotifications} className="text-[11px] font-bold text-rose-500 hover:text-rose-600 transition-colors cursor-pointer">Clear all</button>
-                                            </>
+                                            <button onClick={markAllRead} className="text-[11px] font-bold text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 transition-colors cursor-pointer">Mark read</button>
                                         )}
                                         <button onClick={() => { setIsNotifSettingsOpen(true); setIsNotifOpen(false); }} title="Notification Settings" className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors ml-1 cursor-pointer">
                                             <span className="material-symbols-outlined text-[17px]">settings</span>
@@ -1580,10 +1604,10 @@ export default function Navbar() {
                                                             <div className="flex-1 min-w-0">
                                                                 <p className="text-[12.5px] leading-snug text-slate-800 dark:text-slate-200">
                                                                     <span className="font-bold text-slate-900 dark:text-white mr-1">
-                                                                        {n.parsedSender || n.senderName || n.title || 'Colleague'}
+                                                                        <HighlightText text={n.parsedSender || n.senderName || n.title || 'Colleague'} query={notifSearchQuery} />
                                                                     </span>
                                                                     <span className="text-slate-600 dark:text-slate-300">
-                                                                        {n.parsedAction || n.text || n.message}
+                                                                        <HighlightText text={n.parsedAction || n.text || n.message} query={notifSearchQuery} />
                                                                     </span>
                                                                 </p>
 

@@ -12,6 +12,7 @@ import { useToast } from '../components/contexts/ToastContext';
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import { useScrollLoading } from '../hooks/useScrollLoading';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
+import HighlightText from '../components/ui/HighlightText';
 import CustomDateTimePicker from '../components/widgets/CustomDateTimePicker';
 
 export default function Articles() {
@@ -227,7 +228,7 @@ export default function Articles() {
     
     // Formatting state (FR-AB-02)
     const [activeFormats, setActiveFormats] = useState({
-        bold: false, italic: false, underline: false, list: false, heading: false
+        bold: false, italic: false, underline: false, list: false, numlist: false, heading: false, quote: false
     });
     
     const editorRef = useRef(null);
@@ -258,9 +259,10 @@ export default function Articles() {
         setCurrentUploadType(type);
         if (fileInputRef.current) {
             const acceptMap = {
-                image: 'image/jpeg,image/png,image/gif',
+                image: 'image/jpeg,image/png,image/gif,image/webp',
                 video: 'video/mp4,video/quicktime,video/x-msvideo',
-                podcast: 'audio/mpeg,audio/wav,audio/aac',
+                audio: 'audio/mpeg,audio/wav,audio/aac,audio/ogg',
+                podcast: 'audio/mpeg,audio/wav,audio/aac,audio/ogg',
                 doc: 'application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
             };
             fileInputRef.current.accept = acceptMap[type] || '*/*';
@@ -276,10 +278,11 @@ export default function Articles() {
         reader.onload = async (ev) => {
             const tempId = Date.now();
             const localPreviewUrl = ev.target.result;
+            const normalizedType = (currentUploadType === 'podcast' || currentUploadType === 'audio') ? 'audio' : currentUploadType;
             
             const newAttachment = {
                 id: tempId,
-                type: currentUploadType === 'podcast' ? 'audio' : currentUploadType,
+                type: normalizedType,
                 name: file.name,
                 url: localPreviewUrl,
                 backendUrl: null,
@@ -290,7 +293,7 @@ export default function Articles() {
             setIsUploadingMedia(true);
         
             try {
-                const result = await apiClient.uploadFile('/Media/upload', file, currentUploadType);
+                const result = await apiClient.uploadFile('/Media/upload', file, normalizedType);
 
                 setAttachments(prev => prev.map(att =>
                     att.id === tempId
@@ -388,6 +391,15 @@ export default function Articles() {
                     document.execCommand('formatBlock', false, 'blockquote');
                 }
             }
+        } else if (format === 'codeblock') {
+            const selection = window.getSelection();
+            const selectedText = selection ? selection.toString() : '';
+            const codeSnippet = selectedText || '// Enter your code snippet here\nfunction calculateMetrics() {\n  return { uptime: "99.99%", latencyMs: 14 };\n}';
+            const escapedCode = codeSnippet.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const blockHtml = `<pre class="my-4 p-4 rounded-xl bg-slate-900 text-emerald-400 font-mono text-xs overflow-x-auto border border-slate-800 shadow-inner"><code>${escapedCode}</code></pre><p><br></p>`;
+            document.execCommand('insertHTML', false, blockHtml);
+        } else if (format === 'divider') {
+            document.execCommand('insertHTML', false, '<hr class="my-6 border-t border-slate-300 dark:border-slate-700" /><p><br></p>');
         } else if (format === 'link') {
             const selection = window.getSelection();
             const selectedText = selection ? selection.toString() : '';
@@ -402,13 +414,7 @@ export default function Articles() {
                 }
             }
         } else if (format === 'image') {
-            const imgUrl = window.prompt('Enter Image URL (or leave blank to select an image from your computer):');
-            if (imgUrl && imgUrl.trim()) {
-                const imgHtml = `<figure class="my-4"><img src="${imgUrl.trim()}" alt="Article illustration" class="rounded-2xl max-w-full h-auto shadow-md border border-slate-200 dark:border-slate-800" /><figcaption class="text-xs text-slate-400 mt-1.5 text-center italic">Image caption</figcaption></figure><p><br></p>`;
-                document.execCommand('insertHTML', false, imgHtml);
-            } else if (imgUrl === '') {
-                editorImageInputRef.current?.click();
-            }
+            editorImageInputRef.current?.click();
         } else if (format === 'table') {
             const rowsInput = window.prompt('Enter number of table rows:', '3');
             if (rowsInput === null) return;
@@ -619,7 +625,7 @@ export default function Articles() {
             return isArticleScheduled;
         }
 
-        const matchesCategory = selectedCategory === 'All' || selectedCategory === '✨ Recommended' || (art.category && art.category.toLowerCase() === selectedCategory.toLowerCase());
+        const matchesCategory = selectedCategory === 'All' || (art.category && art.category.toLowerCase() === selectedCategory.toLowerCase());
         const query = searchQuery.toLowerCase();
         const matchesSearch = !query || (art.title && art.title.toLowerCase().includes(query)) || 
                               (art.subtitle && art.subtitle.toLowerCase().includes(query)) ||
@@ -628,9 +634,7 @@ export default function Articles() {
         return matchesCategory && matchesSearch;
     });
 
-    const filteredArticles = selectedCategory === '✨ Recommended' 
-        ? getPersonalizedRecommendations(rawFiltered, currentUser)
-        : rawFiltered;
+    const filteredArticles = rawFiltered;
 
     const { visibleCount, reset: resetScrollLoading } = useScrollLoading(filteredArticles.length, 6, 6);
 
@@ -640,9 +644,8 @@ export default function Articles() {
 
     const categories = [
         'All', 
-        '✨ Recommended', 
         ...(myScheduledArticles.length > 0 ? [`⏰ Scheduled (${myScheduledArticles.length})`] : []),
-        ...availableCategories.map(c => c.name).filter(n => n && !['All', '✨ Recommended'].includes(n))
+        ...availableCategories.map(c => c.name).filter(n => n && n !== 'All')
     ];
 
 
@@ -841,7 +844,7 @@ export default function Articles() {
                                     ) : (
                                         <div className="px-5 pt-5 flex items-center justify-between">
                                             <div className="bg-indigo-500/10 text-indigo-500 border border-indigo-500/20 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider">
-                                                {art.category}
+                                                <HighlightText text={art.category} query={searchQuery} />
                                             </div>
                                             <button
                                                 onClick={(e) => {
@@ -870,10 +873,10 @@ export default function Articles() {
                                     <div className="p-5 flex-1 flex flex-col justify-between">
                                         <div>
                                             <h3 className="text-base font-black text-slate-900 dark:text-white group-hover:text-blue-500 transition-colors line-clamp-2 leading-snug mb-2">
-                                                {art.title}
+                                                <HighlightText text={art.title} query={searchQuery} />
                                             </h3>
                                             <p className="text-[12.5px] font-medium text-slate-500 dark:text-slate-400 line-clamp-2 mb-4 leading-relaxed">
-                                                {art.subtitle}
+                                                <HighlightText text={art.subtitle} query={searchQuery} />
                                             </p>
                                         </div>
 
@@ -886,7 +889,9 @@ export default function Articles() {
                                                     className="w-7 h-7 rounded-full object-cover border border-slate-200 dark:border-slate-700"
                                                 />
                                                 <div className="min-w-0">
-                                                    <p className="text-[11px] font-black text-slate-900 dark:text-white truncate">{art.author.name}</p>
+                                                    <p className="text-[11px] font-black text-slate-900 dark:text-white truncate">
+                                                        <HighlightText text={art.author.name} query={searchQuery} />
+                                                    </p>
                                                     <p className="text-[9px] text-slate-400 truncate">{art.date}</p>
                                                 </div>
                                             </div>
@@ -1211,46 +1216,127 @@ export default function Articles() {
                                 onChange={handleEditorImageUpload} 
                             />
 
-                            {/* Toolbar */}
-                            <div className="bg-theme-subtle p-2 border-b border-theme-30 flex flex-wrap gap-1 items-center sticky top-0 z-10 select-none">
-                                {[
-                                    { id: 'bold', icon: 'format_bold', label: 'Bold (Ctrl+B)' },
-                                    { id: 'italic', icon: 'format_italic', label: 'Italic (Ctrl+I)' },
-                                    { id: 'underline', icon: 'format_underlined', label: 'Underline (Ctrl+U)' }
-                                ].map(btn => (
-                                    <button 
-                                        key={btn.id} 
-                                        type="button"
-                                        onMouseDown={(e) => e.preventDefault()}
-                                        onClick={() => toggleFormat(btn.id)} 
-                                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${activeFormats[btn.id] ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
-                                        title={btn.label}
-                                    >
-                                        <span className="material-symbols-outlined text-[20px]">{btn.icon}</span>
-                                    </button>
-                                ))}
-                                
-                                <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-2"></div>
-                                
-                                {[
-                                    { id: 'heading', icon: 'title', label: 'Heading (H2)' },
-                                    { id: 'list', icon: 'format_list_bulleted', label: 'Bulleted List' },
-                                    { id: 'numlist', icon: 'format_list_numbered', label: 'Numbered List' },
-                                    { id: 'quote', icon: 'format_quote', label: 'Quote / Blockquote' }
-                                ].map(btn => (
-                                    <button 
-                                        key={btn.id} 
-                                        type="button"
-                                        onMouseDown={(e) => e.preventDefault()}
-                                        onClick={() => toggleFormat(btn.id)} 
-                                        className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors cursor-pointer ${activeFormats[btn.id] ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 font-bold shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
-                                        title={btn.label}
-                                    >
-                                        <span className="material-symbols-outlined text-[20px]">{btn.icon}</span>
-                                    </button>
-                                ))}
-                                
+                            {/* Toolbar (LinkedIn Article Editor Style) */}
+                            <div className="bg-slate-50/90 dark:bg-slate-800/80 backdrop-blur-md px-3 py-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-1 sm:gap-1.5 sticky top-0 z-20 select-none overflow-x-auto custom-scrollbar">
 
+
+                                {/* Bold */}
+                                <button 
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => toggleFormat('bold')} 
+                                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                                        activeFormats.bold 
+                                            ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white font-black shadow-xs' 
+                                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700/70'
+                                    }`}
+                                    title="Bold (Ctrl+B)"
+                                >
+                                    <span className="font-serif font-black text-[15px]">B</span>
+                                </button>
+
+                                {/* Italic */}
+                                <button 
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => toggleFormat('italic')} 
+                                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                                        activeFormats.italic 
+                                            ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white font-bold shadow-xs' 
+                                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700/70'
+                                    }`}
+                                    title="Italic (Ctrl+I)"
+                                >
+                                    <span className="font-serif italic font-bold text-[15px]">I</span>
+                                </button>
+
+                                <div className="w-px h-5 bg-slate-300 dark:bg-slate-700 mx-1 shrink-0"></div>
+
+                                {/* Bulleted List */}
+                                <button 
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => toggleFormat('list')} 
+                                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                                        activeFormats.list 
+                                            ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs' 
+                                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700/70'
+                                    }`}
+                                    title="Bulleted List"
+                                >
+                                    <span className="material-symbols-outlined text-[19px]">format_list_bulleted</span>
+                                </button>
+
+                                {/* Numbered List */}
+                                <button 
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => toggleFormat('numlist')} 
+                                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                                        activeFormats.numlist 
+                                            ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs' 
+                                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700/70'
+                                    }`}
+                                    title="Numbered List"
+                                >
+                                    <span className="material-symbols-outlined text-[19px]">format_list_numbered</span>
+                                </button>
+
+                                <div className="w-px h-5 bg-slate-300 dark:bg-slate-700 mx-1 shrink-0"></div>
+
+                                {/* Quote */}
+                                <button 
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => toggleFormat('quote')} 
+                                    className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                                        activeFormats.quote 
+                                            ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white shadow-xs' 
+                                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700/70'
+                                    }`}
+                                    title="Blockquote"
+                                >
+                                    <span className="font-serif text-[20px] font-black leading-none">”</span>
+                                </button>
+
+
+
+                                {/* Horizontal Rule / Divider */}
+                                <button 
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => toggleFormat('divider')} 
+                                    className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-700 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700/70 transition-all cursor-pointer shrink-0"
+                                    title="Divider Line"
+                                >
+                                    <span className="font-bold text-[18px] leading-none">—</span>
+                                </button>
+
+                                <div className="w-px h-5 bg-slate-300 dark:bg-slate-700 mx-1 shrink-0"></div>
+
+                                {/* Link */}
+                                <button 
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => toggleFormat('link')} 
+                                    className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-700 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700/70 transition-all cursor-pointer shrink-0"
+                                    title="Add Link"
+                                >
+                                    <span className="material-symbols-outlined text-[19px]">link</span>
+                                </button>
+
+
+
+                                {/* Image */}
+                                <button 
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => toggleFormat('image')} 
+                                    className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-700 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-700/70 transition-all cursor-pointer shrink-0"
+                                    title="Insert Image"
+                                >
+                                    <span className="material-symbols-outlined text-[19px]">image</span>
+                                </button>
                             </div>
 
                             {/* Editable Area */}
@@ -1409,7 +1495,7 @@ export default function Articles() {
                                                     <img src={resolveMediaUrl(att.backendUrl) || att.url} alt="preview" className="w-8 h-8 rounded object-cover shrink-0" />
                                                 ) : (
                                                     <span className="material-symbols-outlined text-[18px] text-purple-500 shrink-0">
-                                                        {att.type === 'doc' ? 'description' : att.type === 'image' ? 'image' : att.type === 'video' ? 'videocam' : 'mic'}
+                                                        {att.type === 'doc' ? 'description' : att.type === 'image' ? 'image' : att.type === 'video' ? 'videocam' : 'audiotrack'}
                                                     </span>
                                                 )}
                                                 <span className="text-[12px] font-bold text-slate-700 dark:text-slate-300 truncate">{att.name}</span>
@@ -1442,9 +1528,9 @@ export default function Articles() {
                                     <span className="material-symbols-outlined text-[24px] text-slate-400 group-hover:text-cyan-500 mb-1">videocam</span>
                                     <span className="text-[10px] font-bold text-slate-500">Video</span>
                                 </button>
-                                <button onClick={() => addAttachment('podcast')} className="flex flex-col items-center justify-center p-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 hover:border-pink-500 hover:bg-pink-50 dark:hover:bg-pink-900/20 transition-colors group">
-                                    <span className="material-symbols-outlined text-[24px] text-slate-400 group-hover:text-pink-500 mb-1">mic</span>
-                                    <span className="text-[10px] font-bold text-slate-500">Podcast</span>
+                                <button onClick={() => addAttachment('audio')} className="flex flex-col items-center justify-center p-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 hover:border-violet-500 hover:bg-violet-50 dark:hover:bg-violet-900/20 transition-colors group">
+                                    <span className="material-symbols-outlined text-[24px] text-slate-400 group-hover:text-violet-500 mb-1">audiotrack</span>
+                                    <span className="text-[10px] font-bold text-slate-500">Audio</span>
                                 </button>
                             </div>
                         </div>
@@ -1540,6 +1626,7 @@ export default function Articles() {
                 isOpen={!!sharingArticleModal}
                 onClose={() => setSharingArticleModal(null)}
                 article={sharingArticleModal}
+                contentType="Article"
             />
         </>
     );

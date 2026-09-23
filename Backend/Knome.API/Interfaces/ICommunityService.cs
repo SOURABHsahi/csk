@@ -23,6 +23,8 @@ public interface ICommunityService
     Task LeaveCommunityAsync(int communityId, int currentUserId);
     Task<List<CommunityMemberDto>> GetMembersAsync(int communityId, string? status, int pageNumber, int pageSize, int currentUserId);
     Task<CommunityMemberDto> DecideMembershipAsync(int communityId, int targetUserId, int currentUserId, DecideMembershipDto dto);
+    Task<List<CommunityMemberDto>> AddMembersBulkAsync(int communityId, List<int> userIds, int currentUserId);
+    Task RemoveMemberAsync(int communityId, int targetUserId, int currentUserId);
 
     // Admin Delegation
     Task AddAdminAsync(int communityId, int targetUserId, int currentUserId);

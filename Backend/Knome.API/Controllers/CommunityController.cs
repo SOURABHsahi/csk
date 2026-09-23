@@ -123,6 +123,22 @@ public class CommunityController : KnomeControllerBase
         return Ok(ApiResponse<CommunityMemberDto>.SuccessResponse(200, $"Membership status updated to {dto.Status}.", member));
     }
 
+    [HttpPost("{communityId}/members/bulk")]
+    [ProducesResponseType(typeof(ApiResponse<List<CommunityMemberDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> AddMembersBulk(int communityId, [FromBody] List<int> userIds)
+    {
+        var members = await _communityService.AddMembersBulkAsync(communityId, userIds, GetCurrentUserId());
+        return Ok(ApiResponse<List<CommunityMemberDto>>.SuccessResponse(200, "Members added successfully to community.", members));
+    }
+
+    [HttpDelete("{communityId}/members/{targetUserId}")]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RemoveMember(int communityId, int targetUserId)
+    {
+        await _communityService.RemoveMemberAsync(communityId, targetUserId, GetCurrentUserId());
+        return Ok(ApiResponse.SuccessResponse(200, "Member removed successfully from community."));
+    }
+
     [HttpPost("{communityId}/admins/{targetUserId}")]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
     public async Task<IActionResult> AddAdmin(int communityId, int targetUserId)

@@ -20,6 +20,7 @@ public static class CommunityMemberTypes
 {
     public const string Subscriber = "Subscriber";
     public const string Contributor = "Contributor";
+    public const string Member = "Contributor";
     public const string Moderator = "Admin";
     public const string Admin = "Admin";
 

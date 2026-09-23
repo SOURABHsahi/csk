@@ -5,6 +5,7 @@ import { useUser, getUserStatusConfig, deduplicateMembers } from '../components/
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
 import { interactionsApi, adminApi, postsApi, podcastsApi, articlesApi, communitiesApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages, DEFAULT_ENTERPRISE_COMMUNITIES } from '../utils/apiService';
 import { apiClient } from '../utils/apiClient';
+import * as XLSX from 'xlsx';
 
 export const formatCommunityType = (type) => {
     const t = String(type || '').trim().toLowerCase();
@@ -15,6 +16,8 @@ export const formatCommunityType = (type) => {
 import useScrollLoading from '../hooks/useScrollLoading';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 import SuspendUserModal from '../components/modals/SuspendUserModal';
+import CreateCommunityModal from '../components/modals/CreateCommunityModal';
+import HighlightText from '../components/ui/HighlightText';
 import { addRestrictedWord } from '../utils/restrictedWords';
 
 // Helper to provide realistic reported post content if live API call returns empty/404
@@ -334,7 +337,7 @@ export default function AdminConsole() {
         } else if (domain === 'governance') {
             setActiveTab('users');
         } else if (domain === 'operations') {
-            setActiveTab('system');
+            setActiveTab('audit');
         }
     };
 
@@ -408,19 +411,11 @@ export default function AdminConsole() {
     const [roleRequestSearchTerm, setRoleRequestSearchTerm] = useState('');
     const [requestTargetRoles, setRequestTargetRoles] = useState({});
 
-    // Community Channels Moderation State
-    const [communityChannels, setCommunityChannels] = useState([
-        { id: 1, name: 'Engineering & Tech', category: 'Technology & Architecture', reportsCount: 5, mod: 'Loveneesh Sharma', status: 'Strict', type: 'Public', filterKey: 'Engineering', icon: 'developer_board' },
-        { id: 2, name: 'HR & People Ops', category: 'Human Resources & Governance', reportsCount: 3, mod: 'Sourabh Sahu', status: 'Standard', type: 'Org', filterKey: 'HR', icon: 'groups' },
-        { id: 3, name: 'Product Design & UX', category: 'UI/UX & Design Systems', reportsCount: 2, mod: 'Mayur Verma', status: 'Standard', type: 'Public', filterKey: 'Product', icon: 'palette' },
-        { id: 4, name: 'AI & Data Science Lab', category: 'AI Research & Data Science', reportsCount: 4, mod: 'Vishendra Sharma', status: 'Strict', type: 'Private', filterKey: 'AI', icon: 'psychology' },
-        { id: 5, name: 'Finance & Accounting', category: 'Finance, Audit & Payroll', reportsCount: 1, mod: 'Sourabh Sahu', status: 'Standard', type: 'Org', filterKey: 'Finance', icon: 'account_balance' },
-        { id: 6, name: 'Marketing & Brand Strategy', category: 'Marketing, PR & Events', reportsCount: 1, mod: 'Meghna Tiwari', status: 'Standard', type: 'Public', filterKey: 'Marketing', icon: 'campaign' },
-        { id: 7, name: 'CTO Leadership Circle', category: 'Executive Leadership & Strategy', reportsCount: 0, mod: 'Loveneesh Sharma', status: 'Strict', type: 'Private', filterKey: 'CTO', icon: 'military_tech' },
-        { id: 8, name: 'General Discussion', category: 'Company Open Lounge', reportsCount: 2, mod: 'System Admin', status: 'Relaxed', type: 'Public', filterKey: 'General', icon: 'forum' }
-    ]);
+    // Community Channels Moderation State (Live active project communities)
+    const [communityChannels, setCommunityChannels] = useState([]);
     const [selectedManageCommunity, setSelectedManageCommunity] = useState(null);
     const [isCommunityModalOpen, setIsCommunityModalOpen] = useState(false);
+    const [isCreateChannelModalOpen, setIsCreateChannelModalOpen] = useState(false);
     const [communityPolicyFilter, setCommunityPolicyFilter] = useState('All');
     const [isCommunityFilterOpen, setIsCommunityFilterOpen] = useState(false);
     const [mediaTypeFilter, setMediaTypeFilter] = useState('All');
@@ -428,7 +423,9 @@ export default function AdminConsole() {
     const [auditActionFilter, setAuditActionFilter] = useState('All');
 
     // Get exact live member count for each community from persistent storage or API
-    const getCommunityMemberCount = (commId) => {
+    const getCommunityMemberCount = (comm) => {
+        if (!comm) return 1;
+        const commId = typeof comm === 'object' ? (comm.id || comm.communityId) : comm;
         try {
             const savedMembersKey = `knome_community_members_${commId}`;
             const localMembers = JSON.parse(localStorage.getItem(savedMembersKey) || '[]');
@@ -436,7 +433,10 @@ export default function AdminConsole() {
                 return localMembers.length;
             }
         } catch (e) {}
-        return 6;
+        if (typeof comm === 'object' && (comm.membersCount !== undefined || comm.memberCount !== undefined)) {
+            return comm.membersCount || comm.memberCount || 1;
+        }
+        return 1;
     };
 
     // Helper to resolve the user's actual assigned role accurately
@@ -571,6 +571,12 @@ export default function AdminConsole() {
     const [systemLogs, setSystemLogs] = useState([]);
     const [systemLogCounts, setSystemLogCounts] = useState({ total: 0, errors: 0, warnings: 0, info: 0, debug: 0 });
     const [systemLogFiles, setSystemLogFiles] = useState([]);
+    const [systemLogDateGroups, setSystemLogDateGroups] = useState([]);
+    const [systemLogAnalytics, setSystemLogAnalytics] = useState(null);
+    const [serilogViewMode, setSerilogViewMode] = useState('split'); // 'split' | 'graphs' | 'stream'
+    const [logDisplayMode, setLogDisplayMode] = useState('human'); // 'human' (Plain English) | 'raw' (Technical Console)
+    const [selectedHourFilter, setSelectedHourFilter] = useState(null); // null or 0..23
+    const [hoveredHourBucket, setHoveredHourBucket] = useState(null);
     const [selectedLogFile, setSelectedLogFile] = useState('');
     const [logLevelFilter, setLogLevelFilter] = useState('ALL');
     const [logSearchQuery, setLogSearchQuery] = useState('');
@@ -682,7 +688,10 @@ export default function AdminConsole() {
 
     useEffect(() => {
         refreshPendingCommunityApprovals();
-        const handleApprovalSync = () => refreshPendingCommunityApprovals();
+        const handleApprovalSync = () => {
+            refreshPendingCommunityApprovals();
+            fetchCommunities();
+        };
         window.addEventListener('storage', handleApprovalSync);
         window.addEventListener('community-approval-requested', handleApprovalSync);
         window.addEventListener('community-created', handleApprovalSync);
@@ -1022,74 +1031,102 @@ export default function AdminConsole() {
         showToast('Console data refreshed successfully.');
     };
 
-    // Fetch Communities from Live API & Merge with default channels and custom communities
+    // Fetch Communities from Live API (Only active communities in the project)
     const fetchCommunities = async () => {
         try {
             const deletedIds = new Set(JSON.parse(localStorage.getItem('knome_deleted_community_ids') || '[]').map(String));
             const res = await communitiesApi.getAll().catch(() => null);
-            const apiData = res?.data || res;
+            const apiData = res?.data || (Array.isArray(res) ? res : (res?.items || []));
             
-            setCommunityChannels(prev => {
+            setCommunityChannels(() => {
                 const existingMap = new Map();
-                const existingNames = new Set();
 
-                // 1. Initial / default enterprise channels (filter deleted)
-                (DEFAULT_ENTERPRISE_COMMUNITIES || []).forEach(c => {
-                    const cId = String(c.id);
-                    const cleanName = (c.name || '').toLowerCase().trim();
-                    if (!deletedIds.has(cId) && !existingNames.has(cleanName)) {
-                        existingMap.set(cId, {
-                            ...c,
-                            id: c.id,
-                            reportsCount: c.reportsCount || 0,
-                            filterKey: c.filterKey || c.name,
-                            icon: c.icon || (c.type === 'Org' ? 'groups' : 'forum')
-                        });
-                        existingNames.add(cleanName);
-                    }
-                });
-
-                // 2. Merge API communities
+                // 1. Process active communities from live Backend API
                 if (Array.isArray(apiData) && apiData.length > 0) {
                     apiData.forEach(item => {
                         const cId = String(item.communityId || item.id);
-                        const cleanName = (item.name || '').toLowerCase().trim();
-                        if (!deletedIds.has(cId) && !existingMap.has(cId) && !existingNames.has(cleanName)) {
+                        const isActive = item.isActive === undefined || item.isActive === true || item.isActive === 1;
+                        if (!deletedIds.has(cId) && isActive) {
+                            const commType = (item.communityType || item.type || '').toLowerCase();
+                            const isOrg = item.isDefaultOrgCommunity || commType.includes('org') || commType.includes('default');
+                            const isPriv = item.isPrivate || commType.includes('private');
+
+                            // Check stored moderation policy from localStorage or assign default
+                            const savedPolicy = localStorage.getItem(`knome_community_policy_${cId}`) 
+                                || (isPriv ? 'Strict' : (isOrg ? 'Standard' : 'Standard'));
+
+                            const commName = item.name || '';
+                            const commNameLower = commName.toLowerCase();
+                            
+                            // Determine appropriate icon
+                            let icon = 'forum';
+                            if (commNameLower.includes('sql') || commNameLower.includes('db')) icon = 'database';
+                            else if (commNameLower.includes('python') || commNameLower.includes('java') || commNameLower.includes('code') || commNameLower.includes('tech')) icon = 'terminal';
+                            else if (commNameLower.includes('data') || commNameLower.includes('ai') || commNameLower.includes('analytics')) icon = 'psychology';
+                            else if (commNameLower.includes('devops') || commNameLower.includes('cloud')) icon = 'cloud_sync';
+                            else if (isOrg || commNameLower.includes('department') || commNameLower.includes('company')) icon = 'corporate_fare';
+                            else if (isPriv) icon = 'lock';
+
+                            // Dynamic reports count from loaded reports
+                            const commReports = (reports || []).filter(r => 
+                                String(r.communityId) === cId || 
+                                (r.communityName && r.communityName.toLowerCase() === commNameLower)
+                            ).length;
+
+                            // Moderator: use locally saved override if any, otherwise API creator/owner
+                            const savedMod = localStorage.getItem(`knome_community_mod_${cId}`) 
+                                || item.createdByUserName || item.ownerFullName || item.creatorName || 'System Admin';
+
                             existingMap.set(cId, {
                                 id: Number(cId) || cId,
-                                name: item.name,
+                                communityId: Number(cId) || cId,
+                                name: commName,
                                 category: item.categoryName || item.category || 'Enterprise Community',
-                                reportsCount: 0,
-                                mod: item.ownerFullName || item.creatorName || 'System Admin',
-                                status: 'Standard',
-                                type: item.isDefaultOrgCommunity || (item.communityType || '').toLowerCase().includes('org') ? 'Org' : (item.isPrivate || (item.communityType || '').toLowerCase().includes('private') ? 'Private' : 'Public'),
-                                filterKey: item.name,
-                                icon: (item.communityType || '').toLowerCase().includes('org') ? 'groups' : 'forum'
+                                reportsCount: commReports,
+                                mod: savedMod,
+                                status: savedPolicy,
+                                type: isOrg ? 'Org' : (isPriv ? 'Private' : 'Public'),
+                                filterKey: commName,
+                                icon: icon,
+                                membersCount: item.membersCount || 1,
+                                postsCount: item.postsCount || 0,
+                                description: item.description || ''
                             });
-                            existingNames.add(cleanName);
                         }
                     });
                 }
 
-                // 3. Merge custom communities from localStorage
+                // 2. Merge approved custom communities from localStorage (if not deleted and active)
                 const custom = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
                 if (Array.isArray(custom)) {
                     custom.forEach(c => {
                         const cId = String(c.id);
-                        const cleanName = (c.name || '').toLowerCase().trim();
-                        if (!deletedIds.has(cId) && !existingMap.has(cId) && !existingNames.has(cleanName)) {
+                        const isApproved = c.status === 'Approved' || c.isApproved === true;
+                        const isActive = c.isActive === undefined || c.isActive === true || c.isActive === 1;
+                        if (!deletedIds.has(cId) && !existingMap.has(cId) && isApproved && isActive) {
+                            const commType = (c.type || c.communityType || '').toLowerCase();
+                            const isOrg = commType.includes('org') || commType.includes('default');
+                            const isPriv = commType.includes('private');
+                            const savedPolicy = localStorage.getItem(`knome_community_policy_${cId}`) || (isPriv ? 'Strict' : 'Standard');
+
+                            const savedMod = localStorage.getItem(`knome_community_mod_${cId}`) 
+                                || c.creatorName || c.createdBy || 'System Admin';
+
                             existingMap.set(cId, {
                                 id: c.id,
+                                communityId: c.id,
                                 name: c.name,
                                 category: c.category || 'General',
                                 reportsCount: 0,
-                                mod: c.creatorName || 'System Admin',
-                                status: 'Standard',
-                                type: c.type || 'Public',
+                                mod: savedMod,
+                                status: savedPolicy,
+                                type: isOrg ? 'Org' : (isPriv ? 'Private' : 'Public'),
                                 filterKey: c.name,
-                                icon: 'forum'
+                                icon: isPriv ? 'lock' : (isOrg ? 'corporate_fare' : 'forum'),
+                                membersCount: c.membersCount || 1,
+                                postsCount: c.postsCount || 0,
+                                description: c.description || ''
                             });
-                            existingNames.add(cleanName);
                         }
                     });
                 }
@@ -1467,10 +1504,16 @@ export default function AdminConsole() {
             if (data) {
                 setSystemLogs(data.entries || []);
                 if (data.counts) setSystemLogCounts(data.counts);
+                if (data.dateGroups && data.dateGroups.length > 0) {
+                    setSystemLogDateGroups(data.dateGroups);
+                }
+                if (data.analytics) {
+                    setSystemLogAnalytics(data.analytics);
+                }
                 if (data.availableFiles && data.availableFiles.length > 0) {
                     setSystemLogFiles(data.availableFiles);
-                    if (!selectedLogFile && data.logFileName) {
-                        setSelectedLogFile(data.logFileName);
+                    if (!selectedLogFile && (data.relativePath || data.logFileName)) {
+                        setSelectedLogFile(data.relativePath || data.logFileName);
                     }
                 }
                 setLastLogSyncTime(new Date().toLocaleTimeString());
@@ -1803,7 +1846,22 @@ export default function AdminConsole() {
             console.warn("Backend suspend API notice:", err);
         }
 
-        if (toggleUserActiveStatus) toggleUserActiveStatus(numericId, false);
+        if (toggleUserActiveStatus) toggleUserActiveStatus(numericId, false, reason);
+        try {
+            const savedSuspended = JSON.parse(localStorage.getItem('knome_suspended_accounts') || '{}');
+            const empKey = targetUser?.employeeId ? targetUser.employeeId.toUpperCase() : null;
+            savedSuspended[String(numericId)] = {
+                suspendedAt: new Date().toISOString(),
+                reason: reason || 'Suspended by System Administrator'
+            };
+            if (empKey) {
+                savedSuspended[empKey] = {
+                    suspendedAt: new Date().toISOString(),
+                    reason: reason || 'Suspended by System Administrator'
+                };
+            }
+            localStorage.setItem('knome_suspended_accounts', JSON.stringify(savedSuspended));
+        } catch (e) {}
         setUsersList(prev => prev.map(u => (Number(u.userId || u.id) === numericId || (targetUser?.employeeId && u.employeeId === targetUser.employeeId)) ? { ...u, isActive: false, isSuspended: true, status: 'Suspended' } : u));
         
         setIsSuspendModalOpen(false);
@@ -1852,6 +1910,14 @@ export default function AdminConsole() {
         }
 
         if (toggleUserActiveStatus && !isNaN(targetId)) toggleUserActiveStatus(targetId, true);
+        try {
+            const savedSuspended = JSON.parse(localStorage.getItem('knome_suspended_accounts') || '{}');
+            delete savedSuspended[String(targetId)];
+            if (user?.employeeId) {
+                delete savedSuspended[user.employeeId.toUpperCase()];
+            }
+            localStorage.setItem('knome_suspended_accounts', JSON.stringify(savedSuspended));
+        } catch (e) {}
         setUsersList(prev => prev.map(u => (Number(u.userId || u.id) === targetId || (user.employeeId && u.employeeId === user.employeeId)) ? { ...u, isActive: true, isSuspended: false, status: 'Active' } : u));
         showToast(`User ${user.fullName || user.name} is now Active.`);
 
@@ -2196,7 +2262,17 @@ export default function AdminConsole() {
         if (activeUserSearchTerm === 'suspended') return u.isSuspended === true || u.isPermanentlySuspended === true || (u.status || '').toLowerCase() === 'suspended';
         if (activeUserSearchTerm === 'inactive') return (u.isActive === false && !u.isSuspended && !u.isPermanentlySuspended) || (u.status || '').toLowerCase() === 'inactive';
         if (activeUserSearchTerm === 'active') return (u.isActive === true && !u.isSuspended && !u.isPermanentlySuspended) || (u.status || '').toLowerCase() === 'active';
-        if (activeUserSearchTerm === 'admin') return (u.roleName || '').toLowerCase().includes('admin') || (u.role || '').toLowerCase().includes('adm');
+        
+        // When filtering specifically by 'admin' (e.g. clicking the Admins stat card)
+        if (activeUserSearchTerm === 'admin') {
+            const assigned = (u.roleName || getUserAssignedRole(u) || '').toLowerCase();
+            const rolesList = getUserRolesList(u).map(r => String(r).toLowerCase());
+            const hasAdminRole = assigned.includes('admin') || assigned.includes('adm') || 
+                                 rolesList.some(r => r.includes('admin') || r.includes('adm'));
+            const isPureEmployee = rolesList.length === 1 && rolesList[0] === 'employee';
+            return hasAdminRole && !isPureEmployee;
+        }
+
         return (
             String(u.userId || u.id || '').includes(activeUserSearchTerm) ||
             (u.fullName || u.name || '').toLowerCase().includes(activeUserSearchTerm) ||
@@ -2242,7 +2318,14 @@ export default function AdminConsole() {
     const reviewedCount = actionTakenCount + dismissedCount;
     const highPriorityCount = reports.filter(r => r.reasonCode === 'Harassment' || r.reasonCode === 'Copyright' || r.severity === 'Critical' || r.severity === 'High').length;
     const suspendedUsersCount = usersList.filter(u => !u.isActive).length;
-    const activeModeratorsCount = usersList.filter(u => (u.roleName || '').toLowerCase().includes('admin') || (u.role || '').toLowerCase().includes('adm')).length || 4;
+    const activeModeratorsCount = usersList.filter(u => {
+        const assigned = (u.roleName || getUserAssignedRole(u) || '').toLowerCase();
+        const rolesList = getUserRolesList(u).map(r => String(r).toLowerCase());
+        const hasAdminRole = assigned.includes('admin') || assigned.includes('adm') || 
+                             rolesList.some(r => r.includes('admin') || r.includes('adm'));
+        const isPureEmployee = rolesList.length === 1 && rolesList[0] === 'employee';
+        return hasAdminRole && !isPureEmployee;
+    }).length;
     const aiFlaggedCount = reports.filter(r => r.reasonCode === 'Spam' || r.reasonCode === 'Inappropriate' || (r.aiScore && parseInt(r.aiScore) > 70)).length;
     const communitiesCount = communityChannels.length;
     const activeUsersCount = usersList.filter(u => u.isActive).length || usersList.length;
@@ -2266,7 +2349,75 @@ export default function AdminConsole() {
         });
     }, [communityChannels, searchQuery, communityPolicyFilter]);
 
-    // Export Handlers
+    // Generic Excel (.xlsx) Export Engine with Auto-fit Columns
+    const exportToExcelFile = (headers, rows, sheetName, fileNamePrefix) => {
+        try {
+            const aoa = [headers, ...rows];
+            const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+            // Auto-calculate column widths
+            const colWidths = headers.map((h, colIdx) => {
+                let maxLen = String(h).length;
+                rows.forEach(r => {
+                    const cellVal = String(r[colIdx] ?? '');
+                    if (cellVal.length > maxLen) maxLen = Math.min(cellVal.length, 60);
+                });
+                return { wch: Math.max(maxLen + 3, 12) };
+            });
+            ws['!cols'] = colWidths;
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Report');
+            const dateStr = new Date().toISOString().slice(0, 10);
+            XLSX.writeFile(wb, `${fileNamePrefix}_${dateStr}.xlsx`);
+        } catch (err) {
+            console.error('Excel export error:', err);
+            showToast('Failed to generate Excel file: ' + (err?.message || 'Unknown error'));
+        }
+    };
+
+    // Excel (.xlsx) Handlers
+    const handleExportReportsExcel = () => {
+        const headers = ['Report ID', 'Reporter User ID', 'Reporter Name', 'Reported User ID', 'Content Type', 'Content ID', 'Community', 'Reason Code', 'Severity', 'AI Score', 'Status', 'Moderator', 'Action Taken', 'Reported Date'];
+        const rows = filteredReports.map(r => [
+            r.reportId, r.reporterUserId, r.reporterFullName, r.reportedUserId || 'N/A', r.contentType, r.contentId, r.communityName || 'General', r.reasonCode, r.severity || 'Medium', r.aiScore || 'N/A', r.status, r.moderatorFullName || 'Unassigned', r.actionTaken || 'None', r.reportedDate
+        ]);
+        exportToExcelFile(headers, rows, 'Content Reports', 'Knome_ContentReports');
+        setIsExportOpen(false);
+        showToast('Exported Content Reports to Excel (.xlsx) successfully.');
+    };
+
+    const handleExportUsersExcel = () => {
+        const headers = ['User ID', 'Employee ID', 'Full Name', 'Designation', 'Department', 'Role Name', 'Status', 'Karma Points'];
+        const rows = usersList.map(u => [
+            u.userId || u.id, u.employeeId || 'N/A', u.fullName || u.name, u.designation || 'Staff', u.department || u.departmentName || 'MPOnline', u.roleName || 'Employee', u.isActive ? 'Active' : 'Suspended', u.karmaPoints || 0
+        ]);
+        exportToExcelFile(headers, rows, 'Users Directory', 'Knome_UsersDirectory');
+        setIsExportOpen(false);
+        showToast('Exported Users Directory to Excel (.xlsx) successfully.');
+    };
+
+    const handleExportAuditExcel = () => {
+        const headers = ['Log ID', 'Timestamp', 'Actor / Moderator', 'Action', 'Target Details'];
+        const rows = auditTrail.map(a => [
+            a.id, a.time, a.moderator, a.action, a.target
+        ]);
+        exportToExcelFile(headers, rows, 'Audit Log', 'Knome_AuditLog');
+        setIsExportOpen(false);
+        showToast('Exported Audit Log to Excel (.xlsx) successfully.');
+    };
+
+    const handleExportCommunitiesExcel = () => {
+        const headers = ['Community ID', 'Name', 'Category', 'Type', 'Moderation Policy', 'Assigned Moderator', 'Members Count', 'Pending Reports'];
+        const rows = communityChannels.map(c => [
+            c.id, c.name, c.category, c.type, c.status, c.mod, getCommunityMemberCount(c), c.reportsCount || 0
+        ]);
+        exportToExcelFile(headers, rows, 'Communities', 'Knome_CommunitiesModeration');
+        setIsExportOpen(false);
+        showToast('Exported Communities to Excel (.xlsx) successfully.');
+    };
+
+    // CSV Handlers
     const handleExportCSV = () => {
         const BOM = '\uFEFF';
         const headers = ['ReportId', 'ReporterUserId', 'ReporterName', 'ReportedUserId', 'ContentType', 'ContentId', 'Community', 'ReasonCode', 'Severity', 'AIScore', 'Status', 'Moderator', 'ActionTaken', 'ReportedDate'];
@@ -2449,29 +2600,99 @@ export default function AdminConsole() {
                             <span className="material-symbols-outlined text-[14px]">expand_more</span>
                         </button>
                         {isExportOpen && (
-                            <div className="absolute right-0 mt-1.5 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden py-1 text-xs font-bold">
-                                <button
-                                    onClick={handleExportCSV}
-                                    className="w-full px-3 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 cursor-pointer border-b border-slate-100 dark:border-slate-700/60"
-                                >
-                                    <span className="material-symbols-outlined text-indigo-600 text-[16px]">description</span>
-                                    <span>Export Reports (CSV)</span>
-                                </button>
-                                <button
-                                    onClick={handleExportUsersCSV}
-                                    className="w-full px-3 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 cursor-pointer border-b border-slate-100 dark:border-slate-700/60"
-                                >
-                                    <span className="material-symbols-outlined text-emerald-600 text-[16px]">group</span>
-                                    <span>Export Users Directory (CSV)</span>
-                                </button>
-                                <button
-                                    onClick={handleExportAuditCSV}
-                                    className="w-full px-3 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-2 cursor-pointer"
-                                >
-                                    <span className="material-symbols-outlined text-amber-600 text-[16px]">history</span>
-                                    <span>Export Audit Log (CSV)</span>
-                                </button>
-                            </div>
+                            <>
+                                <div 
+                                    className="fixed inset-0 z-40" 
+                                    onClick={() => setIsExportOpen(false)} 
+                                />
+                                <div className="absolute right-0 mt-1.5 w-64 bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden py-1 text-xs font-bold divide-y divide-slate-100 dark:divide-slate-700/60 animate-in fade-in zoom-in-95">
+                                    {/* Section 1: Excel Exports (.XLSX) */}
+                                    <div>
+                                        <div className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 flex items-center gap-1.5">
+                                            <span className="material-symbols-outlined text-[14px]">table_chart</span>
+                                            <span>Excel Spreadsheet (.XLSX)</span>
+                                        </div>
+                                        <button
+                                            onClick={handleExportReportsExcel}
+                                            className="w-full px-3 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-600 flex items-center justify-between cursor-pointer transition-colors"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-emerald-600 text-[16px]">description</span>
+                                                <span>Export Reports</span>
+                                            </div>
+                                            <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded font-black">XLSX</span>
+                                        </button>
+                                        <button
+                                            onClick={handleExportUsersExcel}
+                                            className="w-full px-3 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-600 flex items-center justify-between cursor-pointer transition-colors"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-emerald-600 text-[16px]">group</span>
+                                                <span>Export Users Directory</span>
+                                            </div>
+                                            <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded font-black">XLSX</span>
+                                        </button>
+                                        <button
+                                            onClick={handleExportAuditExcel}
+                                            className="w-full px-3 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-600 flex items-center justify-between cursor-pointer transition-colors"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-emerald-600 text-[16px]">history</span>
+                                                <span>Export Audit Log</span>
+                                            </div>
+                                            <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded font-black">XLSX</span>
+                                        </button>
+                                        <button
+                                            onClick={handleExportCommunitiesExcel}
+                                            className="w-full px-3 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-600 flex items-center justify-between cursor-pointer transition-colors"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-emerald-600 text-[16px]">forum</span>
+                                                <span>Export Communities</span>
+                                            </div>
+                                            <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded font-black">XLSX</span>
+                                        </button>
+                                    </div>
+
+                                    {/* Section 2: CSV Exports */}
+                                    <div>
+                                        <div className="px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-slate-400 bg-slate-50 dark:bg-slate-800/60 flex items-center gap-1.5">
+                                            <span className="material-symbols-outlined text-[14px]">csv</span>
+                                            <span>Comma Separated (.CSV)</span>
+                                        </div>
+                                        <button
+                                            onClick={handleExportCSV}
+                                            className="w-full px-3 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center justify-between cursor-pointer transition-colors"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-indigo-600 text-[16px]">description</span>
+                                                <span>Export Reports (CSV)</span>
+                                            </div>
+                                            <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-500 px-1.5 py-0.5 rounded font-black">CSV</span>
+                                        </button>
+                                        <button
+                                            onClick={handleExportUsersCSV}
+                                            className="w-full px-3 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center justify-between cursor-pointer transition-colors"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-emerald-600 text-[16px]">group</span>
+                                                <span>Export Users Directory (CSV)</span>
+                                            </div>
+                                            <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-500 px-1.5 py-0.5 rounded font-black">CSV</span>
+                                        </button>
+                                        <button
+                                            onClick={handleExportAuditCSV}
+                                            className="w-full px-3 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center justify-between cursor-pointer transition-colors"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-amber-600 text-[16px]">history</span>
+                                                <span>Export Audit Log (CSV)</span>
+                                            </div>
+                                            <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-500 px-1.5 py-0.5 rounded font-black">CSV</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
                         )}
                     </div>
                 </div>
@@ -2499,11 +2720,11 @@ export default function AdminConsole() {
                                 <span className={`text-[10px] font-black uppercase tracking-wider ${activeDomain === 'moderation' ? 'text-indigo-200' : 'text-slate-400'}`}>
                                     Domain 1
                                 </span>
-                                {(pendingCount + pendingMediaApprovals.length + pendingCommunityApprovals.length) > 0 && (
+                                {(pendingCount + pendingMediaApprovals.length) > 0 && (
                                     <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
                                         activeDomain === 'moderation' ? 'bg-amber-400 text-slate-950' : 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30'
                                     }`}>
-                                        {pendingCount + pendingMediaApprovals.length + pendingCommunityApprovals.length} Pending
+                                        {pendingCount + pendingMediaApprovals.length} Pending
                                     </span>
                                 )}
                             </div>
@@ -2511,7 +2732,7 @@ export default function AdminConsole() {
                                 Moderation & Content Safety
                             </h3>
                             <p className={`text-[10px] sm:text-[11px] truncate ${activeDomain === 'moderation' ? 'text-indigo-100' : 'text-slate-400'}`}>
-                                Reports, Media Approvals, AI & Communities
+                                Reports & Media Approvals
                             </p>
                         </div>
                     </div>
@@ -2609,7 +2830,7 @@ export default function AdminConsole() {
                                 Operations & Compliance
                             </h3>
                             <p className={`text-[10px] sm:text-[11px] truncate ${activeDomain === 'operations' ? 'text-cyan-100' : 'text-slate-400'}`}>
-                                Audit Trail, Server Logs, Parameters & KPIs
+                                Audit Trail, Server Logs & Platform Analytics
                             </p>
                         </div>
                     </div>
@@ -2625,120 +2846,41 @@ export default function AdminConsole() {
             </div>
 
             {/* ─── HIERARCHY TIER 2: FUNCTIONAL SUB-TABS (SCOPED TO ACTIVE DOMAIN) ─── */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-1.5 mb-3 shadow-xs flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap py-0.5">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1 hidden sm:inline-block">
-                        Active Modules:
-                    </span>
-                    {activeDomain === 'moderation' && (
-                        <>
-                            <button
-                                onClick={() => setActiveTab('moderation')}
-                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
-                                    activeTab === 'moderation'
-                                        ? 'bg-indigo-600 text-white shadow-xs'
-                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                                }`}
-                            >
-                                <span className="material-symbols-outlined text-[16px]">gavel</span>
-                                <span>Content Moderation ({reports.length})</span>
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('media_approvals')}
-                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
-                                    activeTab === 'media_approvals'
-                                        ? 'bg-indigo-600 text-white shadow-xs'
-                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                                }`}
-                            >
-                                <span className="material-symbols-outlined text-[16px] text-rose-500">video_library</span>
-                                <span>Media Approvals ({pendingMediaApprovals.length})</span>
-                                {pendingMediaApprovals.length > 0 && (
-                                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-                                )}
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('community_approvals')}
-                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
-                                    activeTab === 'community_approvals'
-                                        ? 'bg-amber-600 text-white shadow-xs'
-                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                                }`}
-                            >
-                                <span className="material-symbols-outlined text-[16px] text-amber-500">approval</span>
-                                <span>Community Approvals ({pendingCommunityApprovals.length})</span>
-                                {pendingCommunityApprovals.length > 0 && (
-                                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                                )}
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('ai_moderation')}
-                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
-                                    activeTab === 'ai_moderation'
-                                        ? 'bg-indigo-600 text-white shadow-xs'
-                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                                }`}
-                            >
-                                <span className="material-symbols-outlined text-[16px]">smart_toy</span>
-                                <span>AI Moderation Rules</span>
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('communities')}
-                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
-                                    activeTab === 'communities'
-                                        ? 'bg-indigo-600 text-white shadow-xs'
-                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                                }`}
-                            >
-                                <span className="material-symbols-outlined text-[16px]">forum</span>
-                                <span>Community Moderation ({communityChannels.length})</span>
-                            </button>
-                        </>
-                    )}
-
-                    {activeDomain === 'governance' && (
-                        <>
-                            <button
-                                onClick={() => setActiveTab('users')}
-                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
-                                    activeTab === 'users'
-                                        ? 'bg-purple-600 text-white shadow-xs'
-                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                                }`}
-                            >
-                                <span className="material-symbols-outlined text-[16px]">group</span>
-                                <span>User Directory ({usersList.length})</span>
-                            </button>
-                            <button
-                                onClick={() => setActiveTab('role_requests')}
-                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
-                                    activeTab === 'role_requests'
-                                        ? 'bg-purple-600 text-white shadow-xs'
-                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                                }`}
-                            >
-                                <span className="material-symbols-outlined text-[16px] text-amber-500">verified_user</span>
-                                <span>Role Requests ({roleRequests.filter(r => r.status === 'Pending').length})</span>
-                                {roleRequests.some(r => r.status === 'Pending') && (
-                                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                                )}
-                            </button>
-                        </>
-                    )}
+            {activeDomain !== 'governance' && (
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-2.5 py-1.5 mb-3 shadow-xs flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 overflow-x-auto whitespace-nowrap py-0.5">
+                        {activeDomain === 'moderation' && (
+                            <>
+                                <button
+                                    onClick={() => setActiveTab('moderation')}
+                                    className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
+                                        activeTab === 'moderation'
+                                            ? 'bg-indigo-600 text-white shadow-xs'
+                                            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                    }`}
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">gavel</span>
+                                    <span>Content Moderation ({reports.length})</span>
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('media_approvals')}
+                                    className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
+                                        activeTab === 'media_approvals'
+                                            ? 'bg-indigo-600 text-white shadow-xs'
+                                            : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                    }`}
+                                >
+                                    <span className="material-symbols-outlined text-[16px] text-rose-500">video_library</span>
+                                    <span>Media Approvals ({pendingMediaApprovals.length})</span>
+                                    {pendingMediaApprovals.length > 0 && (
+                                        <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                                    )}
+                                </button>
+                            </>
+                        )}
 
                     {activeDomain === 'operations' && (
                         <>
-                            <button
-                                onClick={() => setActiveTab('system')}
-                                className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
-                                    activeTab === 'system'
-                                        ? 'bg-slate-800 text-white shadow-xs'
-                                        : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                                }`}
-                            >
-                                <span className="material-symbols-outlined text-[16px]">settings</span>
-                                <span>System Parameters</span>
-                            </button>
                             <button
                                 onClick={() => setActiveTab('audit')}
                                 className={`px-3 py-1.5 rounded-lg font-bold text-xs uppercase tracking-tight transition-all flex items-center gap-1.5 cursor-pointer ${
@@ -2781,6 +2923,7 @@ export default function AdminConsole() {
                     )}
                 </div>
             </div>
+            )}
 
             {/* ─── HIERARCHY TIER 3: CONTEXTUAL FILTER & ACTION STRIP (STRICTLY SCOPED TO ACTIVE MODULE) ─── */}
 
@@ -3228,7 +3371,7 @@ export default function AdminConsole() {
 
                     {/* 5. Create Community Action */}
                     <div 
-                        onClick={() => { setSelectedManageCommunity(null); setIsCommunityModalOpen(true); }}
+                        onClick={() => setIsCreateChannelModalOpen(true)}
                         className="p-2.5 rounded-xl transition-all cursor-pointer group border bg-indigo-500/10 border-indigo-500/40 hover:border-indigo-500 hover:bg-indigo-500/15 shadow-xs"
                     >
                         <div className="flex items-center justify-between text-indigo-600 mb-1">
@@ -3486,7 +3629,7 @@ export default function AdminConsole() {
 
             {/* TAB 8: AUDIT TRAIL ACTION FILTERS */}
             {activeTab === 'audit' && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
                     {/* 1. All Audits */}
                     <div 
                         onClick={() => { setAuditActionFilter('All'); showToast('Showing all audit events'); }}
@@ -3504,40 +3647,6 @@ export default function AdminConsole() {
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">All Audit Events</p>
                     </div>
 
-                    {/* 2. Config Updates */}
-                    <div 
-                        onClick={() => { setAuditActionFilter('ConfigUpdate'); showToast('Filtered: Showing Config Updates'); }}
-                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            auditActionFilter === 'ConfigUpdate'
-                                ? 'bg-emerald-500/10 border-emerald-500 ring-2 ring-emerald-500/50 shadow-md scale-[1.02]' 
-                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-500/40 shadow-xs'
-                        }`}
-                    >
-                        <div className="flex items-center justify-between text-emerald-500 mb-1">
-                            <span className="material-symbols-outlined text-[18px]">settings</span>
-                            <span className="text-[10px] font-bold text-emerald-500">Config</span>
-                        </div>
-                        <p className="text-lg font-black text-emerald-500 leading-none">{auditTrail.filter(a => a.action === 'ConfigUpdate').length}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Config Updates</p>
-                    </div>
-
-                    {/* 3. Moderation Actions */}
-                    <div 
-                        onClick={() => { setAuditActionFilter('Moderation'); showToast('Filtered: Showing Moderation Actions'); }}
-                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            auditActionFilter === 'Moderation'
-                                ? 'bg-amber-500/10 border-amber-500 ring-2 ring-amber-500/50 shadow-md scale-[1.02]' 
-                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-amber-500/40 shadow-xs'
-                        }`}
-                    >
-                        <div className="flex items-center justify-between text-amber-500 mb-1">
-                            <span className="material-symbols-outlined text-[18px]">gavel</span>
-                            <span className="text-[10px] font-bold text-amber-500">Safety</span>
-                        </div>
-                        <p className="text-lg font-black text-amber-500 leading-none">{auditTrail.filter(a => a.action === 'ContentModerated' || a.action === 'ReportDismissed').length}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Moderation Logs</p>
-                    </div>
-
                     {/* 4. User Governance */}
                     <div 
                         onClick={() => { setAuditActionFilter('User'); showToast('Filtered: Showing User Governance Logs'); }}
@@ -3553,23 +3662,6 @@ export default function AdminConsole() {
                         </div>
                         <p className="text-lg font-black text-purple-500 leading-none">{auditTrail.filter(a => a.action?.startsWith('User')).length}</p>
                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">User Governance</p>
-                    </div>
-
-                    {/* 5. Batch Audits */}
-                    <div 
-                        onClick={() => { setAuditActionFilter('AIBatchAudit'); showToast('Filtered: Showing Batch AI Audits'); }}
-                        className={`p-2.5 rounded-xl transition-all cursor-pointer group border ${
-                            auditActionFilter === 'AIBatchAudit'
-                                ? 'bg-cyan-500/10 border-cyan-500 ring-2 ring-cyan-500/50 shadow-md scale-[1.02]' 
-                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-cyan-500/40 shadow-xs'
-                        }`}
-                    >
-                        <div className="flex items-center justify-between text-cyan-500 mb-1">
-                            <span className="material-symbols-outlined text-[18px]">smart_toy</span>
-                            <span className="text-[10px] font-bold text-cyan-500">Batch</span>
-                        </div>
-                        <p className="text-lg font-black text-cyan-500 leading-none">{auditTrail.filter(a => a.action === 'AIBatchAudit' || a.action === 'MediaBatchApprove').length}</p>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight truncate mt-1">Batch Audits</p>
                     </div>
                 </div>
             )}
@@ -3867,7 +3959,9 @@ export default function AdminConsole() {
 
                                                 {/* Reporter */}
                                                 <td className="px-2.5 py-2">
-                                                    <div className="font-bold text-slate-800 dark:text-slate-200 truncate max-w-[120px]" title={r.reporterFullName}>{r.reporterFullName}</div>
+                                                    <div className="font-bold text-slate-800 dark:text-slate-200 truncate max-w-[120px]" title={r.reporterFullName}>
+                                                        <HighlightText text={r.reporterFullName} query={searchQuery} />
+                                                    </div>
                                                     <div className="text-[10px] text-slate-400">ID: #{r.reporterUserId}</div>
                                                 </td>
 
@@ -3884,7 +3978,7 @@ export default function AdminConsole() {
                                                         return (
                                                             <>
                                                                 <div className="font-bold text-slate-800 dark:text-slate-200 truncate max-w-[120px]" title={authorName}>
-                                                                    {authorName}
+                                                                    <HighlightText text={authorName} query={searchQuery} />
                                                                 </div>
                                                                 <div className="text-[10px] text-slate-400">ID: #{authorId}</div>
                                                             </>
@@ -3900,13 +3994,13 @@ export default function AdminConsole() {
                                                         title={`Click to preview ${r.contentType} #${r.contentId}`}
                                                     >
                                                         <span className="material-symbols-outlined text-[14px]">description</span>
-                                                        <span>{r.contentType} #{r.contentId}</span>
+                                                        <span><HighlightText text={`${r.contentType} #${r.contentId}`} query={searchQuery} /></span>
                                                     </button>
                                                 </td>
 
                                                 {/* Community */}
                                                 <td className="px-2 py-2 text-slate-600 dark:text-slate-300 font-semibold text-[11px] truncate max-w-[110px]" title={r.communityName || 'General'}>
-                                                    {r.communityName || 'General'}
+                                                    <HighlightText text={r.communityName || 'General'} query={searchQuery} />
                                                 </td>
 
                                                 {/* Reason */}
@@ -4093,8 +4187,12 @@ export default function AdminConsole() {
                                                     <td className="px-4 py-2.5 font-bold">
                                                         <div className="flex flex-col">
                                                             <span className="text-slate-900 dark:text-white font-mono text-[11px]">#{u.userId || u.id}</span>
-                                                            <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-900/30 px-1.5 py-0.2 rounded w-fit mt-0.5">
-                                                                Member
+                                                            <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded w-fit mt-0.5 ${
+                                                                assignedRole.toLowerCase().includes('admin') || assignedRole.toLowerCase().includes('adm')
+                                                                    ? 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30'
+                                                                    : 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30'
+                                                            }`}>
+                                                                {assignedRole.toLowerCase().includes('admin') || assignedRole.toLowerCase().includes('adm') ? 'Admin' : 'Member'}
                                                             </span>
                                                         </div>
                                                     </td>
@@ -4391,6 +4489,15 @@ export default function AdminConsole() {
                                     </>
                                 )}
                             </div>
+
+                            {/* Create Channel Action Button */}
+                            <button
+                                onClick={() => setIsCreateChannelModalOpen(true)}
+                                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition-all hover:shadow-md shrink-0"
+                            >
+                                <span className="material-symbols-outlined text-[16px]">add_circle</span>
+                                <span>+ Create Channel</span>
+                            </button>
                         </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -4436,7 +4543,7 @@ export default function AdminConsole() {
                                             {c.type || 'Public'}
                                         </span>
                                         <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
-                                            {getCommunityMemberCount(c.id)} {getCommunityMemberCount(c.id) === 1 ? 'Member' : 'Members'}
+                                            {getCommunityMemberCount(c)} {getCommunityMemberCount(c) === 1 ? 'Member' : 'Members'}
                                         </span>
                                     </div>
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
@@ -5080,328 +5187,909 @@ export default function AdminConsole() {
                 </div>
             )}
 
-            {/* ─── TAB: LIVE SERILOG SYSTEM LOGS ─── */}
-            {activeTab === 'serilog' && (
-                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-4 space-y-4">
-                    {/* Header & Controls Strip */}
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <span className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-black flex items-center justify-center">
-                                    <span className="material-symbols-outlined text-[20px]">terminal</span>
-                                </span>
-                                <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                                    Live Server Logs (Serilog Stream)
-                                    {isAutoRefreshLogs && (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-black border border-emerald-500/20 animate-pulse">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                            LIVE 5s
-                                        </span>
-                                    )}
-                                </h3>
+            {/* ─── TAB: LIVE SERILOG SYSTEM LOGS (DATE-WISE & GRAPH-WISE) ─── */}
+            {activeTab === 'serilog' && (() => {
+                const maxHourlyEvents = Math.max(
+                    ...(systemLogAnalytics?.hourlyActivity?.map(h => h.total) || [1]),
+                    1
+                );
+                const maxDayBytes = Math.max(
+                    ...(systemLogAnalytics?.daySummaries?.map(d => d.totalSizeBytes) || [1]),
+                    1
+                );
+                const displayedLogs = selectedHourFilter === null
+                    ? systemLogs
+                    : systemLogs.filter(log => {
+                        if (!log.Timestamp || log.Timestamp.length < 13) return true;
+                        const h = parseInt(log.Timestamp.substring(11, 13), 10);
+                        return h === selectedHourFilter;
+                    });
+
+                return (
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm p-4 space-y-4">
+                        {/* Header & Controls Strip */}
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <span className="p-1.5 rounded-lg bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-black flex items-center justify-center">
+                                        <span className="material-symbols-outlined text-[20px]">analytics</span>
+                                    </span>
+                                    <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                                        Server Logs & Serilog Telemetry
+                                        {isAutoRefreshLogs && (
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] font-black border border-emerald-500/20 animate-pulse">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                                LIVE 5s
+                                            </span>
+                                        )}
+                                    </h3>
+                                </div>
+                                <p className="text-xs text-slate-400 mt-0.5 flex flex-wrap items-center gap-2">
+                                    <span>Physical storage: <code className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[11px]">logs/YYYY-MM-DD/</code></span>
+                                    <span>•</span>
+                                    <span>Active file: <code className="px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 font-mono text-[11px] font-bold">{selectedLogFile || 'Auto-detected'}</code></span>
+                                    {lastLogSyncTime && <span className="font-medium text-slate-400">• Synced: {lastLogSyncTime}</span>}
+                                </p>
                             </div>
-                            <p className="text-xs text-slate-400 mt-0.5">
-                                Direct physical server logs from <code className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[11px]">{selectedLogFile || 'Backend/Knome.API/logs/'}</code>.
-                                {lastLogSyncTime && <span className="ml-2 font-medium text-slate-400">Synced: {lastLogSyncTime}</span>}
-                            </p>
-                        </div>
 
-                        {/* Top Actions: File Switcher, Auto-refresh toggle & Download */}
-                        <div className="flex flex-wrap items-center gap-2">
-                            {/* File Selector Dropdown */}
-                            <select
-                                value={selectedLogFile}
-                                onChange={e => setSelectedLogFile(e.target.value)}
-                                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs font-bold rounded-xl px-3 py-2 outline-none cursor-pointer"
-                            >
-                                {systemLogFiles.map(f => (
-                                    <option key={f.fileName} value={f.fileName}>
-                                        📄 {f.fileName} ({(f.sizeBytes / (1024 * 1024)).toFixed(1)} MB){f.isActive ? ' - Active' : ''}
-                                    </option>
-                                ))}
-                            </select>
+                            {/* Top Actions: View Mode, Date-Grouped File Switcher, Lines, Auto-refresh & Download */}
+                            <div className="flex flex-wrap items-center gap-2">
+                                {/* View Mode Toggles */}
+                                <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl border border-slate-200 dark:border-slate-700">
+                                    <button
+                                        onClick={() => setSerilogViewMode('split')}
+                                        title="Split View: Graphs & Console Stream"
+                                        className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                                            serilogViewMode === 'split'
+                                                ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-300 shadow-xs'
+                                                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                                        }`}
+                                    >
+                                        <span className="material-symbols-outlined text-[15px]">splitscreen</span>
+                                        <span className="hidden sm:inline">Split</span>
+                                    </button>
+                                    <button
+                                        onClick={() => setSerilogViewMode('graphs')}
+                                        title="Graphs & Analytics Only"
+                                        className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                                            serilogViewMode === 'graphs'
+                                                ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-300 shadow-xs'
+                                                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                                        }`}
+                                    >
+                                        <span className="material-symbols-outlined text-[15px]">bar_chart</span>
+                                        <span className="hidden sm:inline">Graphs</span>
+                                    </button>
+                                    <button
+                                        onClick={() => setSerilogViewMode('stream')}
+                                        title="Console Stream Only"
+                                        className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                                            serilogViewMode === 'stream'
+                                                ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-300 shadow-xs'
+                                                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                                        }`}
+                                    >
+                                        <span className="material-symbols-outlined text-[15px]">terminal</span>
+                                        <span className="hidden sm:inline">Stream</span>
+                                    </button>
+                                </div>
 
-                            {/* Lines count */}
-                            <select
-                                value={logLinesCount}
-                                onChange={e => setLogLinesCount(Number(e.target.value))}
-                                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs font-bold rounded-xl px-2.5 py-2 outline-none cursor-pointer"
-                            >
-                                <option value={50}>50 Lines</option>
-                                <option value={100}>100 Lines</option>
-                                <option value={200}>200 Lines</option>
-                                <option value={500}>500 Lines</option>
-                                <option value={1000}>1000 Lines</option>
-                            </select>
-
-                            {/* Auto-Refresh Toggle */}
-                            <button
-                                onClick={() => setIsAutoRefreshLogs(!isAutoRefreshLogs)}
-                                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
-                                    isAutoRefreshLogs
-                                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shadow-xs'
-                                        : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
-                                }`}
-                            >
-                                <span className={`material-symbols-outlined text-[16px] ${isAutoRefreshLogs ? 'text-emerald-500 animate-spin' : ''}`}>
-                                    {isAutoRefreshLogs ? 'autorenew' : 'sync'}
-                                </span>
-                                <span>{isAutoRefreshLogs ? 'Auto: ON' : 'Auto: OFF'}</span>
-                            </button>
-
-                            {/* Manual Refresh Button */}
-                            <button
-                                onClick={fetchSystemLogs}
-                                disabled={isLoadingLogs}
-                                className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50"
-                            >
-                                <span className={`material-symbols-outlined text-[16px] ${isLoadingLogs ? 'animate-spin' : ''}`}>refresh</span>
-                                <span>Fetch</span>
-                            </button>
-
-                            {/* Download Log File */}
-                            <a
-                                href={adminApi.downloadSystemLogUrl ? adminApi.downloadSystemLogUrl(selectedLogFile) : `#`}
-                                target="_blank"
-                                rel="noreferrer"
-                                download
-                                className="px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 cursor-pointer"
-                            >
-                                <span className="material-symbols-outlined text-[16px]">file_download</span>
-                                <span className="hidden sm:inline">Download</span>
-                            </a>
-                        </div>
-                    </div>
-
-                    {/* Metric Badges Strip */}
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-                        <div
-                            onClick={() => setLogLevelFilter('ALL')}
-                            className={`p-2.5 rounded-xl border cursor-pointer transition-all ${
-                                logLevelFilter === 'ALL'
-                                    ? 'bg-slate-900 text-white border-slate-900 shadow-md ring-2 ring-slate-500/30'
-                                    : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 hover:border-slate-400'
-                            }`}
-                        >
-                            <span className="text-[10px] font-bold uppercase tracking-wider block opacity-75">Total Log Events</span>
-                            <span className="text-lg font-black">{systemLogCounts.total || systemLogs.length}</span>
-                        </div>
-
-                        <div
-                            onClick={() => setLogLevelFilter('ERR')}
-                            className={`p-2.5 rounded-xl border cursor-pointer transition-all ${
-                                logLevelFilter === 'ERR'
-                                    ? 'bg-rose-600 text-white border-rose-600 shadow-md ring-2 ring-rose-500/30'
-                                    : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 hover:border-rose-400'
-                            }`}
-                        >
-                            <span className="text-[10px] font-bold uppercase tracking-wider block opacity-75">Errors & Fatal</span>
-                            <span className="text-lg font-black">{systemLogCounts.errors || 0}</span>
-                        </div>
-
-                        <div
-                            onClick={() => setLogLevelFilter('WRN')}
-                            className={`p-2.5 rounded-xl border cursor-pointer transition-all ${
-                                logLevelFilter === 'WRN'
-                                    ? 'bg-amber-600 text-white border-amber-600 shadow-md ring-2 ring-amber-500/30'
-                                    : 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-600 dark:text-amber-400 hover:border-amber-400'
-                            }`}
-                        >
-                            <span className="text-[10px] font-bold uppercase tracking-wider block opacity-75">Warnings</span>
-                            <span className="text-lg font-black">{systemLogCounts.warnings || 0}</span>
-                        </div>
-
-                        <div
-                            onClick={() => setLogLevelFilter('INF')}
-                            className={`p-2.5 rounded-xl border cursor-pointer transition-all ${
-                                logLevelFilter === 'INF'
-                                    ? 'bg-sky-600 text-white border-sky-600 shadow-md ring-2 ring-sky-500/30'
-                                    : 'bg-sky-50/50 dark:bg-sky-950/20 border-sky-200 dark:border-sky-900/40 text-sky-600 dark:text-sky-400 hover:border-sky-400'
-                            }`}
-                        >
-                            <span className="text-[10px] font-bold uppercase tracking-wider block opacity-75">Information</span>
-                            <span className="text-lg font-black">{systemLogCounts.info || 0}</span>
-                        </div>
-
-                        <div className="p-2.5 rounded-xl border bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 flex flex-col justify-center">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Active File Size</span>
-                            <span className="text-sm font-black text-slate-800 dark:text-slate-200 font-mono">
-                                {systemLogFiles.find(f => f.fileName === selectedLogFile)
-                                    ? `${(systemLogFiles.find(f => f.fileName === selectedLogFile).sizeBytes / (1024 * 1024)).toFixed(2)} MB`
-                                    : 'Live Disk File'}
-                            </span>
-                        </div>
-                    </div>
-
-                    {/* Search & Filter Bar */}
-                    <div className="flex flex-wrap items-center gap-2 bg-slate-50 dark:bg-slate-800/40 p-2 rounded-xl border border-slate-200/80 dark:border-slate-800">
-                        {/* Search Input */}
-                        <div className="relative flex-1 min-w-[200px]">
-                            <span className="material-symbols-outlined absolute left-2.5 top-2 text-slate-400 text-[16px]">search</span>
-                            <input
-                                type="text"
-                                value={logSearchQuery}
-                                onChange={e => setLogSearchQuery(e.target.value)}
-                                onKeyDown={e => { if (e.key === 'Enter') fetchSystemLogs(); }}
-                                placeholder="Search in logs (e.g. POST /api/Auth, UserId, Exception, Database)..."
-                                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg pl-8 pr-8 py-1.5 text-xs outline-none focus:border-cyan-500 font-mono text-slate-900 dark:text-white"
-                            />
-                            {logSearchQuery && (
-                                <button
-                                    onClick={() => { setLogSearchQuery(''); setTimeout(fetchSystemLogs, 50); }}
-                                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                                {/* Date-Wise Grouped File Selector */}
+                                <select
+                                    value={selectedLogFile}
+                                    onChange={e => {
+                                        setSelectedLogFile(e.target.value);
+                                        setSelectedHourFilter(null);
+                                    }}
+                                    className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs font-bold rounded-xl px-3 py-2 outline-none cursor-pointer max-w-[240px] truncate"
                                 >
-                                    <span className="material-symbols-outlined text-[14px]">close</span>
-                                </button>
-                            )}
-                        </div>
+                                    {systemLogDateGroups && systemLogDateGroups.length > 0 ? (
+                                        systemLogDateGroups.map(group => (
+                                            <optgroup
+                                                key={group.date}
+                                                label={`📅 ${group.dateDisplay} — ${group.fileCount} ${group.fileCount === 1 ? 'file' : 'files'} (${(group.totalSizeBytes / (1024 * 1024)).toFixed(1)} MB)`}
+                                            >
+                                                {group.files.map(f => (
+                                                    <option key={f.relativePath || f.fileName} value={f.relativePath || f.fileName}>
+                                                        {f.isActive ? '🟢 Active: ' : '📄 '} {f.fileName} ({(f.sizeBytes / (1024 * 1024)).toFixed(1)} MB)
+                                                    </option>
+                                                ))}
+                                            </optgroup>
+                                        ))
+                                    ) : (
+                                        systemLogFiles.map(f => (
+                                            <option key={f.fileName} value={f.fileName}>
+                                                📄 {f.fileName} ({(f.sizeBytes / (1024 * 1024)).toFixed(1)} MB){f.isActive ? ' - Active' : ''}
+                                            </option>
+                                        ))
+                                    )}
+                                </select>
 
-                        {/* Log Level Filter Chips */}
-                        <div className="flex items-center gap-1">
-                            {['ALL', 'ERR', 'WRN', 'INF', 'DBG'].map(lvl => (
+                                {/* Lines count */}
+                                <select
+                                    value={logLinesCount}
+                                    onChange={e => setLogLinesCount(Number(e.target.value))}
+                                    className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs font-bold rounded-xl px-2 py-2 outline-none cursor-pointer"
+                                >
+                                    <option value={50}>50 Lines</option>
+                                    <option value={100}>100 Lines</option>
+                                    <option value={200}>200 Lines</option>
+                                    <option value={500}>500 Lines</option>
+                                    <option value={1000}>1000 Lines</option>
+                                </select>
+
+                                {/* Auto-Refresh Toggle */}
                                 <button
-                                    key={lvl}
-                                    onClick={() => setLogLevelFilter(lvl)}
-                                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                                        logLevelFilter === lvl
-                                            ? lvl === 'ERR'
-                                                ? 'bg-rose-600 text-white'
-                                                : lvl === 'WRN'
-                                                ? 'bg-amber-600 text-white'
-                                                : lvl === 'INF'
-                                                ? 'bg-sky-600 text-white'
-                                                : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
-                                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-slate-400'
+                                    onClick={() => setIsAutoRefreshLogs(!isAutoRefreshLogs)}
+                                    className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                                        isAutoRefreshLogs
+                                            ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                                            : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
                                     }`}
                                 >
-                                    {lvl === 'ALL' ? 'All Logs' : lvl}
+                                    <span className={`material-symbols-outlined text-[16px] ${isAutoRefreshLogs ? 'text-emerald-500 animate-spin' : ''}`}>
+                                        {isAutoRefreshLogs ? 'autorenew' : 'sync'}
+                                    </span>
+                                    <span>{isAutoRefreshLogs ? 'Auto: ON' : 'Auto: OFF'}</span>
                                 </button>
-                            ))}
-                        </div>
-                    </div>
 
-                    {/* ─── TERMINAL CONSOLE VIEWER ─── */}
-                    <div className="rounded-xl overflow-hidden border border-slate-800 bg-slate-950 shadow-2xl font-mono text-xs">
-                        {/* Terminal Header */}
-                        <div className="bg-slate-900 px-4 py-2 flex items-center justify-between border-b border-slate-800 text-[11px] text-slate-400">
-                            <div className="flex items-center gap-2">
-                                <div className="flex items-center gap-1.5">
-                                    <div className="w-2.5 h-2.5 rounded-full bg-rose-500"></div>
-                                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500"></div>
-                                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500"></div>
-                                </div>
-                                <span className="font-bold text-slate-300 ml-1.5 flex items-center gap-1">
-                                    <span className="material-symbols-outlined text-[14px] text-cyan-400">terminal</span>
-                                    Knome.API Serilog Console
-                                </span>
-                            </div>
+                                {/* Manual Refresh Button */}
+                                <button
+                                    onClick={fetchSystemLogs}
+                                    disabled={isLoadingLogs}
+                                    className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                                >
+                                    <span className={`material-symbols-outlined text-[16px] ${isLoadingLogs ? 'animate-spin' : ''}`}>refresh</span>
+                                    <span>Fetch</span>
+                                </button>
 
-                            <div className="flex items-center gap-3">
-                                <span className="text-[10px] text-slate-400">
-                                    Showing <strong>{systemLogs.length}</strong> entries (Newest First)
-                                </span>
+                                {/* Download Log File */}
+                                <a
+                                    href={adminApi.downloadSystemLogUrl ? adminApi.downloadSystemLogUrl(selectedLogFile) : `#`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    download
+                                    className="px-3 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-slate-200 dark:border-slate-700 cursor-pointer"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">file_download</span>
+                                    <span className="hidden sm:inline">Download</span>
+                                </a>
                             </div>
                         </div>
 
-                        {/* Terminal Log Stream Area */}
-                        <div className="p-3 max-h-[560px] overflow-y-auto space-y-1 divide-y divide-slate-900/60 selection:bg-cyan-500/30 selection:text-cyan-200">
-                            {isLoadingLogs && systemLogs.length === 0 ? (
-                                <div className="py-12 text-center text-slate-500 flex flex-col items-center gap-2">
-                                    <span className="material-symbols-outlined text-2xl animate-spin text-cyan-400">refresh</span>
-                                    <span>Reading and parsing Serilog disk files...</span>
-                                </div>
-                            ) : systemLogs.length === 0 ? (
-                                <div className="py-12 text-center text-slate-500">
-                                    <p className="text-sm">No log entries matched your filter criteria.</p>
-                                    <p className="text-xs text-slate-600 mt-1">Try changing the level filter or search keywords.</p>
-                                </div>
-                            ) : (
-                                systemLogs.map((log, idx) => {
-                                    const isExpanded = expandedLogIndex === idx;
-                                    const isError = log.Level === 'ERR' || log.Level === 'FTL';
-                                    const isWarn = log.Level === 'WRN';
-                                    const isInfo = log.Level === 'INF';
-
-                                    const badgeClass = isError
-                                        ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                                        : isWarn
-                                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                                        : isInfo
-                                        ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
-                                        : 'bg-slate-500/20 text-slate-400 border border-slate-500/30';
-
+                        {/* Date-Wise Quick Strip: 1-Click Date Filtering */}
+                        {systemLogDateGroups && systemLogDateGroups.length > 0 && (
+                            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs no-scrollbar">
+                                <span className="text-[11px] font-bold text-slate-400 shrink-0 mr-1 flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-[14px]">calendar_month</span>
+                                    Dates:
+                                </span>
+                                {systemLogDateGroups.slice(0, 10).map(dg => {
+                                    const isSelected = selectedLogFile && (selectedLogFile.includes(dg.date) || systemLogFiles.find(f => (f.fileName === selectedLogFile || f.relativePath === selectedLogFile) && f.date === dg.date));
                                     return (
-                                        <div
-                                            key={idx}
-                                            onClick={() => setExpandedLogIndex(isExpanded ? null : idx)}
-                                            className={`pt-1.5 pb-1.5 px-2 rounded-lg transition-colors cursor-pointer group hover:bg-slate-900/90 ${
-                                                isError ? 'bg-rose-950/20' : ''
+                                        <button
+                                            key={dg.date}
+                                            onClick={() => {
+                                                const target = dg.files[0]?.relativePath || dg.files[0]?.fileName;
+                                                if (target) {
+                                                    setSelectedLogFile(target);
+                                                    setSelectedHourFilter(null);
+                                                }
+                                            }}
+                                            className={`px-2.5 py-1 rounded-lg font-bold text-[11px] whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer border ${
+                                                isSelected
+                                                    ? 'bg-cyan-600 text-white border-cyan-600 shadow-xs'
+                                                    : 'bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-400'
                                             }`}
                                         >
-                                            <div className="flex items-start gap-2 text-[11px] leading-relaxed">
-                                                {/* Timestamp */}
-                                                <span className="text-slate-400 whitespace-nowrap shrink-0 text-[10px]">
-                                                    {log.Timestamp || '—'}
-                                                </span>
+                                            {dg.hasActiveFile && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>}
+                                            <span>{dg.dateDisplay}</span>
+                                            <span className={`px-1.5 py-0.2 rounded-full text-[9px] ${isSelected ? 'bg-cyan-700/60 text-cyan-100' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300'}`}>
+                                                {dg.fileCount}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
 
-                                                {/* Level Badge */}
-                                                <span className={`px-1.5 py-0.2 rounded font-black text-[9px] uppercase tracking-wider shrink-0 ${badgeClass}`}>
-                                                    {log.Level}
-                                                </span>
+                        {/* Metric Badges Strip */}
+                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                            <div
+                                onClick={() => setLogLevelFilter('ALL')}
+                                className={`p-2.5 rounded-xl border cursor-pointer transition-all ${
+                                    logLevelFilter === 'ALL'
+                                        ? 'bg-slate-900 text-white border-slate-900 shadow-md ring-2 ring-slate-500/30'
+                                        : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 hover:border-slate-400'
+                                }`}
+                            >
+                                <span className="text-[10px] font-bold uppercase tracking-wider block opacity-75">Total Log Events</span>
+                                <span className="text-lg font-black">{systemLogCounts.total || systemLogs.length}</span>
+                            </div>
 
-                                                {/* Source Context */}
-                                                <span className="text-purple-400 font-semibold truncate max-w-[180px] shrink-0 opacity-90 hidden sm:inline" title={log.SourceContext}>
-                                                    [{log.SourceContext ? log.SourceContext.split('.').slice(-2).join('.') : 'API'}]
-                                                </span>
+                            <div
+                                onClick={() => setLogLevelFilter('ERR')}
+                                className={`p-2.5 rounded-xl border cursor-pointer transition-all ${
+                                    logLevelFilter === 'ERR'
+                                        ? 'bg-rose-600 text-white border-rose-600 shadow-md ring-2 ring-rose-500/30'
+                                        : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 hover:border-rose-400'
+                                }`}
+                            >
+                                <span className="text-[10px] font-bold uppercase tracking-wider block opacity-75">Errors & Fatal</span>
+                                <span className="text-lg font-black">{systemLogCounts.errors || 0}</span>
+                            </div>
 
-                                                {/* Message */}
-                                                <span className={`flex-1 break-all ${isError ? 'text-rose-200 font-bold' : isWarn ? 'text-amber-200' : 'text-slate-200'}`}>
-                                                    {log.Message}
-                                                </span>
+                            <div
+                                onClick={() => setLogLevelFilter('WRN')}
+                                className={`p-2.5 rounded-xl border cursor-pointer transition-all ${
+                                    logLevelFilter === 'WRN'
+                                        ? 'bg-amber-600 text-white border-amber-600 shadow-md ring-2 ring-amber-500/30'
+                                        : 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 text-amber-600 dark:text-amber-400 hover:border-amber-400'
+                                }`}
+                            >
+                                <span className="text-[10px] font-bold uppercase tracking-wider block opacity-75">Warnings</span>
+                                <span className="text-lg font-black">{systemLogCounts.warnings || 0}</span>
+                            </div>
 
-                                                {/* Expand icon if Exception exists */}
-                                                {log.Exception && (
-                                                    <span className="material-symbols-outlined text-[14px] text-rose-400 shrink-0">
-                                                        {isExpanded ? 'expand_less' : 'bug_report'}
-                                                    </span>
-                                                )}
+                            <div
+                                onClick={() => setLogLevelFilter('INF')}
+                                className={`p-2.5 rounded-xl border cursor-pointer transition-all ${
+                                    logLevelFilter === 'INF'
+                                        ? 'bg-sky-600 text-white border-sky-600 shadow-md ring-2 ring-sky-500/30'
+                                        : 'bg-sky-50/50 dark:bg-sky-950/20 border-sky-200 dark:border-sky-900/40 text-sky-600 dark:text-sky-400 hover:border-sky-400'
+                                }`}
+                            >
+                                <span className="text-[10px] font-bold uppercase tracking-wider block opacity-75">Information</span>
+                                <span className="text-lg font-black">{systemLogCounts.info || 0}</span>
+                            </div>
+
+                            <div className="p-2.5 rounded-xl border bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 flex flex-col justify-center">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Active File Size</span>
+                                <span className="text-sm font-black text-slate-800 dark:text-slate-200 font-mono">
+                                    {systemLogFiles.find(f => f.fileName === selectedLogFile || f.relativePath === selectedLogFile)
+                                        ? `${(systemLogFiles.find(f => f.fileName === selectedLogFile || f.relativePath === selectedLogFile).sizeBytes / (1024 * 1024)).toFixed(2)} MB`
+                                        : 'Live Disk File'}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* ─── GRAPH-WISE VISUAL ANALYTICS DASHBOARD ─── */}
+                        {(serilogViewMode === 'split' || serilogViewMode === 'graphs') && (
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                                {/* Graph 1: 24-Hour Timeline Bar Chart (Hourly Distribution) */}
+                                <div className="lg:col-span-2 p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 flex flex-col justify-between">
+                                    <div className="flex items-center justify-between pb-3 border-b border-slate-200/60 dark:border-slate-700/60">
+                                        <div>
+                                            <h4 className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                                                <span className="material-symbols-outlined text-[16px] text-cyan-500">query_stats</span>
+                                                24-Hour Activity Timeline & Volume Distribution
+                                            </h4>
+                                            <p className="text-[11px] text-slate-400 mt-0.5">
+                                                Hourly log events for current file. Click any bar to isolate logs for that hour.
+                                            </p>
+                                        </div>
+
+                                        {/* Legend & Active Filter Reset */}
+                                        <div className="flex items-center gap-2">
+                                            {selectedHourFilter !== null && (
+                                                <button
+                                                    onClick={() => setSelectedHourFilter(null)}
+                                                    className="px-2 py-0.5 rounded-md bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30 text-[10px] font-bold flex items-center gap-1 hover:bg-cyan-500/20 cursor-pointer"
+                                                >
+                                                    <span>Filtering: {selectedHourFilter}:00</span>
+                                                    <span className="material-symbols-outlined text-[12px]">close</span>
+                                                </button>
+                                            )}
+                                            <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400">
+                                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-sky-500"></span>Info</span>
+                                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-amber-500"></span>Warn</span>
+                                                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-rose-500"></span>Err</span>
                                             </div>
+                                        </div>
+                                    </div>
 
-                                            {/* Expandable Exception / Stack Trace */}
-                                            {isExpanded && (
-                                                <div className="mt-2 p-3 rounded-lg bg-slate-900/90 border border-slate-800 text-[10px] space-y-2 text-slate-300">
-                                                    <div className="flex items-center justify-between text-slate-400 border-b border-slate-800 pb-1">
-                                                        <span className="font-bold text-cyan-400">Full Log Detail & Source</span>
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                navigator.clipboard.writeText(log.Raw || `${log.Timestamp} [${log.Level}] [${log.SourceContext}] ${log.Message}\n${log.Exception || ''}`);
-                                                                showToast('Copied log trace to clipboard!');
-                                                            }}
-                                                            className="text-xs text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1 cursor-pointer"
+                                    {/* 24-Hour Timeline Bar Chart */}
+                                    <div className="pt-4 pb-2">
+                                        <div className="h-36 flex items-end gap-1 sm:gap-1.5 px-1">
+                                            {(systemLogAnalytics?.hourlyActivity || []).map((h) => {
+                                                const total = h.total || 0;
+                                                const heightPct = total > 0 ? Math.max(Math.round((total / maxHourlyEvents) * 100), 8) : 4;
+                                                const isSelected = selectedHourFilter === h.hour;
+                                                const isHovered = hoveredHourBucket?.hour === h.hour;
+
+                                                // Calculate segment percentages
+                                                const infoPct = total > 0 ? (h.info / total) * 100 : 0;
+                                                const warnPct = total > 0 ? (h.warnings / total) * 100 : 0;
+                                                const errPct = total > 0 ? (h.errors / total) * 100 : 0;
+
+                                                return (
+                                                    <div
+                                                        key={h.hour}
+                                                        onClick={() => setSelectedHourFilter(isSelected ? null : h.hour)}
+                                                        onMouseEnter={() => setHoveredHourBucket(h)}
+                                                        onMouseLeave={() => setHoveredHourBucket(null)}
+                                                        className="flex-1 flex flex-col items-center h-full justify-end group cursor-pointer relative"
+                                                    >
+                                                        {/* Tooltip on Hover */}
+                                                        {isHovered && (
+                                                            <div className="absolute bottom-full mb-2 z-30 p-2 rounded-lg bg-slate-950 text-white text-[10px] shadow-xl border border-slate-800 whitespace-nowrap pointer-events-none">
+                                                                <div className="font-bold text-cyan-400">{h.hourLabel} - {h.hour}:59</div>
+                                                                <div>Total: <strong>{total.toLocaleString()}</strong> events</div>
+                                                                <div className="text-sky-400">Info: {h.info.toLocaleString()}</div>
+                                                                <div className="text-amber-400">Warnings: {h.warnings.toLocaleString()}</div>
+                                                                <div className="text-rose-400">Errors: {h.errors.toLocaleString()}</div>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Stacked Bar */}
+                                                        <div
+                                                            style={{ height: `${heightPct}%` }}
+                                                            className={`w-full rounded-t-md overflow-hidden flex flex-col-reverse transition-all ${
+                                                                isSelected
+                                                                    ? 'ring-2 ring-cyan-400 ring-offset-1 dark:ring-offset-slate-900 shadow-md scale-105'
+                                                                    : total === 0
+                                                                    ? 'bg-slate-200 dark:bg-slate-800 opacity-40'
+                                                                    : 'hover:brightness-110'
+                                                            }`}
                                                         >
-                                                            <span className="material-symbols-outlined text-[13px]">content_copy</span>
-                                                            Copy Trace
-                                                        </button>
+                                                            {/* Errors segment */}
+                                                            {errPct > 0 && (
+                                                                <div style={{ height: `${errPct}%` }} className="bg-rose-500 w-full"></div>
+                                                            )}
+                                                            {/* Warnings segment */}
+                                                            {warnPct > 0 && (
+                                                                <div style={{ height: `${warnPct}%` }} className="bg-amber-500 w-full"></div>
+                                                            )}
+                                                            {/* Info segment */}
+                                                            {infoPct > 0 && (
+                                                                <div style={{ height: `${infoPct}%` }} className="bg-sky-500 w-full"></div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* Hour label below (every 3 hours or on sm screens) */}
+                                                        <span className={`text-[9px] font-mono mt-1 ${
+                                                            isSelected ? 'text-cyan-500 font-black' : h.hour % 3 === 0 ? 'text-slate-400 font-bold' : 'text-transparent sm:text-slate-500'
+                                                        }`}>
+                                                            {h.hour % 3 === 0 ? `${h.hour}h` : ''}
+                                                        </span>
                                                     </div>
-                                                    <div className="text-slate-400">
-                                                        <strong>Source Context:</strong> {log.SourceContext || 'N/A'}
-                                                    </div>
-                                                    {log.Exception && (
-                                                        <pre className="p-2 rounded bg-black/70 border border-rose-900/50 text-rose-300 whitespace-pre-wrap overflow-x-auto font-mono text-[10px] max-h-60">
-                                                            {log.Exception}
-                                                        </pre>
-                                                    )}
-                                                </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* Sub-bar active info */}
+                                    <div className="flex items-center justify-between text-[11px] text-slate-500 border-t border-slate-200/60 dark:border-slate-700/60 pt-2 font-mono">
+                                        <span>Peak Hour: <strong className="text-slate-800 dark:text-slate-200">{systemLogAnalytics?.peakHour ?? 0}:00</strong> ({systemLogAnalytics?.peakHourEvents?.toLocaleString() ?? 0} events)</span>
+                                        <span>Click bar to filter stream</span>
+                                    </div>
+                                </div>
+
+                                {/* Graph 2: Health Status & Severity Distribution Card */}
+                                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3">
+                                    <div>
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="text-xs font-black text-slate-900 dark:text-white flex items-center gap-1.5">
+                                                <span className="material-symbols-outlined text-[16px] text-emerald-500">health_and_safety</span>
+                                                Telemetry Health
+                                            </h4>
+                                            {/* Health Status Badge */}
+                                            {systemLogAnalytics?.healthStatus === 'Optimal' ? (
+                                                <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-black flex items-center gap-1">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                                    OPTIMAL
+                                                </span>
+                                            ) : systemLogAnalytics?.healthStatus === 'Warning' ? (
+                                                <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[10px] font-black flex items-center gap-1">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                                    WARNINGS
+                                                </span>
+                                            ) : (
+                                                <span className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-[10px] font-black flex items-center gap-1">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                                    DEGRADED
+                                                </span>
                                             )}
                                         </div>
-                                    );
-                                })
+                                        <p className="text-[11px] text-slate-400 mt-0.5">
+                                            Log severity ratio across {systemLogCounts.total?.toLocaleString() || 0} scanned lines.
+                                        </p>
+                                    </div>
+
+                                    {/* Segmented Severity Bar */}
+                                    <div className="space-y-1.5">
+                                        <div className="h-3 w-full rounded-full overflow-hidden flex bg-slate-200 dark:bg-slate-700">
+                                            <div
+                                                style={{ width: `${systemLogAnalytics?.infoPercentage ?? 95}%` }}
+                                                className="bg-sky-500 transition-all"
+                                                title={`Information: ${systemLogAnalytics?.infoPercentage ?? 0}%`}
+                                            ></div>
+                                            <div
+                                                style={{ width: `${systemLogAnalytics?.warningPercentage ?? 3}%` }}
+                                                className="bg-amber-500 transition-all"
+                                                title={`Warnings: ${systemLogAnalytics?.warningPercentage ?? 0}%`}
+                                            ></div>
+                                            <div
+                                                style={{ width: `${systemLogAnalytics?.errorPercentage ?? 2}%` }}
+                                                className="bg-rose-500 transition-all"
+                                                title={`Errors: ${systemLogAnalytics?.errorPercentage ?? 0}%`}
+                                            ></div>
+                                        </div>
+
+                                        {/* Percentages Breakdown */}
+                                        <div className="grid grid-cols-3 text-center text-[10px] font-bold pt-1">
+                                            <div className="text-sky-600 dark:text-sky-400">
+                                                <span className="block text-sm font-black">{systemLogAnalytics?.infoPercentage ?? 0}%</span>
+                                                <span>Information</span>
+                                            </div>
+                                            <div className="text-amber-600 dark:text-amber-400">
+                                                <span className="block text-sm font-black">{systemLogAnalytics?.warningPercentage ?? 0}%</span>
+                                                <span>Warnings</span>
+                                            </div>
+                                            <div className="text-rose-600 dark:text-rose-400">
+                                                <span className="block text-sm font-black">{systemLogAnalytics?.errorPercentage ?? 0}%</span>
+                                                <span>Errors/Fatal</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Multi-Day Volume Trend Bars */}
+                                    <div className="border-t border-slate-200/60 dark:border-slate-700/60 pt-2 space-y-1">
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                                            Multi-Day Storage Trend (MB)
+                                        </span>
+                                        <div className="h-14 flex items-end gap-1.5 pt-1">
+                                            {(systemLogAnalytics?.daySummaries || []).slice(0, 7).reverse().map((day) => {
+                                                const mb = Math.round(day.totalSizeBytes / (1024 * 1024));
+                                                const heightPct = Math.max(Math.round((day.totalSizeBytes / maxDayBytes) * 100), 12);
+                                                return (
+                                                    <div
+                                                        key={day.date}
+                                                        onClick={() => {
+                                                            const group = systemLogDateGroups.find(g => g.date === day.date);
+                                                            const target = group?.files[0]?.relativePath || group?.files[0]?.fileName;
+                                                            if (target) {
+                                                                setSelectedLogFile(target);
+                                                                setSelectedHourFilter(null);
+                                                            }
+                                                        }}
+                                                        className="flex-1 flex flex-col items-center h-full justify-end group cursor-pointer"
+                                                        title={`${day.dateDisplay}: ${mb} MB (${day.fileCount} files)`}
+                                                    >
+                                                        <div
+                                                            style={{ height: `${heightPct}%` }}
+                                                            className={`w-full rounded-t transition-all ${
+                                                                day.isSelected
+                                                                    ? 'bg-cyan-500 shadow-xs'
+                                                                    : 'bg-slate-300 dark:bg-slate-700 hover:bg-cyan-400/60'
+                                                            }`}
+                                                        ></div>
+                                                        <span className="text-[8px] font-mono text-slate-400 mt-1 truncate max-w-[32px]">
+                                                            {day.date.slice(5)}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Search & Filter Bar */}
+                        <div className="flex flex-wrap items-center gap-2 bg-slate-50 dark:bg-slate-800/40 p-2 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                            {/* Search Input */}
+                            <div className="relative flex-1 min-w-[200px]">
+                                <span className="material-symbols-outlined absolute left-2.5 top-2 text-slate-400 text-[16px]">search</span>
+                                <input
+                                    type="text"
+                                    value={logSearchQuery}
+                                    onChange={e => setLogSearchQuery(e.target.value)}
+                                    onKeyDown={e => { if (e.key === 'Enter') fetchSystemLogs(); }}
+                                    placeholder="Search in logs (e.g. POST /api/Auth, UserId, Exception, Database)..."
+                                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg pl-8 pr-8 py-1.5 text-xs outline-none focus:border-cyan-500 font-mono text-slate-900 dark:text-white"
+                                />
+                                {logSearchQuery && (
+                                    <button
+                                        onClick={() => { setLogSearchQuery(''); setTimeout(fetchSystemLogs, 50); }}
+                                        className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                                    >
+                                        <span className="material-symbols-outlined text-[14px]">close</span>
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Active Hour Filter Chip */}
+                            {selectedHourFilter !== null && (
+                                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-600 dark:text-cyan-400 text-xs font-bold">
+                                    <span className="material-symbols-outlined text-[14px]">schedule</span>
+                                    <span>Hour: {selectedHourFilter}:00 - {selectedHourFilter}:59</span>
+                                    <button
+                                        onClick={() => setSelectedHourFilter(null)}
+                                        className="hover:text-cyan-800 dark:hover:text-cyan-200 ml-1 cursor-pointer"
+                                        title="Clear hour filter"
+                                    >
+                                        <span className="material-symbols-outlined text-[13px]">close</span>
+                                    </button>
+                                </div>
                             )}
+
+                            {/* Log Level Filter Chips */}
+                            <div className="flex items-center gap-1">
+                                {['ALL', 'ERR', 'WRN', 'INF', 'DBG'].map(lvl => (
+                                    <button
+                                        key={lvl}
+                                        onClick={() => setLogLevelFilter(lvl)}
+                                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                                            logLevelFilter === lvl
+                                                ? lvl === 'ERR'
+                                                    ? 'bg-rose-600 text-white'
+                                                    : lvl === 'WRN'
+                                                    ? 'bg-amber-600 text-white'
+                                                    : lvl === 'INF'
+                                                    ? 'bg-sky-600 text-white'
+                                                    : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
+                                                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-slate-400'
+                                        }`}
+                                    >
+                                        {lvl === 'ALL' ? 'All Logs' : lvl}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
+
+                        {/* ─── LOG ENTRIES VIEWER (HUMAN-READABLE & RAW TECHNICAL MODES) ─── */}
+                        {(serilogViewMode === 'split' || serilogViewMode === 'stream') && (
+                            <div className="rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 shadow-md">
+                                {/* Log Viewer Toolbar Header */}
+                                <div className="bg-slate-50 dark:bg-slate-900 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800">
+                                    <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="w-2.5 h-2.5 rounded-full bg-rose-500"></div>
+                                            <div className="w-2.5 h-2.5 rounded-full bg-amber-500"></div>
+                                            <div className="w-2.5 h-2.5 rounded-full bg-emerald-500"></div>
+                                        </div>
+                                        <span className="font-black text-xs text-slate-800 dark:text-slate-200 ml-1 flex items-center gap-1.5">
+                                            <span className="material-symbols-outlined text-[17px] text-cyan-500">
+                                                {logDisplayMode === 'human' ? 'group' : 'terminal'}
+                                            </span>
+                                            {logDisplayMode === 'human' ? 'Activity Feed (Plain English)' : 'Serilog Technical Console'}
+                                        </span>
+                                        <span className="text-[11px] text-slate-400 font-mono hidden md:inline">
+                                            • {selectedLogFile || 'Active Log File'}
+                                        </span>
+                                    </div>
+
+                                    {/* Display Mode Toggle & Item Counter */}
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-[11px] text-slate-500">
+                                            Showing <strong>{displayedLogs.length}</strong> {selectedHourFilter !== null ? `(Hour ${selectedHourFilter}:00)` : ''} of <strong>{systemLogs.length}</strong> entries
+                                        </span>
+
+                                        {/* Human vs Raw Switcher */}
+                                        <div className="flex items-center bg-slate-200/80 dark:bg-slate-800 p-0.5 rounded-xl text-[11px] font-bold">
+                                            <button
+                                                onClick={() => setLogDisplayMode('human')}
+                                                className={`px-2.5 py-1 rounded-lg flex items-center gap-1 transition-all cursor-pointer ${
+                                                    logDisplayMode === 'human'
+                                                        ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-xs'
+                                                        : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                                }`}
+                                            >
+                                                <span className="material-symbols-outlined text-[14px]">face</span>
+                                                <span>Simple View</span>
+                                            </button>
+                                            <button
+                                                onClick={() => setLogDisplayMode('raw')}
+                                                className={`px-2.5 py-1 rounded-lg flex items-center gap-1 transition-all cursor-pointer ${
+                                                    logDisplayMode === 'raw'
+                                                        ? 'bg-white dark:bg-slate-700 text-cyan-600 dark:text-cyan-400 shadow-xs'
+                                                        : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                                }`}
+                                            >
+                                                <span className="material-symbols-outlined text-[14px]">terminal</span>
+                                                <span>Raw Logs</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Loading & Empty States */}
+                                {isLoadingLogs && displayedLogs.length === 0 ? (
+                                    <div className="py-16 text-center text-slate-500 flex flex-col items-center gap-3">
+                                        <span className="material-symbols-outlined text-3xl animate-spin text-cyan-500">refresh</span>
+                                        <span className="text-sm font-semibold">Reading server log files...</span>
+                                    </div>
+                                ) : displayedLogs.length === 0 ? (
+                                    <div className="py-16 text-center text-slate-500 flex flex-col items-center gap-2">
+                                        <span className="material-symbols-outlined text-3xl text-slate-400">filter_alt_off</span>
+                                        <p className="text-sm font-bold text-slate-700 dark:text-slate-300">No log entries matched your filter criteria.</p>
+                                        <p className="text-xs text-slate-400">Try choosing a different date, clearing the hour filter, or selecting "All Logs".</p>
+                                    </div>
+                                ) : logDisplayMode === 'human' ? (
+                                    /* ─── MODE 1: HUMAN-READABLE ACTIVITY FEED ─── */
+                                    <div className="p-3 max-h-[580px] overflow-y-auto space-y-2.5 divide-y divide-slate-100 dark:divide-slate-800/60">
+                                        {displayedLogs.map((log, idx) => {
+                                            const isExpanded = expandedLogIndex === idx;
+                                            const rawTimestamp = log.timestamp || log.Timestamp || '';
+                                            const rawLevel = (log.level || log.Level || 'INF').toUpperCase();
+                                            const rawSource = log.sourceContext || log.SourceContext || 'Knome.API';
+                                            const rawMessage = log.message || log.Message || '';
+                                            const rawException = log.exception || log.Exception || '';
+                                            const rawText = log.raw || log.Raw || '';
+
+                                            // Extract readable time: e.g. "10:42:25 AM"
+                                            let timeStr = '—';
+                                            if (rawTimestamp) {
+                                                const parts = rawTimestamp.split(' ');
+                                                if (parts.length >= 2) {
+                                                    timeStr = parts[1].split('.')[0];
+                                                }
+                                            }
+
+                                            const isError = rawLevel === 'ERR' || rawLevel === 'FTL';
+                                            const isWarn = rawLevel === 'WRN';
+
+                                            // Translate into human language
+                                            let category = 'System Activity';
+                                            let icon = 'info';
+                                            let title = 'System Event';
+                                            let humanSummary = rawMessage;
+                                            let metaBadge = null;
+                                            let badgeBg = 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700';
+
+                                            if (rawMessage.includes('/api/auth/login') || rawMessage.includes('LoginRequestDto')) {
+                                                category = 'Employee Login';
+                                                icon = 'lock';
+                                                badgeBg = isError
+                                                    ? 'bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/40'
+                                                    : 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 border-indigo-200 dark:border-indigo-900/40';
+                                                title = isError ? 'Login Failed' : 'Employee Login Request';
+                                                humanSummary = 'An employee requested login authentication.';
+                                                metaBadge = 'POST /api/auth/login';
+                                            } else if (rawMessage.includes('Executed DbCommand')) {
+                                                const msMatch = rawMessage.match(/\((\d+ms)\)/);
+                                                const duration = msMatch ? msMatch[1] : '';
+
+                                                let targetTable = 'Application Data';
+                                                const searchPool = (rawMessage + ' ' + rawException).toUpperCase();
+                                                if (searchPool.includes('FROM [POSTS]')) targetTable = 'Posts Feed';
+                                                else if (searchPool.includes('FROM [USERS]')) targetTable = 'User Profiles';
+                                                else if (searchPool.includes('FROM [COMMENTS]')) targetTable = 'Post Comments';
+                                                else if (searchPool.includes('FROM [JOBS]')) targetTable = 'Internal Job Openings';
+                                                else if (searchPool.includes('FROM [ARTICLES]')) targetTable = 'Knowledge Articles';
+                                                else if (searchPool.includes('FROM [COMMUNITIES]')) targetTable = 'Communities';
+                                                else if (searchPool.includes('FROM [NOTIFICATIONS]')) targetTable = 'User Notifications';
+                                                else if (searchPool.includes('FROM [AUDITLOG]')) targetTable = 'Security Audit Logs';
+                                                else if (searchPool.includes('FROM [KARMABALANCES]')) targetTable = 'Karma Points';
+
+                                                category = 'Database Query';
+                                                icon = 'database';
+                                                badgeBg = 'bg-cyan-50 dark:bg-cyan-950/30 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800/40';
+                                                title = `Fetched ${targetTable}`;
+                                                humanSummary = `Platform retrieved records from ${targetTable}.`;
+                                                metaBadge = duration ? `⚡ ${duration}` : null;
+                                            } else if (rawMessage.includes('responded 200') || rawMessage.includes('responded 201') || rawMessage.includes('Request finished HTTP')) {
+                                                let route = '';
+                                                const m = rawMessage.match(/(GET|POST|PUT|DELETE)\s+([^\s?]+)/i);
+                                                if (m) route = `${m[1]} ${m[2]}`;
+
+                                                let summary = 'Web request completed successfully.';
+                                                if (rawMessage.includes('notifications')) summary = 'User checked notifications.';
+                                                else if (rawMessage.includes('Communities')) summary = 'Loaded community details and members.';
+                                                else if (rawMessage.includes('system-logs')) summary = 'Admin viewed live server logs.';
+                                                else if (rawMessage.includes('posts')) summary = 'Loaded posts feed.';
+
+                                                category = 'Web Traffic';
+                                                icon = 'check_circle';
+                                                badgeBg = 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/40';
+                                                title = route || 'API Endpoint Handled';
+                                                humanSummary = summary;
+                                                metaBadge = '200 OK';
+                                            } else if (rawMessage.includes('JobExpiryHostedService') || rawMessage.includes('ScheduledPostHostedService') || rawMessage.includes('DataArchival')) {
+                                                category = 'Background Maintenance';
+                                                icon = 'smart_toy';
+                                                badgeBg = 'bg-purple-50 dark:bg-purple-950/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800/40';
+                                                title = 'Automated Background Check';
+                                                humanSummary = 'Background worker checked for expired jobs, scheduled posts, and archival.';
+                                                metaBadge = 'Auto Worker';
+                                            } else if (isError) {
+                                                category = 'System Error';
+                                                icon = 'error';
+                                                badgeBg = 'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/40';
+                                                title = 'Server Error Detected';
+                                                humanSummary = rawMessage || 'An unexpected exception occurred during processing.';
+                                                metaBadge = 'ERROR';
+                                            } else if (isWarn) {
+                                                category = 'Warning';
+                                                icon = 'warning';
+                                                badgeBg = 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/40';
+                                                title = 'System Warning';
+                                                humanSummary = rawMessage;
+                                                metaBadge = 'WARN';
+                                            }
+
+                                            return (
+                                                <div
+                                                    key={idx}
+                                                    onClick={() => setExpandedLogIndex(isExpanded ? null : idx)}
+                                                    className={`pt-2.5 pb-2.5 px-3 rounded-xl transition-all cursor-pointer group border ${
+                                                        isError
+                                                            ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 hover:border-rose-400'
+                                                            : isWarn
+                                                            ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/40 hover:border-amber-400'
+                                                            : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-start justify-between gap-3">
+                                                        {/* Left: Icon & Description */}
+                                                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                                                            {/* Category Icon */}
+                                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${badgeBg}`}>
+                                                                <span className="material-symbols-outlined text-[18px]">{icon}</span>
+                                                            </div>
+
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex flex-wrap items-center gap-2">
+                                                                    <span className="text-xs font-bold text-slate-900 dark:text-white">
+                                                                        <HighlightText text={title} query={logSearchQuery} />
+                                                                    </span>
+                                                                    {metaBadge && (
+                                                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
+                                                                            <HighlightText text={metaBadge} query={logSearchQuery} />
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5 leading-snug">
+                                                                    <HighlightText text={humanSummary} query={logSearchQuery} />
+                                                                </p>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Right: Time and Details Chevron */}
+                                                        <div className="flex items-center gap-2 shrink-0">
+                                                            <span className="text-[11px] font-mono font-semibold text-slate-400 whitespace-nowrap">
+                                                                {timeStr}
+                                                            </span>
+                                                            <span className="material-symbols-outlined text-[16px] text-slate-400 group-hover:text-cyan-500 transition-colors">
+                                                                {isExpanded ? 'expand_less' : 'expand_more'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Expanded Technical Details */}
+                                                    {isExpanded && (
+                                                        <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-800 text-xs font-mono space-y-2">
+                                                            <div className="flex items-center justify-between text-slate-400 text-[11px]">
+                                                                <span className="font-bold text-cyan-600 dark:text-cyan-400">Technical Log Details</span>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        navigator.clipboard.writeText(rawText || `${rawTimestamp} [${rawLevel}] ${rawMessage}`);
+                                                                        showToast('Copied log trace to clipboard!');
+                                                                    }}
+                                                                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-bold flex items-center gap-1 cursor-pointer"
+                                                                >
+                                                                    <span className="material-symbols-outlined text-[13px]">content_copy</span>
+                                                                    Copy Full Raw Log
+                                                                </button>
+                                                            </div>
+                                                            <div className="p-2.5 rounded-lg bg-slate-950 text-slate-200 text-[11px] space-y-1.5 overflow-x-auto selection:bg-cyan-500/30 selection:text-cyan-200">
+                                                                <div><span className="text-slate-500">Timestamp:</span> {rawTimestamp}</div>
+                                                                <div><span className="text-slate-500">Level:</span> <strong className={isError ? 'text-rose-400' : isWarn ? 'text-amber-400' : 'text-sky-400'}>{rawLevel}</strong></div>
+                                                                <div><span className="text-slate-500">Source:</span> {rawSource}</div>
+                                                                <div><span className="text-slate-500">Message:</span> <HighlightText text={rawMessage} query={logSearchQuery} /></div>
+                                                                {rawException && (
+                                                                    <div className="mt-2 pt-2 border-t border-slate-800">
+                                                                        <span className="text-slate-500 block mb-1">Details / SQL:</span>
+                                                                        <pre className="text-slate-300 whitespace-pre-wrap max-h-48 overflow-y-auto">{rawException}</pre>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    /* ─── MODE 2: DEVELOPER RAW TERMINAL CONSOLE ─── */
+                                    <div className="p-3 max-h-[580px] overflow-y-auto space-y-1 divide-y divide-slate-900/60 bg-slate-950 font-mono text-xs selection:bg-cyan-500/30 selection:text-cyan-200">
+                                        {displayedLogs.map((log, idx) => {
+                                            const isExpanded = expandedLogIndex === idx;
+                                            const rawTimestamp = log.timestamp || log.Timestamp || '—';
+                                            const rawLevel = (log.level || log.Level || 'INF').toUpperCase();
+                                            const rawSource = log.sourceContext || log.SourceContext || 'Knome.API';
+                                            const rawMessage = log.message || log.Message || '';
+                                            const rawException = log.exception || log.Exception || '';
+                                            const rawText = log.raw || log.Raw || '';
+
+                                            const isError = rawLevel === 'ERR' || rawLevel === 'FTL';
+                                            const isWarn = rawLevel === 'WRN';
+                                            const isInfo = rawLevel === 'INF';
+
+                                            const badgeClass = isError
+                                                ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                                                : isWarn
+                                                ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                                                : isInfo
+                                                ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
+                                                : 'bg-slate-500/20 text-slate-400 border border-slate-500/30';
+
+                                            return (
+                                                <div
+                                                    key={idx}
+                                                    onClick={() => setExpandedLogIndex(isExpanded ? null : idx)}
+                                                    className={`pt-1.5 pb-1.5 px-2 rounded-lg transition-colors cursor-pointer group hover:bg-slate-900/90 ${
+                                                        isError ? 'bg-rose-950/20' : ''
+                                                    }`}
+                                                >
+                                                    <div className="flex items-start gap-2 text-[11px] leading-relaxed">
+                                                        {/* Timestamp */}
+                                                        <span className="text-slate-400 whitespace-nowrap shrink-0 text-[10px]">
+                                                            {rawTimestamp}
+                                                        </span>
+
+                                                        {/* Level Badge */}
+                                                        <span className={`px-1.5 py-0.2 rounded font-black text-[9px] uppercase tracking-wider shrink-0 ${badgeClass}`}>
+                                                            {rawLevel}
+                                                        </span>
+
+                                                        {/* Source Context */}
+                                                        <span className="text-purple-400 font-semibold truncate max-w-[180px] shrink-0 opacity-90 hidden sm:inline" title={rawSource}>
+                                                            [{rawSource ? rawSource.split('.').slice(-2).join('.') : 'API'}]
+                                                        </span>
+
+                                                        {/* Message */}
+                                                        <span className={`flex-1 break-all ${isError ? 'text-rose-200 font-bold' : isWarn ? 'text-amber-200' : 'text-slate-200'}`}>
+                                                            <HighlightText text={rawMessage} query={logSearchQuery} />
+                                                        </span>
+
+                                                        {/* Expand icon if Exception exists */}
+                                                        {rawException && (
+                                                            <span className="material-symbols-outlined text-[14px] text-rose-400 shrink-0">
+                                                                {isExpanded ? 'expand_less' : 'bug_report'}
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Expandable Exception / Stack Trace */}
+                                                    {isExpanded && (
+                                                        <div className="mt-2 p-3 rounded-lg bg-slate-900/90 border border-slate-800 text-[10px] space-y-2 text-slate-300">
+                                                            <div className="flex items-center justify-between text-slate-400 border-b border-slate-800 pb-1">
+                                                                <span className="font-bold text-cyan-400">Full Raw Log Detail</span>
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        navigator.clipboard.writeText(rawText || `${rawTimestamp} [${rawLevel}] [${rawSource}] ${rawMessage}\n${rawException}`);
+                                                                        showToast('Copied log trace to clipboard!');
+                                                                    }}
+                                                                    className="text-xs text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1 cursor-pointer"
+                                                                >
+                                                                    <span className="material-symbols-outlined text-[13px]">content_copy</span>
+                                                                    Copy Trace
+                                                                </button>
+                                                            </div>
+                                                            <div className="text-slate-400">
+                                                                <strong>Source Context:</strong> {rawSource || 'N/A'}
+                                                            </div>
+                                                            {rawException && (
+                                                                <pre className="p-2 rounded bg-black/70 border border-rose-900/50 text-rose-300 whitespace-pre-wrap overflow-x-auto font-mono text-[10px] max-h-60">
+                                                                    {rawException}
+                                                                </pre>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* ─── TAB 7: ANALYTICS ─── */}
             {activeTab === 'analytics' && (
@@ -5710,7 +6398,7 @@ export default function AdminConsole() {
 
                                             <div className="absolute bottom-2 left-3 right-3 flex items-center justify-between text-white/90 text-[11px]">
                                                 <span className="font-bold px-2 py-0.5 rounded-md bg-slate-900/60 backdrop-blur-xs">
-                                                    {comm.category || 'General'}
+                                                    <HighlightText text={comm.category || 'General'} query={communityApprovalSearchTerm} />
                                                 </span>
                                                 <span className="text-[10px] text-slate-200 drop-shadow-xs">
                                                     {comm.createdDate ? new Date(comm.createdDate).toLocaleDateString() : 'Recent'}
@@ -5721,11 +6409,11 @@ export default function AdminConsole() {
                                         {/* Card Body */}
                                         <div className="p-4 flex flex-col flex-1">
                                             <h3 className="font-extrabold text-base text-slate-900 dark:text-white leading-snug line-clamp-1">
-                                                {comm.name}
+                                                <HighlightText text={comm.name} query={communityApprovalSearchTerm} />
                                             </h3>
                                             
                                             <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 mt-1 mb-3">
-                                                {comm.description || 'No description provided.'}
+                                                <HighlightText text={comm.description || 'No description provided.'} query={communityApprovalSearchTerm} />
                                             </p>
 
                                             {/* Creator Info Box */}
@@ -5739,7 +6427,7 @@ export default function AdminConsole() {
                                                 )}
                                                 <div className="flex-1 min-w-0">
                                                     <p className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
-                                                        {comm.creatorName || comm.createdBy || 'Employee'}
+                                                        <HighlightText text={comm.creatorName || comm.createdBy || 'Employee'} query={communityApprovalSearchTerm} />
                                                     </p>
                                                     <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
                                                         {comm.creatorDesignation || 'Community Creator'} • {comm.creatorDepartment || 'MPOnline'}
@@ -5892,7 +6580,7 @@ export default function AdminConsole() {
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-2">
                                                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
-                                                        {req.assignedRoleName || req.requestedRoleCode || 'Role Request'}
+                                                        <HighlightText text={req.assignedRoleName || req.requestedRoleCode || 'Role Request'} query={roleRequestSearchTerm || searchQuery} />
                                                     </span>
                                                     <span className="text-[11px] text-slate-400 font-medium">
                                                         {new Date(req.createdAt).toLocaleDateString()}
@@ -5917,18 +6605,18 @@ export default function AdminConsole() {
                                                 </div>
                                                 <div className="min-w-0 flex-1">
                                                     <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                                                        {req.fullName}
+                                                        <HighlightText text={req.fullName} query={roleRequestSearchTerm || searchQuery} />
                                                     </h4>
                                                     <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                                                        {req.email}
+                                                        <HighlightText text={req.email} query={roleRequestSearchTerm || searchQuery} />
                                                     </p>
                                                     <div className="flex items-center gap-2 mt-1 text-[11px] text-slate-400">
                                                         <span className="font-semibold text-slate-700 dark:text-slate-300">
-                                                            {req.designation || 'TL'}
+                                                            <HighlightText text={req.designation || 'TL'} query={roleRequestSearchTerm || searchQuery} />
                                                         </span>
                                                         <span>•</span>
                                                         <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
-                                                            {req.departmentName || 'Development'}
+                                                            <HighlightText text={req.departmentName || 'Development'} query={roleRequestSearchTerm || searchQuery} />
                                                         </span>
                                                     </div>
                                                 </div>
@@ -6800,7 +7488,7 @@ export default function AdminConsole() {
                                 <div>
                                     <span className="text-slate-400 font-medium">Total Members</span>
                                     <p className="font-black text-sm text-slate-900 dark:text-white">
-                                        {getCommunityMemberCount(selectedManageCommunity.id)} {getCommunityMemberCount(selectedManageCommunity.id) === 1 ? 'Member' : 'Members'}
+                                        {getCommunityMemberCount(selectedManageCommunity)} {getCommunityMemberCount(selectedManageCommunity) === 1 ? 'Member' : 'Members'}
                                     </p>
                                 </div>
                                 <div>
@@ -6835,10 +7523,48 @@ export default function AdminConsole() {
                                     }}
                                     className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 font-bold outline-none text-slate-900 dark:text-white"
                                 >
-                                    <option value="System Admin">System Admin</option>
-                                    <option value="Priya Verma">Priya Verma (HR Admin)</option>
-                                    <option value="Sourabh Sahu">Sourabh Sahu (Lead Admin)</option>
-                                    <option value="Loveneesh Sharma">Loveneesh Sharma (Community Lead)</option>
+                                    {(() => {
+                                        const userOptionsMap = new Map();
+
+                                        // 1. Always include System Admin
+                                        userOptionsMap.set('System Admin', {
+                                            value: 'System Admin',
+                                            label: 'System Admin (Platform Administrator)'
+                                        });
+
+                                        // 2. Include all users from usersList
+                                        (usersList || []).forEach(u => {
+                                            const name = (u.fullName || u.name || '').trim();
+                                            if (name && !userOptionsMap.has(name)) {
+                                                const roleOrDesig = u.roleName || u.designation || u.department || 'Employee';
+                                                const empCode = u.employeeId ? ` - ${u.employeeId}` : '';
+                                                userOptionsMap.set(name, {
+                                                    value: name,
+                                                    label: `${name} (${roleOrDesig}${empCode})`
+                                                });
+                                            }
+                                        });
+
+                                        // 3. Ensure currently selected mod is present if not already in list
+                                        if (selectedManageCommunity.mod && !userOptionsMap.has(selectedManageCommunity.mod)) {
+                                            userOptionsMap.set(selectedManageCommunity.mod, {
+                                                value: selectedManageCommunity.mod,
+                                                label: `${selectedManageCommunity.mod} (Current Moderator)`
+                                            });
+                                        }
+
+                                        const sortedOptions = Array.from(userOptionsMap.values()).sort((a, b) => {
+                                            if (a.value === 'System Admin') return -1;
+                                            if (b.value === 'System Admin') return 1;
+                                            return a.value.localeCompare(b.value);
+                                        });
+
+                                        return sortedOptions.map(opt => (
+                                            <option key={opt.value} value={opt.value}>
+                                                {opt.label}
+                                            </option>
+                                        ));
+                                    })()}
                                 </select>
                             </div>
                         </div>
@@ -6877,8 +7603,12 @@ export default function AdminConsole() {
                                 <button
                                     onClick={() => {
                                         setCommunityChannels(prev => prev.map(c => c.id === selectedManageCommunity.id ? selectedManageCommunity : c));
+                                        if (selectedManageCommunity?.id) {
+                                            localStorage.setItem(`knome_community_policy_${selectedManageCommunity.id}`, selectedManageCommunity.status);
+                                            localStorage.setItem(`knome_community_mod_${selectedManageCommunity.id}`, selectedManageCommunity.mod);
+                                        }
                                         setIsCommunityModalOpen(false);
-                                        showToast(`Community parameters updated for '${selectedManageCommunity.name}'.`);
+                                        showToast(`Community parameters updated: Moderator is now '${selectedManageCommunity.mod}'.`);
                                     }}
                                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer"
                                 >
@@ -6890,6 +7620,27 @@ export default function AdminConsole() {
                 </div>,
                 document.body
             )}
+
+            {/* ─── MODAL 4B: CREATE COMMUNITY CHANNEL MODAL ─── */}
+            {isCreateChannelModalOpen && createPortal(
+                <CreateCommunityModal 
+                    isOpen={isCreateChannelModalOpen} 
+                    onClose={() => setIsCreateChannelModalOpen(false)} 
+                    onCommunityCreated={(res) => {
+                        setIsCreateChannelModalOpen(false);
+                        fetchCommunities();
+                        refreshPendingCommunityApprovals();
+                        if (res?.type === 'approval') {
+                            showToast(`Community channel "${res.communityName || 'New Community'}" submitted for approval!`);
+                        } else {
+                            showToast(res?.communityName ? `Community channel "${res.communityName}" created successfully!` : 'Community channel created successfully!', 'success');
+                        }
+                    }}
+                    existingCommunities={communityChannels}
+                />,
+                document.body
+            )}
+
             {/* ─── MODAL: PREVIEW MEDIA (VIDEO / PODCAST PLAYER) ─── */}
             {previewingMedia && createPortal(
                 <div className="fixed inset-0 z-[9999] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">

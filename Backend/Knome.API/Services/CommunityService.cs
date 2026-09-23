@@ -98,8 +98,6 @@ public class CommunityService : ICommunityService
         if (community == null)
             throw new NotFoundException($"Community ID {communityId} not found.");
 
-        await CheckCanViewCommunityAsync(communityId, currentUserId, community);
-
         var dto = _mapper.Map<CommunityDto>(community);
         dto.IsCurrentUserAdmin = await _repo.IsCommunityAdminAsync(communityId, currentUserId);
         
@@ -209,6 +207,33 @@ public class CommunityService : ICommunityService
             DecidedDate = KnomeTime.Now
         };
         await _repo.AddMemberAsync(member);
+
+        // Add invited members if specified upon creation
+        if (dto.MemberUserIds != null && dto.MemberUserIds.Count > 0)
+        {
+            var validUserIds = await _db.Users
+                .Where(u => dto.MemberUserIds.Contains(u.UserId) && u.UserId != currentUserId && u.IsActive)
+                .Select(u => u.UserId)
+                .ToListAsync();
+
+            foreach (var uid in validUserIds)
+            {
+                var existingMember = await _repo.GetMemberAsync(community.CommunityId, uid);
+                if (existingMember == null)
+                {
+                    var newMember = new CommunityMember
+                    {
+                        CommunityId = community.CommunityId,
+                        UserId = uid,
+                        MemberType = CommunityMemberTypes.Member,
+                        Status = CommunityMemberStatuses.Approved,
+                        RequestedDate = KnomeTime.Now,
+                        DecidedDate = KnomeTime.Now
+                    };
+                    await _repo.AddMemberAsync(newMember);
+                }
+            }
+        }
 
         return await GetCommunityAsync(community.CommunityId, currentUserId);
     }
@@ -413,8 +438,103 @@ public class CommunityService : ICommunityService
                 relatedContentType: NotificationContentTypes.Community,
                 relatedContentId: communityId);
         }
+        else if (dto.Status == CommunityMemberStatuses.Rejected)
+        {
+            var community = await _repo.GetCommunityByIdAsync(communityId);
+            await _notificationService.PublishAsync(
+                targetUserId,
+                NotificationTypes.CommunityJoin,
+                $"Your request to join {(community?.Name ?? "the community")} was declined.",
+                relatedContentType: NotificationContentTypes.Community,
+                relatedContentId: communityId);
+        }
 
         return _mapper.Map<CommunityMemberDto>(member);
+    }
+
+    public async Task<List<CommunityMemberDto>> AddMembersBulkAsync(int communityId, List<int> userIds, int currentUserId)
+    {
+        var community = await _repo.GetCommunityByIdAsync(communityId);
+        if (community == null)
+            throw new NotFoundException($"Community ID {communityId} not found.");
+
+        await CheckIsAdminOrSysAdminAsync(communityId, currentUserId);
+
+        if (userIds == null || userIds.Count == 0)
+            return await GetMembersAsync(communityId, null, 1, 100, currentUserId);
+
+        var validUserIds = await _db.Users
+            .Where(u => userIds.Contains(u.UserId) && u.IsActive)
+            .Select(u => u.UserId)
+            .ToListAsync();
+
+        foreach (var uid in validUserIds)
+        {
+            var existing = await _repo.GetMemberAsync(communityId, uid);
+            if (existing == null)
+            {
+                var newMember = new CommunityMember
+                {
+                    CommunityId = communityId,
+                    UserId = uid,
+                    MemberType = CommunityMemberTypes.Member,
+                    Status = CommunityMemberStatuses.Approved,
+                    RequestedDate = KnomeTime.Now,
+                    DecidedDate = KnomeTime.Now
+                };
+                await _repo.AddMemberAsync(newMember);
+            }
+            else if (existing.Status != CommunityMemberStatuses.Approved)
+            {
+                existing.Status = CommunityMemberStatuses.Approved;
+                existing.DecidedDate = KnomeTime.Now;
+                await _repo.UpdateMemberAsync(existing);
+            }
+        }
+
+        return await GetMembersAsync(communityId, null, 1, 100, currentUserId);
+    }
+
+    public async Task RemoveMemberAsync(int communityId, int targetUserId, int currentUserId)
+    {
+        await CheckIsAdminOrSysAdminAsync(communityId, currentUserId);
+
+        var community = await _repo.GetCommunityByIdAsync(communityId);
+        if (community == null)
+            throw new NotFoundException($"Community ID {communityId} not found.");
+
+        if (community.CommunityType == CommunityTypes.Default || community.CommunityType == CommunityTypes.Org)
+            throw new BadRequestException("Members cannot be removed from an Org/Default system community (FR-CM-04).");
+
+        var isTargetAdmin = await _repo.IsCommunityAdminAsync(communityId, targetUserId);
+        if (isTargetAdmin)
+        {
+            var adminsCount = await _repo.GetCommunityAdminsCountAsync(communityId);
+            if (adminsCount <= 1)
+                throw new BadRequestException("Cannot remove the sole remaining Community Admin. Assign another admin first.");
+
+            await _repo.RemoveCommunityAdminAsync(communityId, targetUserId);
+        }
+
+        var member = await _repo.GetMemberAsync(communityId, targetUserId);
+        if (member != null)
+        {
+            await _repo.RemoveMemberAsync(member);
+        }
+
+        try
+        {
+            await _notificationService.PublishAsync(
+                targetUserId,
+                NotificationTypes.CommunityJoin,
+                $"You have been removed from {community.Name}.",
+                relatedContentType: NotificationContentTypes.Community,
+                relatedContentId: communityId);
+        }
+        catch
+        {
+            // Non-critical notification delivery failure
+        }
     }
 
     // --- Admin Delegation ---
@@ -582,6 +702,25 @@ public class CommunityService : ICommunityService
 
         communityPost.IsPinned = dto.IsPinned;
         await _repo.UpdateCommunityPostAsync(communityPost);
+
+        if (dto.IsPinned)
+        {
+            var memberIds = await _db.CommunityMembers
+                .Where(m => m.CommunityId == communityId && m.UserId != currentUserId && (m.Status == CommunityMemberStatuses.Approved || m.Status == "Active" || string.IsNullOrEmpty(m.Status)))
+                .Select(m => m.UserId)
+                .ToListAsync();
+
+            if (memberIds.Count > 0)
+            {
+                var community = await _repo.GetCommunityByIdAsync(communityId);
+                await _notificationService.PublishBroadcastAsync(
+                    NotificationTypes.Community,
+                    $"An announcement was pinned in {(community?.Name ?? "your community")}.",
+                    relatedContentType: ContentTypes.Post,
+                    relatedContentId: postId,
+                    candidateUserIds: memberIds);
+            }
+        }
 
         var author = communityPost.Post.AuthorUser;
         var summary = await _interactionService.GetContentSummaryAsync(ContentTypes.Post, postId, currentUserId);

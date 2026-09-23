@@ -36,14 +36,18 @@ export default function CreateJobModal({ isOpen, onClose, onJobCreated }) {
 
         setIsSubmitting(true);
         try {
+            const futureDate = new Date();
+            futureDate.setDate(futureDate.getDate() + 30);
+            const formattedClosing = closingDate || futureDate.toISOString().split('T')[0];
+
             const jobData = {
                 title: title.trim(),
-                departmentName: department || 'Engineering',
-                location: location || 'Hybrid',
-                description: description || title,
-                requirements: skills.join(', ') || 'Standard skills required',
-                expiryDate: closingDate ? new Date(closingDate).toISOString() : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-                applicationUrl: applicationLink || 'https://ats.mponline.gov.in'
+                description: description.trim() || title.trim(),
+                location: location.trim() || 'Bhopal, MP (Hybrid)',
+                skillsRequired: skills.length > 0 ? skills.join(', ') : 'Standard skills required',
+                closingDate: formattedClosing,
+                applicationLink: applicationLink.trim() || 'https://ats.mponline.gov.in',
+                status: 'Open'
             };
 
             await jobsApi.create(jobData);

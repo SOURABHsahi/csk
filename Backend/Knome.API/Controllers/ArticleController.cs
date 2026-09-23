@@ -104,7 +104,7 @@ public class ArticleController : KnomeControllerBase
     [ProducesResponseType(typeof(ApiResponse<int>), StatusCodes.Status200OK)]
     public async Task<IActionResult> RecordView(long articleId)
     {
-        var newCount = await _articleService.IncrementViewCountAsync(articleId);
+        var newCount = await _articleService.IncrementViewCountAsync(articleId, GetCurrentUserId());
         return Ok(ApiResponse<int>.SuccessResponse(200, "Article view recorded.", newCount));
     }
 }
