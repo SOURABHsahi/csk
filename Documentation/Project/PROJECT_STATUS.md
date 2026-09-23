@@ -273,5 +273,7 @@ dotnet run --project "d:\Knome Final\Backend\Knome.API\scratch\VerifyPhase9\Veri
 - [149_Hr_Admin_Broadcast_Message_Management_And_Dashboard_Banner_Refactor.md](file:///D:/Knome%20main/Documentation/Development%20Journal/149_Hr_Admin_Broadcast_Message_Management_And_Dashboard_Banner_Refactor.md) — Phase 149: HR Administrator Broadcast Message Management & Dashboard Announcement Refactor
 - [150_Enterprise_Cross_Browser_Media_Approvals_Queue_And_Realtime_Sync.md](file:///D:/Knome%20main/Documentation/Development%20Journal/150_Enterprise_Cross_Browser_Media_Approvals_Queue_And_Realtime_Sync.md) — Phase 150: Enterprise Cross-Browser Media Approvals Queue & Real-Time Sync
 - [151_Community_Member_Permanent_Removal_And_Persistence_Fix.md](file:///D:/Knome%20main/Documentation/Development%20Journal/151_Community_Member_Permanent_Removal_And_Persistence_Fix.md) — Phase 151: Community Member Permanent Removal & Refresh Persistence Fix
+- [152_Multi_Format_Enterprise_Document_Viewer_And_Pdf_Fix.md](file:///D:/Knome%20main/Documentation/Development%20Journal/152_Multi_Format_Enterprise_Document_Viewer_And_Pdf_Fix.md) — Phase 152: Multi-Format Enterprise Document Viewer & PDF Preview Fix
+
 
 

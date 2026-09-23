@@ -55,8 +55,8 @@ export default function DocumentViewerModal({ document: docFile, onClose }) {
             return;
         }
 
-        // Direct HTTP/HTTPS URLs can be rendered directly by iframe
-        if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
+        // Direct HTTP/HTTPS/Blob/Data URLs can be rendered directly by iframe
+        if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://') || fileUrl.startsWith('blob:') || fileUrl.startsWith('data:')) {
             setBlobUrl(fileUrl);
             setLoading(false);
             return;

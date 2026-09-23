@@ -253,6 +253,8 @@ export default function CommunityView() {
     const [isUploadingFile, setIsUploadingFile] = useState(false);
     const [previewModalFile, setPreviewModalFile] = useState(null);
     const [activePdfBlobUrl, setActivePdfBlobUrl] = useState(null);
+    const [previewZoom, setPreviewZoom] = useState(1);
+    const [previewTab, setPreviewTab] = useState('viewer'); // 'viewer' | 'summary'
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [shareTab, setShareTab] = useState('menu'); // 'menu', 'community', 'users'
     const [shareTargetCommunity, setShareTargetCommunity] = useState('');
@@ -362,24 +364,6 @@ export default function CommunityView() {
         return urlOrBase64;
     };
 
-    useEffect(() => {
-        let currentBlobUrl = null;
-        if (previewModalFile) {
-            currentBlobUrl = getPdfBlobUrl(previewModalFile.url);
-            setActivePdfBlobUrl(currentBlobUrl);
-        } else {
-            setActivePdfBlobUrl(null);
-        }
-
-        return () => {
-            if (currentBlobUrl && typeof currentBlobUrl === 'string' && currentBlobUrl.startsWith('blob:')) {
-                // Delay revocation so active iframes/objects do not throw ERR_FILE_NOT_FOUND
-                setTimeout(() => {
-                    try { URL.revokeObjectURL(currentBlobUrl); } catch (e) {}
-                }, 2000);
-            }
-        };
-    }, [previewModalFile]);
 
     // Real-time live count updates (Reactions, Comments, Shares)
     useEffect(() => {
@@ -679,7 +663,7 @@ export default function CommunityView() {
         }
     };
 
-    const SAMPLE_PDF_DATA_URL = 'data:application/pdf;base64,JVBERi0xLjQKJcOkw7zDtsOfCjEgMCBvYmoKPDwvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFI+PgplbmRvYmoKMiAwIG9iago8PC9UeXBlIC9QYWdlcyAvQ291bnQgMSAvS2lkcyBbMyAwIFJdPj4KZW5kb2JqCjMgMCBvYmoKPDwvVHlwZSAvUGFnZSAvUGFyZW50IDIgMCBSIC9NZWRpYUJveCBbMCAwIDYxMiA3OTJdIC9Db250ZW50cyA0IDAgUiAvUmVzb3VyY2VzIDw8L0ZvbnQgPDwvRjEgNSAwIFI+Pj4+PgplbmRvYmoKNCAwIG9iago8PC9MZW5ndGggNzQ+PnN0cmVhbQpCVAovRjEgMjQgVGYKMTAwIDcwMCBUZAkKKEtub21lIC0gU3lzdGVtIEFyY2hpdGVjdHVyZSBPdmVydmlldykgVGosCjAgLTMwIFRkCihNUE9ubGluZSBMaW1pdGVkKSBUagpFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwvVHlwZSAvRm9udCAvU3Vic3R5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhPj4KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxNSAwMDAwMCBuIAowMDAwMDAwMDY4IDAMDAwMCBuIAowMDAwMDAwMTI1IDAMDAwMCBuIAowMDAwMDAwMjU3IDAMDAwMCBuIAowMDAwMDAwMzgwIDAMDAwMCBuIAp0cmFpbGVyCjw8L1NpemUgNiAvUm9vdCAxIDAgUj4+CnN0YXJ0eHJlZgo0NjkKJSVFT0Y=';
+    const SAMPLE_PDF_DATA_URL = 'data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwKICAvVHlwZSAvUGFnZQogIC9QYXJlbnQgMiAwIFIKICAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXQogIC9Db250ZW50cyA0IDAgUgogIC9SZXNvdXJjZXMgPDwKICAgIC9Gb250IDw8CiAgICAgIC9GMSA8PCAvVHlwZSAvRm9udCAvU3VidHlwZSAvVHlwZTEgL0Jhc2VGb250IC9IZWx2ZXRpY2EtQm9sZCA+PgogICAgICAvRjIgPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhID4+CiAgICA+PgogID4+Cj4+CmVuZG9iago0IDAgb2JqCjw8IC9MZW5ndGggNjkyID4+CnN0cmVhbQpCVAovRjEgMjAgVGYKNTAgNzIwIFRkCihNUE9ubGluZSBMaW1pdGVkIC0gS25vbWUgRW50ZXJwcmlzZSkgVGoKMCAtMzAgVGQKL0YxIDE1IFRmCihTeXN0ZW0gQXJjaGl0ZWN0dXJlICYgSW50ZWdyYXRpb24gT3ZlcnZpZXcpIFRqCjAgLTQwIFRkCi9GMiAxMiBUZgooRG9jdW1lbnQ6IFN5c3RlbV9BcmNoaXRlY3R1cmVfT3ZlcnZpZXcucGRmKSBUagowIC0yMiBUZAooU3RhdHVzOiBBcHByb3ZlZCAmIFZlcmlmaWVkKSBUagowIC0yMiBUZAooQ2xhc3NpZmljYXRpb246IEludGVybmFsIEVudGVycHJpc2UgRG9jdW1lbnRhdGlvbikgVGoKMCAtNDAgVGQKL0YxIDEzIFRmCigxLiBBcmNoaXRlY3R1cmUgU3VtbWFyeSkgVGoKMCAtMjAgVGQKL0YyIDExIFRmCihLbm9tZSBpcyB0aGUgdW5pZmllZCBpbnRlcm5hbCBrbm93bGVkZ2UgYW5kIGNvbGxhYm9yYXRpb24gcGxhdGZvcm0gZm9yIE1QT25saW5lLikgVGoKMCAtMjAgVGQKKEJ1aWx0IHdpdGggQVNQLk5FVCBDb3JlIDEwLCBTUUwgU2VydmVyLCBhbmQgbW9kZXJuIFJlYWN0IHdpdGggVml0ZS4pIFRqCjAgLTM1IFRkCi9GMSAxMyBUZgooMi4gU2VjdXJpdHkgJiBDb21wbGlhbmNlKSBUagowIC0yMiBUZAovRjIgMTEgVGYKKEFsbCBkb2N1bWVudHMgYW5kIG1lZGlhIGZpbGVzIGFyZSBnb3Zlcm5lZCBpbiBjb21wbGlhbmNlIHdpdGggRFBEUCBzdGFuZGFyZHMuKSBUagpFVAplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA1CjAwMDAwMDAwMDAgNjU1MzUgZiANCjAwMDAwMDAwMDkgMDAwMDAgbiANCjAwMDAwMDAwNTggMDAwMDAgbiANCjAwMDAwMDAxMTUgMDAwMDAgbiANCjAwMDAwMDAzODYgMDAwMDAgbiANCnRyYWlsZXIKPDwKICAvU2l6ZSA1CiAgL1Jvb3QgMSAwIFIKPj4Kc3RhcnR4cmVmCjExMjkKJSVFT0YK';
 
     const readFileAsDataUrl = (file) => {
         return new Promise((resolve) => {
@@ -777,6 +761,20 @@ export default function CommunityView() {
 
     useEffect(() => {
         let isMounted = true;
+        let createdBlobUrl = null;
+
+        if (previewModalFile) {
+            setPreviewZoom(1);
+            setPreviewTab('viewer');
+        }
+
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                setPreviewModalFile(null);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+
         const loadPreviewUrl = async () => {
             if (!previewModalFile) {
                 setActivePdfBlobUrl(null);
@@ -793,6 +791,7 @@ export default function CommunityView() {
 
             if (isMounted) {
                 const blobUrl = getPdfBlobUrl(rawUrl || SAMPLE_PDF_DATA_URL);
+                createdBlobUrl = blobUrl;
                 setActivePdfBlobUrl(blobUrl);
             }
         };
@@ -801,6 +800,12 @@ export default function CommunityView() {
 
         return () => {
             isMounted = false;
+            window.removeEventListener('keydown', handleKeyDown);
+            if (createdBlobUrl && typeof createdBlobUrl === 'string' && createdBlobUrl.startsWith('blob:')) {
+                setTimeout(() => {
+                    try { URL.revokeObjectURL(createdBlobUrl); } catch (e) {}
+                }, 3000);
+            }
         };
     }, [previewModalFile]);
 
@@ -1311,7 +1316,7 @@ export default function CommunityView() {
                         if (idbBlob) currentUrl = idbBlob;
                     } catch (_) {}
                 }
-                if (f.extension === 'pdf' && (!currentUrl || currentUrl === '#' || currentUrl.includes('w3.org') || currentUrl.includes('localhost') || currentUrl.startsWith('blob:'))) {
+                if (f.extension === 'pdf' && (!currentUrl || currentUrl === '#' || currentUrl.includes('w3.org') || currentUrl.includes('localhost') || currentUrl.startsWith('blob:') || currentUrl.includes('cOkw7zDtsOf') || f.name === 'System_Architecture_Overview.pdf')) {
                     currentUrl = SAMPLE_PDF_DATA_URL;
                 }
                 return { ...f, url: currentUrl };
@@ -1319,6 +1324,7 @@ export default function CommunityView() {
 
             if (hydratedFiles.length > 0) {
                 setFilesList(hydratedFiles);
+                safeSetStorage(savedFilesKey, hydratedFiles);
             } else {
                 const isCustom = (JSON.parse(localStorage.getItem('knome_custom_communities') || '[]')).some(c => String(c.id) === String(resolvedTargetId));
                 if (!isCustom) {
@@ -4686,166 +4692,7 @@ export default function CommunityView() {
                 </div>
             )}
 
-            {/* Multi-Format File & Document Viewer Modal */}
-            {previewModalFile && (
-                <div className="fixed inset-0 z-[350] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-                    <div className="relative max-w-4xl w-full bg-slate-900 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-                        
-                        {/* Header */}
-                        <div className="p-4 px-6 border-b border-slate-800 flex items-center justify-between text-white bg-slate-900/90">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-                                    <span className="material-symbols-outlined text-[22px]">
-                                        {previewModalFile.category === 'Image' ? 'image' : 
-                                         previewModalFile.extension === 'pdf' ? 'picture_as_pdf' :
-                                         previewModalFile.extension === 'zip' ? 'folder_zip' : 'description'}
-                                    </span>
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-sm text-white truncate max-w-md">{previewModalFile.name}</h3>
-                                    <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
-                                        <span className="px-2 py-0.5 rounded bg-slate-800 text-indigo-400 font-bold uppercase">{previewModalFile.extension || previewModalFile.category}</span>
-                                        <span>•</span>
-                                        <span>{previewModalFile.size || '3.4 MB'}</span>
-                                        <span>•</span>
-                                        <span>Uploaded by {previewModalFile.uploadedBy || 'Team Member'}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div className="flex items-center gap-2">
 
-                                <button
-                                    onClick={() => setPreviewModalFile(null)}
-                                    className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
-                                >
-                                    <span className="material-symbols-outlined text-[20px]">close</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Body / Content Renderer */}
-                        <div className="p-6 flex-1 overflow-auto flex flex-col items-center justify-center bg-slate-950/60">
-                            {previewModalFile.category === 'Image' || ['png', 'jpg', 'jpeg', 'svg', 'webp'].includes(previewModalFile.extension?.toLowerCase()) ? (
-                                <div className="flex flex-col items-center justify-center w-full">
-                                    <img
-                                        src={previewModalFile.url}
-                                        alt={previewModalFile.name}
-                                        className="max-w-full max-h-[65vh] object-contain rounded-2xl shadow-2xl border border-slate-800"
-                                        onError={(e) => {
-                                            e.target.style.display = 'none';
-                                            e.target.nextSibling.style.display = 'flex';
-                                        }}
-                                    />
-                                    <div className="hidden flex-col items-center justify-center p-12 text-center">
-                                        <span className="material-symbols-outlined text-[64px] text-indigo-400 mb-3">image</span>
-                                        <p className="text-slate-300 font-bold text-base">{previewModalFile.name}</p>
-                                        <p className="text-slate-500 text-xs mt-1">Image Asset File ({previewModalFile.size})</p>
-                                    </div>
-                                </div>
-                            ) : previewModalFile.extension === 'pdf' ? (
-                                <div className="w-full h-full flex flex-col items-center justify-center p-2">
-                                    <embed
-                                        src={(previewModalFile.url && (previewModalFile.url.startsWith('data:') || (previewModalFile.url.startsWith('http') && !previewModalFile.url.includes('localhost') && !previewModalFile.url.includes('w3.org')))) ? previewModalFile.url : SAMPLE_PDF_DATA_URL}
-                                        type="application/pdf"
-                                        className="w-full h-[70vh] rounded-2xl bg-white border border-slate-800 shadow-2xl"
-                                    />
-                                </div>
-                            ) : previewModalFile.category === 'Video' || ['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(previewModalFile.extension?.toLowerCase()) || (previewModalFile.name && previewModalFile.name.toLowerCase().endsWith('.mp4')) ? (
-                                <div className="flex flex-col items-center justify-center w-full gap-4">
-                                    {previewModalFile.url && previewModalFile.url !== '#' ? (
-                                        <div className="relative w-full max-w-3xl rounded-2xl overflow-hidden border border-slate-800 bg-black shadow-2xl">
-                                            <video
-                                                src={previewModalFile.url}
-                                                controls
-                                                controlsList="nodownload"
-                                                disablePictureInPicture
-                                                onContextMenu={(e) => e.preventDefault()}
-                                                autoPlay
-                                                playsInline
-                                                className="w-full max-h-[65vh] rounded-2xl object-contain"
-                                            >
-                                                Your browser does not support HTML5 Video playback.
-                                            </video>
-                                        </div>
-                                    ) : (
-                                        <div className="w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-slate-200 flex flex-col items-center gap-4">
-                                            <div className="w-20 h-20 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-                                                <span className="material-symbols-outlined text-[48px]">play_circle</span>
-                                            </div>
-                                            <div>
-                                                <h4 className="text-xl font-bold text-white">{previewModalFile.name}</h4>
-                                                <p className="text-xs text-slate-400 mt-1">MP4 Video Stream Asset ({previewModalFile.size})</p>
-                                            </div>
-                                            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-indigo-300 w-full max-w-md">
-                                                HTML5 Video Player Ready • Controls Active
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            ) : previewModalFile.extension === 'zip' || previewModalFile.category === 'Archive' ? (
-                                <div className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-left text-slate-200 max-h-[65vh] overflow-y-auto custom-scrollbar">
-                                    <div className="flex items-center gap-3 border-b border-slate-800 pb-4 mb-6">
-                                        <span className="material-symbols-outlined text-[36px] text-amber-400">folder_zip</span>
-                                        <div>
-                                            <h4 className="text-lg font-bold text-white">{previewModalFile.name}</h4>
-                                            <p className="text-xs text-slate-400">Compressed Archive Assets Directory ({previewModalFile.size})</p>
-                                        </div>
-                                    </div>
-                                    <div className="space-y-3">
-                                        <h5 className="font-bold text-white text-xs uppercase tracking-wider text-slate-400">Contained Archive Files</h5>
-                                        <div className="space-y-2">
-                                            {[
-                                                { name: 'src/components/ui/DesignSystem.tsx', size: '42 KB', type: 'TypeScript' },
-                                                { name: 'src/styles/theme.config.css', size: '18 KB', type: 'CSS' },
-                                                { name: 'public/assets/logos/knome_brand.svg', size: '120 KB', type: 'SVG' },
-                                                { name: 'README_SETUP_GUIDE.md', size: '8 KB', type: 'Markdown' }
-                                            ].map((item, idx) => (
-                                                <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs">
-                                                    <span className="font-mono text-slate-300">{item.name}</span>
-                                                    <span className="text-slate-500">{item.size} • {item.type}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-left text-slate-200 max-h-[65vh] overflow-y-auto custom-scrollbar">
-                                    <div className="flex items-center gap-3 border-b border-slate-800 pb-4 mb-6">
-                                        <span className="material-symbols-outlined text-[36px] text-blue-400">description</span>
-                                        <div>
-                                            <h4 className="text-lg font-bold text-white">{previewModalFile.name}</h4>
-                                            <p className="text-xs text-slate-400">Technical Documentation File ({previewModalFile.size})</p>
-                                        </div>
-                                    </div>
-                                    <div className="space-y-4 text-sm leading-relaxed text-slate-300">
-                                        <h5 className="font-bold text-white text-base">API Integration Guidelines & Specifications</h5>
-                                        <p>Comprehensive guide detailing REST API endpoints, JWT token handling, response envelopes (`ApiResponse&lt;T&gt;`), and rate limiting guidelines for MPOnline integration developers.</p>
-                                        <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5 text-xs text-slate-400">
-                                            <div className="font-bold text-indigo-400">Key Sections:</div>
-                                            <div>1. Authentication Endpoints (`/api/v1/auth/login`)</div>
-                                            <div>2. User & Community Management (`/api/v1/communities`)</div>
-                                            <div>3. Posts & Media Channels Engine (`/api/v1/posts`)</div>
-                                            <div>4. Global Search & Discovery Query Filters</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Footer */}
-                        <div className="p-4 px-6 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 bg-slate-900/90">
-                            <span>Document ID: #{previewModalFile.id || '101'}</span>
-                            <button
-                                onClick={() => setPreviewModalFile(null)}
-                                className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold transition-colors cursor-pointer"
-                            >
-                                Close Preview
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Multi-Option Share Community Modal */}
             {isShareModalOpen && (
@@ -5070,114 +4917,462 @@ export default function CommunityView() {
                     </div>
                 </div>
             )}
-            {/* Document / PDF Preview Modal */}
-            {previewModalFile && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 md:p-6 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-900 w-full max-w-5xl h-[88vh] rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
-                        
-                        {/* Modal Header */}
-                        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-800/80 shrink-0">
-                            <div className="flex items-center gap-3 min-w-0">
-                                <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-lg shrink-0">
-                                    <span className="material-symbols-outlined text-[24px]">
-                                        {previewModalFile.category === 'Image' ? 'image' : 'picture_as_pdf'}
-                                    </span>
-                                </div>
-                                <div className="min-w-0">
-                                    <h3 className="font-bold text-slate-900 dark:text-white text-base truncate" title={previewModalFile.name}>
-                                        {previewModalFile.name}
-                                    </h3>
-                                    <p className="text-[12px] text-slate-500 flex items-center gap-2">
-                                        <span className="font-bold text-indigo-500 uppercase">{previewModalFile.extension || 'PDF'}</span>
-                                        <span>•</span>
-                                        <span>{previewModalFile.size}</span>
-                                        <span>•</span>
-                                        <span>Uploaded by {previewModalFile.uploadedBy || 'Loveneesh Sharma'}</span>
-                                    </p>
-                                </div>
-                            </div>
+            {/* Document / PDF / Multi-Format Preview Modal */}
+            {previewModalFile && (() => {
+                const ext = (previewModalFile.extension || previewModalFile.name?.split('.').pop() || '').toLowerCase();
+                const isPdf = ext === 'pdf';
+                const isImage = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext) || previewModalFile.category === 'Image';
+                const isVideo = ['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(ext) || previewModalFile.category === 'Video';
+                const isOfficeDoc = ['docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt'].includes(ext);
+                const isWord = ['docx', 'doc'].includes(ext);
+                const isExcel = ['xlsx', 'xls', 'csv'].includes(ext);
+                const isPowerPoint = ['pptx', 'ppt'].includes(ext);
+                const isArchive = ['zip', 'rar', '7z', 'tar', 'gz'].includes(ext) || previewModalFile.category === 'Archive';
+                const isCode = ['js', 'jsx', 'ts', 'tsx', 'json', 'sql', 'py', 'html', 'css', 'xml', 'md', 'txt'].includes(ext) || previewModalFile.category === 'Code';
 
-                            <div className="flex items-center gap-2.5 shrink-0">
-                                {activePdfBlobUrl && (
-                                    <a
-                                        href={activePdfBlobUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer text-decoration-none"
-                                        title="Open PDF in New Window"
-                                    >
-                                        <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                                        Open Full View
-                                    </a>
-                                )}
+                const displayUrl = activePdfBlobUrl || (previewModalFile.url && previewModalFile.url !== '#' ? previewModalFile.url : (isPdf ? SAMPLE_PDF_DATA_URL : null));
 
+                const docTypeBadgeColor = isPdf
+                    ? 'bg-red-500/10 text-red-500 border-red-500/20'
+                    : isWord
+                    ? 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                    : isExcel
+                    ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                    : isPowerPoint
+                    ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                    : isVideo
+                    ? 'bg-purple-500/10 text-purple-500 border-purple-500/20'
+                    : isImage
+                    ? 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20'
+                    : isArchive
+                    ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                    : 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20';
 
+                const docIcon = isPdf
+                    ? 'picture_as_pdf'
+                    : isWord
+                    ? 'description'
+                    : isExcel
+                    ? 'table_chart'
+                    : isPowerPoint
+                    ? 'slideshow'
+                    : isVideo
+                    ? 'movie'
+                    : isImage
+                    ? 'image'
+                    : isArchive
+                    ? 'folder_zip'
+                    : isCode
+                    ? 'code'
+                    : 'description';
 
-                                <button
-                                    onClick={() => setPreviewModalFile(null)}
-                                    className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
-                                >
-                                    <span className="material-symbols-outlined text-[20px]">close</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Modal Body: High-Compatibility Object/Embed PDF Viewer */}
-                        <div className="flex-1 bg-slate-100 dark:bg-slate-950 p-3 md:p-5 relative overflow-hidden flex items-center justify-center">
-                            {previewModalFile.category === 'Image' || ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(previewModalFile.extension?.toLowerCase()) ? (
-                                <img
-                                    src={previewModalFile.url}
-                                    alt={previewModalFile.name}
-                                    className="max-h-full max-w-full object-contain rounded-xl shadow-md"
-                                />
-                            ) : (
-                                <object
-                                    data={activePdfBlobUrl || SAMPLE_PDF_DATA_URL}
-                                    type="application/pdf"
-                                    className="w-full h-full rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner bg-white"
-                                >
-                                    {/* Fallback View inside object if browser PDF plugin blocks embedded view */}
-                                    <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-white dark:bg-slate-900 rounded-2xl text-center">
-                                        <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 flex items-center justify-center mb-4">
-                                            <span className="material-symbols-outlined text-[36px]">picture_as_pdf</span>
-                                        </div>
-                                        <h4 className="font-bold text-slate-900 dark:text-white text-lg mb-2">{previewModalFile.name}</h4>
-                                        <p className="text-sm text-slate-500 max-w-md mb-6">
-                                            PDF document preview is ready. You can open it in a new full view tab to view.
-                                        </p>
-                                        <div className="flex items-center gap-3">
-                                            <a
-                                                href={activePdfBlobUrl}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="px-6 py-2.5 bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-lg hover:bg-indigo-600 transition-all flex items-center gap-2"
-                                            >
-                                                <span className="material-symbols-outlined text-[18px]">open_in_new</span>
-                                                Open Full PDF View
-                                            </a>
-
+                return (
+                    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+                        <div className="bg-white dark:bg-slate-900 w-full max-w-5xl h-[90vh] rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
+                            {/* Modal Header */}
+                            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/90 dark:bg-slate-800/90 shrink-0 gap-3">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-lg shrink-0 border ${docTypeBadgeColor}`}>
+                                        <span className="material-symbols-outlined text-[24px]">
+                                            {docIcon}
+                                        </span>
+                                    </div>
+                                    <div className="min-w-0">
+                                        <h3 className="font-bold text-slate-900 dark:text-white text-base truncate max-w-sm sm:max-w-md lg:max-w-xl" title={previewModalFile.name}>
+                                            {previewModalFile.name}
+                                        </h3>
+                                        <div className="text-[12px] text-slate-500 flex items-center gap-2 mt-0.5">
+                                            <span className="font-bold text-indigo-500 uppercase">{ext || previewModalFile.category || 'DOC'}</span>
+                                            <span>•</span>
+                                            <span>{previewModalFile.size || '3.4 MB'}</span>
+                                            <span>•</span>
+                                            <span>Uploaded by {previewModalFile.uploadedBy || 'Team Member'}</span>
                                         </div>
                                     </div>
-                                </object>
-                            )}
-                        </div>
+                                </div>
 
-                        {/* Modal Footer */}
-                        <div className="px-6 py-3 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between text-xs text-slate-500 shrink-0">
-                            <span className="flex items-center gap-1.5 font-bold text-slate-600 dark:text-slate-300">
-                                <span className="material-symbols-outlined text-[16px] text-emerald-500">verified</span>
-                                MPOnline Enterprise Document Viewer
-                            </span>
-                            <button
-                                onClick={() => setPreviewModalFile(null)}
-                                className="font-bold text-indigo-500 hover:text-indigo-600 cursor-pointer"
-                            >
-                                Close Preview
-                            </button>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    {/* Image Zoom Controls */}
+                                    {isImage && (
+                                        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-1 border border-slate-200 dark:border-slate-700">
+                                            <button
+                                                onClick={() => setPreviewZoom(prev => Math.max(prev - 0.25, 0.5))}
+                                                className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                                                title="Zoom Out"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">remove</span>
+                                            </button>
+                                            <button
+                                                onClick={() => setPreviewZoom(1)}
+                                                className="px-2 py-0.5 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:text-indigo-500"
+                                                title="Reset Zoom"
+                                            >
+                                                {Math.round(previewZoom * 100)}%
+                                            </button>
+                                            <button
+                                                onClick={() => setPreviewZoom(prev => Math.min(prev + 0.25, 3))}
+                                                className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                                                title="Zoom In"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">add</span>
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* PDF View Mode Toggle (PDF Document vs Text Summary) */}
+                                    {isPdf && (
+                                        <div className="hidden sm:flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1 border border-slate-200 dark:border-slate-700">
+                                            <button
+                                                onClick={() => setPreviewTab('viewer')}
+                                                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                                                    previewTab === 'viewer'
+                                                        ? 'bg-indigo-600 text-white shadow-sm'
+                                                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                                }`}
+                                            >
+                                                PDF Viewer
+                                            </button>
+                                            <button
+                                                onClick={() => setPreviewTab('summary')}
+                                                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                                                    previewTab === 'summary'
+                                                        ? 'bg-indigo-600 text-white shadow-sm'
+                                                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                                }`}
+                                            >
+                                                Document Overview
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* Open Full View (Direct in new window) */}
+                                    {displayUrl && (
+                                        <a
+                                            href={displayUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer text-decoration-none shadow-sm"
+                                            title="Open Full Document in New Window"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                                            <span className="hidden sm:inline">Open Full View</span>
+                                        </a>
+                                    )}
+
+                                    {/* Download Document Button */}
+                                    {displayUrl && (
+                                        <a
+                                            href={displayUrl}
+                                            download={previewModalFile.name}
+                                            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer text-decoration-none shadow-md shadow-indigo-600/20"
+                                            title="Download File"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">download</span>
+                                            <span className="hidden sm:inline">Download</span>
+                                        </a>
+                                    )}
+
+                                    {/* Close Button */}
+                                    <button
+                                        onClick={() => setPreviewModalFile(null)}
+                                        className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                                        title="Close Preview (Esc)"
+                                    >
+                                        <span className="material-symbols-outlined text-[20px]">close</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Modal Body */}
+                            <div className="flex-1 bg-slate-100 dark:bg-slate-950 p-2 sm:p-4 md:p-5 relative overflow-hidden flex items-center justify-center">
+                                {isImage ? (
+                                    <div className="w-full h-full flex items-center justify-center overflow-auto p-2">
+                                        <img
+                                            src={displayUrl}
+                                            alt={previewModalFile.name}
+                                            style={{ transform: `scale(${previewZoom})` }}
+                                            className="max-h-full max-w-full object-contain rounded-xl shadow-lg transition-transform duration-150"
+                                        />
+                                    </div>
+                                ) : isVideo ? (
+                                    <div className="w-full max-w-3xl rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-black shadow-2xl">
+                                        <video
+                                            src={displayUrl}
+                                            controls
+                                            autoPlay
+                                            playsInline
+                                            className="w-full max-h-[65vh] rounded-2xl object-contain"
+                                        >
+                                            Your browser does not support HTML5 Video playback.
+                                        </video>
+                                    </div>
+                                ) : isPdf ? (
+                                    previewTab === 'viewer' ? (
+                                        <div className="w-full h-full relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-inner bg-white">
+                                            <iframe
+                                                src={`${displayUrl}#toolbar=1&navpanes=0&view=Fit`}
+                                                title={previewModalFile.name}
+                                                className="w-full h-full border-0 bg-white"
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className="w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 text-left text-slate-800 dark:text-slate-200 max-h-[72vh] overflow-y-auto custom-scrollbar shadow-xl">
+                                            <div className="flex items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-5 mb-6">
+                                                <div className="w-14 h-14 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center font-bold text-2xl shrink-0 border border-red-500/20 shadow-sm">
+                                                    <span className="material-symbols-outlined text-[32px]">picture_as_pdf</span>
+                                                </div>
+                                                <div>
+                                                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400">
+                                                        Official Architecture Document
+                                                    </span>
+                                                    <h4 className="text-xl font-bold text-slate-900 dark:text-white mt-1">System Architecture & Integration Overview</h4>
+                                                    <p className="text-xs text-slate-500 mt-0.5">MPOnline Limited Enterprise Knowledge Platform (Knome)</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-5 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                                                <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 border border-slate-100 dark:border-slate-700/60">
+                                                    <h5 className="font-bold text-slate-900 dark:text-white text-sm mb-2 flex items-center gap-2">
+                                                        <span className="material-symbols-outlined text-[18px] text-indigo-500">layers</span>
+                                                        1. Platform Core Architecture
+                                                    </h5>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                                                        Knome operates on a decoupled modern architecture combining ASP.NET Core 10 on the backend with Microsoft SQL Server, Serilog partitioned audit streaming, and a high-performance React/Vite web application client.
+                                                    </p>
+                                                </div>
+
+                                                <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 border border-slate-100 dark:border-slate-700/60">
+                                                    <h5 className="font-bold text-slate-900 dark:text-white text-sm mb-2 flex items-center gap-2">
+                                                        <span className="material-symbols-outlined text-[18px] text-emerald-500">security</span>
+                                                        2. Security, Isolation & DPDP Governance
+                                                    </h5>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                                                        Built with strict role-based access control (Employee, Community Admin, HR Admin, System Admin), Bcrypt work factor 11 password hashing, JWT HS256 tokens, and automatic PII scrubbing compliant with India's DPDP Act 2023.
+                                                    </p>
+                                                </div>
+
+                                                <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 border border-slate-100 dark:border-slate-700/60">
+                                                    <h5 className="font-bold text-slate-900 dark:text-white text-sm mb-2 flex items-center gap-2">
+                                                        <span className="material-symbols-outlined text-[18px] text-purple-500">groups</span>
+                                                        3. Community Knowledge & File Isolation
+                                                    </h5>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                                                        Communities maintain segregated document repositories with live file uploads, IndexedDB persistence caches, and real-time interaction syncing across all connected departments.
+                                                    </p>
+                                                </div>
+
+                                                <div className="flex items-center gap-3 pt-3">
+                                                    <a
+                                                        href={displayUrl}
+                                                        download={previewModalFile.name}
+                                                        className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center gap-2"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">download</span>
+                                                        Download PDF ({previewModalFile.size})
+                                                    </a>
+                                                    <button
+                                                        onClick={() => setPreviewTab('viewer')}
+                                                        className="px-5 py-2.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs transition-all flex items-center gap-2 cursor-pointer"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">visibility</span>
+                                                        Switch to Full PDF Viewer
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )
+                                ) : isOfficeDoc ? (
+                                    <div className="w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 text-left text-slate-800 dark:text-slate-200 max-h-[72vh] overflow-y-auto custom-scrollbar shadow-2xl">
+                                        <div className="flex items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-5 mb-6">
+                                            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-3xl shrink-0 border shadow-sm ${docTypeBadgeColor}`}>
+                                                <span className="material-symbols-outlined text-[36px]">
+                                                    {isWord ? 'description' : isExcel ? 'table_chart' : 'slideshow'}
+                                                </span>
+                                            </div>
+                                            <div>
+                                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                                    isWord ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400' :
+                                                    isExcel ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400' :
+                                                    'bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400'
+                                                }`}>
+                                                    {isWord ? 'Microsoft Word Document' : isExcel ? 'Excel Spreadsheet' : 'PowerPoint Presentation'}
+                                                </span>
+                                                <h4 className="text-xl font-bold text-slate-900 dark:text-white mt-1">{previewModalFile.name}</h4>
+                                                <p className="text-xs text-slate-500 mt-0.5">{previewModalFile.size} • Uploaded by {previewModalFile.uploadedBy || 'Team Member'}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                                            <h5 className="font-bold text-slate-900 dark:text-white text-base">API Integration Guidelines & Specifications</h5>
+                                            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                                                Comprehensive technical guide detailing REST API endpoints, JWT authentication tokens, ApiResponse standard envelopes, and DPDP compliance standards for MPOnline integration developers.
+                                            </p>
+
+                                            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 space-y-2 text-xs">
+                                                <div className="font-bold text-indigo-500 uppercase tracking-wider text-[11px]">Key Documentation Modules:</div>
+                                                <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 font-mono">
+                                                    <span className="material-symbols-outlined text-[14px] text-blue-500">check_circle</span>
+                                                    <span>1. Authentication & Session Security (<code>/api/v1/auth/login</code>)</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 font-mono">
+                                                    <span className="material-symbols-outlined text-[14px] text-blue-500">check_circle</span>
+                                                    <span>2. Community Management & Role Delegation (<code>/api/v1/communities</code>)</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 font-mono">
+                                                    <span className="material-symbols-outlined text-[14px] text-blue-500">check_circle</span>
+                                                    <span>3. Posts, Media Channels & Interaction Engine (<code>/api/v1/posts</code>)</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 font-mono">
+                                                    <span className="material-symbols-outlined text-[14px] text-blue-500">check_circle</span>
+                                                    <span>4. Global Search, Filter Queries & Audit Logs</span>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex flex-wrap items-center gap-3 pt-3">
+                                                {displayUrl && (
+                                                    <a
+                                                        href={displayUrl}
+                                                        download={previewModalFile.name}
+                                                        className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center gap-2"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">download</span>
+                                                        Download Document ({previewModalFile.size})
+                                                    </a>
+                                                )}
+                                                {displayUrl && (displayUrl.startsWith('http://') || displayUrl.startsWith('https://')) && (
+                                                    <a
+                                                        href={`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(displayUrl)}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="px-5 py-2.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs transition-all flex items-center gap-2"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                                                        Open with Office Online
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : isArchive ? (
+                                    <div className="w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 text-left text-slate-800 dark:text-slate-200 max-h-[72vh] overflow-y-auto custom-scrollbar shadow-2xl">
+                                        <div className="flex items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-5 mb-6">
+                                            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center font-bold text-3xl shrink-0 border border-amber-500/20 shadow-sm">
+                                                <span className="material-symbols-outlined text-[36px]">folder_zip</span>
+                                            </div>
+                                            <div>
+                                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400">
+                                                    Compressed Archive
+                                                </span>
+                                                <h4 className="text-xl font-bold text-slate-900 dark:text-white mt-1">{previewModalFile.name}</h4>
+                                                <p className="text-xs text-slate-500 mt-0.5">{previewModalFile.size} • Uploaded by {previewModalFile.uploadedBy || 'Team Member'}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            <h5 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider text-slate-500">Contained Archive Files (4 files)</h5>
+                                            <div className="space-y-2">
+                                                {[
+                                                    { name: 'src/components/ui/DesignSystem.tsx', size: '42 KB', type: 'TypeScript' },
+                                                    { name: 'src/styles/theme.config.css', size: '18 KB', type: 'CSS' },
+                                                    { name: 'public/assets/logos/knome_brand.svg', size: '120 KB', type: 'SVG' },
+                                                    { name: 'README_SETUP_GUIDE.md', size: '8 KB', type: 'Markdown' }
+                                                ].map((item, idx) => (
+                                                    <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 text-xs">
+                                                        <span className="font-mono text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                                                            <span className="material-symbols-outlined text-[16px] text-amber-500">draft</span>
+                                                            {item.name}
+                                                        </span>
+                                                        <span className="text-slate-500">{item.size} • {item.type}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {displayUrl && (
+                                                <div className="pt-3">
+                                                    <a
+                                                        href={displayUrl}
+                                                        download={previewModalFile.name}
+                                                        className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs shadow-md transition-all inline-flex items-center gap-2"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">download</span>
+                                                        Download Archive ({previewModalFile.size})
+                                                    </a>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 text-left text-slate-800 dark:text-slate-200 max-h-[72vh] overflow-y-auto custom-scrollbar shadow-2xl">
+                                        <div className="flex items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-5 mb-6">
+                                            <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-bold text-3xl shrink-0 border border-indigo-500/20 shadow-sm">
+                                                <span className="material-symbols-outlined text-[36px]">description</span>
+                                            </div>
+                                            <div>
+                                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                                                    {ext ? ext.toUpperCase() : 'Enterprise Asset'}
+                                                </span>
+                                                <h4 className="text-xl font-bold text-slate-900 dark:text-white mt-1">{previewModalFile.name}</h4>
+                                                <p className="text-xs text-slate-500 mt-0.5">{previewModalFile.size} • Uploaded by {previewModalFile.uploadedBy || 'Team Member'}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4 text-xs text-slate-600 dark:text-slate-300">
+                                            <p>This file is stored in the community repository. You can download or view it externally:</p>
+                                            {displayUrl && (
+                                                <div className="flex items-center gap-3 pt-2">
+                                                    <a
+                                                        href={displayUrl}
+                                                        download={previewModalFile.name}
+                                                        className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center gap-2"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">download</span>
+                                                        Download File ({previewModalFile.size})
+                                                    </a>
+                                                    <a
+                                                        href={displayUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="px-5 py-2.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs transition-all flex items-center gap-2"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                                                        Open in New Tab
+                                                    </a>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="px-6 py-3 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between text-xs text-slate-500 shrink-0">
+                                <span className="flex items-center gap-1.5 font-bold text-slate-600 dark:text-slate-300">
+                                    <span className="material-symbols-outlined text-[16px] text-emerald-500">verified</span>
+                                    MPOnline Enterprise Document Viewer
+                                </span>
+                                <div className="flex items-center gap-4">
+                                    {displayUrl && (
+                                        <a
+                                            href={displayUrl}
+                                            download={previewModalFile.name}
+                                            className="font-bold text-slate-600 dark:text-slate-300 hover:text-indigo-500 transition-colors flex items-center gap-1 cursor-pointer"
+                                        >
+                                            <span className="material-symbols-outlined text-[14px]">download</span>
+                                            Download
+                                        </a>
+                                    )}
+                                    <button
+                                        onClick={() => setPreviewModalFile(null)}
+                                        className="font-bold text-indigo-500 hover:text-indigo-600 cursor-pointer"
+                                    >
+                                        Close Preview
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* 1. Admin Protection Warning Modal */}
             {adminProtectionWarning && (
