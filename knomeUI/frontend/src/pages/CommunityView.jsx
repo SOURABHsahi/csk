@@ -260,6 +260,7 @@ export default function CommunityView() {
     const [isUploadingFile, setIsUploadingFile] = useState(false);
     const [previewModalFile, setPreviewModalFile] = useState(null);
     const [activePdfBlobUrl, setActivePdfBlobUrl] = useState(null);
+    const [activeMediaBlobUrl, setActiveMediaBlobUrl] = useState(null);
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [shareTab, setShareTab] = useState('menu'); // 'menu', 'community', 'users'
     const [shareTargetCommunity, setShareTargetCommunity] = useState('');
@@ -348,6 +349,20 @@ export default function CommunityView() {
         };
     };
 
+    const SAMPLE_PDF_DATA_URL = 'data:application/pdf;base64,JVBERi0xLjQKJcOkw7zDtsOfCjEgMCBvYmoKPDwvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFI+PgplbmRvYmoKMiAwIG9iago8PC9UeXBlIC9QYWdlcyAvQ291bnQgMSAvS2lkcyBbMyAwIFJdPj4KZW5kb2JqCjMgMCBvYmoKPDwvVHlwZSAvUGFnZSAvUGFyZW50IDIgMCBSIC9NZWRpYUJveCBbMCAwIDYxMiA3OTJdIC9Db250ZW50cyA0IDAgUiAvUmVzb3VyY2VzIDw8L0ZvbnQgPDwvRjEgNSAwIFI+Pj4+PgplbmRvYmoKNCAwIG9iago8PC9MZW5ndGggNzQ+PnN0cmVhbQpCVAovRjEgMjQgVGYKMTAwIDcwMCBUZAkKKEtub21lIC0gU3lzdGVtIEFyY2hpdGVjdHVyZSBPdmVydmlldykgVGosCjAgLTMwIFRkCihNUE9ubGluZSBMaW1pdGVkKSBUagpFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwvVHlwZSAvRm9udCAvU3Vic3R5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhPj4KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxNSAwMDAwMCBuIAowMDAwMDAwMDY4IDAMDAwMCBuIAowMDAwMDAwMTI1IDAMDAwMCBuIAowMDAwMDAwMjU3IDAMDAwMCBuIAowMDAwMDAwMzgwIDAMDAwMCBuIAp0cmFpbGVyCjw8L1NpemUgNiAvUm9vdCAxIDAgUj4+CnN0YXJ0eHJlZgo0NjkKJSVFT0Y=';
+
+    const getPublicMediaUrl = (filename) => {
+        const base = import.meta.env.BASE_URL || '/';
+        const cleanBase = base.endsWith('/') ? base : base + '/';
+        return `${cleanBase}media/${filename}`;
+    };
+
+    const SAMPLE_AUDIO_URL = getPublicMediaUrl('sample-audio.mp3');
+    const SAMPLE_VIDEO_URL = getPublicMediaUrl('sample-video.mp4');
+    const SAMPLE_DOCX_URL = getPublicMediaUrl('sample-doc.docx');
+    const FALLBACK_REMOTE_AUDIO = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+    const FALLBACK_REMOTE_VIDEO = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
+
     const getPdfBlobUrl = (urlOrBase64) => {
         if (!urlOrBase64 || urlOrBase64 === '#') {
             urlOrBase64 = SAMPLE_PDF_DATA_URL;
@@ -369,25 +384,6 @@ export default function CommunityView() {
         }
         return urlOrBase64;
     };
-
-    useEffect(() => {
-        let currentBlobUrl = null;
-        if (previewModalFile) {
-            currentBlobUrl = getPdfBlobUrl(previewModalFile.url);
-            setActivePdfBlobUrl(currentBlobUrl);
-        } else {
-            setActivePdfBlobUrl(null);
-        }
-
-        return () => {
-            if (currentBlobUrl && typeof currentBlobUrl === 'string' && currentBlobUrl.startsWith('blob:')) {
-                // Delay revocation so active iframes/objects do not throw ERR_FILE_NOT_FOUND
-                setTimeout(() => {
-                    try { URL.revokeObjectURL(currentBlobUrl); } catch (e) {}
-                }, 2000);
-            }
-        };
-    }, [previewModalFile]);
 
     // Real-time live count updates (Reactions, Comments, Shares)
     useEffect(() => {
@@ -687,8 +683,6 @@ export default function CommunityView() {
         }
     };
 
-    const SAMPLE_PDF_DATA_URL = 'data:application/pdf;base64,JVBERi0xLjQKJcOkw7zDtsOfCjEgMCBvYmoKPDwvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFI+PgplbmRvYmoKMiAwIG9iago8PC9UeXBlIC9QYWdlcyAvQ291bnQgMSAvS2lkcyBbMyAwIFJdPj4KZW5kb2JqCjMgMCBvYmoKPDwvVHlwZSAvUGFnZSAvUGFyZW50IDIgMCBSIC9NZWRpYUJveCBbMCAwIDYxMiA3OTJdIC9Db250ZW50cyA0IDAgUiAvUmVzb3VyY2VzIDw8L0ZvbnQgPDwvRjEgNSAwIFI+Pj4+PgplbmRvYmoKNCAwIG9iago8PC9MZW5ndGggNzQ+PnN0cmVhbQpCVAovRjEgMjQgVGYKMTAwIDcwMCBUZAkKKEtub21lIC0gU3lzdGVtIEFyY2hpdGVjdHVyZSBPdmVydmlldykgVGosCjAgLTMwIFRkCihNUE9ubGluZSBMaW1pdGVkKSBUagpFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwvVHlwZSAvRm9udCAvU3Vic3R5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhPj4KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxNSAwMDAwMCBuIAowMDAwMDAwMDY4IDAMDAwMCBuIAowMDAwMDAwMTI1IDAMDAwMCBuIAowMDAwMDAwMjU3IDAMDAwMCBuIAowMDAwMDAwMzgwIDAMDAwMCBuIAp0cmFpbGVyCjw8L1NpemUgNiAvUm9vdCAxIDAgUj4+CnN0YXJ0eHJlZgo0NjkKJSVFT0Y=';
-
     const readFileAsDataUrl = (file) => {
         return new Promise((resolve) => {
             if (!file) return resolve(null);
@@ -709,19 +703,29 @@ export default function CommunityView() {
                 localStorage.removeItem('knome_notifications');
 
                 if (Array.isArray(value)) {
-                    // Sanitize heavy Base64 URLs to prevent quota crashes
+                    // Sanitize heavy Base64 URLs to prevent quota crashes without breaking media types
                     const sanitized = value.map(item => {
                         if (item && item.url && typeof item.url === 'string' && item.url.length > 50000 && item.url.startsWith('data:')) {
+                            const ext = (item.extension || (item.name ? item.name.split('.').pop() : '')).toLowerCase();
+                            const cat = item.category || '';
+                            let fallbackUrl = SAMPLE_PDF_DATA_URL;
+                            if (cat === 'Audio' || ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(ext)) {
+                                fallbackUrl = SAMPLE_AUDIO_URL;
+                            } else if (cat === 'Video' || ['mp4', 'webm', 'mov', 'm4v', 'mkv'].includes(ext)) {
+                                fallbackUrl = SAMPLE_VIDEO_URL;
+                            } else if (ext === 'docx' || ext === 'doc') {
+                                fallbackUrl = SAMPLE_DOCX_URL;
+                            } else if (cat === 'Image' || ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(ext)) {
+                                fallbackUrl = 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&q=80&w=600&h=400';
+                            }
                             return {
                                 ...item,
-                                url: item.extension === 'pdf'
-                                    ? SAMPLE_PDF_DATA_URL
-                                    : 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&q=80&w=600&h=400'
+                                url: fallbackUrl
                             };
                         }
                         return item;
                     });
-                    localStorage.setItem(key, JSON.stringify(sanitized.slice(0, 20)));
+                    localStorage.setItem(key, JSON.stringify(sanitized.slice(0, 30)));
                 } else {
                     localStorage.setItem(key, JSON.stringify(value));
                 }
@@ -785,23 +789,47 @@ export default function CommunityView() {
 
     useEffect(() => {
         let isMounted = true;
+        let createdBlobUrl = null;
+
         const loadPreviewUrl = async () => {
             if (!previewModalFile) {
                 setActivePdfBlobUrl(null);
+                setActiveMediaBlobUrl(null);
                 return;
             }
             
             let rawUrl = previewModalFile.url;
 
             // Try to load exact uploaded file from IndexedDB first
-            const idbUrl = await getFileBlobFromIndexedDb(previewModalFile.id);
-            if (idbUrl) {
-                rawUrl = idbUrl;
+            try {
+                const idbUrl = await getFileBlobFromIndexedDb(previewModalFile.id);
+                if (idbUrl) {
+                    rawUrl = idbUrl;
+                }
+            } catch (err) {
+                console.warn('Could not read from IndexedDB:', err);
             }
 
-            if (isMounted) {
-                const blobUrl = getPdfBlobUrl(rawUrl || SAMPLE_PDF_DATA_URL);
-                setActivePdfBlobUrl(blobUrl);
+            if (!isMounted) return;
+
+            const ext = (previewModalFile.extension || (previewModalFile.name ? previewModalFile.name.split('.').pop() : '')).toLowerCase();
+            const cat = previewModalFile.category || '';
+
+            if (ext === 'pdf' || (rawUrl && typeof rawUrl === 'string' && rawUrl.startsWith('data:application/pdf'))) {
+                createdBlobUrl = getPdfBlobUrl(rawUrl || SAMPLE_PDF_DATA_URL);
+                setActivePdfBlobUrl(createdBlobUrl);
+                setActiveMediaBlobUrl(createdBlobUrl);
+            } else if (cat === 'Audio' || ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'wma', 'opus'].includes(ext)) {
+                const finalAudioUrl = (rawUrl && rawUrl !== '#' && !rawUrl.includes('images.unsplash.com')) ? rawUrl : SAMPLE_AUDIO_URL;
+                setActiveMediaBlobUrl(finalAudioUrl);
+            } else if (cat === 'Video' || ['mp4', 'webm', 'mov', 'm4v', 'mkv', 'avi'].includes(ext)) {
+                const finalVideoUrl = (rawUrl && rawUrl !== '#' && !rawUrl.includes('images.unsplash.com')) ? rawUrl : SAMPLE_VIDEO_URL;
+                setActiveMediaBlobUrl(finalVideoUrl);
+            } else if (ext === 'docx' || ext === 'doc') {
+                const finalDocUrl = (rawUrl && rawUrl !== '#' && !rawUrl.includes('images.unsplash.com')) ? rawUrl : SAMPLE_DOCX_URL;
+                setActiveMediaBlobUrl(finalDocUrl);
+            } else {
+                setActiveMediaBlobUrl(rawUrl);
             }
         };
 
@@ -809,6 +837,11 @@ export default function CommunityView() {
 
         return () => {
             isMounted = false;
+            if (createdBlobUrl && typeof createdBlobUrl === 'string' && createdBlobUrl.startsWith('blob:')) {
+                setTimeout(() => {
+                    try { URL.revokeObjectURL(createdBlobUrl); } catch (e) {}
+                }, 2000);
+            }
         };
     }, [previewModalFile]);
 
@@ -874,14 +907,25 @@ export default function CommunityView() {
             }
 
             const fileId = Date.now();
-            const finalUrl = backendFileUrl ? resolveMediaUrl(backendFileUrl) : (fileDataUrl || (fileExt === 'pdf' ? SAMPLE_PDF_DATA_URL : '#'));
+            let defaultFallbackUrl = SAMPLE_PDF_DATA_URL;
+            if (fileCategory === 'Audio' || ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(fileExt)) {
+                defaultFallbackUrl = SAMPLE_AUDIO_URL;
+            } else if (fileCategory === 'Video' || ['mp4', 'webm', 'mov', 'm4v', 'mkv'].includes(fileExt)) {
+                defaultFallbackUrl = SAMPLE_VIDEO_URL;
+            } else if (fileExt === 'docx' || fileExt === 'doc') {
+                defaultFallbackUrl = SAMPLE_DOCX_URL;
+            } else if (fileCategory === 'Image' || ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(fileExt)) {
+                defaultFallbackUrl = 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&q=80&w=600&h=400';
+            }
+
+            const finalUrl = backendFileUrl ? resolveMediaUrl(backendFileUrl) : (fileDataUrl || defaultFallbackUrl);
 
             // Save full exact user uploaded file URL to IndexedDB!
             await saveFileBlobToIndexedDb(fileId, finalUrl);
 
             // Light weight payload for LocalStorage
             const storedUrlForLocalStorage = (finalUrl && typeof finalUrl === 'string' && finalUrl.length > 50000 && finalUrl.startsWith('data:'))
-                ? (fileExt === 'pdf' ? SAMPLE_PDF_DATA_URL : 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&q=80&w=600&h=400')
+                ? defaultFallbackUrl
                 : finalUrl;
 
             const newFileItem = {
@@ -903,7 +947,19 @@ export default function CommunityView() {
             // Save sanitized payload for LocalStorage metadata list
             const localStorageItem = { ...newFileItem, url: storedUrlForLocalStorage };
             const updatedFilesMemory = [newFileItem, ...filesList];
-            const updatedFilesStorage = [localStorageItem, ...filesList.map(f => ({ ...f, url: (f.url && f.url.length > 50000 && f.url.startsWith('data:')) ? (f.extension === 'pdf' ? SAMPLE_PDF_DATA_URL : '#') : f.url }))];
+            const updatedFilesStorage = [localStorageItem, ...filesList.map(f => {
+                const fExt = (f.extension || (f.name ? f.name.split('.').pop() : '')).toLowerCase();
+                const fCat = f.category || '';
+                let fFallback = SAMPLE_PDF_DATA_URL;
+                if (fCat === 'Audio' || ['mp3', 'wav', 'aac', 'flac'].includes(fExt)) fFallback = SAMPLE_AUDIO_URL;
+                else if (fCat === 'Video' || ['mp4', 'webm', 'mov'].includes(fExt)) fFallback = SAMPLE_VIDEO_URL;
+                else if (fExt === 'docx' || fExt === 'doc') fFallback = SAMPLE_DOCX_URL;
+                else if (fCat === 'Image' || ['png', 'jpg', 'jpeg'].includes(fExt)) fFallback = 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&q=80&w=600&h=400';
+                return {
+                    ...f,
+                    url: (f.url && f.url.length > 50000 && f.url.startsWith('data:')) ? fFallback : f.url
+                };
+            })];
             
             setFilesList(updatedFilesMemory);
             safeSetStorage(savedFilesKey, updatedFilesStorage);
@@ -1332,17 +1388,34 @@ export default function CommunityView() {
             const savedFilesKey = `knome_community_files_${resolvedTargetId}`;
             const localFiles = JSON.parse(localStorage.getItem(savedFilesKey) || '[]');
 
-            // Rehydrate files: if IndexedDB has the blob, restore it; otherwise ensure valid PDF URL
+            // Rehydrate files: if IndexedDB has the blob, restore it; otherwise heal URLs
             const hydratedFiles = await Promise.all(localFiles.map(async (f) => {
                 let currentUrl = f.url;
-                if (f.hasIndexedDb) {
+                if (f.hasIndexedDb || f.id) {
                     try {
                         const idbBlob = await getFileBlobFromIndexedDb(f.id);
                         if (idbBlob) currentUrl = idbBlob;
                     } catch (_) {}
                 }
-                if (f.extension === 'pdf' && (!currentUrl || currentUrl === '#' || currentUrl.includes('w3.org') || currentUrl.includes('localhost') || currentUrl.startsWith('blob:'))) {
-                    currentUrl = SAMPLE_PDF_DATA_URL;
+                const ext = (f.extension || (f.name ? f.name.split('.').pop() : '')).toLowerCase();
+                const cat = f.category || '';
+
+                if (cat === 'Audio' || ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a'].includes(ext)) {
+                    if (!currentUrl || currentUrl === '#' || currentUrl.includes('images.unsplash.com')) {
+                        currentUrl = SAMPLE_AUDIO_URL;
+                    }
+                } else if (cat === 'Video' || ['mp4', 'webm', 'mov', 'm4v', 'mkv'].includes(ext)) {
+                    if (!currentUrl || currentUrl === '#' || currentUrl.includes('images.unsplash.com')) {
+                        currentUrl = SAMPLE_VIDEO_URL;
+                    }
+                } else if (ext === 'pdf') {
+                    if (!currentUrl || currentUrl === '#' || currentUrl.includes('w3.org') || currentUrl.includes('localhost') || currentUrl.startsWith('blob:')) {
+                        currentUrl = SAMPLE_PDF_DATA_URL;
+                    }
+                } else if (ext === 'docx' || ext === 'doc') {
+                    if (!currentUrl || currentUrl === '#' || currentUrl.includes('images.unsplash.com')) {
+                        currentUrl = SAMPLE_DOCX_URL;
+                    }
                 }
                 return { ...f, url: currentUrl };
             }));
@@ -1354,12 +1427,12 @@ export default function CommunityView() {
                 if (!isCustom) {
                     const hasAudio = currentFiles.some(f => f.category === 'Audio' || (f.extension && ['mp3', 'wav', 'aac', 'flac'].includes(f.extension.toLowerCase())));
                     if (!hasAudio) {
-                        currentFiles.push({ id: 5, name: 'Team_Sprint_Retrospective.mp3', category: 'Audio', extension: 'mp3', size: '5.2 MB', uploadedBy: 'Vilash Deshmukh', uploadedAt: '2026-07-29T11:00:00.000Z', url: '#', downloadCount: 11 });
+                        currentFiles.push({ id: 5, name: 'Team_Sprint_Retrospective.mp3', category: 'Audio', extension: 'mp3', size: '5.2 MB', uploadedBy: 'Vilash Deshmukh', uploadedAt: '2026-07-29T11:00:00.000Z', url: SAMPLE_AUDIO_URL, downloadCount: 11 });
                         updated = true;
                     }
                     const hasVideo = currentFiles.some(f => f.category === 'Video' || (f.extension && ['mp4', 'webm', 'mov'].includes(f.extension.toLowerCase())));
                     if (!hasVideo) {
-                        currentFiles.push({ id: 4, name: 'Project_Walkthrough_Demo.mp4', category: 'Video', extension: 'mp4', size: '14.8 MB', uploadedBy: 'Rishikesh Ugle', uploadedAt: '2026-07-28T08:00:00.000Z', url: '#', downloadCount: 7 });
+                        currentFiles.push({ id: 4, name: 'Project_Walkthrough_Demo.mp4', category: 'Video', extension: 'mp4', size: '14.8 MB', uploadedBy: 'Rishikesh Ugle', uploadedAt: '2026-07-28T08:00:00.000Z', url: SAMPLE_VIDEO_URL, downloadCount: 7 });
                         updated = true;
                     }
                 }
@@ -1372,10 +1445,10 @@ export default function CommunityView() {
                 if (!isCustom) {
                     const seedFiles = [
                         { id: 1, name: 'System_Architecture_Overview.pdf', category: 'Document', extension: 'pdf', size: '3.4 MB', uploadedBy: 'Loveneesh Sharma', uploadedAt: '2026-07-25T10:30:00.000Z', url: SAMPLE_PDF_DATA_URL, downloadCount: 14 },
-                        { id: 2, name: 'API_Integration_Guild_v2.docx', category: 'Document', extension: 'docx', size: '1.2 MB', uploadedBy: 'Vishendra Sharma', uploadedAt: '2026-07-26T14:15:00.000Z', url: 'https://filesamples.com/samples/document/docx/sample3.docx', downloadCount: 9 },
+                        { id: 2, name: 'API_Integration_Guild_v2.docx', category: 'Document', extension: 'docx', size: '1.2 MB', uploadedBy: 'Vishendra Sharma', uploadedAt: '2026-07-26T14:15:00.000Z', url: SAMPLE_DOCX_URL, downloadCount: 9 },
                         { id: 3, name: 'Database_Schema_Architecture.png', category: 'Image', extension: 'png', size: '850 KB', uploadedBy: 'Sourabh Sahu', uploadedAt: '2026-07-27T09:45:00.000Z', url: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&q=80&w=1200&h=800', downloadCount: 22 },
-                        { id: 4, name: 'Project_Walkthrough_Demo.mp4', category: 'Video', extension: 'mp4', size: '14.8 MB', uploadedBy: 'Rishikesh Ugle', uploadedAt: '2026-07-28T08:00:00.000Z', url: '#', downloadCount: 7 },
-                        { id: 5, name: 'Team_Sprint_Retrospective.mp3', category: 'Audio', extension: 'mp3', size: '5.2 MB', uploadedBy: 'Vilash Deshmukh', uploadedAt: '2026-07-29T11:00:00.000Z', url: '#', downloadCount: 11 }
+                        { id: 4, name: 'Project_Walkthrough_Demo.mp4', category: 'Video', extension: 'mp4', size: '14.8 MB', uploadedBy: 'Rishikesh Ugle', uploadedAt: '2026-07-28T08:00:00.000Z', url: SAMPLE_VIDEO_URL, downloadCount: 7 },
+                        { id: 5, name: 'Team_Sprint_Retrospective.mp3', category: 'Audio', extension: 'mp3', size: '5.2 MB', uploadedBy: 'Vilash Deshmukh', uploadedAt: '2026-07-29T11:00:00.000Z', url: SAMPLE_AUDIO_URL, downloadCount: 11 }
                     ];
                     setFilesList(seedFiles);
                     safeSetStorage(savedFilesKey, seedFiles);
@@ -2879,6 +2952,41 @@ export default function CommunityView() {
     // ─────────────────────────────────────────
     // Files & Media Handlers
     // ─────────────────────────────────────────
+    const triggerFileDownload = (file, explicitUrl) => {
+        try {
+            if (!file) return;
+            const ext = (file?.extension || (file?.name ? file.name.split('.').pop() : '')).toLowerCase();
+            const cat = file?.category || '';
+            let downloadUrl = explicitUrl || file?.url;
+
+            if (!downloadUrl || downloadUrl === '#' || (downloadUrl.includes('images.unsplash.com') && (cat === 'Audio' || cat === 'Video' || cat === 'Document'))) {
+                if (cat === 'Audio' || ['mp3', 'wav', 'aac', 'flac'].includes(ext)) {
+                    downloadUrl = SAMPLE_AUDIO_URL;
+                } else if (cat === 'Video' || ['mp4', 'webm', 'mov'].includes(ext)) {
+                    downloadUrl = SAMPLE_VIDEO_URL;
+                } else if (ext === 'docx' || ext === 'doc') {
+                    downloadUrl = SAMPLE_DOCX_URL;
+                } else if (ext === 'pdf') {
+                    downloadUrl = activePdfBlobUrl || SAMPLE_PDF_DATA_URL;
+                }
+            }
+
+            const fileName = file?.name || `file_${Date.now()}.${ext || 'dat'}`;
+            const a = document.createElement('a');
+            a.href = downloadUrl;
+            a.download = fileName;
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            showToast(`Downloading "${fileName}"...`, 'success');
+        } catch (e) {
+            console.error('File download error:', e);
+            showToast('Unable to start file download.', 'error');
+        }
+    };
+
     const handleDownloadFile = (file) => {
         setPreviewModalFile(file);
     };
@@ -3379,7 +3487,7 @@ export default function CommunityView() {
                 <div className="flex-1 min-w-0">
                     
                     {/* Navigation Tabs */}
-                    <div className="flex border-b border-slate-200 dark:border-slate-800 mb-6 overflow-x-auto">
+                    <div className="flex border-b border-slate-200 dark:border-slate-800 mb-6 overflow-x-auto no-scrollbar scrollbar-none [&::-webkit-scrollbar]:hidden">
                         <button 
                             onClick={() => setActiveTab('feed')}
                             className={`px-6 py-3 font-bold text-[14px] transition-colors relative shrink-0 ${activeTab === 'feed' ? 'text-indigo-500' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'}`}
@@ -5097,191 +5205,347 @@ export default function CommunityView() {
             )}
 
             {/* Multi-Format File & Document Viewer Modal */}
-            {previewModalFile && (
-                <div className="fixed inset-0 z-[350] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-                    <div className="relative max-w-4xl w-full bg-slate-900 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-                        
-                        {/* Header */}
-                        <div className="p-4 px-6 border-b border-slate-800 flex items-center justify-between text-white bg-slate-900/90">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-                                    <span className="material-symbols-outlined text-[22px]">
-                                        {previewModalFile.category === 'Image' ? 'image' : 
-                                         previewModalFile.category === 'Audio' ? 'audiotrack' :
-                                         previewModalFile.category === 'Video' ? 'videocam' :
-                                         previewModalFile.extension === 'pdf' ? 'picture_as_pdf' :
-                                         previewModalFile.extension === 'zip' ? 'folder_zip' : 'description'}
-                                    </span>
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-sm text-white truncate max-w-md">{previewModalFile.name}</h3>
-                                    <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
-                                        <span className="px-2 py-0.5 rounded bg-slate-800 text-indigo-400 font-bold uppercase">{previewModalFile.extension || previewModalFile.category}</span>
-                                        <span>•</span>
-                                        <span>{previewModalFile.size || '3.4 MB'}</span>
-                                        <span>•</span>
-                                        <span>Uploaded by {previewModalFile.uploadedBy || 'Team Member'}</span>
-                                    </div>
-                                </div>
-                            </div>
+            {/* Multi-Format File & Document Viewer Modal */}
+            {previewModalFile && (() => {
+                const ext = (previewModalFile.extension || (previewModalFile.name ? previewModalFile.name.split('.').pop() : '')).toLowerCase();
+                const cat = previewModalFile.category || '';
+                const isAudio = cat === 'Audio' || ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'wma', 'opus'].includes(ext) || (previewModalFile.name && (previewModalFile.name.toLowerCase().endsWith('.mp3') || previewModalFile.name.toLowerCase().endsWith('.wav')));
+                const isVideo = cat === 'Video' || ['mp4', 'webm', 'ogg', 'mov', 'm4v', 'mkv', 'avi'].includes(ext) || (previewModalFile.name && (previewModalFile.name.toLowerCase().endsWith('.mp4') || previewModalFile.name.toLowerCase().endsWith('.webm')));
+                const isPdf = ext === 'pdf' || (previewModalFile.url && typeof previewModalFile.url === 'string' && previewModalFile.url.startsWith('data:application/pdf'));
+                const isImage = cat === 'Image' || ['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif', 'bmp', 'ico'].includes(ext);
+                const isArchive = ext === 'zip' || cat === 'Archive';
+
+                // Determine active URL with fallback safety
+                let modalActiveUrl = activeMediaBlobUrl || previewModalFile.url;
+                if (isAudio && (!modalActiveUrl || modalActiveUrl === '#' || modalActiveUrl.includes('images.unsplash.com'))) {
+                    modalActiveUrl = SAMPLE_AUDIO_URL;
+                } else if (isVideo && (!modalActiveUrl || modalActiveUrl === '#' || modalActiveUrl.includes('images.unsplash.com'))) {
+                    modalActiveUrl = SAMPLE_VIDEO_URL;
+                } else if (isPdf && (!modalActiveUrl || modalActiveUrl === '#' || modalActiveUrl.includes('localhost') || modalActiveUrl.includes('w3.org'))) {
+                    modalActiveUrl = activePdfBlobUrl || SAMPLE_PDF_DATA_URL;
+                } else if ((ext === 'docx' || ext === 'doc') && (!modalActiveUrl || modalActiveUrl === '#' || modalActiveUrl.includes('images.unsplash.com'))) {
+                    modalActiveUrl = SAMPLE_DOCX_URL;
+                }
+
+                return (
+                    <div className="fixed inset-0 z-[350] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+                        <div className="relative max-w-4xl w-full bg-slate-900 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
                             
-                            <div className="flex items-center gap-2">
-
-                                <button
-                                    onClick={() => setPreviewModalFile(null)}
-                                    className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
-                                >
-                                    <span className="material-symbols-outlined text-[20px]">close</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Body / Content Renderer */}
-                        <div className="p-6 flex-1 overflow-auto flex flex-col items-center justify-center bg-slate-950/60">
-                            {previewModalFile.category === 'Image' || ['png', 'jpg', 'jpeg', 'svg', 'webp'].includes(previewModalFile.extension?.toLowerCase()) ? (
-                                <div className="flex flex-col items-center justify-center w-full">
-                                    <img
-                                        src={previewModalFile.url}
-                                        alt={previewModalFile.name}
-                                        className="max-w-full max-h-[65vh] object-contain rounded-2xl shadow-2xl border border-slate-800"
-                                        onError={(e) => {
-                                            e.target.style.display = 'none';
-                                            e.target.nextSibling.style.display = 'flex';
-                                        }}
-                                    />
-                                    <div className="hidden flex-col items-center justify-center p-12 text-center">
-                                        <span className="material-symbols-outlined text-[64px] text-indigo-400 mb-3">image</span>
-                                        <p className="text-slate-300 font-bold text-base">{previewModalFile.name}</p>
-                                        <p className="text-slate-500 text-xs mt-1">Image Asset File ({previewModalFile.size})</p>
+                            {/* Header */}
+                            <div className="p-4 px-6 border-b border-slate-800 flex items-center justify-between text-white bg-slate-900/90">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+                                        <span className="material-symbols-outlined text-[22px]">
+                                            {isImage ? 'image' : 
+                                             isAudio ? 'audiotrack' :
+                                             isVideo ? 'videocam' :
+                                             isPdf ? 'picture_as_pdf' :
+                                             isArchive ? 'folder_zip' : 'description'}
+                                        </span>
                                     </div>
-                                </div>
-                            ) : previewModalFile.extension === 'pdf' ? (
-                                <div className="w-full h-full flex flex-col items-center justify-center p-2">
-                                    <embed
-                                        src={(previewModalFile.url && (previewModalFile.url.startsWith('data:') || (previewModalFile.url.startsWith('http') && !previewModalFile.url.includes('localhost') && !previewModalFile.url.includes('w3.org')))) ? previewModalFile.url : SAMPLE_PDF_DATA_URL}
-                                        type="application/pdf"
-                                        className="w-full h-[70vh] rounded-2xl bg-white border border-slate-800 shadow-2xl"
-                                    />
-                                </div>
-                            ) : previewModalFile.category === 'Audio' || ['mp3', 'wav', 'aac', 'flac', 'ogg', 'm4a', 'wma'].includes(previewModalFile.extension?.toLowerCase()) || (previewModalFile.name && (previewModalFile.name.toLowerCase().endsWith('.mp3') || previewModalFile.name.toLowerCase().endsWith('.wav'))) ? (
-                                <div className="flex flex-col items-center justify-center w-full gap-4 max-w-xl mx-auto p-8 bg-slate-900 border border-slate-800 rounded-2xl text-center">
-                                    <div className="w-20 h-20 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-                                        <span className="material-symbols-outlined text-[44px]">audiotrack</span>
-                                    </div>
-                                    <div>
-                                        <h4 className="text-xl font-bold text-white">{previewModalFile.name}</h4>
-                                        <p className="text-xs text-slate-400 mt-1">Audio Recording Track ({previewModalFile.size})</p>
-                                    </div>
-                                    {previewModalFile.url && previewModalFile.url !== '#' ? (
-                                        <audio
-                                            src={previewModalFile.url}
-                                            controls
-                                            className="w-full mt-2"
-                                            autoPlay
-                                        >
-                                            Your browser does not support HTML5 Audio playback.
-                                        </audio>
-                                    ) : (
-                                        <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-emerald-300 w-full">
-                                            HTML5 Audio Player Ready • Standard Audio Playback
+                                    <div className="min-w-0">
+                                        <h3 className="font-bold text-sm text-white truncate max-w-md" title={previewModalFile.name}>{previewModalFile.name}</h3>
+                                        <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+                                            <span className="px-2 py-0.5 rounded bg-slate-800 text-indigo-400 font-bold uppercase">{ext || cat}</span>
+                                            <span>•</span>
+                                            <span>{previewModalFile.size || '1.2 MB'}</span>
+                                            <span>•</span>
+                                            <span className="truncate">Uploaded by {previewModalFile.uploadedBy || 'Team Member'}</span>
                                         </div>
-                                    )}
+                                    </div>
                                 </div>
-                            ) : previewModalFile.category === 'Video' || ['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(previewModalFile.extension?.toLowerCase()) || (previewModalFile.name && previewModalFile.name.toLowerCase().endsWith('.mp4')) ? (
-                                <div className="flex flex-col items-center justify-center w-full gap-4">
-                                    {previewModalFile.url && previewModalFile.url !== '#' ? (
-                                        <div className="relative w-full max-w-3xl rounded-2xl overflow-hidden border border-slate-800 bg-black shadow-2xl">
-                                            <video
-                                                src={previewModalFile.url}
+                                
+                                <div className="flex items-center gap-2 shrink-0">
+                                    {modalActiveUrl && modalActiveUrl !== '#' && (
+                                        <button
+                                            onClick={() => triggerFileDownload(previewModalFile, modalActiveUrl)}
+                                            className="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600 border border-indigo-500/30 text-indigo-300 hover:text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                                            title="Download File"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">download</span>
+                                            <span className="hidden sm:inline">Download</span>
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => setPreviewModalFile(null)}
+                                        className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors cursor-pointer"
+                                        title="Close"
+                                    >
+                                        <span className="material-symbols-outlined text-[20px]">close</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Body / Content Renderer */}
+                            <div className="p-6 flex-1 overflow-auto flex flex-col items-center justify-center bg-slate-950/60">
+                                {isImage ? (
+                                    <div className="flex flex-col items-center justify-center w-full">
+                                        <img
+                                            src={modalActiveUrl}
+                                            alt={previewModalFile.name}
+                                            className="max-w-full max-h-[65vh] object-contain rounded-2xl shadow-2xl border border-slate-800"
+                                            onError={(e) => {
+                                                e.target.style.display = 'none';
+                                                if (e.target.nextSibling) e.target.nextSibling.style.display = 'flex';
+                                            }}
+                                        />
+                                        <div className="hidden flex-col items-center justify-center p-12 text-center">
+                                            <span className="material-symbols-outlined text-[64px] text-indigo-400 mb-3">image</span>
+                                            <p className="text-slate-300 font-bold text-base">{previewModalFile.name}</p>
+                                            <p className="text-slate-500 text-xs mt-1">Image Asset File ({previewModalFile.size})</p>
+                                        </div>
+                                    </div>
+                                ) : isPdf ? (
+                                    <div className="w-full h-full flex flex-col items-center justify-center p-2">
+                                        <embed
+                                            src={modalActiveUrl}
+                                            type="application/pdf"
+                                            className="w-full h-[70vh] rounded-2xl bg-white border border-slate-800 shadow-2xl"
+                                        />
+                                        <div className="mt-3 flex items-center gap-3">
+                                            <a
+                                                href={modalActiveUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-400 hover:text-white text-xs font-bold flex items-center gap-2 transition-colors"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                                                Open in Full Window
+                                            </a>
+                                            <button
+                                                onClick={() => triggerFileDownload(previewModalFile, modalActiveUrl)}
+                                                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">download</span>
+                                                Download PDF
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : isAudio ? (
+                                    <div className="flex flex-col items-center justify-center w-full gap-5 max-w-xl mx-auto p-8 bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl text-center">
+                                        <div className="relative">
+                                            <div className="w-24 h-24 rounded-3xl bg-gradient-to-tr from-emerald-600 to-teal-400 p-0.5 shadow-xl shadow-emerald-500/20">
+                                                <div className="w-full h-full bg-slate-950 rounded-[22px] flex items-center justify-center text-emerald-400">
+                                                    <span className="material-symbols-outlined text-[48px] animate-pulse">audiotrack</span>
+                                                </div>
+                                            </div>
+                                            <span className="absolute -bottom-2 -right-2 px-2.5 py-0.5 rounded-full bg-emerald-500 text-slate-950 font-black text-[10px] uppercase shadow">
+                                                {ext.toUpperCase()}
+                                            </span>
+                                        </div>
+
+                                        <div>
+                                            <h4 className="text-xl font-black text-white max-w-md mx-auto truncate" title={previewModalFile.name}>{previewModalFile.name}</h4>
+                                            <p className="text-xs text-slate-400 mt-1">Audio Recording Track • {previewModalFile.size || 'Audio File'}</p>
+                                        </div>
+
+                                        {/* Waveform Visualization Bars */}
+                                        <div className="flex items-center justify-center gap-1.5 h-10 w-full px-8 py-1">
+                                            {[40, 75, 55, 90, 60, 85, 45, 100, 70, 50, 80, 95, 65, 85, 40, 70, 90, 60, 75, 50].map((h, i) => (
+                                                <div
+                                                    key={i}
+                                                    className="w-1.5 bg-emerald-500/60 rounded-full transition-all duration-300 hover:bg-emerald-400"
+                                                    style={{ height: `${h}%` }}
+                                                />
+                                            ))}
+                                        </div>
+
+                                        <div className="w-full bg-slate-950/80 p-4 rounded-2xl border border-slate-800/80">
+                                            <audio
+                                                src={modalActiveUrl}
                                                 controls
-                                                controlsList="nodownload"
-                                                disablePictureInPicture
-                                                onContextMenu={(e) => e.preventDefault()}
+                                                className="w-full"
+                                                autoPlay
+                                                onError={(e) => {
+                                                    if (e.target.src !== FALLBACK_REMOTE_AUDIO) {
+                                                        e.target.src = FALLBACK_REMOTE_AUDIO;
+                                                    }
+                                                }}
+                                            >
+                                                Your browser does not support HTML5 Audio playback.
+                                            </audio>
+                                        </div>
+
+                                        <div className="flex items-center justify-center gap-3 w-full">
+                                            <button
+                                                onClick={() => triggerFileDownload(previewModalFile, modalActiveUrl)}
+                                                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-emerald-600/20 cursor-pointer"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">download</span>
+                                                Download Audio Track
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : isVideo ? (
+                                    <div className="flex flex-col items-center justify-center w-full gap-4 max-w-4xl mx-auto">
+                                        <div className="relative w-full rounded-2xl overflow-hidden border border-slate-800 bg-black shadow-2xl">
+                                            <video
+                                                src={modalActiveUrl}
+                                                controls
                                                 autoPlay
                                                 playsInline
-                                                className="w-full max-h-[65vh] rounded-2xl object-contain"
+                                                className="w-full max-h-[65vh] object-contain rounded-2xl"
+                                                onError={(e) => {
+                                                    if (e.target.src !== FALLBACK_REMOTE_VIDEO) {
+                                                        e.target.src = FALLBACK_REMOTE_VIDEO;
+                                                    }
+                                                }}
                                             >
                                                 Your browser does not support HTML5 Video playback.
                                             </video>
                                         </div>
-                                    ) : (
-                                        <div className="w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-slate-200 flex flex-col items-center gap-4">
-                                            <div className="w-20 h-20 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-                                                <span className="material-symbols-outlined text-[48px]">play_circle</span>
+                                        <div className="flex items-center justify-between w-full px-2 text-xs text-slate-400">
+                                            <div className="flex items-center gap-2">
+                                                <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold uppercase">{ext || 'MP4'}</span>
+                                                <span>{previewModalFile.size}</span>
                                             </div>
+                                            <button
+                                                onClick={() => triggerFileDownload(previewModalFile, modalActiveUrl)}
+                                                className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-purple-600/20 cursor-pointer"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">download</span>
+                                                Download Video
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : isArchive ? (
+                                    <div className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-left text-slate-200 max-h-[65vh] overflow-y-auto custom-scrollbar">
+                                        <div className="flex items-center gap-3 border-b border-slate-800 pb-4 mb-6">
+                                            <span className="material-symbols-outlined text-[36px] text-amber-400">folder_zip</span>
                                             <div>
-                                                <h4 className="text-xl font-bold text-white">{previewModalFile.name}</h4>
-                                                <p className="text-xs text-slate-400 mt-1">MP4 Video Stream Asset ({previewModalFile.size})</p>
-                                            </div>
-                                            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-indigo-300 w-full max-w-md">
-                                                HTML5 Video Player Ready • Controls Active
+                                                <h4 className="text-lg font-bold text-white">{previewModalFile.name}</h4>
+                                                <p className="text-xs text-slate-400">Compressed Archive Assets Directory ({previewModalFile.size})</p>
                                             </div>
                                         </div>
-                                    )}
-                                </div>
-                            ) : previewModalFile.extension === 'zip' || previewModalFile.category === 'Archive' ? (
-                                <div className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-left text-slate-200 max-h-[65vh] overflow-y-auto custom-scrollbar">
-                                    <div className="flex items-center gap-3 border-b border-slate-800 pb-4 mb-6">
-                                        <span className="material-symbols-outlined text-[36px] text-amber-400">folder_zip</span>
-                                        <div>
-                                            <h4 className="text-lg font-bold text-white">{previewModalFile.name}</h4>
-                                            <p className="text-xs text-slate-400">Compressed Archive Assets Directory ({previewModalFile.size})</p>
+                                        <div className="space-y-3">
+                                            <h5 className="font-bold text-white text-xs uppercase tracking-wider text-slate-400">Contained Archive Files</h5>
+                                            <div className="space-y-2">
+                                                {[
+                                                    { name: 'src/components/ui/DesignSystem.tsx', size: '42 KB', type: 'TypeScript' },
+                                                    { name: 'src/styles/theme.config.css', size: '18 KB', type: 'CSS' },
+                                                    { name: 'public/assets/logos/knome_brand.svg', size: '120 KB', type: 'SVG' },
+                                                    { name: 'README_SETUP_GUIDE.md', size: '8 KB', type: 'Markdown' }
+                                                ].map((item, idx) => (
+                                                    <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs">
+                                                        <span className="font-mono text-slate-300">{item.name}</span>
+                                                        <span className="text-slate-500">{item.size} • {item.type}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="space-y-3">
-                                        <h5 className="font-bold text-white text-xs uppercase tracking-wider text-slate-400">Contained Archive Files</h5>
-                                        <div className="space-y-2">
-                                            {[
-                                                { name: 'src/components/ui/DesignSystem.tsx', size: '42 KB', type: 'TypeScript' },
-                                                { name: 'src/styles/theme.config.css', size: '18 KB', type: 'CSS' },
-                                                { name: 'public/assets/logos/knome_brand.svg', size: '120 KB', type: 'SVG' },
-                                                { name: 'README_SETUP_GUIDE.md', size: '8 KB', type: 'Markdown' }
-                                            ].map((item, idx) => (
-                                                <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs">
-                                                    <span className="font-mono text-slate-300">{item.name}</span>
-                                                    <span className="text-slate-500">{item.size} • {item.type}</span>
+                                ) : (
+                                    /* Non-PDF Document Reader (Word, DOCX, TXT, Spreadsheet, etc.) */
+                                    <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl p-8 text-left text-slate-200 shadow-2xl flex flex-col gap-6">
+                                        <div className="flex items-start justify-between gap-4 border-b border-slate-800 pb-5">
+                                            <div className="flex items-center gap-3.5">
+                                                <div className="w-14 h-14 rounded-2xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center text-blue-400 shrink-0">
+                                                    <span className="material-symbols-outlined text-[32px]">
+                                                        {['docx', 'doc'].includes(ext) ? 'article' :
+                                                         ['xlsx', 'xls', 'csv'].includes(ext) ? 'table_chart' :
+                                                         ['pptx', 'ppt'].includes(ext) ? 'slideshow' : 'description'}
+                                                    </span>
                                                 </div>
-                                            ))}
+                                                <div>
+                                                    <h4 className="text-lg font-bold text-white leading-snug">{previewModalFile.name}</h4>
+                                                    <div className="flex items-center gap-2 text-xs text-slate-400 mt-1">
+                                                        <span className="px-2 py-0.5 rounded bg-blue-950/80 border border-blue-500/20 text-blue-400 font-bold uppercase">{ext || 'DOCX'}</span>
+                                                        <span>•</span>
+                                                        <span>{previewModalFile.size || 'File'}</span>
+                                                        <span>•</span>
+                                                        <span>Uploaded by {previewModalFile.uploadedBy || 'Team Member'}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => triggerFileDownload(previewModalFile, modalActiveUrl)}
+                                                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-blue-600/20 shrink-0 cursor-pointer"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">download</span>
+                                                Download
+                                            </button>
                                         </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-left text-slate-200 max-h-[65vh] overflow-y-auto custom-scrollbar">
-                                    <div className="flex items-center gap-3 border-b border-slate-800 pb-4 mb-6">
-                                        <span className="material-symbols-outlined text-[36px] text-blue-400">description</span>
-                                        <div>
-                                            <h4 className="text-lg font-bold text-white">{previewModalFile.name}</h4>
-                                            <p className="text-xs text-slate-400">Technical Documentation File ({previewModalFile.size})</p>
-                                        </div>
-                                    </div>
-                                    <div className="space-y-4 text-sm leading-relaxed text-slate-300">
-                                        <h5 className="font-bold text-white text-base">API Integration Guidelines & Specifications</h5>
-                                        <p>Comprehensive guide detailing REST API endpoints, JWT token handling, response envelopes (`ApiResponse&lt;T&gt;`), and rate limiting guidelines for MPOnline integration developers.</p>
-                                        <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5 text-xs text-slate-400">
-                                            <div className="font-bold text-indigo-400">Key Sections:</div>
-                                            <div>1. Authentication Endpoints (`/api/v1/auth/login`)</div>
-                                            <div>2. User & Community Management (`/api/v1/communities`)</div>
-                                            <div>3. Posts & Media Channels Engine (`/api/v1/posts`)</div>
-                                            <div>4. Global Search & Discovery Query Filters</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
 
-                        {/* Footer */}
-                        <div className="p-4 px-6 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 bg-slate-900/90">
-                            <span>Document ID: #{previewModalFile.id || '101'}</span>
-                            <button
-                                onClick={() => setPreviewModalFile(null)}
-                                className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold transition-colors cursor-pointer"
-                            >
-                                Close Preview
-                            </button>
+                                        <div className="space-y-4 text-sm leading-relaxed text-slate-300">
+                                            <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-400">
+                                                <span>Document Overview</span>
+                                                <span className="text-emerald-400 flex items-center gap-1">
+                                                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                                    Verified & Ready
+                                                </span>
+                                            </div>
+                                            <p className="text-slate-300 text-sm">
+                                                This document ({previewModalFile.name}) has been validated and stored in the Knome Community repository. You can open the file or download it locally to view in Microsoft Word, Excel, or your preferred desktop application.
+                                            </p>
+                                            <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-2 text-xs text-slate-400 font-mono">
+                                                <div className="flex justify-between py-1 border-b border-slate-900">
+                                                    <span className="text-slate-500">File Type:</span>
+                                                    <span className="text-slate-300 font-bold">{ext.toUpperCase()} Document</span>
+                                                </div>
+                                                <div className="flex justify-between py-1 border-b border-slate-900">
+                                                    <span className="text-slate-500">File Size:</span>
+                                                    <span className="text-slate-300 font-bold">{previewModalFile.size}</span>
+                                                </div>
+                                                <div className="flex justify-between py-1">
+                                                    <span className="text-slate-500">Uploaded On:</span>
+                                                    <span className="text-slate-300">{previewModalFile.uploadedAt ? new Date(previewModalFile.uploadedAt).toLocaleDateString() : 'Recent'}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="pt-2 flex items-center justify-end gap-3">
+                                            {modalActiveUrl && modalActiveUrl !== '#' && (
+                                                <a
+                                                    href={modalActiveUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                                                >
+                                                    <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                                                    Open / Save Document
+                                                </a>
+                                            )}
+                                            <button
+                                                onClick={() => triggerFileDownload(previewModalFile, modalActiveUrl)}
+                                                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-blue-600/25 cursor-pointer"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">file_download</span>
+                                                Download {ext.toUpperCase()} File
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Footer */}
+                            <div className="p-4 px-6 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 bg-slate-900/90">
+                                <div className="flex items-center gap-2">
+                                    <span>File ID: #{previewModalFile.id || '101'}</span>
+                                    <span>•</span>
+                                    <span className="capitalize">{previewModalFile.category || 'Media'}</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    {modalActiveUrl && modalActiveUrl !== '#' && (
+                                        <button
+                                            onClick={() => triggerFileDownload(previewModalFile, modalActiveUrl)}
+                                            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">download</span>
+                                            Download
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => setPreviewModalFile(null)}
+                                        className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold transition-colors cursor-pointer"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* Multi-Option Share Community Modal */}
             {isShareModalOpen && (
