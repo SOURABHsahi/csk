@@ -4,7 +4,16 @@ import { useToast } from '../contexts/ToastContext';
 import { postsApi, mediaApi, communitiesApi, profileApi, notificationsApi, formatToDDMMYYYY } from '../../utils/apiService';
 import { apiClient } from '../../utils/apiClient';
 import { checkRestrictedContent, syncRestrictedWordsFromBackend, addRestrictedWord } from '../../utils/restrictedWords';
-import { getUserDraft, saveUserDraft, clearUserDraft, deleteDraft, formatDraftTimeAgo } from '../../utils/draftManager';
+import { 
+    getUserDraft, 
+    saveUserDraft, 
+    clearUserDraft, 
+    deleteDraft, 
+    formatDraftTimeAgo,
+    getActiveComposerScratchpad,
+    saveActiveComposerScratchpad,
+    clearActiveComposerScratchpad
+} from '../../utils/draftManager';
 import ImageCropModal from './ImageCropModal';
 import CustomDateTimePicker from '../widgets/CustomDateTimePicker';
 import HighlightText from '../ui/HighlightText';
@@ -76,6 +85,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, draftT
         const hasContent = (newText && newText.trim().length > 0) || (newAttachments && newAttachments.length > 0);
         if (!hasContent) {
             setAutoSaveStatus(null);
+            clearActiveComposerScratchpad(currentUserId);
             return;
         }
 
@@ -84,22 +94,39 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, draftT
         if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
 
         autoSaveTimerRef.current = setTimeout(() => {
-            const saved = saveUserDraft(currentUserId, {
-                id: activeDraftId,
-                text: newText,
-                attachments: newAttachments,
-                audience: newAudience,
-                selectedCommunity: newCommunity,
-                selectedConnections: newConnections,
-                scheduledTime: newSchedTime
-            });
+            if (activeDraftId) {
+                // If editing an existing official draft, update that draft
+                const saved = saveUserDraft(currentUserId, {
+                    id: activeDraftId,
+                    text: newText,
+                    attachments: newAttachments,
+                    audience: newAudience,
+                    selectedCommunity: newCommunity,
+                    selectedConnections: newConnections,
+                    scheduledTime: newSchedTime
+                });
 
-            if (saved) {
-                if (!activeDraftId && saved.id) setActiveDraftId(saved.id);
-                setIsDraftMode(true);
-                setLastSavedTime(saved.updatedAt || new Date().toISOString());
-                setAutoSaveStatus('saved');
-                isDirtyRef.current = false;
+                if (saved) {
+                    setLastSavedTime(saved.updatedAt || new Date().toISOString());
+                    setAutoSaveStatus('saved');
+                    isDirtyRef.current = false;
+                }
+            } else {
+                // Composing a new post: save on Create Post ONLY (scratchpad), do NOT save into Drafts!
+                const saved = saveActiveComposerScratchpad(currentUserId, {
+                    text: newText,
+                    attachments: newAttachments,
+                    audience: newAudience,
+                    selectedCommunity: newCommunity,
+                    selectedConnections: newConnections,
+                    scheduledTime: newSchedTime
+                });
+
+                if (saved) {
+                    setLastSavedTime(saved.savedAt || new Date().toISOString());
+                    setAutoSaveStatus('saved');
+                    isDirtyRef.current = false;
+                }
             }
         }, 1500);
     };
@@ -340,28 +367,44 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, draftT
         if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
 
-    // Load active draft on open, or clear state on close
+    // Load active draft or composer scratchpad on open, or clear state on close
     useEffect(() => {
         if (!isOpen) {
             resetForm();
             return;
         }
 
-        const targetDraft = draftToEdit || (currentUserId ? getUserDraft(currentUserId) : null);
-        if (targetDraft) {
-            setText(targetDraft.text || targetDraft.content || targetDraft.contentText || '');
-            setAttachments(targetDraft.attachments || targetDraft.postAttachments || []);
-            setAudience(targetDraft.audience || targetDraft.audienceType || 'Everyone');
-            setSelectedCommunity(targetDraft.selectedCommunity || (targetDraft.communityId ? { id: targetDraft.communityId, name: targetDraft.communityName } : null));
-            setSelectedConnections(targetDraft.selectedConnections || targetDraft.sharedUsers || []);
-            setScheduledTime(targetDraft.scheduledTime || targetDraft.scheduledDate || '');
-            setActiveDraftId(targetDraft.id || targetDraft.postId || null);
+        if (draftToEdit) {
+            // Explicitly editing a draft selected from the Drafts tab
+            setText(draftToEdit.text || draftToEdit.content || draftToEdit.contentText || '');
+            setAttachments(draftToEdit.attachments || draftToEdit.postAttachments || []);
+            setAudience(draftToEdit.audience || draftToEdit.audienceType || 'Everyone');
+            setSelectedCommunity(draftToEdit.selectedCommunity || (draftToEdit.communityId ? { id: draftToEdit.communityId, name: draftToEdit.communityName } : null));
+            setSelectedConnections(draftToEdit.selectedConnections || draftToEdit.sharedUsers || []);
+            setScheduledTime(draftToEdit.scheduledTime || draftToEdit.scheduledDate || '');
+            setActiveDraftId(draftToEdit.id || draftToEdit.postId || null);
             setIsDraftMode(true);
-            setLastSavedTime(targetDraft.updatedAt || targetDraft.savedAt || targetDraft.createdDate || new Date().toISOString());
+            setLastSavedTime(draftToEdit.updatedAt || draftToEdit.savedAt || draftToEdit.createdDate || new Date().toISOString());
             setAutoSaveStatus('saved');
             isDirtyRef.current = false;
         } else {
-            resetForm();
+            // Opened Create Post normally: restore uncommitted in-progress scratchpad if any
+            const scratchpad = currentUserId ? getActiveComposerScratchpad(currentUserId) : null;
+            if (scratchpad) {
+                setText(scratchpad.text || '');
+                setAttachments(scratchpad.attachments || []);
+                setAudience(scratchpad.audience || 'Everyone');
+                setSelectedCommunity(scratchpad.selectedCommunity || null);
+                setSelectedConnections(scratchpad.selectedConnections || []);
+                setScheduledTime(scratchpad.scheduledTime || '');
+                setActiveDraftId(null);
+                setIsDraftMode(false);
+                setLastSavedTime(scratchpad.savedAt || new Date().toISOString());
+                setAutoSaveStatus('saved');
+                isDirtyRef.current = false;
+            } else {
+                resetForm();
+            }
         }
 
         // Live sync restricted keywords directly from SQL Server database table RestrictedKeywords
@@ -381,18 +424,33 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, draftT
 
         const hasContent = text.trim().length > 0 || attachments.length > 0;
         if (hasContent && currentUserId) {
-            saveUserDraft(currentUserId, {
-                id: activeDraftId,
-                text,
-                attachments,
-                audience,
-                selectedCommunity,
-                selectedConnections,
-                scheduledTime
-            });
-            addToast('Draft auto-saved', 'info');
-        } else if (!hasContent && activeDraftId && currentUserId) {
-            deleteDraft(currentUserId, activeDraftId, postsApi);
+            if (activeDraftId) {
+                // If editing an existing official draft, update it
+                saveUserDraft(currentUserId, {
+                    id: activeDraftId,
+                    text,
+                    attachments,
+                    audience,
+                    selectedCommunity,
+                    selectedConnections,
+                    scheduledTime
+                });
+            } else {
+                // Save on Create Post ONLY - do NOT save inside official Drafts!
+                saveActiveComposerScratchpad(currentUserId, {
+                    text,
+                    attachments,
+                    audience,
+                    selectedCommunity,
+                    selectedConnections,
+                    scheduledTime
+                });
+            }
+        } else if (!hasContent) {
+            if (activeDraftId && currentUserId) {
+                deleteDraft(currentUserId, activeDraftId, postsApi);
+            }
+            clearActiveComposerScratchpad(currentUserId);
         }
 
         resetForm();
@@ -400,11 +458,12 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated, draftT
     };
 
     const handleDiscardDraft = async () => {
-        if (!window.confirm('Discard this draft? All progress will be removed.')) return;
+        if (!window.confirm('Discard this post? All progress will be removed.')) return;
         setIsDiscarding(true);
         try {
             if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
             if (currentUserId) {
+                clearActiveComposerScratchpad(currentUserId);
                 if (activeDraftId) {
                     await deleteDraft(currentUserId, activeDraftId, postsApi);
                 } else {
@@ -663,6 +722,7 @@ const FILE_LIMITS = {
                     }
                 }
 
+                clearActiveComposerScratchpad(currentUserId);
                 saveUserDraft(currentUserId, {
                     id: savedId,
                     postId: typeof savedId === 'number' ? savedId : null,
@@ -844,7 +904,8 @@ const FILE_LIMITS = {
                 }
             }
 
-            // Post published or scheduled: clean up user draft
+            // Post published or scheduled: clean up user draft and composer scratchpad
+            clearActiveComposerScratchpad(currentUserId);
             clearUserDraft(currentUserId);
             if (activeDraftId) {
                 removeDraftFromLocalPosts(activeDraftId);
@@ -1087,14 +1148,14 @@ const FILE_LIMITS = {
                             </div>
                         )}
 
-                        {/* Discard Draft Button (shown when editing a saved draft) */}
-                        {isDraftMode && (
+                        {/* Discard Button (shown when editing a draft or when content is present) */}
+                        {(isDraftMode || text.trim().length > 0 || attachments.length > 0) && (
                             <button
                                 type="button"
                                 onClick={handleDiscardDraft}
                                 disabled={isPublishing || isDiscarding}
                                 className="text-xs font-semibold text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50"
-                                title="Discard this draft and start fresh"
+                                title="Discard this post and start fresh"
                             >
                                 <span className="material-symbols-outlined text-[15px]">delete_sweep</span>
                                 <span className="hidden sm:inline">Discard</span>

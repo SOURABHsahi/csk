@@ -9,6 +9,75 @@
  */
 
 const STORAGE_PREFIX = 'knome_user_post_draft_';
+const COMPOSER_SCRATCHPAD_PREFIX = 'knome_create_post_scratchpad_';
+
+/**
+ * Get user-isolated composer scratchpad key (uncommitted text kept on Create Post only)
+ */
+export const getComposerScratchpadKey = (userId) => {
+    return `${COMPOSER_SCRATCHPAD_PREFIX}${userId || 'guest'}`;
+};
+
+/**
+ * Retrieve active uncommitted composer scratchpad for Create Post
+ */
+export const getActiveComposerScratchpad = (userId) => {
+    if (!userId) return null;
+    try {
+        const raw = localStorage.getItem(getComposerScratchpadKey(userId));
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        if (!data) return null;
+        const hasText = data.text && data.text.trim().length > 0;
+        const hasAttachments = Array.isArray(data.attachments) && data.attachments.length > 0;
+        if (!hasText && !hasAttachments) {
+            return null;
+        }
+        return data;
+    } catch (_) {
+        return null;
+    }
+};
+
+/**
+ * Save uncommitted in-progress composer scratchpad (preserves text on Create Post without creating a draft in the Drafts tab)
+ */
+export const saveActiveComposerScratchpad = (userId, data) => {
+    if (!userId) return null;
+    const text = data.text ?? data.content ?? data.contentText ?? '';
+    const attachments = data.attachments || [];
+
+    if (!text.trim() && attachments.length === 0) {
+        clearActiveComposerScratchpad(userId);
+        return null;
+    }
+
+    const scratchpad = {
+        text: text,
+        attachments: attachments,
+        audience: data.audience || data.audienceType || 'Everyone',
+        selectedCommunity: data.selectedCommunity || null,
+        selectedConnections: data.selectedConnections || [],
+        scheduledTime: data.scheduledTime || null,
+        savedAt: new Date().toISOString()
+    };
+
+    try {
+        localStorage.setItem(getComposerScratchpadKey(userId), JSON.stringify(scratchpad));
+    } catch (_) {}
+
+    return scratchpad;
+};
+
+/**
+ * Clear the active composer scratchpad
+ */
+export const clearActiveComposerScratchpad = (userId) => {
+    if (!userId) return;
+    try {
+        localStorage.removeItem(getComposerScratchpadKey(userId));
+    } catch (_) {}
+};
 
 /**
  * Get user-isolated localStorage key
@@ -18,7 +87,7 @@ export const getUserDraftKey = (userId) => {
 };
 
 /**
- * Retrieve saved draft for the given user
+ * Retrieve saved draft for the given user (ONLY explicit drafts saved via 'Save as Draft')
  */
 export const getUserDraft = (userId) => {
     if (!userId) return null;
@@ -28,6 +97,16 @@ export const getUserDraft = (userId) => {
         const draft = JSON.parse(raw);
         if (!draft) return null;
         
+        // If draft was not explicitly saved via 'Save as Draft', migrate it to scratchpad so it is preserved on Create Post, and remove from official drafts
+        if (!draft.savedAsDraft) {
+            if (!getActiveComposerScratchpad(userId)) {
+                saveActiveComposerScratchpad(userId, draft);
+            }
+            removeDraftFromLocalPosts(draft.id || draft.postId);
+            localStorage.removeItem(getUserDraftKey(userId));
+            return null;
+        }
+
         // Ensure draft has content
         const hasText = draft.text && draft.text.trim().length > 0;
         const hasAttachments = Array.isArray(draft.attachments) && draft.attachments.length > 0;
@@ -49,7 +128,7 @@ export const hasUserDraft = (userId) => {
 };
 
 /**
- * Save or update the active user's draft
+ * Save or update the active user's draft (called ONLY when user clicks 'Save as Draft')
  */
 export const saveUserDraft = (userId, draftData) => {
     if (!userId) return null;
@@ -89,6 +168,7 @@ export const saveUserDraft = (userId, draftData) => {
         selectedConnections: draftData.selectedConnections || [],
         scheduledTime: draftData.scheduledTime || null,
         status: 'Draft',
+        savedAsDraft: true,
         updatedAt: nowIso,
         savedAt: nowIso,
         createdAt: existingDraft?.createdAt || nowIso
@@ -102,6 +182,9 @@ export const saveUserDraft = (userId, draftData) => {
 
     // Mirror to knome_local_posts so the draft shows up in the Drafts tab feed
     syncDraftToLocalPosts(normalizedDraft);
+
+    // Clear composer scratchpad since it has now been officially saved into Drafts
+    clearActiveComposerScratchpad(userId);
 
     // Broadcast update across open pages
     window.dispatchEvent(new CustomEvent('knome_drafts_updated', {
@@ -182,6 +265,7 @@ export const syncDraftToLocalPosts = (draft) => {
             content: draft.text,
             contentText: draft.text,
             status: 'Draft',
+            savedAsDraft: true,
             attachments: draft.attachments || [],
             audienceType: draft.audience || 'Everyone',
             communityId: draft.selectedCommunity?.id || null,

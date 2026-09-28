@@ -47,11 +47,15 @@ export default function Posts() {
             const data = await postsApi.getPosts(null, null, 1, 100);
             let mapped = data ? data.map(mapPost) : [];
 
-            // Merge local fallback posts if any
+            // Merge local fallback posts if any (only include explicit drafts saved via 'Save as Draft')
             try {
                 const deletedIds = JSON.parse(localStorage.getItem('knome_deleted_post_ids') || '[]').map(String);
                 const localPosts = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
-                localPosts.forEach(lp => {
+                const cleanedLocalPosts = localPosts.filter(lp => lp.status !== 'Draft' || lp.savedAsDraft === true);
+                if (cleanedLocalPosts.length !== localPosts.length) {
+                    localStorage.setItem('knome_local_posts', JSON.stringify(cleanedLocalPosts));
+                }
+                cleanedLocalPosts.forEach(lp => {
                     const lpIdStr = String(lp.id || lp.postId || '');
                     if (!deletedIds.includes(lpIdStr) && !mapped.some(m => String(m.id || m.postId) === lpIdStr)) {
                         mapped.unshift(mapPost(lp));
@@ -59,11 +63,11 @@ export default function Posts() {
                 });
             } catch (e) {}
 
-            // Ensure current active user draft is fresh and synced in mapped posts
+            // Ensure current active user draft is fresh and synced in mapped posts ONLY if explicitly saved as draft
             try {
                 const currentUid = currentUser?.userId || currentUser?.id;
                 const activeDraft = getUserDraft(currentUid);
-                if (activeDraft) {
+                if (activeDraft && activeDraft.savedAsDraft) {
                     const draftIdStr = String(activeDraft.id || activeDraft.postId || '');
                     const deletedIds = JSON.parse(localStorage.getItem('knome_deleted_post_ids') || '[]').map(String);
                     if (!deletedIds.includes(draftIdStr)) {
