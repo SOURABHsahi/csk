@@ -580,6 +580,7 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
     const [isReactionsModalOpen, setIsReactionsModalOpen] = useState(false);
     const [isPublishingNow, setIsPublishingNow] = useState(false);
     const isScheduled = Boolean(post.isScheduledFuture || post.status === 'Scheduled');
+    const isDraft = Boolean(post.status === 'Draft');
     const [isContentExpanded, setIsContentExpanded] = useState(false);
 
     // Distinct reaction types currently active on this post
@@ -1442,7 +1443,7 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
             className={`w-full min-w-0 rounded-2xl overflow-hidden flex flex-col transition-all hover:-translate-y-1 ${post.isHighlighted ? 'ring-2 ring-indigo-500 shadow-2xl' : ''}`}
             style={{
                 background: 'var(--bg-card)',
-                border: isScheduled ? '1.5px dashed #f59e0b' : (post.isHighlighted ? '1px solid #6366f1' : '1px solid var(--border-subtle)'),
+                border: isScheduled ? '1.5px dashed #f59e0b' : (isDraft ? '1.5px dashed #64748b' : (post.isHighlighted ? '1px solid #6366f1' : '1px solid var(--border-subtle)')),
                 boxShadow: 'var(--shadow-premium)',
             }}>
             {/* Scheduled Notice Banner for Author */}
@@ -1469,6 +1470,41 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
                                 disabled={isPublishingNow}
                                 className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer disabled:opacity-50"
                                 title="Publish this post immediately"
+                            >
+                                {isPublishingNow ? (
+                                    <span className="material-symbols-outlined text-[13px] animate-spin">refresh</span>
+                                ) : (
+                                    <span className="material-symbols-outlined text-[13px]">send</span>
+                                )}
+                                Publish Now
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Draft Notice Banner for Author */}
+            {isDraft && (
+                <div className="mx-5 mt-4 p-3 bg-gradient-to-r from-slate-500/10 via-indigo-500/10 to-blue-500/10 border border-slate-300 dark:border-slate-700 rounded-xl flex items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2.5 text-slate-700 dark:text-slate-300 font-bold">
+                        <span className="material-symbols-outlined text-[20px] text-slate-500">draft</span>
+                        <div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-[10px] font-extrabold uppercase tracking-wider">Draft</span>
+                                <span>Saved Draft</span>
+                            </div>
+                            <span className="block text-[10.5px] text-slate-500 dark:text-slate-400 font-normal">
+                                Only visible to you. Not published to the feed.
+                            </span>
+                        </div>
+                    </div>
+                    {isAuthor && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                                onClick={handlePublishNow}
+                                disabled={isPublishingNow}
+                                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer disabled:opacity-50"
+                                title="Publish this draft to network feed immediately"
                             >
                                 {isPublishingNow ? (
                                     <span className="material-symbols-outlined text-[13px] animate-spin">refresh</span>
@@ -1579,7 +1615,7 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
                                         >
                                             <span className="material-symbols-outlined text-[16px]">report</span> Report Post
                                         </button>
-                                        {isAuthor && isScheduled && (
+                                        {isAuthor && (isScheduled || isDraft) && (
                                             <>
                                                 <button 
                                                     onClick={() => { setIsMenuOpen(false); handlePublishNow(); }}
@@ -1587,12 +1623,14 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
                                                 >
                                                     <span className="material-symbols-outlined text-[16px]">send</span> Publish Now
                                                 </button>
-                                                <button 
-                                                    onClick={() => { setIsMenuOpen(false); handleCancelSchedule(); }}
-                                                    className="w-full text-left px-4 py-2 font-source-sans text-[13px] font-bold text-amber-600 dark:text-amber-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
-                                                >
-                                                    <span className="material-symbols-outlined text-[16px]">event_busy</span> Cancel Schedule
-                                                </button>
+                                                {isScheduled && (
+                                                    <button 
+                                                        onClick={() => { setIsMenuOpen(false); handleCancelSchedule(); }}
+                                                        className="w-full text-left px-4 py-2 font-source-sans text-[13px] font-bold text-amber-600 dark:text-amber-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">event_busy</span> Cancel Schedule
+                                                    </button>
+                                                )}
                                             </>
                                         )}
                                         {canDeletePost && (
@@ -1613,6 +1651,12 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
                         <p className="font-arial text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1">
                             {post.time}
                         </p>
+                        {isDraft && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-500/10 text-slate-600 dark:text-slate-400 font-arial text-[10px] font-bold border border-slate-500/20 shadow-xs">
+                                <span className="material-symbols-outlined text-[12px]">draft</span>
+                                Draft
+                            </span>
+                        )}
                         {post.isScheduledFuture && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 font-arial text-[10px] font-bold border border-amber-500/20 shadow-xs animate-pulse">
                                 <span className="material-symbols-outlined text-[12px]">schedule</span>

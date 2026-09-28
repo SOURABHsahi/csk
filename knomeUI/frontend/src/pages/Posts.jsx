@@ -83,9 +83,14 @@ export default function Posts() {
                 }
             }
 
-            // Filter posts based on publication schedule for scheduled items
+            // Filter posts based on publication schedule and draft privacy
             const currentUserIdStr = String(currentUser?.userId || currentUser?.id || '');
             const accessiblePosts = mapped.filter(p => {
+                if (p.status === 'Draft') {
+                    // Draft: author only
+                    const authorIdStr = String(p.author?.id || p.authorId || p.userId || '');
+                    return authorIdStr === currentUserIdStr;
+                }
                 if (p.status === 'Scheduled' && p.scheduledDate) {
                     const schedTime = new Date(p.scheduledDate).getTime();
                     const now = Date.now();
@@ -135,20 +140,24 @@ export default function Posts() {
 
 
 
-    // Count author's upcoming scheduled posts
+    // Count author's upcoming scheduled posts and private drafts
     const authorScheduledCount = posts.filter(p => (p.status === 'Scheduled' || p.isScheduledFuture)).length;
+    const authorDraftCount = posts.filter(p => p.status === 'Draft').length;
 
     // Filter and sort logic — highlighted target post always at top
     const rawPosts = posts.filter(post => {
         const matchesSearch = !searchQuery || (post.content || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                               (post.author?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesTag = selectedTag === 'All' || 
-                           selectedTag === '🔥 Hot Posts' ||
-                           (selectedTag === '⏰ Scheduled' ? (post.status === 'Scheduled' || post.isScheduledFuture) : 
+        const matchesTag = selectedTag === 'All' ? post.status !== 'Draft' : 
+                           selectedTag === '🔥 Hot Posts' ? post.status !== 'Draft' :
+                           selectedTag === '⏰ Scheduled' ? (post.status === 'Scheduled' || post.isScheduledFuture) : 
+                           selectedTag === '📝 Drafts' ? post.status === 'Draft' :
                            (
-                               (post.tags && post.tags.some(t => t.toLowerCase() === selectedTag.toLowerCase())) ||
-                               ((post.content || '').toLowerCase().includes('#' + selectedTag.toLowerCase()))
-                           ));
+                               post.status !== 'Draft' && (
+                                   (post.tags && post.tags.some(t => t.toLowerCase() === selectedTag.toLowerCase())) ||
+                                   ((post.content || '').toLowerCase().includes('#' + selectedTag.toLowerCase()))
+                               )
+                           );
         return matchesSearch && matchesTag;
     });
 
@@ -264,10 +273,28 @@ export default function Posts() {
                             </span>
                         </button>
                     )}
+                    {authorDraftCount > 0 && (
+                        <button
+                            onClick={() => setSelectedTag('📝 Drafts')}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer ${
+                                selectedTag === '📝 Drafts'
+                                    ? 'bg-slate-500/15 border-slate-500/40 text-slate-700 dark:text-slate-300 shadow-xs'
+                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                            }`}
+                        >
+                            <span className="material-symbols-outlined text-[14px]">draft</span>
+                            <span>Drafts</span>
+                            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                                selectedTag === '📝 Drafts' ? 'bg-slate-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-300'
+                            }`}>
+                                {authorDraftCount}
+                            </span>
+                        </button>
+                    )}
                 </div>
 
                 {/* Active Selected Filter Badge */}
-                {selectedTag !== 'All' && selectedTag !== '⏰ Scheduled' && selectedTag !== '🔥 Hot Posts' && (
+                {selectedTag !== 'All' && selectedTag !== '⏰ Scheduled' && selectedTag !== '📝 Drafts' && selectedTag !== '🔥 Hot Posts' && (
                     <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-xl animate-in fade-in duration-150">
                         <span>Topic: #{selectedTag}</span>
                         <button 
@@ -305,15 +332,17 @@ export default function Posts() {
                     ) : (
                         <div className="glass bg-white dark:bg-slate-950 p-12 rounded-2xl border border-slate-200 dark:border-slate-800 text-center flex flex-col items-center justify-center gap-3">
                             <span className="material-symbols-outlined text-4xl text-slate-300 dark:text-slate-700 animate-bounce">
-                                {selectedTag === '⏰ Scheduled' ? 'schedule' : 'feed'}
+                                {selectedTag === '📝 Drafts' ? 'draft' : (selectedTag === '⏰ Scheduled' ? 'schedule' : 'feed')}
                             </span>
                             <h3 className="font-bold text-slate-700 dark:text-slate-350 text-sm">
-                                {selectedTag === '⏰ Scheduled' ? 'No Scheduled Posts' : 'No Posts Found'}
+                                {selectedTag === '📝 Drafts' ? 'No Draft Posts' : (selectedTag === '⏰ Scheduled' ? 'No Scheduled Posts' : 'No Posts Found')}
                             </h3>
                             <p className="text-xs text-slate-500">
-                                {selectedTag === '⏰ Scheduled' 
-                                    ? 'You do not have any posts waiting to be published.'
-                                    : 'Try adjusting your search criteria or tags filter.'}
+                                {selectedTag === '📝 Drafts'
+                                    ? 'You do not have any saved draft posts.'
+                                    : (selectedTag === '⏰ Scheduled' 
+                                        ? 'You do not have any posts waiting to be published.'
+                                        : 'Try adjusting your search criteria or tags filter.')}
                             </p>
                             {currentUser.role !== 'SYSADM' && (
                                 <button
