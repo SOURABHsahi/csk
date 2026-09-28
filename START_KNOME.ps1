@@ -27,7 +27,25 @@ $BackendJob = Start-Job -ScriptBlock {
     dotnet run --launch-profile http
 } -ArgumentList $ScriptDir
 
-Start-Sleep -Seconds 3
+# Wait for Backend to become ready on Port 5095 (up to 30 seconds)
+$maxWaitSeconds = 30
+$backendReady = $false
+Write-Host " Waiting for Backend API to initialize on port 5095..." -ForegroundColor Yellow -NoNewline
+for ($i = 0; $i -lt $maxWaitSeconds; $i++) {
+    Start-Sleep -Seconds 1
+    Write-Host "." -ForegroundColor Yellow -NoNewline
+    $conn = Get-NetTCPConnection -LocalPort 5095 -State Listen -ErrorAction SilentlyContinue
+    if ($conn) {
+        $backendReady = $true
+        break
+    }
+}
+Write-Host ""
+if ($backendReady) {
+    Write-Host " Backend API is ready and listening on http://localhost:5095" -ForegroundColor Green
+} else {
+    Write-Host " Backend API initialization continuing in background..." -ForegroundColor Yellow
+}
 
 # 2. Ensure IIS Sites are Active (Port 8080 & 8081)
 try {

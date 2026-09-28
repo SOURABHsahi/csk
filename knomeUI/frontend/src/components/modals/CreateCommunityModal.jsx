@@ -518,8 +518,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                 categoryId: mappedCategoryId,
                 rules: filteredRules.join('\n'),
                 faq: JSON.stringify(filteredFaq),
-                communityType: formattedCommunityType,
-                memberUserIds: validMemberUserIds
+                communityType: formattedCommunityType
             };
 
             let dbCommunity = null;

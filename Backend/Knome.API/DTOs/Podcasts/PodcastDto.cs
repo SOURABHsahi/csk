@@ -23,5 +23,6 @@ public class PodcastDto
     public int? FileSizeMb { get; set; }
     public DateTime UploadedDate { get; set; }
     public int ViewCount { get; set; }
+    public bool IsActive { get; set; } = true;
     public ContentSummaryDto? EngagementSummary { get; set; }
 }

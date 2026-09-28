@@ -14,6 +14,7 @@ public class CommunityMemberDto
     public string Status { get; set; } = null!;
     public DateTime RequestedDate { get; set; }
     public DateTime? DecidedDate { get; set; }
+    public int? ApprovedByUserId { get; set; }
 }
 
 public class DecideMembershipDto

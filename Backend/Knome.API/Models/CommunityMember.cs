@@ -17,6 +17,10 @@ public partial class CommunityMember
 
     public DateTime? DecidedDate { get; set; }
 
+    public int? ApprovedByUserId { get; set; }
+
+    public virtual User? ApprovedByUser { get; set; }
+
     public virtual Community Community { get; set; } = null!;
 
     public virtual User User { get; set; } = null!;

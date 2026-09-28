@@ -612,14 +612,9 @@ export default function Network() {
             
             {/* Hero Header */}
             <div className="relative rounded-3xl overflow-hidden shadow-sm border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col md:flex-row items-start md:items-center justify-between text-left px-6 py-8 md:px-10 md:py-8 gap-6">
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_left,_var(--tw-gradient-stops))] from-blue-100/50 dark:from-blue-900/20 via-transparent to-transparent pointer-events-none"></div>
                 <div className="absolute top-1/2 left-0 -translate-y-1/2 w-[500px] h-32 bg-blue-500/10 dark:bg-blue-500/15 blur-[80px] pointer-events-none"></div>
                 
                 <div className="relative z-10 flex flex-col items-start max-w-3xl">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-blue-500/30 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 text-[11px] font-bold mb-3 backdrop-blur-md uppercase tracking-wider">
-                        ✨ Connecting MPOnline Colleagues
-                    </div>
-                    
                     <h1 className="text-3xl md:text-4xl lg:text-[40px] font-black tracking-tight mb-3 text-slate-900 dark:text-white" style={{ lineHeight: '1.2' }}>
                         <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-sky-600 to-cyan-600 dark:from-blue-400 dark:via-sky-400 dark:to-cyan-400">
                             People Network & Connections

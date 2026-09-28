@@ -57,6 +57,8 @@ public partial class User
 
     public DateTime? ModifiedDate { get; set; }
 
+    public virtual ICollection<Abbreviation> Abbreviations { get; set; } = new List<Abbreviation>();
+
     public virtual ICollection<ArticleVersion> ArticleVersions { get; set; } = new List<ArticleVersion>();
 
     public virtual ICollection<Article> Articles { get; set; } = new List<Article>();
@@ -69,7 +71,9 @@ public partial class User
 
     public virtual ICollection<Community> Communities { get; set; } = new List<Community>();
 
-    public virtual ICollection<CommunityMember> CommunityMembers { get; set; } = new List<CommunityMember>();
+    public virtual ICollection<CommunityMember> CommunityMemberApprovedByUsers { get; set; } = new List<CommunityMember>();
+
+    public virtual ICollection<CommunityMember> CommunityMemberUsers { get; set; } = new List<CommunityMember>();
 
     public virtual ICollection<ConnectionRequest> ConnectionRequestReceivers { get; set; } = new List<ConnectionRequest>();
 

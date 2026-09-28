@@ -29,6 +29,8 @@ public partial class Community
 
     public bool IsActive { get; set; }
 
+    public string ApprovalStatus { get; set; } = null!;
+
     public virtual Category? Category { get; set; }
 
     public virtual ICollection<CommunityMember> CommunityMembers { get; set; } = new List<CommunityMember>();

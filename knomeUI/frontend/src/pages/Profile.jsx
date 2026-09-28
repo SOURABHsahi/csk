@@ -415,8 +415,9 @@ export default function Profile() {
                             ? await podcastsApi.getMyPodcasts(1, 50)
                             : await profileApi.getUserPodcasts(currentProfileUserId, 1, 50);
                         const rawPodcasts = Array.isArray(podcastsRes) ? podcastsRes : (podcastsRes?.data || podcastsRes?.items || []);
+                        const activePodcasts = rawPodcasts.filter(p => p.isActive === undefined || p.isActive === null || p.isActive === true || p.isActive === 1 || p.isActive === 'true');
                         if (!isCancelled) {
-                            setTabData(prev => ({ ...prev, podcasts: rawPodcasts }));
+                            setTabData(prev => ({ ...prev, podcasts: activePodcasts }));
                         }
                         break;
                     }

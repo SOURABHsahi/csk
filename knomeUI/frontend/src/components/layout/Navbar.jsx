@@ -737,7 +737,7 @@ export default function Navbar() {
             const combined = [...freshCommunity, ...freshGeneric, ...apiNotifs];
             setAllNotifs(sortNotifsDescending(combined));
         } catch (error) {
-            console.error('Failed to fetch notifications', error);
+            console.warn('Notifications fetch deferred:', error?.message || error);
             // Fallback: show all local notifs sorted newest first
             setAllNotifs(sortNotifsDescending([...getLocalCommunityNotifs(), ...getLocalGenericNotifs()]));
         }

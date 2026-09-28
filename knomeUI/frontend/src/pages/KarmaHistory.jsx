@@ -180,6 +180,11 @@ export default function KarmaHistory() {
     const [leaderboard, setLeaderboard] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
+    const [visibleCount, setVisibleCount] = useState(10);
+
+    useEffect(() => {
+        setVisibleCount(10);
+    }, [selectedCategoryFilter]);
 
     const isSysAdmin = Boolean(
         ['SYSADM', 'SYSTEM ADMINISTRATOR', 'SYSTEM ADMIN', 'SYSTEMADMIN'].includes(String(currentUser?.role || '').toUpperCase()) || 
@@ -285,6 +290,14 @@ export default function KarmaHistory() {
         if (selectedCategoryFilter === 'all') return activities;
         return activities.filter(a => a.categoryId === selectedCategoryFilter);
     }, [activities, selectedCategoryFilter]);
+
+    const displayedActivities = useMemo(() => {
+        return filteredActivities.slice(0, visibleCount);
+    }, [filteredActivities, visibleCount]);
+
+    const filteredPointsTotal = useMemo(() => {
+        return filteredActivities.reduce((sum, act) => sum + (act.pointsNum || 0), 0);
+    }, [filteredActivities]);
 
     const rules = [
         { activity: 'Create and publish a Post', points: '2 pts', cap: 'Max 50 pts/day from posts', icon: 'dynamic_feed' },
@@ -650,6 +663,11 @@ export default function KarmaHistory() {
                             <span className="text-[11px] font-bold text-slate-500 bg-slate-200/70 dark:bg-slate-800 px-2 py-0.5 rounded-full">
                                 {filteredActivities.length} {filteredActivities.length === 1 ? 'entry' : 'entries'}
                             </span>
+                            {filteredPointsTotal > 0 && (
+                                <span className="text-[11px] font-black text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-200/50 dark:border-amber-800/40">
+                                    +{filteredPointsTotal} pts
+                                </span>
+                            )}
                         </div>
 
                         {/* Category Filter Pills */}
@@ -700,8 +718,8 @@ export default function KarmaHistory() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
-                                {filteredActivities.length > 0 ? (
-                                    filteredActivities.map((act) => (
+                                {displayedActivities.length > 0 ? (
+                                    displayedActivities.map((act) => (
                                         <tr key={act.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors group">
                                             <td className="px-6 py-4 text-[12px] font-medium text-slate-400 whitespace-nowrap">
                                                 {act.date}
@@ -745,6 +763,35 @@ export default function KarmaHistory() {
                             </tbody>
                         </table>
                     </div>
+
+                    {/* Show More / Show Less Pagination Controls (Max 10 visible initially) */}
+                    {filteredActivities.length > 10 && (
+                        <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/70 flex flex-col sm:flex-row items-center justify-between gap-3">
+                            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                Showing <strong className="text-slate-800 dark:text-slate-200">{displayedActivities.length}</strong> of <strong className="text-slate-800 dark:text-slate-200">{filteredActivities.length}</strong> transactions
+                            </span>
+                            <div className="flex items-center gap-2">
+                                {visibleCount < filteredActivities.length && (
+                                    <button
+                                        onClick={() => setVisibleCount(prev => prev + 10)}
+                                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer active:scale-95"
+                                    >
+                                        <span>Show More</span>
+                                        <span className="material-symbols-outlined text-[16px]">expand_more</span>
+                                    </button>
+                                )}
+                                {visibleCount > 10 && (
+                                    <button
+                                        onClick={() => setVisibleCount(10)}
+                                        className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                    >
+                                        <span>Show Less</span>
+                                        <span className="material-symbols-outlined text-[16px]">expand_less</span>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Right Column: How to Earn Points & Karma Level Table */}

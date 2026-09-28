@@ -20,7 +20,7 @@ public class MediaProfile : Profile
             .ForMember(dest => dest.EngagementSummary, opt => opt.Ignore());
 
         CreateMap<PodcastSeries, PodcastSeriesDto>()
-            .ForMember(dest => dest.EpisodeCount, opt => opt.MapFrom(src => src.Podcasts != null ? src.Podcasts.Count : 0));
+            .ForMember(dest => dest.EpisodeCount, opt => opt.MapFrom(src => src.Podcasts != null ? src.Podcasts.Count(p => p.IsActive) : 0));
 
         CreateMap<Podcast, PodcastDto>()
             .ForMember(dest => dest.UploaderEmployeeId, opt => opt.MapFrom(src => src.UploaderUser != null ? src.UploaderUser.EmployeeId : string.Empty))

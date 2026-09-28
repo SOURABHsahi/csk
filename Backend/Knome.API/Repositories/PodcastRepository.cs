@@ -22,14 +22,14 @@ public class PodcastRepository : IPodcastRepository
     public async Task<PodcastSeries?> GetSeriesByIdAsync(int seriesId)
     {
         return await _db.PodcastSeries
-            .Include(s => s.Podcasts)
+            .Include(s => s.Podcasts.Where(p => p.IsActive))
             .FirstOrDefaultAsync(s => s.SeriesId == seriesId);
     }
 
     public async Task<List<PodcastSeries>> GetAllSeriesAsync()
     {
         return await _db.PodcastSeries
-            .Include(s => s.Podcasts)
+            .Include(s => s.Podcasts.Where(p => p.IsActive))
             .OrderBy(s => s.Title)
             .ToListAsync();
     }
@@ -77,6 +77,7 @@ public class PodcastRepository : IPodcastRepository
             .Include(p => p.UploaderUser)
             .Include(p => p.Category)
             .Include(p => p.Series)
+            .Where(p => p.IsActive)
             .AsQueryable();
 
         if (seriesId.HasValue)
@@ -101,7 +102,7 @@ public class PodcastRepository : IPodcastRepository
             .Include(p => p.UploaderUser)
             .Include(p => p.Category)
             .Include(p => p.Series)
-            .Where(p => p.UploaderUserId == uploaderUserId)
+            .Where(p => p.UploaderUserId == uploaderUserId && p.IsActive)
             .OrderByDescending(p => p.UploadedDate)
             .Skip((pageNumber - 1) * pageSize)
             .Take(pageSize)
@@ -110,6 +111,7 @@ public class PodcastRepository : IPodcastRepository
 
     public async Task<Podcast> AddPodcastAsync(Podcast podcast)
     {
+        podcast.IsActive = true;
         _db.Podcasts.Add(podcast);
         await _db.SaveChangesAsync();
         return (await GetPodcastByIdAsync(podcast.PodcastId))!;
@@ -123,27 +125,8 @@ public class PodcastRepository : IPodcastRepository
 
     public async Task DeletePodcastAsync(Podcast podcast)
     {
-        // Remove Reactions
-        var reactions = await _db.Reactions.Where(r => r.ContentId == podcast.PodcastId && r.ContentType == "Podcast").ToListAsync();
-        _db.Reactions.RemoveRange(reactions);
-
-        // Remove Comments
-        var comments = await _db.Comments.Where(c => c.ContentId == podcast.PodcastId && c.ContentType == "Podcast").ToListAsync();
-        _db.Comments.RemoveRange(comments);
-
-        // Remove Bookmarks
-        var bookmarks = await _db.Bookmarks.Where(b => b.ContentId == podcast.PodcastId && b.ContentType == "Podcast").ToListAsync();
-        _db.Bookmarks.RemoveRange(bookmarks);
-
-        // Remove Shares
-        var shares = await _db.Shares.Where(s => s.ContentId == podcast.PodcastId && s.ContentType == "Podcast").ToListAsync();
-        _db.Shares.RemoveRange(shares);
-
-        // Remove KarmaTransactions
-        var karmaTx = await _db.KarmaTransactions.Where(kt => kt.RelatedContentId == podcast.PodcastId && kt.RelatedContentType == "Podcast").ToListAsync();
-        _db.KarmaTransactions.RemoveRange(karmaTx);
-
-        _db.Podcasts.Remove(podcast);
+        podcast.IsActive = false;
+        _db.Podcasts.Update(podcast);
         await _db.SaveChangesAsync();
     }
 

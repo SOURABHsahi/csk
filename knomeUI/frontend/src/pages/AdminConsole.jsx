@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Link, useNavigate } from 'react-router-dom';
 import { useUser, getUserStatusConfig, deduplicateMembers } from '../components/contexts/UserContext';
 import { useConfirm } from '../components/contexts/ConfirmDialogContext';
-import { interactionsApi, adminApi, postsApi, podcastsApi, articlesApi, communitiesApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages, DEFAULT_ENTERPRISE_COMMUNITIES } from '../utils/apiService';
+import { interactionsApi, adminApi, postsApi, podcastsApi, articlesApi, communitiesApi, mediaApi, resolveMediaUrl, getVideoThumbnail, getCommunityImages, DEFAULT_ENTERPRISE_COMMUNITIES } from '../utils/apiService';
 import { apiClient } from '../utils/apiClient';
 import * as XLSX from 'xlsx';
 
@@ -650,7 +650,17 @@ export default function AdminConsole() {
         }
     });
 
-    const refreshPendingMedia = () => {
+    const refreshPendingMedia = async () => {
+        try {
+            const res = await mediaApi.getPendingApprovals();
+            if (Array.isArray(res)) {
+                setPendingMediaApprovals(res);
+                localStorage.setItem('knome_pending_media_approvals', JSON.stringify(res));
+                return;
+            }
+        } catch (e) {
+            console.warn("Backend media pending fetch fallback:", e);
+        }
         try {
             const stored = JSON.parse(localStorage.getItem('knome_pending_media_approvals') || '[]');
             setPendingMediaApprovals(stored.length > 0 ? stored : DEFAULT_SEED_PENDING_MEDIA);
@@ -662,8 +672,20 @@ export default function AdminConsole() {
     useEffect(() => {
         refreshPendingMedia();
         const handleStorage = () => refreshPendingMedia();
+        const handlePendingUpdate = () => refreshPendingMedia();
         window.addEventListener('storage', handleStorage);
-        return () => window.removeEventListener('storage', handleStorage);
+        window.addEventListener('pending-media-updated', handlePendingUpdate);
+        window.addEventListener('focus', handlePendingUpdate);
+
+        // Auto-poll every 3 seconds so submissions from other windows/browsers appear in real-time
+        const interval = setInterval(refreshPendingMedia, 3000);
+
+        return () => {
+            window.removeEventListener('storage', handleStorage);
+            window.removeEventListener('pending-media-updated', handlePendingUpdate);
+            window.removeEventListener('focus', handlePendingUpdate);
+            clearInterval(interval);
+        };
     }, []);
 
     // ── COMMUNITY APPROVALS STATE & HANDLERS ──
@@ -677,7 +699,46 @@ export default function AdminConsole() {
     const [communityApprovalSearchTerm, setCommunityApprovalSearchTerm] = useState('');
     const [communityApprovalTypeFilter, setCommunityApprovalTypeFilter] = useState('All');
 
-    const refreshPendingCommunityApprovals = () => {
+    const refreshPendingCommunityApprovals = async () => {
+        try {
+            const res = await communitiesApi.getPending({ noCache: true });
+            const apiPending = Array.isArray(res) 
+                ? res 
+                : (Array.isArray(res?.data) 
+                    ? res.data 
+                    : (Array.isArray(res?.data?.data) 
+                        ? res.data.data 
+                        : []));
+            if (Array.isArray(apiPending)) {
+                const mapped = apiPending.map(c => ({
+                    id: c.communityId || c.id,
+                    name: c.name,
+                    category: c.category || c.categoryName || 'General',
+                    type: formatCommunityType(c.communityType || c.type || (c.isPrivate ? 'Private' : 'Public')),
+                    description: c.description || 'No description provided.',
+                    creatorUserId: c.createdByUserId || c.createdById || c.creatorUserId,
+                    creatorName: c.createdByUserName || c.createdBy || c.creatorName || 'Employee',
+                    creatorEmployeeId: c.creatorEmployeeId || (c.createdByUserId || c.createdById ? `EMP${c.createdByUserId || c.createdById}` : 'MPO'),
+                    creatorDesignation: c.creatorDesignation || 'Community Creator',
+                    creatorDepartment: c.creatorDepartment || 'MPOnline',
+                    creatorAvatar: c.creatorAvatar || c.avatar,
+                    createdAt: c.createdDate || c.createdAt,
+                    createdDate: c.createdDate || c.createdAt,
+                    status: c.approvalStatus || 'Pending'
+                }));
+                const localList = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+                const combined = [...mapped];
+                localList.forEach(l => {
+                    if (!combined.some(c => String(c.id) === String(l.id) || (c.name || '').toLowerCase() === (l.name || '').toLowerCase())) {
+                        combined.push(l);
+                    }
+                });
+                setPendingCommunityApprovals(combined);
+                return;
+            }
+        } catch (e) {
+            console.warn('Backend pending communities fetch note:', e);
+        }
         try {
             const list = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
             setPendingCommunityApprovals(list);
@@ -702,8 +763,14 @@ export default function AdminConsole() {
         };
     }, []);
 
-    const handleApproveCommunity = (e, comm) => {
+    const handleApproveCommunity = async (e, comm) => {
         if (e && e.stopPropagation) e.stopPropagation();
+
+        try {
+            await communitiesApi.approve(comm.id);
+        } catch (apiErr) {
+            console.warn('Backend community approve failed, continuing with fallback:', apiErr);
+        }
 
         // 1. Remove from pending approvals
         const currentPending = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
@@ -824,6 +891,12 @@ export default function AdminConsole() {
         });
         if (!ok) return;
 
+        try {
+            await communitiesApi.reject(comm.id, 'Request rejected by Administrator');
+        } catch (apiErr) {
+            console.warn('Backend community reject failed, continuing with fallback:', apiErr);
+        }
+
         // 1. Remove from pending
         const currentPending = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
         const updatedPending = currentPending.filter(p => String(p.id) !== String(comm.id));
@@ -920,6 +993,12 @@ export default function AdminConsole() {
             }
 
 
+            try {
+                await mediaApi.removePendingApproval(mediaItem.id);
+            } catch (errRem) {
+                console.warn("Failed removing media from backend queue:", errRem);
+            }
+
             const updated = pendingMediaApprovals.filter(m => m.id !== mediaItem.id);
             setPendingMediaApprovals(updated);
             localStorage.setItem('knome_pending_media_approvals', JSON.stringify(updated));
@@ -974,7 +1053,13 @@ export default function AdminConsole() {
         }
     };
 
-    const handleRejectMedia = (mediaItem) => {
+    const handleRejectMedia = async (mediaItem) => {
+        try {
+            await mediaApi.removePendingApproval(mediaItem.id);
+        } catch (errRem) {
+            console.warn("Failed removing rejected media from backend queue:", errRem);
+        }
+
         const updated = pendingMediaApprovals.filter(m => m.id !== mediaItem.id);
         setPendingMediaApprovals(updated);
         localStorage.setItem('knome_pending_media_approvals', JSON.stringify(updated));
@@ -1000,14 +1085,27 @@ export default function AdminConsole() {
         showToast(`Rejected ${mediaItem.mediaType} "${mediaItem.title}"`);
     };
 
-    const handleBatchApproveMedia = () => {
+    const handleBatchApproveMedia = async () => {
         if (pendingMediaApprovals.length === 0) {
             showToast('No pending media submissions to approve.');
             return;
         }
         const count = pendingMediaApprovals.length;
+        const currentList = [...pendingMediaApprovals];
         setPendingMediaApprovals([]);
         localStorage.setItem('knome_pending_media_approvals', JSON.stringify([]));
+
+        for (const m of currentList) {
+            try {
+                if (m.mediaType === 'Video' && m.dto) {
+                    const postDto = { ...m.dto, uploaderUserId: m.authorId || m.dto?.uploaderUserId };
+                    await apiClient.post('/videos', postDto).catch(() => {});
+                }
+                await mediaApi.removePendingApproval(m.id).catch(() => {});
+            } catch (e) {}
+        }
+        window.dispatchEvent(new CustomEvent('video-published'));
+
         showToast(`Successfully batch-approved all ${count} pending media submission${count === 1 ? '' : 's'}.`);
         setAuditTrail(prev => [
             {
@@ -1026,7 +1124,7 @@ export default function AdminConsole() {
     const handleRefreshAll = async () => {
         setIsRefreshing(true);
         setLastUpdatedTime(new Date().toLocaleTimeString());
-        await Promise.all([fetchReports(), fetchUsers(), fetchAuditLogs(), fetchRoleRequests(), fetchCommunities()]);
+        await Promise.all([fetchReports(), fetchUsers(), fetchAuditLogs(), fetchRoleRequests(), fetchCommunities(), refreshPendingMedia()]);
         setTimeout(() => setIsRefreshing(false), 500);
         showToast('Console data refreshed successfully.');
     };
@@ -1037,6 +1135,16 @@ export default function AdminConsole() {
             const deletedIds = new Set(JSON.parse(localStorage.getItem('knome_deleted_community_ids') || '[]').map(String));
             const res = await communitiesApi.getAll().catch(() => null);
             const apiData = res?.data || (Array.isArray(res) ? res : (res?.items || []));
+
+            if (Array.isArray(apiData)) {
+                const activeDbIds = new Set(apiData.filter(c => c.isActive === undefined || c.isActive === true || c.isActive === 1).map(c => String(c.communityId || c.id)));
+                const remainingDeleted = Array.from(deletedIds).filter(id => !activeDbIds.has(id));
+                if (remainingDeleted.length !== deletedIds.size) {
+                    localStorage.setItem('knome_deleted_community_ids', JSON.stringify(remainingDeleted));
+                    deletedIds.clear();
+                    remainingDeleted.forEach(id => deletedIds.add(id));
+                }
+            }
             
             setCommunityChannels(() => {
                 const existingMap = new Map();
@@ -1046,7 +1154,7 @@ export default function AdminConsole() {
                     apiData.forEach(item => {
                         const cId = String(item.communityId || item.id);
                         const isActive = item.isActive === undefined || item.isActive === true || item.isActive === 1;
-                        if (!deletedIds.has(cId) && isActive) {
+                        if (isActive) {
                             const commType = (item.communityType || item.type || '').toLowerCase();
                             const isOrg = item.isDefaultOrgCommunity || commType.includes('org') || commType.includes('default');
                             const isPriv = item.isPrivate || commType.includes('private');

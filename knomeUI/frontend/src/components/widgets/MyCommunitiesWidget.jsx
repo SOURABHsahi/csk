@@ -10,11 +10,12 @@ export default function MyCommunitiesWidget() {
     const navigate = useNavigate();
     const [communities, setCommunities] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [isExpanded, setIsExpanded] = useState(false);
 
     const loadCommunities = async () => {
         setIsLoading(true);
         try {
-            const res = await communitiesApi.getAll().catch(() => null);
+            const res = await communitiesApi.getAll(500).catch(() => null);
             const userKey = `knome_joined_communities_${currentUser?.id || 'guest'}`;
             const userJoinedList = JSON.parse(localStorage.getItem(userKey) || '[]');
             const deletedIds = new Set(JSON.parse(localStorage.getItem('knome_deleted_community_ids') || '[]').map(String));
@@ -27,15 +28,29 @@ export default function MyCommunitiesWidget() {
                 list = custom.filter(c => !deletedIds.has(String(c.id)));
             }
 
+            const currentUid = currentUser?.id || currentUser?.userId;
+            const currentName = (currentUser?.name || currentUser?.fullName || '').toLowerCase().trim();
+
             const mapped = list.map(c => {
                 const cId = c.communityId || c.id;
                 const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${cId}`) || '[]');
                 const count = localMembers.length > 0 ? localMembers.length : (c.membersCount || parseInt(c.members) || 1);
                 const imgs = getCommunityImages(c.name, c.categoryName || c.category);
+                
+                const cType = (c.communityType || c.type || '').toLowerCase();
+                const isOrgDefault = cType.includes('default') || cType.includes('org');
+
                 const isJoined = Boolean(
                     c.currentUserMembershipStatus === 'Approved' ||
-                    userJoinedList.some(j => String(j.id) === String(cId)) ||
-                    (currentUser && localMembers.some(m => String(m.userId || m.id) === String(currentUser.id)))
+                    c.currentUserMembershipStatus === 'joined' ||
+                    isOrgDefault ||
+                    userJoinedList.some(j => String(j.id) === String(cId) && (j.status === 'joined' || !j.status)) ||
+                    (currentUser && localMembers.some(m => 
+                        (currentUid && String(m.userId || m.id) === String(currentUid)) ||
+                        (currentName && (m.fullName || m.name || '').toLowerCase().trim() === currentName)
+                    )) ||
+                    (c.creatorUserId && String(c.creatorUserId) === String(currentUid)) ||
+                    (c.createdBy && currentName && c.createdBy.toLowerCase().includes(currentName))
                 );
 
                 const userPhoto = c.avatar || c.thumbnail || c.thumbnailUrl || c.banner || c.bannerUrl || c.bannerImageUrl;
@@ -51,8 +66,9 @@ export default function MyCommunitiesWidget() {
                 };
             });
 
-            // Display all joined/available communities
-            setCommunities(mapped);
+            // Only display communities the current user has joined
+            const joinedOnly = mapped.filter(c => c.isJoined);
+            setCommunities(joinedOnly);
         } catch (err) {
             console.error('Failed to load communities widget:', err);
         } finally {
@@ -72,6 +88,8 @@ export default function MyCommunitiesWidget() {
         };
     }, [currentUser?.id]);
 
+    const visibleCommunities = isExpanded ? communities : communities.slice(0, 3);
+
     return (
         <div className="rounded-2xl p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="flex items-center justify-between mb-4">
@@ -79,6 +97,11 @@ export default function MyCommunitiesWidget() {
                     <h3 className="text-[14px] font-black text-slate-900 dark:text-white flex items-center gap-2">
                         <span className="material-symbols-outlined text-[18px] text-indigo-500" style={{fontVariationSettings:"'FILL' 1"}}>groups</span>
                         Enterprise Communities
+                        {communities.length > 0 && (
+                            <span className="text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/40 px-1.5 py-0.2 rounded-full">
+                                {communities.length}
+                            </span>
+                        )}
                     </h3>
                     <p className="text-[11px] text-slate-400 font-medium">MPOnline official groups</p>
                 </div>
@@ -90,53 +113,75 @@ export default function MyCommunitiesWidget() {
             <div className="flex flex-col gap-2.5">
                 {isLoading ? (
                     <div className="py-6 text-center text-xs text-slate-400">Loading communities...</div>
+                ) : communities.length === 0 ? (
+                    <div className="py-5 px-3 text-center rounded-xl bg-slate-50/60 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                        <span className="material-symbols-outlined text-[26px] text-slate-400 mb-1">group_off</span>
+                        <p className="text-xs font-bold text-slate-700 dark:text-slate-300">No Joined Communities</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5 mb-2.5">Join official MPOnline groups to see them here.</p>
+                        <Link to="/communities" className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 rounded-lg text-xs font-bold transition-colors">
+                            <span>Explore</span>
+                            <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                        </Link>
+                    </div>
                 ) : (
-                    communities.map((community, idx) => (
-                        <div 
-                            key={community.id ? `${community.id}-${idx}` : `${community.name}-${idx}`}
-                            onClick={() => navigate(`/community/view?id=${community.id || 177}`)}
-                            className="flex items-center gap-3 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700 bg-slate-50/50 dark:bg-slate-800/50 hover:bg-white dark:hover:bg-slate-800 transition-all cursor-pointer group"
-                        >
-                            <div className="w-11 h-11 rounded-xl overflow-hidden shrink-0 relative shadow-xs">
-                                <img 
-                                    src={community.avatar || community.banner || FALLBACK_COMM_BANNER} 
-                                    alt={community.name} 
-                                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300 bg-slate-200" 
-                                    onError={(e) => { 
-                                        e.target.onerror = null; 
-                                        e.target.src = FALLBACK_COMM_BANNER; 
-                                    }}
-                                />
-                                <div className="absolute inset-0 bg-slate-900/10"></div>
-                            </div>
-                            
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                    <h4 className="text-[13px] font-bold text-slate-900 dark:text-white truncate group-hover:text-indigo-500 transition-colors">
-                                        {community.name}
-                                    </h4>
-                                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider ${
-                                        (community.type || '').toLowerCase() === 'private'
-                                            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
-                                            : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
-                                    }`}>
-                                        {community.type}
-                                    </span>
+                    <>
+                        {visibleCommunities.map((community, idx) => (
+                            <div 
+                                key={community.id ? `${community.id}-${idx}` : `${community.name}-${idx}`}
+                                onClick={() => navigate(`/community/view?id=${community.id || 177}`)}
+                                className="flex items-center gap-3 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 hover:border-indigo-300 dark:hover:border-indigo-700 bg-slate-50/50 dark:bg-slate-800/50 hover:bg-white dark:hover:bg-slate-800 transition-all cursor-pointer group"
+                            >
+                                <div className="w-11 h-11 rounded-xl overflow-hidden shrink-0 relative shadow-xs">
+                                    <img 
+                                        src={community.avatar || community.banner || FALLBACK_COMM_BANNER} 
+                                        alt={community.name} 
+                                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300 bg-slate-200" 
+                                        onError={(e) => { 
+                                            e.target.onerror = null; 
+                                            e.target.src = FALLBACK_COMM_BANNER; 
+                                        }}
+                                    />
+                                    <div className="absolute inset-0 bg-slate-900/10"></div>
                                 </div>
-                                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1 mt-0.5">
-                                    <span className="material-symbols-outlined text-[12px]">group</span>
-                                    {community.membersCount} {community.membersCount === 1 ? 'member' : 'members'}
-                                    {community.isJoined && (
-                                        <> · <span className="text-emerald-500 font-bold">Joined</span></>
-                                    )}
-                                </p>
-                            </div>
+                                
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                        <h4 className="text-[13px] font-bold text-slate-900 dark:text-white truncate group-hover:text-indigo-500 transition-colors">
+                                            {community.name}
+                                        </h4>
+                                        <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider ${
+                                            (community.type || '').toLowerCase() === 'private'
+                                                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                                                : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                                        }`}>
+                                            {community.type}
+                                        </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1 mt-0.5">
+                                        <span className="material-symbols-outlined text-[12px]">group</span>
+                                        {community.membersCount} {community.membersCount === 1 ? 'member' : 'members'}
+                                        <span className="text-emerald-500 font-bold"> · Joined</span>
+                                    </p>
+                                </div>
 
-                            <span className="material-symbols-outlined text-[18px] text-slate-400 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-all">
-                                chevron_right
-                            </span>
-                        </div>
-                    ))
+                                <span className="material-symbols-outlined text-[18px] text-slate-400 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-all">
+                                    chevron_right
+                                </span>
+                            </div>
+                        ))}
+
+                        {communities.length > 3 && (
+                            <button
+                                onClick={() => setIsExpanded(prev => !prev)}
+                                className="w-full py-2 px-3 mt-0.5 rounded-xl text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors flex items-center justify-center gap-1 cursor-pointer border border-transparent hover:border-indigo-100 dark:hover:border-indigo-900/40"
+                            >
+                                <span>{isExpanded ? 'Show Less' : `Show More (${communities.length - 3})`}</span>
+                                <span className="material-symbols-outlined text-[18px]">
+                                    {isExpanded ? 'expand_less' : 'expand_more'}
+                                </span>
+                            </button>
+                        )}
+                    </>
                 )}
             </div>
         </div>

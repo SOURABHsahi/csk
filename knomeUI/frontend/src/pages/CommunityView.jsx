@@ -225,6 +225,16 @@ export default function CommunityView() {
     const [isLoading, setIsLoading] = useState(true);
     const [toast, setToast] = useState(null); // { message, type }
 
+    // Admin Approval & Add Members State
+    const [isApprovingCommunity, setIsApprovingCommunity] = useState(false);
+    const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
+    const [addMemberSearch, setAddMemberSearch] = useState('');
+    const [selectedUserIdsToAdd, setSelectedUserIdsToAdd] = useState([]);
+    const [selectedRoleToAdd, setSelectedRoleToAdd] = useState('Member');
+    const [isSavingMembers, setIsSavingMembers] = useState(false);
+    const [allOrgUsers, setAllOrgUsers] = useState([]);
+    const [isLoadingOrgUsers, setIsLoadingOrgUsers] = useState(false);
+
     // Admin Protection & Member Management Modals
     const [adminProtectionWarning, setAdminProtectionWarning] = useState(null); // { title, message }
     const [suspendModalMember, setSuspendModalMember] = useState(null);
@@ -233,13 +243,6 @@ export default function CommunityView() {
     const [suspendReasonCategory, setSuspendReasonCategory] = useState('Violation of community guidelines');
     const [suspendReasonNote, setSuspendReasonNote] = useState('');
     const [removeModalMember, setRemoveModalMember] = useState(null);
-
-    // Add Members Modal State
-    const [isAddMembersModalOpen, setIsAddMembersModalOpen] = useState(false);
-    const [selectedNewMemberIds, setSelectedNewMemberIds] = useState([]);
-    const [addMemberSearch, setAddMemberSearch] = useState('');
-    const [isSubmittingMembers, setIsSubmittingMembers] = useState(false);
-    const [allAvailableUsers, setAllAvailableUsers] = useState([]);
 
     // Rules & FAQ Management State
     const [editRules, setEditRules] = useState([]);
@@ -253,6 +256,8 @@ export default function CommunityView() {
     const [filesList, setFilesList] = useState([]);
     const [fileCategoryFilter, setFileCategoryFilter] = useState('All');
     const [fileSearchQuery, setFileSearchQuery] = useState('');
+    const [fileViewMode, setFileViewMode] = useState('table'); // 'table' | 'grid'
+    const [fileSortBy, setFileSortBy] = useState('newest'); // 'newest' | 'oldest' | 'name' | 'size'
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
     const [selectedUploadFile, setSelectedUploadFile] = useState(null);
     const [uploadFileName, setUploadFileName] = useState('');
@@ -260,12 +265,13 @@ export default function CommunityView() {
     const [isUploadingFile, setIsUploadingFile] = useState(false);
     const [previewModalFile, setPreviewModalFile] = useState(null);
     const [activePdfBlobUrl, setActivePdfBlobUrl] = useState(null);
+    const [previewZoom, setPreviewZoom] = useState(1);
+    const [previewTab, setPreviewTab] = useState('viewer'); // 'viewer' | 'summary'
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const [shareTab, setShareTab] = useState('menu'); // 'menu', 'community', 'users'
     const [shareTargetCommunity, setShareTargetCommunity] = useState('');
     const [shareSelectedUsers, setShareSelectedUsers] = useState([]);
     const [shareMessageNote, setShareMessageNote] = useState('');
-    const [shareUserSearchQuery, setShareUserSearchQuery] = useState('');
     const [isSharingProcess, setIsSharingProcess] = useState(false);
     const [allCommunities, setAllCommunities] = useState([]);
 
@@ -370,24 +376,6 @@ export default function CommunityView() {
         return urlOrBase64;
     };
 
-    useEffect(() => {
-        let currentBlobUrl = null;
-        if (previewModalFile) {
-            currentBlobUrl = getPdfBlobUrl(previewModalFile.url);
-            setActivePdfBlobUrl(currentBlobUrl);
-        } else {
-            setActivePdfBlobUrl(null);
-        }
-
-        return () => {
-            if (currentBlobUrl && typeof currentBlobUrl === 'string' && currentBlobUrl.startsWith('blob:')) {
-                // Delay revocation so active iframes/objects do not throw ERR_FILE_NOT_FOUND
-                setTimeout(() => {
-                    try { URL.revokeObjectURL(currentBlobUrl); } catch (e) {}
-                }, 2000);
-            }
-        };
-    }, [previewModalFile]);
 
     // Real-time live count updates (Reactions, Comments, Shares)
     useEffect(() => {
@@ -635,7 +623,7 @@ export default function CommunityView() {
             // 2. Build local notifications for immediate bell/dropdown update with recipient isolation
             const savedNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
             const newNotifs = shareSelectedUsers.map(uId => {
-                const uObj = allShareEligibleUsers.find(u => String(u.id || u.userId) === String(uId)) || (contextUsers || []).find(u => String(u.id || u.userId) === String(uId));
+                const uObj = (contextUsers || []).find(u => String(u.id || u.userId) === String(uId));
                 return {
                     id: `notif_comm_share_${Date.now()}_${uId}_${Math.random().toString(36).slice(2, 6)}`,
                     targetUserId: uId,
@@ -687,7 +675,7 @@ export default function CommunityView() {
         }
     };
 
-    const SAMPLE_PDF_DATA_URL = 'data:application/pdf;base64,JVBERi0xLjQKJcOkw7zDtsOfCjEgMCBvYmoKPDwvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFI+PgplbmRvYmoKMiAwIG9iago8PC9UeXBlIC9QYWdlcyAvQ291bnQgMSAvS2lkcyBbMyAwIFJdPj4KZW5kb2JqCjMgMCBvYmoKPDwvVHlwZSAvUGFnZSAvUGFyZW50IDIgMCBSIC9NZWRpYUJveCBbMCAwIDYxMiA3OTJdIC9Db250ZW50cyA0IDAgUiAvUmVzb3VyY2VzIDw8L0ZvbnQgPDwvRjEgNSAwIFI+Pj4+PgplbmRvYmoKNCAwIG9iago8PC9MZW5ndGggNzQ+PnN0cmVhbQpCVAovRjEgMjQgVGYKMTAwIDcwMCBUZAkKKEtub21lIC0gU3lzdGVtIEFyY2hpdGVjdHVyZSBPdmVydmlldykgVGosCjAgLTMwIFRkCihNUE9ubGluZSBMaW1pdGVkKSBUagpFVAplbmRzdHJlYW0KZW5kb2JqCjUgMCBvYmoKPDwvVHlwZSAvRm9udCAvU3Vic3R5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhPj4KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxNSAwMDAwMCBuIAowMDAwMDAwMDY4IDAMDAwMCBuIAowMDAwMDAwMTI1IDAMDAwMCBuIAowMDAwMDAwMjU3IDAMDAwMCBuIAowMDAwMDAwMzgwIDAMDAwMCBuIAp0cmFpbGVyCjw8L1NpemUgNiAvUm9vdCAxIDAgUj4+CnN0YXJ0eHJlZgo0NjkKJSVFT0Y=';
+    const SAMPLE_PDF_DATA_URL = 'data:application/pdf;base64,JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwKICAvVHlwZSAvUGFnZQogIC9QYXJlbnQgMiAwIFIKICAvTWVkaWFCb3ggWzAgMCA2MTIgNzkyXQogIC9Db250ZW50cyA0IDAgUgogIC9SZXNvdXJjZXMgPDwKICAgIC9Gb250IDw8CiAgICAgIC9GMSA8PCAvVHlwZSAvRm9udCAvU3VidHlwZSAvVHlwZTEgL0Jhc2VGb250IC9IZWx2ZXRpY2EtQm9sZCA+PgogICAgICAvRjIgPDwgL1R5cGUgL0ZvbnQgL1N1YnR5cGUgL1R5cGUxIC9CYXNlRm9udCAvSGVsdmV0aWNhID4+CiAgICA+PgogID4+Cj4+CmVuZG9iago0IDAgb2JqCjw8IC9MZW5ndGggNjkyID4+CnN0cmVhbQpCVAovRjEgMjAgVGYKNTAgNzIwIFRkCihNUE9ubGluZSBMaW1pdGVkIC0gS25vbWUgRW50ZXJwcmlzZSkgVGoKMCAtMzAgVGQKL0YxIDE1IFRmCihTeXN0ZW0gQXJjaGl0ZWN0dXJlICYgSW50ZWdyYXRpb24gT3ZlcnZpZXcpIFRqCjAgLTQwIFRkCi9GMiAxMiBUZgooRG9jdW1lbnQ6IFN5c3RlbV9BcmNoaXRlY3R1cmVfT3ZlcnZpZXcucGRmKSBUagowIC0yMiBUZAooU3RhdHVzOiBBcHByb3ZlZCAmIFZlcmlmaWVkKSBUagowIC0yMiBUZAooQ2xhc3NpZmljYXRpb246IEludGVybmFsIEVudGVycHJpc2UgRG9jdW1lbnRhdGlvbikgVGoKMCAtNDAgVGQKL0YxIDEzIFRmCigxLiBBcmNoaXRlY3R1cmUgU3VtbWFyeSkgVGoKMCAtMjAgVGQKL0YyIDExIFRmCihLbm9tZSBpcyB0aGUgdW5pZmllZCBpbnRlcm5hbCBrbm93bGVkZ2UgYW5kIGNvbGxhYm9yYXRpb24gcGxhdGZvcm0gZm9yIE1QT25saW5lLikgVGoKMCAtMjAgVGQKKEJ1aWx0IHdpdGggQVNQLk5FVCBDb3JlIDEwLCBTUUwgU2VydmVyLCBhbmQgbW9kZXJuIFJlYWN0IHdpdGggVml0ZS4pIFRqCjAgLTM1IFRkCi9GMSAxMyBUZgooMi4gU2VjdXJpdHkgJiBDb21wbGlhbmNlKSBUagowIC0yMiBUZAovRjIgMTEgVGYKKEFsbCBkb2N1bWVudHMgYW5kIG1lZGlhIGZpbGVzIGFyZSBnb3Zlcm5lZCBpbiBjb21wbGlhbmNlIHdpdGggRFBEUCBzdGFuZGFyZHMuKSBUagpFVAplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA1CjAwMDAwMDAwMDAgNjU1MzUgZiANCjAwMDAwMDAwMDkgMDAwMDAgbiANCjAwMDAwMDAwNTggMDAwMDAgbiANCjAwMDAwMDAxMTUgMDAwMDAgbiANCjAwMDAwMDAzODYgMDAwMDAgbiANCnRyYWlsZXIKPDwKICAvU2l6ZSA1CiAgL1Jvb3QgMSAwIFIKPj4Kc3RhcnR4cmVmCjExMjkKJSVFT0YK';
 
     const readFileAsDataUrl = (file) => {
         return new Promise((resolve) => {
@@ -785,6 +773,20 @@ export default function CommunityView() {
 
     useEffect(() => {
         let isMounted = true;
+        let createdBlobUrl = null;
+
+        if (previewModalFile) {
+            setPreviewZoom(1);
+            setPreviewTab('viewer');
+        }
+
+        const handleKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                setPreviewModalFile(null);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+
         const loadPreviewUrl = async () => {
             if (!previewModalFile) {
                 setActivePdfBlobUrl(null);
@@ -801,6 +803,7 @@ export default function CommunityView() {
 
             if (isMounted) {
                 const blobUrl = getPdfBlobUrl(rawUrl || SAMPLE_PDF_DATA_URL);
+                createdBlobUrl = blobUrl;
                 setActivePdfBlobUrl(blobUrl);
             }
         };
@@ -809,6 +812,12 @@ export default function CommunityView() {
 
         return () => {
             isMounted = false;
+            window.removeEventListener('keydown', handleKeyDown);
+            if (createdBlobUrl && typeof createdBlobUrl === 'string' && createdBlobUrl.startsWith('blob:')) {
+                setTimeout(() => {
+                    try { URL.revokeObjectURL(createdBlobUrl); } catch (e) {}
+                }, 3000);
+            }
         };
     }, [previewModalFile]);
 
@@ -833,8 +842,126 @@ export default function CommunityView() {
             return { category: 'Video', ext: ext || 'mp3' };
         }
 
-        // 3. Document (PDF, Word, Excel, PowerPoint, Text, etc.)
+        // 3. Document (PDF, Word, Excel, PowerPoint, Text, Archives, Code, etc.)
         return { category: 'Document', ext: ext || 'pdf' };
+    };
+
+    const getFileFormatConfig = (file) => {
+        const ext = (file?.extension || (file?.name ? file.name.split('.').pop() : '') || '').toLowerCase();
+        const cat = file?.category || 'Document';
+
+        if (['pdf'].includes(ext)) {
+            return {
+                badge: 'PDF',
+                label: 'Adobe PDF Document',
+                icon: 'picture_as_pdf',
+                color: 'text-rose-600 dark:text-rose-400',
+                border: 'border-rose-200 dark:border-rose-800/60',
+                bg: 'bg-rose-50 dark:bg-rose-950/40',
+                badgeBg: 'bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+            };
+        }
+        if (['doc', 'docx'].includes(ext)) {
+            return {
+                badge: 'DOCX',
+                label: 'Microsoft Word Document',
+                icon: 'description',
+                color: 'text-blue-600 dark:text-blue-400',
+                border: 'border-blue-200 dark:border-blue-800/60',
+                bg: 'bg-blue-50 dark:bg-blue-950/40',
+                badgeBg: 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+            };
+        }
+        if (['xls', 'xlsx', 'csv'].includes(ext)) {
+            return {
+                badge: ext.toUpperCase(),
+                label: 'Excel Spreadsheet',
+                icon: 'table_chart',
+                color: 'text-emerald-600 dark:text-emerald-400',
+                border: 'border-emerald-200 dark:border-emerald-800/60',
+                bg: 'bg-emerald-50 dark:bg-emerald-950/40',
+                badgeBg: 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+            };
+        }
+        if (['ppt', 'pptx'].includes(ext)) {
+            return {
+                badge: 'PPTX',
+                label: 'PowerPoint Presentation',
+                icon: 'slideshow',
+                color: 'text-amber-600 dark:text-amber-400',
+                border: 'border-amber-200 dark:border-amber-800/60',
+                bg: 'bg-amber-50 dark:bg-amber-950/40',
+                badgeBg: 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+            };
+        }
+        if (cat === 'Image' || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) {
+            return {
+                badge: (ext || 'IMG').toUpperCase(),
+                label: 'Graphic Asset',
+                icon: 'image',
+                color: 'text-purple-600 dark:text-purple-400',
+                border: 'border-purple-200 dark:border-purple-800/60',
+                bg: 'bg-purple-50 dark:bg-purple-950/40',
+                badgeBg: 'bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+            };
+        }
+        if (cat === 'Video' || ['mp4', 'webm', 'mov', 'm4v', 'mkv', 'avi'].includes(ext)) {
+            return {
+                badge: (ext || 'MP4').toUpperCase(),
+                label: 'Digital Video',
+                icon: 'movie',
+                color: 'text-indigo-600 dark:text-indigo-400',
+                border: 'border-indigo-200 dark:border-indigo-800/60',
+                bg: 'bg-indigo-50 dark:bg-indigo-950/40',
+                badgeBg: 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+            };
+        }
+        if (cat === 'Archive' || ['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
+            return {
+                badge: (ext || 'ZIP').toUpperCase(),
+                label: 'Archive Package',
+                icon: 'folder_zip',
+                color: 'text-amber-600 dark:text-amber-400',
+                border: 'border-amber-200 dark:border-amber-800/60',
+                bg: 'bg-amber-50 dark:bg-amber-950/40',
+                badgeBg: 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+            };
+        }
+        if (cat === 'Code' || ['js', 'jsx', 'ts', 'tsx', 'cs', 'py', 'java', 'sql', 'json', 'html', 'css'].includes(ext)) {
+            return {
+                badge: (ext || 'SRC').toUpperCase(),
+                label: 'Code / Script',
+                icon: 'terminal',
+                color: 'text-cyan-600 dark:text-cyan-400',
+                border: 'border-cyan-200 dark:border-cyan-800/60',
+                bg: 'bg-cyan-50 dark:bg-cyan-950/40',
+                badgeBg: 'bg-cyan-100 dark:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 border border-cyan-200 dark:border-cyan-800'
+            };
+        }
+        return {
+            badge: (ext || 'DOC').toUpperCase(),
+            label: 'Institutional Document',
+            icon: 'article',
+            color: 'text-slate-600 dark:text-slate-400',
+            border: 'border-slate-200 dark:border-slate-700',
+            bg: 'bg-slate-50 dark:bg-slate-800/60',
+            badgeBg: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+        };
+    };
+
+    const formatFileDate = (dateVal) => {
+        if (!dateVal) return 'Recently';
+        try {
+            const d = new Date(dateVal);
+            if (isNaN(d.getTime())) return 'Recently';
+            return d.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+        } catch {
+            return 'Recently';
+        }
     };
 
     const handleFileUploadSubmit = async (e) => {
@@ -932,11 +1059,143 @@ export default function CommunityView() {
                       (community?.createdBy && currentUser?.name && community.createdBy.toLowerCase().includes(currentUser.name.toLowerCase())) ||
                       (community?.adminContact && currentUser?.name && community.adminContact.toLowerCase().includes(currentUser.name.toLowerCase()));
 
-    // Treat SYSADM, CADM, Creator, and assigned Admins/Moderators as Community Admins
-    const isAdmin = ['SYSADM', 'CADM'].includes(currentUser?.role) ||
-                    ['System Administrator', 'HR Administrator', 'Community Administrator', 'System Admin'].includes(currentUser?.roleName) ||
+    // Treat SYSADM, CADM, HRADM, Creator, and assigned Admins/Moderators as Community Admins
+    const isAdmin = ['SYSADM', 'CADM', 'HRADM'].includes(currentUser?.role) ||
+                    ['System Administrator', 'HR Administrator', 'Community Administrator', 'System Admin', 'HR Admin'].includes(currentUser?.roleName) ||
+                    (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => ['System Administrator', 'HR Administrator', 'Community Administrator', 'SYSADM', 'HRADM'].includes(r))) ||
                     isCreator ||
                     membersList.some(m => String(m.userId || m.id) === String(currentUser?.id) && (m.memberType === 'Admin' || m.memberType === 'Moderator'));
+
+    const isSysAdmin = ['SYSADM', 'HRADM'].includes(currentUser?.role) || 
+                       ['System Administrator', 'HR Administrator', 'System Admin', 'HR Admin'].includes(currentUser?.roleName) ||
+                       (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => ['SYSADM', 'HRADM', 'System Administrator', 'HR Administrator'].includes(r)));
+
+    // Load organization directory for admin member addition modal
+    useEffect(() => {
+        if (isAddMemberModalOpen) {
+            setIsLoadingOrgUsers(true);
+            adminApi.getUsers(1, 500, '').then(res => {
+                const list = res?.data?.items || res?.data || res?.items || res || [];
+                if (Array.isArray(list) && list.length > 0) {
+                    setAllOrgUsers(list);
+                } else if (Array.isArray(contextUsers) && contextUsers.length > 0) {
+                    setAllOrgUsers(contextUsers);
+                }
+            }).catch(() => {
+                if (Array.isArray(contextUsers) && contextUsers.length > 0) {
+                    setAllOrgUsers(contextUsers);
+                }
+            }).finally(() => {
+                setIsLoadingOrgUsers(false);
+            });
+        }
+    }, [isAddMemberModalOpen]);
+
+    const filteredEmployeesToAdd = useMemo(() => {
+        const pool = (allOrgUsers && allOrgUsers.length > 0) ? allOrgUsers : (contextUsers || []);
+        if (!addMemberSearch || !addMemberSearch.trim()) return pool;
+        const q = addMemberSearch.toLowerCase().trim();
+        return pool.filter(u => 
+            (u.name && u.name.toLowerCase().includes(q)) ||
+            (u.fullName && u.fullName.toLowerCase().includes(q)) ||
+            (u.employeeId && u.employeeId.toLowerCase().includes(q)) ||
+            (u.department && u.department.toLowerCase().includes(q)) ||
+            (u.departmentName && u.departmentName.toLowerCase().includes(q)) ||
+            (u.designation && u.designation.toLowerCase().includes(q))
+        );
+    }, [allOrgUsers, contextUsers, addMemberSearch]);
+
+    const handleAddSelectedMembers = async () => {
+        if (selectedUserIdsToAdd.length === 0) {
+            showToast('Please select at least one employee to add.', 'error');
+            return;
+        }
+
+        setIsSavingMembers(true);
+        try {
+            const targetId = community?.id || communityId;
+            await communitiesApi.addMembers(targetId, {
+                userIds: selectedUserIdsToAdd.map(Number),
+                memberType: selectedRoleToAdd
+            });
+
+            await loadData();
+
+            showToast(`✅ Successfully added ${selectedUserIdsToAdd.length} member(s) to "${community?.name}"!`, 'success');
+            setSelectedUserIdsToAdd([]);
+            setIsAddMemberModalOpen(false);
+            window.dispatchEvent(new CustomEvent('community-joined-change'));
+        } catch (err) {
+            console.error('Failed to add members:', err);
+            const msg = err?.data?.message || err?.message || 'Failed to add members to community.';
+            showToast(msg, 'error');
+        } finally {
+            setIsSavingMembers(false);
+        }
+    };
+
+    const handleApproveThisCommunity = async () => {
+        setIsApprovingCommunity(true);
+        try {
+            const commIdNum = Number(community?.id || communityId);
+            if (!isNaN(commIdNum) && commIdNum > 0) {
+                await communitiesApi.approve(commIdNum);
+            }
+
+            try {
+                const pending = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+                const updatedPending = pending.filter(p => String(p.id) !== String(commIdNum));
+                localStorage.setItem('knome_pending_community_approvals', JSON.stringify(updatedPending));
+            } catch (_) {}
+
+            setCommunity(prev => ({
+                ...prev,
+                isActive: true,
+                approvalStatus: 'Approved'
+            }));
+            showToast(`🎉 Community "${community?.name}" approved successfully and is now live!`, 'success');
+            window.dispatchEvent(new CustomEvent('community-created'));
+            window.dispatchEvent(new CustomEvent('community-approval-requested'));
+        } catch (err) {
+            console.error('Failed to approve community:', err);
+            showToast('Failed to approve community.', 'error');
+        } finally {
+            setIsApprovingCommunity(false);
+        }
+    };
+
+    const handleRejectThisCommunity = async () => {
+        const ok = await confirm({
+            title: 'Reject Community Request',
+            message: `Are you sure you want to reject the community creation request for "${community?.name}"?`,
+            confirmText: 'Reject Community',
+            cancelText: 'Cancel',
+            variant: 'warning'
+        });
+        if (!ok) return;
+
+        setIsApprovingCommunity(true);
+        try {
+            const commIdNum = Number(community?.id || communityId);
+            if (!isNaN(commIdNum) && commIdNum > 0) {
+                await communitiesApi.reject(commIdNum, 'Rejected by administrator');
+            }
+
+            try {
+                const pending = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+                const updatedPending = pending.filter(p => String(p.id) !== String(commIdNum));
+                localStorage.setItem('knome_pending_community_approvals', JSON.stringify(updatedPending));
+            } catch (_) {}
+
+            showToast(`Community request for "${community?.name}" was rejected.`, 'info');
+            navigate('/communities');
+        } catch (err) {
+            console.error('Failed to reject community:', err);
+            showToast('Failed to reject community.', 'error');
+        } finally {
+            setIsApprovingCommunity(false);
+        }
+    };
 
     const showToast = (message, type = 'success') => {
         setToast({ message, type });
@@ -1025,29 +1284,16 @@ export default function CommunityView() {
                     status: 'Approved',
                     profilePhotoUrl: commData.creatorAvatar || null
                 };
-
-                // Merge API members with locally stored/enrolled members seamlessly
-                const combinedMembers = [];
-                const seenUserIds = new Set();
-
-                const addUniqueMember = (m) => {
-                    if (!m) return;
-                    const uid = String(m.userId || m.id || '').toLowerCase();
-                    const empId = String(m.employeeId || m.empId || m.displayEmpId || '').toLowerCase();
-                    if (removedSet.has(uid) || (empId && removedSet.has(empId))) {
-                        return; // Exclude removed member
-                    }
-                    if (uid && !seenUserIds.has(uid)) {
-                        seenUserIds.add(uid);
-                        combinedMembers.push(m.memberType === 'Moderator' ? { ...m, memberType: 'Admin' } : m);
-                    }
-                };
-
-                if (Array.isArray(rawMembers)) rawMembers.forEach(addUniqueMember);
-                if (Array.isArray(localMembersApi)) localMembersApi.forEach(addUniqueMember);
-                if (combinedMembers.length === 0) combinedMembers.push(defaultCreator);
-
-                let resolvedMembers = deduplicateMembers(combinedMembers, contextUsers);
+                const rawList = (Array.isArray(rawMembers) && rawMembers.length > 0 
+                    ? rawMembers 
+                    : (localMembersApi.length > 0 ? localMembersApi : [defaultCreator]))
+                    .filter(m => {
+                        const uid = String(m?.userId || m?.id || '').toLowerCase();
+                        const empId = String(m?.employeeId || m?.empId || '').toLowerCase();
+                        return !(removedSet.has(uid) || (empId && removedSet.has(empId)));
+                    })
+                    .map(m => (m.memberType === 'Moderator' ? { ...m, memberType: 'Admin' } : m));
+                let resolvedMembers = deduplicateMembers(rawList, contextUsers);
                 localStorage.setItem(savedMembersKey, JSON.stringify(resolvedMembers));
 
                 setCommunity({
@@ -1055,13 +1301,17 @@ export default function CommunityView() {
                     name: commData.name,
                     type: commData.communityType || 'Public',
                     category: commData.categoryName || 'Technology',
-                    membersCount: Math.max(commData.membersCount || 1, resolvedMembers.length),
+                    membersCount: resolvedMembers.length > 0 ? resolvedMembers.length : (commData.membersCount || 1),
                     adminContact: commData.createdByUserName || 'Admin',
                     banner: localMatch?.banner || localMatch?.bannerUrl || resolveMediaUrl(commData.bannerUrl || commData.bannerImageUrl) || imgs.banner,
                     thumbnail: localMatch?.thumbnail || localMatch?.avatar || localMatch?.thumbnailUrl || resolveMediaUrl(commData.thumbnailUrl) || imgs.thumbnail,
                     description: commData.description || 'Community for MPOnline team members.',
                     rules: resolvedRules,
-                    faq: resolvedFaq
+                    faq: resolvedFaq,
+                    isActive: commData.isActive,
+                    approvalStatus: commData.approvalStatus || (commData.isActive ? 'Approved' : 'Pending'),
+                    createdByUserId: commData.createdByUserId,
+                    createdDate: commData.createdDate
                 });
 
                 const userJoinedList = JSON.parse(localStorage.getItem(`knome_joined_communities_${currentUser?.id || 'guest'}`) || '[]');
@@ -1160,8 +1410,6 @@ export default function CommunityView() {
                 const targetId = communityId || 101;
                 const savedMembersKey = `knome_community_members_${targetId}`;
                 const localMembers = JSON.parse(localStorage.getItem(savedMembersKey) || '[]');
-                const removedMembersList = JSON.parse(localStorage.getItem(`knome_community_removed_${targetId}`) || '[]');
-                const removedSet = new Set(removedMembersList.map(x => String(x).toLowerCase()));
 
                 const creatorName = found?.createdBy || 'Community Creator';
                 const defaultCreator = {
@@ -1174,11 +1422,6 @@ export default function CommunityView() {
                     profilePhotoUrl: found?.creatorAvatar || found?.avatar || null
                 };
                 const rawFallbackList = (localMembers.length > 0 ? localMembers : [defaultCreator])
-                    .filter(m => {
-                        const uid = String(m.userId || m.id || '').toLowerCase();
-                        const empId = String(m.employeeId || m.empId || '').toLowerCase();
-                        return !removedSet.has(uid) && (!empId || !removedSet.has(empId));
-                    })
                     .map(m => (m.memberType === 'Moderator' ? { ...m, memberType: 'Admin' } : m));
                 let resolvedMembers = deduplicateMembers(rawFallbackList, contextUsers);
                 localStorage.setItem(savedMembersKey, JSON.stringify(resolvedMembers));
@@ -1339,7 +1582,7 @@ export default function CommunityView() {
                         if (idbBlob) currentUrl = idbBlob;
                     } catch (_) {}
                 }
-                if (f.extension === 'pdf' && (!currentUrl || currentUrl === '#' || currentUrl.includes('w3.org') || currentUrl.includes('localhost') || currentUrl.startsWith('blob:'))) {
+                if (f.extension === 'pdf' && (!currentUrl || currentUrl === '#' || currentUrl.includes('w3.org') || currentUrl.includes('localhost') || currentUrl.startsWith('blob:') || currentUrl.includes('cOkw7zDtsOf') || f.name === 'System_Architecture_Overview.pdf')) {
                     currentUrl = SAMPLE_PDF_DATA_URL;
                 }
                 return { ...f, url: currentUrl };
@@ -1347,6 +1590,7 @@ export default function CommunityView() {
 
             if (hydratedFiles.length > 0) {
                 setFilesList(hydratedFiles);
+                safeSetStorage(savedFilesKey, hydratedFiles);
             } else {
                 const isCustom = (JSON.parse(localStorage.getItem('knome_custom_communities') || '[]')).some(c => String(c.id) === String(resolvedTargetId));
                 if (!isCustom) {
@@ -1660,54 +1904,6 @@ export default function CommunityView() {
             window.removeEventListener('storage', handleFeedOrPostsUpdated);
         };
     }, [communityId]);
-
-    // Load available colleagues pool for community member additions
-    useEffect(() => {
-        let isMounted = true;
-        const loadAllUsers = async () => {
-            const roster = [...(contextUsers || []), ...(INITIAL_USERS || [])];
-            try {
-                const customUsers = JSON.parse(localStorage.getItem('knome_custom_users') || '[]');
-                if (Array.isArray(customUsers)) {
-                    customUsers.forEach(cu => {
-                        const cuid = cu.id || cu.userId;
-                        if (!roster.some(u => String(u.id || u.userId) === String(cuid) || (u.employeeId && cu.employeeId && u.employeeId.toUpperCase() === cu.employeeId.toUpperCase()))) {
-                            roster.push(cu);
-                        }
-                    });
-                }
-            } catch (_) {}
-
-            try {
-                const searchRes = await apiClient.get('/search/users?pageSize=100');
-                const items = searchRes?.items || (Array.isArray(searchRes) ? searchRes : (searchRes?.data?.items || searchRes?.data || []));
-                if (Array.isArray(items) && items.length > 0) {
-                    items.forEach(u => {
-                        const uid = u.id || u.userId;
-                        if (!roster.some(existing => String(existing.id || existing.userId) === String(uid) || (existing.employeeId && u.authorEmployeeId && existing.employeeId.toUpperCase() === u.authorEmployeeId.toUpperCase()))) {
-                            roster.push({
-                                id: uid,
-                                userId: uid,
-                                name: u.title || u.authorFullName || u.name || `Employee ${uid}`,
-                                fullName: u.title || u.authorFullName || u.name || `Employee ${uid}`,
-                                employeeId: u.authorEmployeeId || `MPO${uid}`,
-                                designation: u.summary || u.designation || 'Employee',
-                                department: u.departmentName || u.department || 'MPOnline Limited',
-                                avatar: u.authorProfilePhotoUrl || u.thumbnailUrl || null
-                            });
-                        }
-                    });
-                }
-            } catch (_) {}
-
-            if (isMounted) {
-                setAllAvailableUsers(roster);
-            }
-        };
-
-        loadAllUsers();
-        return () => { isMounted = false; };
-    }, [contextUsers]);
 
     // Create New Post inside Community (Only for Members - FR-CM-06)
     const handleCreatePost = async (e) => {
@@ -2097,7 +2293,7 @@ export default function CommunityView() {
         const isTargetAdmin = member.memberType === 'Admin' || member.memberType === 'Moderator' || member.memberType === 'Community Administrator' || member.memberType === 'Community Admin';
         const targetId = communityId || community?.id || 101;
 
-        // 1. Call Backend API to remove member from database
+        // 1. Call Backend API to remove member from SQL database
         const numId = Number(targetId);
         const numMemberId = Number(memberId);
         if (!isNaN(numId) && numId > 0 && numId < 1000000000 && !isNaN(numMemberId) && numMemberId > 0) {
@@ -2129,17 +2325,9 @@ export default function CommunityView() {
         ]));
         localStorage.setItem(removedKey, JSON.stringify(updatedRemoved));
 
-        // 3. Remove from community members local cache
+        // 3. Remove from community members local state & cache
         setMembersList(prev => {
-            const updated = prev.filter(m => {
-                const mUid = String(m.userId || m.id || '');
-                const mEmpId = String(m.employeeId || m.empId || '').toUpperCase();
-                const targetUid = String(memberId);
-                const targetEmpId = String(member.employeeId || '').toUpperCase();
-                if (mUid === targetUid) return false;
-                if (targetEmpId && mEmpId === targetEmpId) return false;
-                return true;
-            });
+            const updated = prev.filter(m => String(m.userId || m.id) !== String(memberId));
             localStorage.setItem(`knome_community_members_${targetId}`, JSON.stringify(updated));
             localStorage.setItem(`knome_community_members_updated_${targetId}`, Date.now().toString());
             window.dispatchEvent(new CustomEvent('community-members-updated', { detail: { communityId: targetId } }));
@@ -2147,16 +2335,8 @@ export default function CommunityView() {
             return updated;
         });
 
-        // 4. Clean up target member's joined communities in localStorage
-        try {
-            const targetUserKey = `knome_joined_communities_${memberId}`;
-            const targetJoined = JSON.parse(localStorage.getItem(targetUserKey) || '[]');
-            const updatedTargetJoined = targetJoined.filter(c => String(c.id) !== String(targetId));
-            localStorage.setItem(targetUserKey, JSON.stringify(updatedTargetJoined));
-        } catch (e) {}
-
-        // 5. Decrement community members count
-        setCommunity(prev => prev ? ({ ...prev, membersCount: Math.max(1, (prev.membersCount || 1) - 1) }) : prev);
+        // 4. Update community object members count
+        setCommunity(prev => ({ ...prev, membersCount: Math.max(1, (prev.membersCount || 1) - 1) }));
         showToast(`${memberName} has been removed from this community.`, 'info');
         setRemoveModalMember(null);
     };
@@ -2164,79 +2344,6 @@ export default function CommunityView() {
     const handleRemoveMemberByAdmin = async (memberId, memberName) => {
         const member = membersList.find(m => String(m.userId || m.id) === String(memberId)) || { userId: memberId, fullName: memberName };
         handleInitiateRemoveMember(member);
-    };
-
-    const handleAddSelectedMembers = async () => {
-        if (!selectedNewMemberIds || selectedNewMemberIds.length === 0) {
-            showToast('Please select at least one colleague to add.', 'warning');
-            return;
-        }
-
-        setIsSubmittingMembers(true);
-        const targetId = community?.id || communityId;
-
-        try {
-            const numId = Number(targetId);
-            if (!isNaN(numId) && numId > 0 && numId < 1000000000) {
-                try {
-                    await communitiesApi.addMembers(numId, selectedNewMemberIds);
-                } catch (apiErr) {
-                    console.warn('Backend bulk add members warning, updating locally:', apiErr);
-                }
-            }
-
-            const pool = [...(allAvailableUsers || []), ...(contextUsers || []), ...(INITIAL_USERS || [])];
-            const newMemberObjects = selectedNewMemberIds.map(uid => {
-                const u = pool.find(user => String(user.userId || user.id) === String(uid)) || { userId: uid, fullName: `Employee ${uid}` };
-                return {
-                    userId: u.userId || u.id || uid,
-                    id: u.userId || u.id || uid,
-                    fullName: u.fullName || u.name || `Employee ${uid}`,
-                    name: u.fullName || u.name || `Employee ${uid}`,
-                    employeeId: u.employeeId || `MPO${uid}`,
-                    designation: u.designation || u.roleName || 'Employee',
-                    department: u.department || 'MPOnline Limited',
-                    memberType: 'Member',
-                    status: 'Approved',
-                    profilePhotoUrl: u.profilePhotoUrl || u.avatar || null
-                };
-            });
-
-            const savedMembersKey = `knome_community_members_${targetId}`;
-            const updatedMembers = deduplicateMembers([...membersList, ...newMemberObjects], contextUsers);
-
-            setMembersList(updatedMembers);
-            localStorage.setItem(savedMembersKey, JSON.stringify(updatedMembers));
-            localStorage.setItem(`knome_community_members_updated_${targetId}`, Date.now().toString());
-
-            setCommunity(prev => prev ? { ...prev, membersCount: updatedMembers.length } : prev);
-
-            // Remove from join requests if any were pending
-            setJoinRequests(prev => {
-                const updated = prev.filter(r => !selectedNewMemberIds.some(sid => String(sid) === String(r.id || r.userId)));
-                localStorage.setItem(`knome_join_requests_${targetId}`, JSON.stringify(updated));
-                return updated;
-            });
-
-            // Clear added members from removed tombstone so they can be re-enrolled cleanly
-            const removedKey = `knome_community_removed_${targetId}`;
-            const currentRemoved = JSON.parse(localStorage.getItem(removedKey) || '[]');
-            const updatedRemoved = currentRemoved.filter(id => !selectedNewMemberIds.some(sel => String(sel).toLowerCase() === String(id).toLowerCase()));
-            localStorage.setItem(removedKey, JSON.stringify(updatedRemoved));
-
-            window.dispatchEvent(new CustomEvent('community-members-updated', { detail: { communityId: targetId } }));
-            window.dispatchEvent(new CustomEvent('community-joined-change'));
-
-            showToast(`Added ${selectedNewMemberIds.length} colleague(s) to ${community?.name || 'community'}.`, 'success');
-            setIsAddMembersModalOpen(false);
-            setSelectedNewMemberIds([]);
-            setAddMemberSearch('');
-        } catch (err) {
-            console.error('Failed to add members:', err);
-            showToast('Failed to add members. Please try again.', 'error');
-        } finally {
-            setIsSubmittingMembers(false);
-        }
     };
 
     const handleJoinAction = async () => {
@@ -2804,8 +2911,6 @@ export default function CommunityView() {
         showToast(`${requestName}'s join request has been rejected.`, 'warning');
     };
 
-    const isSysAdmin = ['SYSADM', 'CADM'].includes(currentUser?.role) || ['System Administrator', 'HR Administrator', 'Community Administrator', 'System Admin'].includes(currentUser?.roleName);
-
     const handleDeleteCommunity = async () => {
         const ok = await confirm({
             title: 'Delete Community',
@@ -2862,13 +2967,72 @@ export default function CommunityView() {
         setPreviewModalFile(file);
     };
 
-    const filteredFiles = filesList.filter(f => {
-        const matchesCat = fileCategoryFilter === 'All' || f.category === fileCategoryFilter;
-        const matchesQuery = !fileSearchQuery.trim() || 
-            f.name.toLowerCase().includes(fileSearchQuery.toLowerCase()) || 
-            (f.uploadedBy && f.uploadedBy.toLowerCase().includes(fileSearchQuery.toLowerCase()));
-        return matchesCat && matchesQuery;
-    });
+    const fileCategoryCounts = useMemo(() => {
+        const counts = { All: filesList.length, Document: 0, Image: 0, Video: 0 };
+        filesList.forEach(f => {
+            if (f.category === 'Image') {
+                counts.Image++;
+            } else if (f.category === 'Video') {
+                counts.Video++;
+            } else {
+                counts.Document++;
+            }
+        });
+        return counts;
+    }, [filesList]);
+
+    const totalStorageDisplay = useMemo(() => {
+        let totalBytes = 0;
+        filesList.forEach(f => {
+            const sz = String(f.size || '').trim().toLowerCase();
+            if (sz.endsWith('mb')) {
+                totalBytes += (parseFloat(sz) || 0) * 1024 * 1024;
+            } else if (sz.endsWith('kb')) {
+                totalBytes += (parseFloat(sz) || 0) * 1024;
+            } else if (sz.endsWith('bytes') || sz.endsWith('b')) {
+                totalBytes += (parseFloat(sz) || 0);
+            } else {
+                totalBytes += 250 * 1024; // fallback estimation
+            }
+        });
+        if (totalBytes >= 1024 * 1024) {
+            return `${(totalBytes / (1024 * 1024)).toFixed(1)} MB`;
+        }
+        return `${Math.round(totalBytes / 1024)} KB`;
+    }, [filesList]);
+
+    const filteredFiles = useMemo(() => {
+        let list = filesList.filter(f => {
+            const matchesCat = fileCategoryFilter === 'All' || 
+                (fileCategoryFilter === 'Document' ? (f.category === 'Document' || f.category === 'Archive' || f.category === 'Code') : f.category === fileCategoryFilter);
+            const q = fileSearchQuery.trim().toLowerCase();
+            const matchesQuery = !q || 
+                (f.name && f.name.toLowerCase().includes(q)) || 
+                (f.uploadedBy && f.uploadedBy.toLowerCase().includes(q)) ||
+                (f.extension && f.extension.toLowerCase().includes(q));
+            return matchesCat && matchesQuery;
+        });
+
+        return [...list].sort((a, b) => {
+            if (fileSortBy === 'name') {
+                return (a.name || '').localeCompare(b.name || '');
+            }
+            if (fileSortBy === 'oldest') {
+                return new Date(a.uploadedAt || 0) - new Date(b.uploadedAt || 0);
+            }
+            if (fileSortBy === 'size') {
+                const parseSz = (s) => {
+                    const str = String(s || '').toLowerCase();
+                    if (str.endsWith('mb')) return parseFloat(str) * 1024 * 1024;
+                    if (str.endsWith('kb')) return parseFloat(str) * 1024;
+                    return parseFloat(str) || 0;
+                };
+                return parseSz(b.size) - parseSz(a.size);
+            }
+            // default: newest first
+            return new Date(b.uploadedAt || 0) - new Date(a.uploadedAt || 0);
+        });
+    }, [filesList, fileCategoryFilter, fileSearchQuery, fileSortBy]);
 
     // Sort pinned posts first (FR-CM-08)
     const resolveTargetCommunityFromPost = (p) => {
@@ -2944,103 +3108,6 @@ export default function CommunityView() {
             });
     }, [membersList, memberSearchQuery, contextUsers]);
 
-    // Candidate colleagues for adding to community (excluding existing members)
-    const filteredCandidates = useMemo(() => {
-        const pool = [...(allAvailableUsers || []), ...(contextUsers || []), ...(INITIAL_USERS || [])];
-        const currentMemberIds = new Set(membersList.map(m => String(m.userId || m.id)));
-        const currentMemberEmpIds = new Set(membersList.map(m => String(m.employeeId || m.displayEmpId || '').toUpperCase()).filter(Boolean));
-        const currentMemberNames = new Set(membersList.map(m => String(m.fullName || m.displayName || m.name || '').toLowerCase()).filter(Boolean));
-
-        const uniqueCandidates = [];
-        const seen = new Set();
-
-        for (const u of pool) {
-            if (!u) continue;
-            const uid = String(u.userId || u.id || '');
-            const empId = String(u.employeeId || '').toUpperCase();
-            const fullName = String(u.fullName || u.name || '').toLowerCase();
-
-            if (currentMemberIds.has(uid)) continue;
-            if (empId && currentMemberEmpIds.has(empId)) continue;
-            if (fullName && currentMemberNames.has(fullName)) continue;
-
-            const dedupeKey = uid || empId || fullName;
-            if (!seen.has(dedupeKey)) {
-                seen.add(dedupeKey);
-                uniqueCandidates.push({
-                    userId: u.userId || u.id || uid,
-                    id: u.userId || u.id || uid,
-                    fullName: u.fullName || u.name || `Colleague ${uid}`,
-                    name: u.fullName || u.name || `Colleague ${uid}`,
-                    employeeId: u.employeeId || `MPO${uid}`,
-                    designation: u.designation || u.roleName || 'Employee',
-                    department: u.department || 'MPOnline Limited',
-                    avatar: u.profilePhotoUrl || u.avatar || null
-                });
-            }
-        }
-
-        if (!addMemberSearch.trim()) return uniqueCandidates;
-
-        const q = addMemberSearch.toLowerCase().trim();
-        return uniqueCandidates.filter(u => 
-            (u.fullName || '').toLowerCase().includes(q) ||
-            (u.employeeId || '').toLowerCase().includes(q) ||
-            (u.designation || '').toLowerCase().includes(q) ||
-            (u.department || '').toLowerCase().includes(q)
-        );
-    }, [allAvailableUsers, contextUsers, membersList, addMemberSearch]);
-
-    // All platform employees eligible for direct community sharing (excluding current user)
-    const allShareEligibleUsers = useMemo(() => {
-        const pool = [...(allAvailableUsers || []), ...(contextUsers || []), ...(INITIAL_USERS || [])];
-        const currentUid = String(currentUser?.userId || currentUser?.id || '');
-        const currentEmp = String(currentUser?.employeeId || '').toUpperCase();
-        const seen = new Set();
-        const unique = [];
-
-        for (const u of pool) {
-            if (!u) continue;
-            const uid = String(u.userId || u.id || '');
-            const empId = String(u.employeeId || '').toUpperCase();
-            const fullName = String(u.fullName || u.name || '').trim();
-
-            if (!fullName && !empId && !uid) continue;
-
-            // Exclude current logged in user
-            if ((currentUid && uid === currentUid) || (currentEmp && empId === currentEmp)) continue;
-
-            const dedupeKey = empId ? `emp:${empId}` : (uid ? `uid:${uid}` : `name:${fullName.toLowerCase()}`);
-            if (seen.has(dedupeKey)) continue;
-            seen.add(dedupeKey);
-
-            unique.push({
-                id: u.id || u.userId || uid,
-                userId: u.userId || u.id || uid,
-                name: fullName || `Employee ${uid}`,
-                fullName: fullName || `Employee ${uid}`,
-                employeeId: u.employeeId || '',
-                designation: u.designation || u.roleName || u.role || 'Employee',
-                department: u.department || 'MPOnline Limited',
-                avatar: u.profilePhotoUrl || u.avatar || null
-            });
-        }
-
-        return unique.sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
-    }, [allAvailableUsers, contextUsers, currentUser]);
-
-    // Filtered share users based on real-time search query
-    const filteredShareUsers = useMemo(() => {
-        if (!shareUserSearchQuery.trim()) return allShareEligibleUsers;
-        const q = shareUserSearchQuery.toLowerCase().trim();
-        return allShareEligibleUsers.filter(u => 
-            (u.fullName || '').toLowerCase().includes(q) ||
-            (u.employeeId || '').toLowerCase().includes(q) ||
-            (u.designation || '').toLowerCase().includes(q) ||
-            (u.department || '').toLowerCase().includes(q)
-        );
-    }, [allShareEligibleUsers, shareUserSearchQuery]);
-
     // Scroll-wise progressive loading hooks
     const { visibleCount: visiblePostCount, resetVisibleCount: resetPostCount } = useScrollLoading(sortedPosts.length, 6, 6);
     const { visibleCount: visibleMemberCount, resetVisibleCount: resetMemberCount } = useScrollLoading(filteredMembers.length, 12, 12);
@@ -3058,7 +3125,7 @@ export default function CommunityView() {
 
     useEffect(() => {
         resetFileCount();
-    }, [fileCategoryFilter, fileSearchQuery]);
+    }, [fileCategoryFilter, fileSearchQuery, fileSortBy, fileViewMode]);
 
     if (isLoading || !community) {
         return (
@@ -3239,23 +3306,6 @@ export default function CommunityView() {
                             <span className="material-symbols-outlined text-[18px]">share</span>
                         </button>
 
-                        {/* Add Members Button for Community / System Admins */}
-                        {isAdmin && (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setSelectedNewMemberIds([]);
-                                    setAddMemberSearch('');
-                                    setIsAddMembersModalOpen(true);
-                                }}
-                                className="h-10 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-1.5 text-xs cursor-pointer shrink-0 ml-1"
-                                title="Add colleagues to this Community"
-                            >
-                                <span className="material-symbols-outlined text-[18px] shrink-0">person_add</span>
-                                <span className="truncate">Add Members</span>
-                            </button>
-                        )}
-
                         {isSysAdmin && (
                             <button 
                                 onClick={handleDeleteCommunity}
@@ -3271,6 +3321,61 @@ export default function CommunityView() {
             })()}
         </div>
             </section>
+
+            {/* Pending Approval Notice Banner */}
+            {community && (community.approvalStatus === 'Pending' || community.isActive === false) && (
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2">
+                    {isSysAdmin ? (
+                        <div className="bg-amber-500/10 dark:bg-amber-950/40 border-2 border-amber-500/40 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+                            <div className="flex items-start sm:items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                    <span className="material-symbols-outlined text-2xl">pending_actions</span>
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white">Under HR Review</span>
+                                        <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">Community Awaiting Administrator Clearance</h4>
+                                    </div>
+                                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                                        This community was created by <strong className="text-slate-800 dark:text-slate-100">{community.adminContact || 'an employee'}</strong> and is currently inactive and hidden from the public feed.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <button 
+                                    onClick={handleApproveThisCommunity}
+                                    disabled={isApprovingCommunity}
+                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                                    <span>{isApprovingCommunity ? 'Approving...' : 'Approve Community'}</span>
+                                </button>
+                                <button 
+                                    onClick={handleRejectThisCommunity}
+                                    disabled={isApprovingCommunity}
+                                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">cancel</span>
+                                    <span>Reject</span>
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="bg-amber-500/10 dark:bg-amber-950/40 border-2 border-amber-500/30 rounded-2xl p-4 sm:p-5 flex items-center gap-3.5 shadow-sm">
+                            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                <span className="material-symbols-outlined text-2xl">hourglass_top</span>
+                            </div>
+                            <div>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white">Under HR Review</span>
+                                <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white mt-1">Your Community is Awaiting Administrator Clearance</h4>
+                                <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                                    You have submitted this community for approval. It will become publicly visible and open for team members once approved by the HR Administrator.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {membershipStatus === 'banned' ? (
                 <div className="max-w-3xl mx-auto px-4 py-16 text-center">
@@ -3327,10 +3432,10 @@ export default function CommunityView() {
                     </div>
                 </div>
             ) : (
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8 flex flex-col lg:flex-row gap-8">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
                 
                 {/* Main Content Area */}
-                <div className="flex-1 min-w-0">
+                <div className="w-full">
                     
                     {/* Navigation Tabs */}
                     <div className="flex border-b border-slate-200 dark:border-slate-800 mb-6 overflow-x-auto">
@@ -4170,15 +4275,28 @@ export default function CommunityView() {
                                         </h3>
                                         <p className="text-xs text-slate-500 mt-1">View all team members, assigned community roles, and designations.</p>
                                     </div>
-                                    <div className="relative">
-                                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
-                                        <input 
-                                            type="text" 
-                                            value={memberSearchQuery}
-                                            onChange={(e) => setMemberSearchQuery(e.target.value)}
-                                            placeholder="Search members..."
-                                            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
-                                        />
+                                    <div className="flex items-center gap-3">
+                                        {isAdmin && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsAddMemberModalOpen(true)}
+                                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-xs shadow-xs transition-all cursor-pointer shrink-0"
+                                                title="Add organization employees to this community"
+                                            >
+                                                <span className="material-symbols-outlined text-[17px]">person_add</span>
+                                                <span>Add Member</span>
+                                            </button>
+                                        )}
+                                        <div className="relative">
+                                            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
+                                            <input 
+                                                type="text" 
+                                                value={memberSearchQuery}
+                                                onChange={(e) => setMemberSearchQuery(e.target.value)}
+                                                placeholder="Search members..."
+                                                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
 
@@ -4295,136 +4413,342 @@ export default function CommunityView() {
                         </div>
                     )}
 
-                    {/* Files & Media Tab */}
+                    {/* Files & Media Tab - Enterprise Document Management */}
                     {activeTab === 'files' && (
                         <div className="space-y-6">
-                            {/* Filter Bar & Upload Action */}
-                            <div className="glass bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-                                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0">
-                                    {['All', 'Document', 'Image', 'Video'].map(cat => (
-                                        <button
-                                            key={cat}
-                                            onClick={() => setFileCategoryFilter(cat)}
-                                            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                                                fileCategoryFilter === cat
-                                                    ? 'bg-indigo-500 text-white shadow-md shadow-indigo-500/20'
-                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                                            }`}
-                                        >
-                                            {cat === 'All' ? '📁 All Files' : cat === 'Document' ? '📄 Documents' : cat === 'Image' ? '🖼️ Images' : '🎬 Videos'}
-                                        </button>
-                                    ))}
-                                </div>
+                            {/* Enterprise Toolbar & Filter System */}
+                            <div className="glass bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm space-y-4">
+                                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                                    {/* Category Filter Pills with Badges */}
+                                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 custom-scrollbar">
+                                        {[
+                                            { id: 'All', label: 'All Assets', icon: 'inventory_2', count: fileCategoryCounts.All },
+                                            { id: 'Document', label: 'Documents', icon: 'description', count: fileCategoryCounts.Document },
+                                            { id: 'Image', label: 'Images', icon: 'image', count: fileCategoryCounts.Image },
+                                            { id: 'Video', label: 'Videos', icon: 'movie', count: fileCategoryCounts.Video },
+                                        ].map(cat => {
+                                            const isSelected = fileCategoryFilter === cat.id;
+                                            return (
+                                                <button
+                                                    key={cat.id}
+                                                    onClick={() => setFileCategoryFilter(cat.id)}
+                                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 border ${
+                                                        isSelected
+                                                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                                                            : 'bg-slate-50 dark:bg-slate-800/80 border-slate-200/70 dark:border-slate-700/60 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+                                                    }`}
+                                                >
+                                                    <span className="material-symbols-outlined text-[16px]">{cat.icon}</span>
+                                                    <span>{cat.label}</span>
+                                                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                                                        isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                                    }`}>
+                                                        {cat.count || 0}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
 
-                                <div className="flex items-center gap-3">
-                                    <div className="relative flex-1 md:w-64">
-                                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
-                                        <input
-                                            type="text"
-                                            value={fileSearchQuery}
-                                            onChange={(e) => setFileSearchQuery(e.target.value)}
-                                            placeholder="Search files..."
-                                            className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
-                                        />
-                                        {fileSearchQuery && (
-                                            <button onClick={() => setFileSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                                                <span className="material-symbols-outlined text-[16px]">close</span>
+                                    {/* Action Controls: Search, Sort, View Toggle, Upload */}
+                                    <div className="flex flex-wrap items-center gap-2.5">
+                                        {/* Search Input */}
+                                        <div className="relative flex-1 sm:w-56 md:w-64">
+                                            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
+                                            <input
+                                                type="text"
+                                                value={fileSearchQuery}
+                                                onChange={(e) => setFileSearchQuery(e.target.value)}
+                                                placeholder="Filter by name or ext..."
+                                                className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                                            />
+                                            {fileSearchQuery && (
+                                                <button onClick={() => setFileSearchQuery('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                                                    <span className="material-symbols-outlined text-[15px]">close</span>
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Sort By Dropdown */}
+                                        <div className="relative">
+                                            <select
+                                                value={fileSortBy}
+                                                onChange={(e) => setFileSortBy(e.target.value)}
+                                                className="py-2 pl-3 pr-8 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 outline-none cursor-pointer focus:ring-2 focus:ring-indigo-500 appearance-none"
+                                            >
+                                                <option value="newest">Newest First</option>
+                                                <option value="oldest">Oldest First</option>
+                                                <option value="name">Name (A-Z)</option>
+                                                <option value="size">Size (Largest)</option>
+                                            </select>
+                                            <span className="material-symbols-outlined absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[16px] pointer-events-none">expand_more</span>
+                                        </div>
+
+                                        {/* View Switcher: Table vs Grid */}
+                                        <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1 border border-slate-200 dark:border-slate-700">
+                                            <button
+                                                onClick={() => setFileViewMode('table')}
+                                                className={`p-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center ${
+                                                    fileViewMode === 'table'
+                                                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                                                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+                                                }`}
+                                                title="Directory Table View"
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">table_rows</span>
+                                            </button>
+                                            <button
+                                                onClick={() => setFileViewMode('grid')}
+                                                className={`p-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center ${
+                                                    fileViewMode === 'grid'
+                                                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                                                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+                                                }`}
+                                                title="Card Grid View"
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">grid_view</span>
+                                            </button>
+                                        </div>
+
+                                        {/* Upload Button */}
+                                        {(membershipStatus === 'joined' || isAdmin) && (
+                                            <button
+                                                onClick={() => setIsUploadModalOpen(true)}
+                                                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-all shadow-sm shadow-indigo-600/30 flex items-center gap-1.5 shrink-0 cursor-pointer"
+                                            >
+                                                <span className="material-symbols-outlined text-[18px]">upload_file</span>
+                                                <span>Upload Document</span>
                                             </button>
                                         )}
                                     </div>
-
-                                    {membershipStatus === 'joined' && (
-                                        <button
-                                            onClick={() => setIsUploadModalOpen(true)}
-                                            className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-indigo-500/20 flex items-center gap-1.5 shrink-0 cursor-pointer"
-                                        >
-                                            <span className="material-symbols-outlined text-[18px]">upload_file</span>
-                                            Upload File
-                                        </button>
-                                    )}
                                 </div>
                             </div>
 
-                            {/* Files Grid */}
+                            {/* 3. Restricted State for Private Communities */}
                             {community.type === 'Private' && membershipStatus !== 'joined' && !isAdmin ? (
-                                <div className="p-12 text-center glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm flex flex-col items-center gap-2">
-                                    <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 flex items-center justify-center mx-auto mb-1">
-                                        <span className="material-symbols-outlined text-2xl">lock</span>
+                                <div className="p-12 text-center glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm flex flex-col items-center gap-3">
+                                    <div className="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto mb-1 border border-indigo-200 dark:border-indigo-800/60">
+                                        <span className="material-symbols-outlined text-[28px]">lock</span>
                                     </div>
-                                    <p className="font-bold text-slate-800 dark:text-slate-200">Files & Media Restricted</p>
-                                    <p className="text-xs text-slate-400 max-w-sm mx-auto">Shared files, documents, and media for this private community are accessible only to approved members.</p>
+                                    <p className="font-bold text-slate-900 dark:text-white text-base">Community Repository Restricted</p>
+                                    <p className="text-xs text-slate-500 max-w-sm mx-auto">Shared files, institutional documents, and media for this private community are accessible only to approved community members.</p>
                                 </div>
                             ) : filteredFiles.length === 0 ? (
-                                <div className="p-12 text-center glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm flex flex-col items-center gap-2">
-                                    <span className="material-symbols-outlined text-[36px] text-slate-400">folder_off</span>
-                                    <p className="font-bold">No files found matching filter.</p>
-                                    <p className="text-xs text-slate-400">Click "Upload File" above to share documents, images, or media with this community.</p>
+                                /* 4. Formal Empty State */
+                                <div className="p-12 text-center glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 text-slate-500 text-sm flex flex-col items-center gap-3">
+                                    <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-400 flex items-center justify-center mx-auto border border-slate-200 dark:border-slate-700">
+                                        <span className="material-symbols-outlined text-[32px]">folder_off</span>
+                                    </div>
+                                    <p className="font-bold text-slate-900 dark:text-white text-base">No Assets Found</p>
+                                    <p className="text-xs text-slate-400 max-w-sm">No files in this repository match your current category or search criteria.</p>
+                                    {(membershipStatus === 'joined' || isAdmin) && (
+                                        <button
+                                            onClick={() => setIsUploadModalOpen(true)}
+                                            className="mt-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-indigo-600/20"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">upload_file</span>
+                                            Upload First Document
+                                        </button>
+                                    )}
+                                </div>
+                            ) : fileViewMode === 'table' ? (
+                                /* 5. Enterprise Directory Table View */
+                                <div className="overflow-x-auto rounded-2xl border border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
+                                    <table className="w-full text-left text-sm border-collapse">
+                                        <thead>
+                                            <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                                                <th className="py-3.5 px-4">Document / Asset</th>
+                                                <th className="py-3.5 px-4 hidden md:table-cell">Category</th>
+                                                <th className="py-3.5 px-4 hidden sm:table-cell">Size</th>
+                                                <th className="py-3.5 px-4 hidden lg:table-cell">Uploaded By</th>
+                                                <th className="py-3.5 px-4 hidden sm:table-cell">Date Added</th>
+                                                <th className="py-3.5 px-4 text-right">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                                            {filteredFiles.slice(0, visibleFileCount).map(file => {
+                                                const cfg = getFileFormatConfig(file);
+                                                const isVideoFile = file.category === 'Video' || ['mp4', 'webm', 'mov'].includes(file.extension?.toLowerCase());
+                                                return (
+                                                    <tr key={file.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors group">
+                                                        <td className="py-3.5 px-4">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${cfg.bg} ${cfg.border} ${cfg.color}`}>
+                                                                    <span className="material-symbols-outlined text-[22px]">{cfg.icon}</span>
+                                                                </div>
+                                                                <div className="min-w-0">
+                                                                    <button 
+                                                                        onClick={() => setPreviewModalFile(file)}
+                                                                        className="font-bold text-slate-900 dark:text-white hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors truncate max-w-xs sm:max-w-md block text-left text-sm cursor-pointer"
+                                                                        title={file.name}
+                                                                    >
+                                                                        <HighlightText text={file.name} query={fileSearchQuery} />
+                                                                    </button>
+                                                                    <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
+                                                                        <span className={`px-1.5 py-0.2 rounded font-bold uppercase text-[9px] ${cfg.badgeBg}`}>{cfg.badge}</span>
+                                                                        <span>•</span>
+                                                                        <span>{cfg.label}</span>
+                                                                        <span className="sm:hidden">• {file.size}</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-3.5 px-4 hidden md:table-cell">
+                                                            <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                                                {file.category}
+                                                            </span>
+                                                        </td>
+                                                        <td className="py-3.5 px-4 hidden sm:table-cell text-xs font-mono text-slate-600 dark:text-slate-400">
+                                                            {file.size}
+                                                        </td>
+                                                        <td className="py-3.5 px-4 hidden lg:table-cell">
+                                                            <div className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+                                                                <div className="w-6 h-6 rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 font-bold flex items-center justify-center text-[10px] shrink-0 border border-indigo-500/20">
+                                                                    {(file.uploadedBy || 'U').charAt(0).toUpperCase()}
+                                                                </div>
+                                                                <span className="truncate max-w-[140px] font-medium">
+                                                                    <HighlightText text={file.uploadedBy || 'Member'} query={fileSearchQuery} />
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-3.5 px-4 hidden sm:table-cell text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                                                            {formatFileDate(file.uploadedAt)}
+                                                        </td>
+                                                        <td className="py-3.5 px-4 text-right">
+                                                            <div className="flex items-center justify-end gap-1">
+                                                                {isVideoFile && (
+                                                                    <button
+                                                                        onClick={() => setPreviewModalFile(file)}
+                                                                        className="px-2.5 py-1 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-600 hover:text-white rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                                                                        title="Play Video Media"
+                                                                    >
+                                                                        <span className="material-symbols-outlined text-[16px]">play_circle</span>
+                                                                        <span className="hidden xl:inline">Play</span>
+                                                                    </button>
+                                                                )}
+                                                                <button
+                                                                    onClick={() => setPreviewModalFile(file)}
+                                                                    className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors cursor-pointer"
+                                                                    title="Preview Document"
+                                                                >
+                                                                    <span className="material-symbols-outlined text-[18px]">visibility</span>
+                                                                </button>
+                                                                {file.url && (
+                                                                    <a
+                                                                        href={file.url}
+                                                                        download={file.name}
+                                                                        className="p-1.5 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition-colors cursor-pointer"
+                                                                        title="Download File"
+                                                                    >
+                                                                        <span className="material-symbols-outlined text-[18px]">download</span>
+                                                                    </a>
+                                                                )}
+                                                                {(isAdmin || String(file.uploadedBy) === String(currentUser?.name)) && (
+                                                                    <button
+                                                                        onClick={() => handleDeleteFile(file.id, file.name)}
+                                                                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+                                                                        title="Delete File"
+                                                                    >
+                                                                        <span className="material-symbols-outlined text-[18px]">delete</span>
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
                                 </div>
                             ) : (
+                                /* 6. Enterprise Grid / Card View */
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                                    {filteredFiles.slice(0, visibleFileCount).map(file => (
-                                        <div key={file.id} className="glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-4 flex flex-col justify-between hover:border-indigo-300 dark:hover:border-indigo-700/50 transition-all group">
-                                            <div onClick={() => setPreviewModalFile(file)} className="cursor-pointer">
-                                                <div className="flex items-start justify-between gap-3 mb-3">
-                                                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-bold text-xl shadow-inner bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500">
-                                                        <span className="material-symbols-outlined text-[26px]">
-                                                            {file.category === 'Image' ? 'image' : file.category === 'Archive' ? 'folder_zip' : file.category === 'Video' ? 'video_file' : file.category === 'Code' ? 'code' : 'description'}
+                                    {filteredFiles.slice(0, visibleFileCount).map(file => {
+                                        const cfg = getFileFormatConfig(file);
+                                        const isVideoFile = file.category === 'Video' || ['mp4', 'webm', 'mov'].includes(file.extension?.toLowerCase());
+                                        return (
+                                            <div key={file.id} className="glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm p-5 flex flex-col justify-between hover:border-indigo-400 dark:hover:border-indigo-600/60 hover:shadow-md transition-all group">
+                                                <div onClick={() => setPreviewModalFile(file)} className="cursor-pointer">
+                                                    {/* Top Row: Format Badge & Category Tag */}
+                                                    <div className="flex items-start justify-between gap-3 mb-4">
+                                                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border ${cfg.bg} ${cfg.border} ${cfg.color} shadow-sm group-hover:scale-105 transition-transform`}>
+                                                            <span className="material-symbols-outlined text-[28px]">{cfg.icon}</span>
+                                                        </div>
+                                                        <div className="flex flex-col items-end gap-1">
+                                                            <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${cfg.badgeBg}`}>
+                                                                {cfg.badge}
+                                                            </span>
+                                                            <span className="text-[11px] text-slate-400 dark:text-slate-500 font-medium">
+                                                                {cfg.label}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Title & Metadata */}
+                                                    <h4 className="font-bold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors mb-2 leading-snug" title={file.name}>
+                                                        <HighlightText text={file.name} query={fileSearchQuery} />
+                                                    </h4>
+                                                    
+                                                    <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 mb-4">
+                                                        <span className="font-mono bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-[11px] font-medium">{file.size}</span>
+                                                        <span>•</span>
+                                                        <span>{formatFileDate(file.uploadedAt)}</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Card Footer: Uploader & Action Icons */}
+                                                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 min-w-0">
+                                                        <div className="w-6 h-6 rounded-full bg-indigo-500 text-white flex items-center justify-center text-[10px] font-bold shrink-0">
+                                                            {(file.uploadedBy || 'U').charAt(0).toUpperCase()}
+                                                        </div>
+                                                        <span className="truncate max-w-[110px] font-medium">
+                                                            <HighlightText text={file.uploadedBy || 'Member'} query={fileSearchQuery} />
                                                         </span>
                                                     </div>
-                                                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                                                        {file.category}
-                                                    </span>
-                                                </div>
 
-                                                <h4 className="font-bold text-sm text-slate-900 dark:text-white line-clamp-1 group-hover:text-indigo-500 transition-colors mb-1" title={file.name}>
-                                                    <HighlightText text={file.name} query={fileSearchQuery} />
-                                                </h4>
-                                                <div className="flex items-center gap-2 text-[11px] text-slate-500 mb-3">
-                                                    <span>{file.size}</span>
-                                                </div>
-                                            </div>
-
-                                            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                                                <div className="flex items-center gap-2 text-[11px] text-slate-500">
-                                                    <div className="w-5 h-5 rounded-full bg-indigo-500 text-white flex items-center justify-center text-[10px] font-bold">
-                                                        {(file.uploadedBy || 'U').charAt(0)}
-                                                    </div>
-                                                    <span className="truncate max-w-[100px]">
-                                                        <HighlightText text={file.uploadedBy} query={fileSearchQuery} />
-                                                    </span>
-                                                </div>
-
-                                                <div className="flex items-center gap-1">
-                                                    {(file.category === 'Video' || ['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(file.extension?.toLowerCase()) || (file.name && file.name.toLowerCase().endsWith('.mp4'))) && (
+                                                    <div className="flex items-center gap-1 shrink-0">
+                                                        {isVideoFile && (
+                                                            <button
+                                                                onClick={() => setPreviewModalFile(file)}
+                                                                className="px-2 py-1 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-600 hover:text-white rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                                                                title="Play Video Media"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[16px]">play_circle</span>
+                                                                <span>Play</span>
+                                                            </button>
+                                                        )}
                                                         <button
                                                             onClick={() => setPreviewModalFile(file)}
-                                                            className="px-2 py-1 text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-500 hover:text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1 font-bold text-xs"
-                                                            title="Play Video"
+                                                            className="p-1.5 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition-colors cursor-pointer"
+                                                            title="Preview Document"
                                                         >
-                                                            <span className="material-symbols-outlined text-[16px]">play_circle</span>
-                                                            <span>Play</span>
+                                                            <span className="material-symbols-outlined text-[18px]">visibility</span>
                                                         </button>
-                                                    )}
-                                                    <button
-                                                        onClick={() => setPreviewModalFile(file)}
-                                                        className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors cursor-pointer"
-                                                        title="View File Preview"
-                                                    >
-                                                        <span className="material-symbols-outlined text-[18px]">visibility</span>
-                                                    </button>
-                                                    {(isAdmin || String(file.uploadedBy) === String(currentUser?.name)) && (
-                                                        <button
-                                                            onClick={() => handleDeleteFile(file.id, file.name)}
-                                                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors cursor-pointer"
-                                                            title="Delete File"
-                                                        >
-                                                            <span className="material-symbols-outlined text-[18px]">delete</span>
-                                                        </button>
-                                                    )}
+                                                        {file.url && (
+                                                            <a
+                                                                href={file.url}
+                                                                download={file.name}
+                                                                className="p-1.5 text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition-colors cursor-pointer"
+                                                                title="Download File"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[18px]">download</span>
+                                                            </a>
+                                                        )}
+                                                        {(isAdmin || String(file.uploadedBy) === String(currentUser?.name)) && (
+                                                            <button
+                                                                onClick={() => handleDeleteFile(file.id, file.name)}
+                                                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+                                                                title="Delete File"
+                                                            >
+                                                                <span className="material-symbols-outlined text-[18px]">delete</span>
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
                             <ScrollLoadingIndicator isVisible={visibleFileCount < filteredFiles.length} text="Loading more community files on scroll..." />
@@ -4741,219 +5065,198 @@ export default function CommunityView() {
                         </div>
                     )}
                 </div>
-
-                {/* Right Sidebar (FR-CM-08: Full stats) */}
-                <div className="w-full lg:w-80 shrink-0 space-y-6">
-                    {/* About */}
-                    <div className="glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5">
-                        <h3 className="font-bold text-slate-900 dark:text-white mb-4 text-[15px]">About Community</h3>
-                        
-                        <div className="space-y-3.5">
-                            {/* Members count — clickable to tab */}
-                            <div 
-                                onClick={() => setActiveTab('members')}
-                                className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300 cursor-pointer hover:text-indigo-500 transition-colors group"
-                            >
-                                <span className="material-symbols-outlined text-[20px] text-indigo-500 group-hover:scale-110 transition-transform">group</span>
-                                <div className="flex items-center gap-1.5">
-                                    <span className="font-black text-slate-900 dark:text-white">{membersList.length || community.membersCount}</span>
-                                    <span className="text-slate-500">Members</span>
-                                </div>
-                            </div>
-
-                            {/* Subscriber count */}
-                            <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-                                <span className="material-symbols-outlined text-[20px] text-blue-500">visibility</span>
-                                <div className="flex items-center gap-1.5">
-                                    <span className="font-black text-slate-900 dark:text-white">{subscribersList.length}</span>
-                                    <span className="text-slate-500">Subscribers (View-Only)</span>
-                                </div>
-                            </div>
-
-                            {/* Online indicator */}
-                            <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-                                <span className="relative flex items-center justify-center w-5 h-5">
-                                    <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-emerald-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                                </span>
-                                <div className="flex items-center gap-1.5">
-                                    <span className="font-black text-emerald-600">{Math.max(1, Math.min(membersList.length, Math.floor(membersList.length * 0.4) || 1))}</span>
-                                    <span className="text-slate-500">Online now</span>
-                                </div>
-                            </div>
-
-                            {/* Category */}
-                            <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-                                <span className="material-symbols-outlined text-[20px] text-indigo-500">category</span>
-                                <span className="font-medium">{community.category}</span>
-                            </div>
-
-                            {/* Type */}
-                            <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-                                <span className="material-symbols-outlined text-[20px] text-indigo-500">public</span>
-                                <span className="font-medium">{community.type}</span>
-                                {community.type === 'Private' && <span className="text-[10px] font-black text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-full">Approval Required</span>}
-                            </div>
-
-                            {/* Created date */}
-                            {community.createdDate && (
-                                <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-                                    <span className="material-symbols-outlined text-[20px] text-indigo-500">calendar_today</span>
-                                    <span className="text-slate-500">Created {new Date(community.createdDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                                </div>
-                            )}
-
-                            {/* Admin */}
-                            <div className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300">
-                                <span className="material-symbols-outlined text-[20px] text-indigo-500">shield_person</span>
-                                <span>Admin: <span className="font-bold text-indigo-500">{communityAdminDisplay}</span></span>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Rules (FR-CM-08) */}
-                    <div className="glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-bold text-slate-900 dark:text-white text-[15px] flex items-center gap-2">
-                                <span className="material-symbols-outlined text-indigo-500">gavel</span>
-                                Community Rules
-                            </h3>
-                            {isAdmin && (
-                                <button
-                                    onClick={() => setActiveTab('admin')}
-                                    className="text-[12px] font-bold text-indigo-500 hover:text-indigo-600 flex items-center gap-1 cursor-pointer transition-colors"
-                                    title="Edit rules in Admin Tools"
-                                >
-                                    <span className="material-symbols-outlined text-[15px]">edit</span>
-                                    Edit
-                                </button>
-                            )}
-                        </div>
-                        <ul className="space-y-3">
-                            {community.rules.map((rule, idx) => (
-                                <li key={idx} className="text-[13px] text-slate-600 dark:text-slate-300 leading-relaxed">
-                                    {rule}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-
-                    {/* FAQ (FR-CM-08) */}
-                    <div className="glass bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm p-5">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-bold text-slate-900 dark:text-white text-[15px] flex items-center gap-2">
-                                <span className="material-symbols-outlined text-indigo-500">help</span>
-                                Frequently Asked Questions
-                            </h3>
-                            {isAdmin && (
-                                <button
-                                    onClick={() => setActiveTab('admin')}
-                                    className="text-[12px] font-bold text-indigo-500 hover:text-indigo-600 flex items-center gap-1 cursor-pointer transition-colors"
-                                    title="Edit FAQs in Admin Tools"
-                                >
-                                    <span className="material-symbols-outlined text-[15px]">edit</span>
-                                    Edit
-                                </button>
-                            )}
-                        </div>
-                        <div className="space-y-4">
-                            {community.faq.map((item, idx) => (
-                                <div key={idx}>
-                                    <h4 className="text-[13px] font-bold text-slate-900 dark:text-white mb-1">{item.q}</h4>
-                                    <p className="text-[12px] text-slate-500 leading-relaxed">{item.a}</p>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-
             </div>
             )}
 
-            {/* Upload File Modal */}
+            {/* Upload File Modal - Enterprise Grade */}
             {isUploadModalOpen && (
-                <div className="fixed inset-0 z-[300] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50">
-                            <h3 className="font-black text-slate-900 dark:text-white flex items-center gap-2 text-base">
-                                <span className="material-symbols-outlined text-indigo-500">upload_file</span>
-                                Upload Community File
-                            </h3>
-                            <button onClick={() => setIsUploadModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <div className="fixed inset-0 z-[300] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        {/* Modal Header */}
+                        <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-800/50">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center border border-indigo-100 dark:border-indigo-900/40">
+                                    <span className="material-symbols-outlined text-[24px]">drive_folder_upload</span>
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-slate-900 dark:text-white text-base leading-tight">
+                                        Upload Community Document / Asset
+                                    </h3>
+                                    <p className="text-[12px] text-slate-400">Publish reference files, reports, and media for community members</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => {
+                                    setIsUploadModalOpen(false);
+                                    setSelectedUploadFile(null);
+                                    setUploadFileName('');
+                                }} 
+                                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                            >
                                 <span className="material-symbols-outlined text-[20px]">close</span>
                             </button>
                         </div>
 
+                        {/* Modal Form */}
                         <form onSubmit={handleFileUploadSubmit} className="p-6 space-y-4">
+                            {/* Drag & Drop File Upload Zone */}
                             <div>
-                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                                    File Title / Description *
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">
+                                    File Attachment *
+                                </label>
+
+                                {selectedUploadFile ? (
+                                    <div className="p-4 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 bg-indigo-50/50 dark:bg-indigo-950/30 flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-11 h-11 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 font-black text-xs shadow-sm">
+                                                {(selectedUploadFile.name.split('.').pop() || 'FILE').toUpperCase()}
+                                            </div>
+                                            <div className="min-w-0">
+                                                <p className="text-xs font-bold text-slate-900 dark:text-white truncate" title={selectedUploadFile.name}>
+                                                    {selectedUploadFile.name}
+                                                </p>
+                                                <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                                                    {selectedUploadFile.size > 1048576 
+                                                        ? `${(selectedUploadFile.size / 1048576).toFixed(1)} MB` 
+                                                        : `${Math.round(selectedUploadFile.size / 1024)} KB`} • {uploadFileCategory}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <label className="px-3 py-1.5 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold cursor-pointer shrink-0 transition-colors">
+                                            Change
+                                            <input
+                                                type="file"
+                                                className="hidden"
+                                                onChange={(e) => {
+                                                    if (e.target.files && e.target.files[0]) {
+                                                        const file = e.target.files[0];
+                                                        setSelectedUploadFile(file);
+                                                        const detected = detectFileTypeAndCategory(file);
+                                                        setUploadFileCategory(detected.category);
+                                                        setUploadFileName(file.name);
+                                                    }
+                                                }}
+                                            />
+                                        </label>
+                                    </div>
+                                ) : (
+                                    <label
+                                        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                        onDrop={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                                                const file = e.dataTransfer.files[0];
+                                                setSelectedUploadFile(file);
+                                                const detected = detectFileTypeAndCategory(file);
+                                                setUploadFileCategory(detected.category);
+                                                setUploadFileName(file.name);
+                                            }
+                                        }}
+                                        className="border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-indigo-500 dark:hover:border-indigo-500 rounded-2xl p-6 text-center flex flex-col items-center justify-center gap-2 cursor-pointer bg-slate-50/50 dark:bg-slate-800/30 transition-all hover:bg-indigo-50/20 group"
+                                    >
+                                        <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center group-hover:scale-105 transition-transform border border-indigo-100 dark:border-indigo-900/40">
+                                            <span className="material-symbols-outlined text-[28px]">cloud_upload</span>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                                Click to browse files or drag & drop here
+                                            </p>
+                                            <p className="text-[11px] text-slate-400 mt-0.5">
+                                                Institutional documents, presentations & media up to 50 MB
+                                            </p>
+                                        </div>
+                                        <div className="flex flex-wrap items-center justify-center gap-1.5 mt-1">
+                                            {['PDF', 'DOCX', 'XLSX', 'PPTX', 'PNG/JPG', 'MP4'].map(tag => (
+                                                <span key={tag} className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                                                    {tag}
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <input
+                                            type="file"
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                if (e.target.files && e.target.files[0]) {
+                                                    const file = e.target.files[0];
+                                                    setSelectedUploadFile(file);
+                                                    const detected = detectFileTypeAndCategory(file);
+                                                    setUploadFileCategory(detected.category);
+                                                    setUploadFileName(file.name);
+                                                }
+                                            }}
+                                        />
+                                    </label>
+                                )}
+                            </div>
+
+                            {/* Title / Description */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                                    Document Title / Display Name *
                                 </label>
                                 <input
                                     type="text"
                                     value={uploadFileName}
                                     onChange={(e) => setUploadFileName(e.target.value)}
-                                    placeholder="e.g. System_Architecture_v2.pdf"
-                                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="e.g. Q3_Technology_Roadmap_Final.pdf"
+                                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 font-medium"
                                 />
                             </div>
 
+                            {/* Category Selector */}
                             <div>
-                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                                    Category
+                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                                    Asset Classification
                                 </label>
                                 <select
                                     value={uploadFileCategory}
                                     onChange={(e) => setUploadFileCategory(e.target.value)}
-                                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 font-medium cursor-pointer"
                                 >
-                                    <option value="Document">📄 Document (PDF, DOCX, TXT)</option>
-                                    <option value="Image">🖼️ Image (PNG, JPG, SVG)</option>
-                                    <option value="Video">🎬 Video / Audio</option>
+                                    <option value="Document">Institutional Document (PDF, Word, TXT)</option>
+                                    <option value="Image">Graphic & Visual Asset (PNG, JPG, SVG, WebP)</option>
+                                    <option value="Video">Digital Media & Recording (MP4, WebM, Audio)</option>
+                                    <option value="Archive">Compressed Archive (ZIP, RAR, 7Z, TAR)</option>
+                                    <option value="Code">Source Code / Script (C#, JS, Python, SQL)</option>
                                 </select>
                             </div>
 
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                                    Choose File from Disk
-                                </label>
-                                <input
-                                    type="file"
-                                    onChange={(e) => {
-                                        if (e.target.files && e.target.files[0]) {
-                                            const file = e.target.files[0];
-                                            setSelectedUploadFile(file);
-                                            const detected = detectFileTypeAndCategory(file);
-                                            setUploadFileCategory(detected.category);
-                                            setUploadFileName(file.name);
-                                        }
-                                    }}
-                                    className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 cursor-pointer"
-                                />
+                            {/* Compliance / Information Classification Callout */}
+                            <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200/80 dark:border-slate-700/60 flex items-start gap-2.5">
+                                <span className="material-symbols-outlined text-[16px] text-indigo-500 shrink-0 mt-0.5">verified_user</span>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                                    Uploaded documents are indexed and made available to authorized members of this community in compliance with MPOnline Limited enterprise information governance standards.
+                                </p>
                             </div>
 
-                            <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
+                            {/* Action Buttons */}
+                            <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-slate-100 dark:border-slate-800">
                                 <button
                                     type="button"
-                                    onClick={() => setIsUploadModalOpen(false)}
-                                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                    onClick={() => {
+                                        setIsUploadModalOpen(false);
+                                        setSelectedUploadFile(null);
+                                        setUploadFileName('');
+                                    }}
+                                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                                 >
                                     Cancel
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={isUploadingFile}
-                                    className="px-6 py-2.5 rounded-xl text-xs font-bold bg-indigo-500 hover:bg-indigo-600 text-white shadow-lg shadow-indigo-500/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                    disabled={isUploadingFile || !uploadFileName.trim()}
+                                    className="px-5 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {isUploadingFile ? (
                                         <>
                                             <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
-                                            Uploading...
+                                            Uploading Document...
                                         </>
                                     ) : (
                                         <>
                                             <span className="material-symbols-outlined text-[16px]">cloud_upload</span>
-                                            Upload Now
+                                            Publish to Community
                                         </>
                                     )}
                                 </button>
@@ -4963,166 +5266,7 @@ export default function CommunityView() {
                 </div>
             )}
 
-            {/* Multi-Format File & Document Viewer Modal */}
-            {previewModalFile && (
-                <div className="fixed inset-0 z-[350] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-                    <div className="relative max-w-4xl w-full bg-slate-900 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-                        
-                        {/* Header */}
-                        <div className="p-4 px-6 border-b border-slate-800 flex items-center justify-between text-white bg-slate-900/90">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-                                    <span className="material-symbols-outlined text-[22px]">
-                                        {previewModalFile.category === 'Image' ? 'image' : 
-                                         previewModalFile.extension === 'pdf' ? 'picture_as_pdf' :
-                                         previewModalFile.extension === 'zip' ? 'folder_zip' : 'description'}
-                                    </span>
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-sm text-white truncate max-w-md">{previewModalFile.name}</h3>
-                                    <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5">
-                                        <span className="px-2 py-0.5 rounded bg-slate-800 text-indigo-400 font-bold uppercase">{previewModalFile.extension || previewModalFile.category}</span>
-                                        <span>•</span>
-                                        <span>{previewModalFile.size || '3.4 MB'}</span>
-                                        <span>•</span>
-                                        <span>Uploaded by {previewModalFile.uploadedBy || 'Team Member'}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div className="flex items-center gap-2">
 
-                                <button
-                                    onClick={() => setPreviewModalFile(null)}
-                                    className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors"
-                                >
-                                    <span className="material-symbols-outlined text-[20px]">close</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Body / Content Renderer */}
-                        <div className="p-6 flex-1 overflow-auto flex flex-col items-center justify-center bg-slate-950/60">
-                            {previewModalFile.category === 'Image' || ['png', 'jpg', 'jpeg', 'svg', 'webp'].includes(previewModalFile.extension?.toLowerCase()) ? (
-                                <div className="flex flex-col items-center justify-center w-full">
-                                    <img
-                                        src={previewModalFile.url}
-                                        alt={previewModalFile.name}
-                                        className="max-w-full max-h-[65vh] object-contain rounded-2xl shadow-2xl border border-slate-800"
-                                        onError={(e) => {
-                                            e.target.style.display = 'none';
-                                            e.target.nextSibling.style.display = 'flex';
-                                        }}
-                                    />
-                                    <div className="hidden flex-col items-center justify-center p-12 text-center">
-                                        <span className="material-symbols-outlined text-[64px] text-indigo-400 mb-3">image</span>
-                                        <p className="text-slate-300 font-bold text-base">{previewModalFile.name}</p>
-                                        <p className="text-slate-500 text-xs mt-1">Image Asset File ({previewModalFile.size})</p>
-                                    </div>
-                                </div>
-                            ) : previewModalFile.extension === 'pdf' ? (
-                                <div className="w-full h-full flex flex-col items-center justify-center p-2">
-                                    <embed
-                                        src={(previewModalFile.url && (previewModalFile.url.startsWith('data:') || (previewModalFile.url.startsWith('http') && !previewModalFile.url.includes('localhost') && !previewModalFile.url.includes('w3.org')))) ? previewModalFile.url : SAMPLE_PDF_DATA_URL}
-                                        type="application/pdf"
-                                        className="w-full h-[70vh] rounded-2xl bg-white border border-slate-800 shadow-2xl"
-                                    />
-                                </div>
-                            ) : previewModalFile.category === 'Video' || ['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(previewModalFile.extension?.toLowerCase()) || (previewModalFile.name && previewModalFile.name.toLowerCase().endsWith('.mp4')) ? (
-                                <div className="flex flex-col items-center justify-center w-full gap-4">
-                                    {previewModalFile.url && previewModalFile.url !== '#' ? (
-                                        <div className="relative w-full max-w-3xl rounded-2xl overflow-hidden border border-slate-800 bg-black shadow-2xl">
-                                            <video
-                                                src={previewModalFile.url}
-                                                controls
-                                                controlsList="nodownload"
-                                                disablePictureInPicture
-                                                onContextMenu={(e) => e.preventDefault()}
-                                                autoPlay
-                                                playsInline
-                                                className="w-full max-h-[65vh] rounded-2xl object-contain"
-                                            >
-                                                Your browser does not support HTML5 Video playback.
-                                            </video>
-                                        </div>
-                                    ) : (
-                                        <div className="w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-slate-200 flex flex-col items-center gap-4">
-                                            <div className="w-20 h-20 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
-                                                <span className="material-symbols-outlined text-[48px]">play_circle</span>
-                                            </div>
-                                            <div>
-                                                <h4 className="text-xl font-bold text-white">{previewModalFile.name}</h4>
-                                                <p className="text-xs text-slate-400 mt-1">MP4 Video Stream Asset ({previewModalFile.size})</p>
-                                            </div>
-                                            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono text-indigo-300 w-full max-w-md">
-                                                HTML5 Video Player Ready • Controls Active
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            ) : previewModalFile.extension === 'zip' || previewModalFile.category === 'Archive' ? (
-                                <div className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-left text-slate-200 max-h-[65vh] overflow-y-auto custom-scrollbar">
-                                    <div className="flex items-center gap-3 border-b border-slate-800 pb-4 mb-6">
-                                        <span className="material-symbols-outlined text-[36px] text-amber-400">folder_zip</span>
-                                        <div>
-                                            <h4 className="text-lg font-bold text-white">{previewModalFile.name}</h4>
-                                            <p className="text-xs text-slate-400">Compressed Archive Assets Directory ({previewModalFile.size})</p>
-                                        </div>
-                                    </div>
-                                    <div className="space-y-3">
-                                        <h5 className="font-bold text-white text-xs uppercase tracking-wider text-slate-400">Contained Archive Files</h5>
-                                        <div className="space-y-2">
-                                            {[
-                                                { name: 'src/components/ui/DesignSystem.tsx', size: '42 KB', type: 'TypeScript' },
-                                                { name: 'src/styles/theme.config.css', size: '18 KB', type: 'CSS' },
-                                                { name: 'public/assets/logos/knome_brand.svg', size: '120 KB', type: 'SVG' },
-                                                { name: 'README_SETUP_GUIDE.md', size: '8 KB', type: 'Markdown' }
-                                            ].map((item, idx) => (
-                                                <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs">
-                                                    <span className="font-mono text-slate-300">{item.name}</span>
-                                                    <span className="text-slate-500">{item.size} • {item.type}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-left text-slate-200 max-h-[65vh] overflow-y-auto custom-scrollbar">
-                                    <div className="flex items-center gap-3 border-b border-slate-800 pb-4 mb-6">
-                                        <span className="material-symbols-outlined text-[36px] text-blue-400">description</span>
-                                        <div>
-                                            <h4 className="text-lg font-bold text-white">{previewModalFile.name}</h4>
-                                            <p className="text-xs text-slate-400">Technical Documentation File ({previewModalFile.size})</p>
-                                        </div>
-                                    </div>
-                                    <div className="space-y-4 text-sm leading-relaxed text-slate-300">
-                                        <h5 className="font-bold text-white text-base">API Integration Guidelines & Specifications</h5>
-                                        <p>Comprehensive guide detailing REST API endpoints, JWT token handling, response envelopes (`ApiResponse&lt;T&gt;`), and rate limiting guidelines for MPOnline integration developers.</p>
-                                        <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5 text-xs text-slate-400">
-                                            <div className="font-bold text-indigo-400">Key Sections:</div>
-                                            <div>1. Authentication Endpoints (`/api/v1/auth/login`)</div>
-                                            <div>2. User & Community Management (`/api/v1/communities`)</div>
-                                            <div>3. Posts & Media Channels Engine (`/api/v1/posts`)</div>
-                                            <div>4. Global Search & Discovery Query Filters</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Footer */}
-                        <div className="p-4 px-6 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 bg-slate-900/90">
-                            <span>Document ID: #{previewModalFile.id || '101'}</span>
-                            <button
-                                onClick={() => setPreviewModalFile(null)}
-                                className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold transition-colors cursor-pointer"
-                            >
-                                Close Preview
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* Multi-Option Share Community Modal */}
             {isShareModalOpen && (
@@ -5250,108 +5394,17 @@ export default function CommunityView() {
                             {shareTab === 'users' && (
                                 <form onSubmit={handleShareToUsersSubmit} className="space-y-4">
                                     <div>
-                                        <div className="flex items-center justify-between mb-2">
-                                            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
-                                                Select MPOnline Team Members *
-                                            </label>
-                                            <span className="text-[11px] font-bold text-purple-600 dark:text-purple-400">
-                                                {shareSelectedUsers.length > 0 ? `${shareSelectedUsers.length} selected` : `${filteredShareUsers.length} employees`}
-                                            </span>
-                                        </div>
-
-                                        {/* Search Filter Bar */}
-                                        <div className="relative mb-2.5">
-                                            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
-                                            <input
-                                                type="text"
-                                                value={shareUserSearchQuery}
-                                                onChange={(e) => setShareUserSearchQuery(e.target.value)}
-                                                placeholder="Search employees by name, employee ID, designation, department..."
-                                                className="w-full pl-9 pr-8 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 placeholder:text-slate-400"
-                                                autoFocus
-                                            />
-                                            {shareUserSearchQuery && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShareUserSearchQuery('')}
-                                                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer p-0.5"
-                                                    title="Clear search"
-                                                >
-                                                    <span className="material-symbols-outlined text-[16px]">close</span>
-                                                </button>
-                                            )}
-                                        </div>
-
-                                        {/* Quick Select / Deselect Bar */}
-                                        {filteredShareUsers.length > 0 && (
-                                            <div className="flex items-center justify-between px-1 mb-2 text-[11px]">
-                                                <span className="text-slate-500">
-                                                    Showing {filteredShareUsers.length} employee{filteredShareUsers.length !== 1 ? 's' : ''}
-                                                </span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        const targetIds = filteredShareUsers.map(u => u.id || u.userId);
-                                                        const allSelected = targetIds.length > 0 && targetIds.every(id => shareSelectedUsers.some(sel => String(sel) === String(id)));
-                                                        if (allSelected) {
-                                                            setShareSelectedUsers(prev => prev.filter(id => !targetIds.some(tId => String(tId) === String(id))));
-                                                        } else {
-                                                            const next = [...shareSelectedUsers];
-                                                            targetIds.forEach(tId => {
-                                                                if (!next.some(id => String(id) === String(tId))) {
-                                                                    next.push(tId);
-                                                                }
-                                                            });
-                                                            setShareSelectedUsers(next);
-                                                        }
-                                                    }}
-                                                    className="font-bold text-purple-600 dark:text-purple-400 hover:underline cursor-pointer"
-                                                >
-                                                    {(() => {
-                                                        const targetIds = filteredShareUsers.map(u => u.id || u.userId);
-                                                        const allSelected = targetIds.length > 0 && targetIds.every(id => shareSelectedUsers.some(sel => String(sel) === String(id)));
-                                                        return allSelected ? 'Deselect All' : `Select All (${targetIds.length})`;
-                                                    })()}
-                                                </button>
-                                            </div>
-                                        )}
-
-                                        {/* Selected Users Chips (if any selected) */}
-                                        {shareSelectedUsers.length > 0 && (
-                                            <div className="flex flex-wrap gap-1.5 p-2 mb-2 bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/60 dark:border-purple-800/40 rounded-xl max-h-20 overflow-y-auto custom-scrollbar">
-                                                {shareSelectedUsers.map(selId => {
-                                                    const uObj = allShareEligibleUsers.find(u => String(u.id || u.userId) === String(selId));
-                                                    return (
-                                                        <span key={selId} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-purple-600 text-white text-[11px] font-bold shadow-xs">
-                                                            {uObj?.fullName || uObj?.name || `Employee ${selId}`}
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setShareSelectedUsers(prev => prev.filter(id => id !== selId))}
-                                                                className="hover:text-red-200 cursor-pointer ml-0.5"
-                                                            >
-                                                                <span className="material-symbols-outlined text-[13px]">close</span>
-                                                            </button>
-                                                        </span>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-
-                                        {/* Employee List */}
-                                        <div className="space-y-1.5 max-h-56 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-xl p-2 bg-slate-50 dark:bg-slate-800">
-                                            {filteredShareUsers.length === 0 ? (
-                                                <div className="py-8 text-center text-slate-400 text-xs">
-                                                    <span className="material-symbols-outlined text-2xl text-slate-300 dark:text-slate-600 mb-1">person_search</span>
-                                                    <p className="font-bold">No team members found</p>
-                                                    <p className="text-[11px] mt-0.5">Try a different search term or check spelling.</p>
-                                                </div>
-                                            ) : (
-                                                filteredShareUsers.map(userItem => {
+                                        <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                                            Select MPOnline Team Members *
+                                        </label>
+                                        <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar border border-slate-200 dark:border-slate-700 rounded-xl p-2 bg-slate-50 dark:bg-slate-800">
+                                            {(contextUsers || [])
+                                                .filter(u => String(u.userId || u.id) !== String(currentUser?.userId || currentUser?.id))
+                                                .map(userItem => {
                                                     const uId = userItem.id || userItem.userId;
-                                                    const isSelected = shareSelectedUsers.some(id => String(id) === String(uId));
-                                                    const uName = userItem.fullName || userItem.name || 'User';
-                                                    const uRole = userItem.designation || userItem.roleName || userItem.role || 'Employee';
-                                                    const uDept = userItem.department || 'MPOnline';
+                                                    const isSelected = shareSelectedUsers.includes(uId);
+                                                    const uName = userItem.name || userItem.fullName || 'User';
+                                                    const uRole = userItem.roleName || userItem.designation || userItem.role || 'Employee';
                                                     const uEmp = userItem.employeeId || '';
                                                     const uAvatar = resolveMediaUrl(userItem.avatar || userItem.profilePhotoUrl) || `https://ui-avatars.com/api/?name=${encodeURIComponent(uName)}&background=6366f1&color=fff&bold=true`;
 
@@ -5360,62 +5413,42 @@ export default function CommunityView() {
                                                             key={uId}
                                                             onClick={() => {
                                                                 if (isSelected) {
-                                                                    setShareSelectedUsers(prev => prev.filter(id => String(id) !== String(uId)));
+                                                                    setShareSelectedUsers(prev => prev.filter(id => id !== uId));
                                                                 } else {
                                                                     setShareSelectedUsers(prev => [...prev, uId]);
                                                                 }
                                                             }}
-                                                            className={`flex items-center justify-between p-2 rounded-xl cursor-pointer text-xs transition-all border ${
+                                                            className={`flex items-center justify-between p-2 rounded-lg cursor-pointer text-xs transition-all border ${
                                                                 isSelected 
-                                                                    ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800/60 text-purple-700 dark:text-purple-300 shadow-xs' 
-                                                                    : 'hover:bg-slate-100 dark:hover:bg-slate-700/50 border-transparent text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800/60'
+                                                                    ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800/60 text-purple-600 dark:text-purple-300' 
+                                                                    : 'hover:bg-slate-100 dark:hover:bg-slate-700/50 border-transparent text-slate-700 dark:text-slate-300'
                                                             }`}
                                                         >
                                                             <div className="flex items-center gap-2.5 min-w-0 flex-1 pr-2">
-                                                                <img
-                                                                    src={uAvatar}
-                                                                    alt={uName}
-                                                                    onError={(e) => { e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(uName)}&background=6366f1&color=fff&bold=true`; }}
-                                                                    className="w-8 h-8 rounded-full object-cover shrink-0 shadow-xs"
-                                                                />
+                                                                <img src={uAvatar} alt={uName} className="w-7 h-7 rounded-full object-cover shrink-0" />
                                                                 <div className="min-w-0 flex-1">
-                                                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                                                        <span className="font-bold text-slate-900 dark:text-white truncate">
-                                                                            <HighlightText text={uName} query={shareUserSearchQuery} />
-                                                                        </span>
-                                                                        {uEmp && (
-                                                                            <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-semibold">
-                                                                                <HighlightText text={uEmp} query={shareUserSearchQuery} />
-                                                                            </span>
-                                                                        )}
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <span className="font-bold text-slate-900 dark:text-white truncate">{uName}</span>
+                                                                        {uEmp && <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-semibold">{uEmp}</span>}
                                                                     </div>
-                                                                    <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                                                                        <HighlightText text={uRole} query={shareUserSearchQuery} />
-                                                                        {uDept && (
-                                                                            <>
-                                                                                <span className="mx-1 text-slate-300 dark:text-slate-600">•</span>
-                                                                                <HighlightText text={uDept} query={shareUserSearchQuery} />
-                                                                            </>
-                                                                        )}
-                                                                    </div>
+                                                                    <div className="text-[11px] text-slate-400 truncate">{uRole}</div>
                                                                 </div>
                                                             </div>
 
-                                                            <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all shrink-0 ${
+                                                            <div className={`w-4 h-4 rounded flex items-center justify-center border transition-all shrink-0 ${
                                                                 isSelected 
                                                                     ? 'bg-purple-600 border-purple-600 text-white' 
                                                                     : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700'
                                                             }`}>
                                                                 {isSelected && (
-                                                                    <svg className="w-3.5 h-3.5 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="3" stroke="currentColor">
+                                                                    <svg className="w-3 h-3 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="3" stroke="currentColor">
                                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                                                                     </svg>
                                                                 )}
                                                             </div>
                                                         </div>
                                                     );
-                                                })
-                                            )}
+                                                })}
                                         </div>
                                     </div>
 
@@ -5458,114 +5491,462 @@ export default function CommunityView() {
                     </div>
                 </div>
             )}
-            {/* Document / PDF Preview Modal */}
-            {previewModalFile && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 md:p-6 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-900 w-full max-w-5xl h-[88vh] rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
-                        
-                        {/* Modal Header */}
-                        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/80 dark:bg-slate-800/80 shrink-0">
-                            <div className="flex items-center gap-3 min-w-0">
-                                <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-lg shrink-0">
-                                    <span className="material-symbols-outlined text-[24px]">
-                                        {previewModalFile.category === 'Image' ? 'image' : 'picture_as_pdf'}
-                                    </span>
-                                </div>
-                                <div className="min-w-0">
-                                    <h3 className="font-bold text-slate-900 dark:text-white text-base truncate" title={previewModalFile.name}>
-                                        {previewModalFile.name}
-                                    </h3>
-                                    <p className="text-[12px] text-slate-500 flex items-center gap-2">
-                                        <span className="font-bold text-indigo-500 uppercase">{previewModalFile.extension || 'PDF'}</span>
-                                        <span>•</span>
-                                        <span>{previewModalFile.size}</span>
-                                        <span>•</span>
-                                        <span>Uploaded by {previewModalFile.uploadedBy || 'Loveneesh Sharma'}</span>
-                                    </p>
-                                </div>
-                            </div>
+            {/* Document / PDF / Multi-Format Preview Modal */}
+            {previewModalFile && (() => {
+                const ext = (previewModalFile.extension || previewModalFile.name?.split('.').pop() || '').toLowerCase();
+                const isPdf = ext === 'pdf';
+                const isImage = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg'].includes(ext) || previewModalFile.category === 'Image';
+                const isVideo = ['mp4', 'webm', 'ogg', 'mov', 'm4v'].includes(ext) || previewModalFile.category === 'Video';
+                const isOfficeDoc = ['docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt'].includes(ext);
+                const isWord = ['docx', 'doc'].includes(ext);
+                const isExcel = ['xlsx', 'xls', 'csv'].includes(ext);
+                const isPowerPoint = ['pptx', 'ppt'].includes(ext);
+                const isArchive = ['zip', 'rar', '7z', 'tar', 'gz'].includes(ext) || previewModalFile.category === 'Archive';
+                const isCode = ['js', 'jsx', 'ts', 'tsx', 'json', 'sql', 'py', 'html', 'css', 'xml', 'md', 'txt'].includes(ext) || previewModalFile.category === 'Code';
 
-                            <div className="flex items-center gap-2.5 shrink-0">
-                                {activePdfBlobUrl && (
-                                    <a
-                                        href={activePdfBlobUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer text-decoration-none"
-                                        title="Open PDF in New Window"
-                                    >
-                                        <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                                        Open Full View
-                                    </a>
-                                )}
+                const displayUrl = activePdfBlobUrl || (previewModalFile.url && previewModalFile.url !== '#' ? previewModalFile.url : (isPdf ? SAMPLE_PDF_DATA_URL : null));
 
+                const docTypeBadgeColor = isPdf
+                    ? 'bg-red-500/10 text-red-500 border-red-500/20'
+                    : isWord
+                    ? 'bg-blue-500/10 text-blue-500 border-blue-500/20'
+                    : isExcel
+                    ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                    : isPowerPoint
+                    ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                    : isVideo
+                    ? 'bg-purple-500/10 text-purple-500 border-purple-500/20'
+                    : isImage
+                    ? 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20'
+                    : isArchive
+                    ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                    : 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20';
 
+                const docIcon = isPdf
+                    ? 'picture_as_pdf'
+                    : isWord
+                    ? 'description'
+                    : isExcel
+                    ? 'table_chart'
+                    : isPowerPoint
+                    ? 'slideshow'
+                    : isVideo
+                    ? 'movie'
+                    : isImage
+                    ? 'image'
+                    : isArchive
+                    ? 'folder_zip'
+                    : isCode
+                    ? 'code'
+                    : 'description';
 
-                                <button
-                                    onClick={() => setPreviewModalFile(null)}
-                                    className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
-                                >
-                                    <span className="material-symbols-outlined text-[20px]">close</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Modal Body: High-Compatibility Object/Embed PDF Viewer */}
-                        <div className="flex-1 bg-slate-100 dark:bg-slate-950 p-3 md:p-5 relative overflow-hidden flex items-center justify-center">
-                            {previewModalFile.category === 'Image' || ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(previewModalFile.extension?.toLowerCase()) ? (
-                                <img
-                                    src={previewModalFile.url}
-                                    alt={previewModalFile.name}
-                                    className="max-h-full max-w-full object-contain rounded-xl shadow-md"
-                                />
-                            ) : (
-                                <object
-                                    data={activePdfBlobUrl || SAMPLE_PDF_DATA_URL}
-                                    type="application/pdf"
-                                    className="w-full h-full rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner bg-white"
-                                >
-                                    {/* Fallback View inside object if browser PDF plugin blocks embedded view */}
-                                    <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-white dark:bg-slate-900 rounded-2xl text-center">
-                                        <div className="w-16 h-16 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 flex items-center justify-center mb-4">
-                                            <span className="material-symbols-outlined text-[36px]">picture_as_pdf</span>
-                                        </div>
-                                        <h4 className="font-bold text-slate-900 dark:text-white text-lg mb-2">{previewModalFile.name}</h4>
-                                        <p className="text-sm text-slate-500 max-w-md mb-6">
-                                            PDF document preview is ready. You can open it in a new full view tab to view.
-                                        </p>
-                                        <div className="flex items-center gap-3">
-                                            <a
-                                                href={activePdfBlobUrl}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="px-6 py-2.5 bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-lg hover:bg-indigo-600 transition-all flex items-center gap-2"
-                                            >
-                                                <span className="material-symbols-outlined text-[18px]">open_in_new</span>
-                                                Open Full PDF View
-                                            </a>
-
+                return (
+                    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-5 md:p-6 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+                        <div className="bg-white dark:bg-slate-900 w-full max-w-5xl h-[90vh] rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
+                            {/* Modal Header */}
+                            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/90 dark:bg-slate-800/90 shrink-0 gap-3">
+                                <div className="flex items-center gap-3 min-w-0">
+                                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-lg shrink-0 border ${docTypeBadgeColor}`}>
+                                        <span className="material-symbols-outlined text-[24px]">
+                                            {docIcon}
+                                        </span>
+                                    </div>
+                                    <div className="min-w-0">
+                                        <h3 className="font-bold text-slate-900 dark:text-white text-base truncate max-w-sm sm:max-w-md lg:max-w-xl" title={previewModalFile.name}>
+                                            {previewModalFile.name}
+                                        </h3>
+                                        <div className="text-[12px] text-slate-500 flex items-center gap-2 mt-0.5">
+                                            <span className="font-bold text-indigo-500 uppercase">{ext || previewModalFile.category || 'DOC'}</span>
+                                            <span>•</span>
+                                            <span>{previewModalFile.size || '3.4 MB'}</span>
+                                            <span>•</span>
+                                            <span>Uploaded by {previewModalFile.uploadedBy || 'Team Member'}</span>
                                         </div>
                                     </div>
-                                </object>
-                            )}
-                        </div>
+                                </div>
 
-                        {/* Modal Footer */}
-                        <div className="px-6 py-3 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between text-xs text-slate-500 shrink-0">
-                            <span className="flex items-center gap-1.5 font-bold text-slate-600 dark:text-slate-300">
-                                <span className="material-symbols-outlined text-[16px] text-emerald-500">verified</span>
-                                MPOnline Enterprise Document Viewer
-                            </span>
-                            <button
-                                onClick={() => setPreviewModalFile(null)}
-                                className="font-bold text-indigo-500 hover:text-indigo-600 cursor-pointer"
-                            >
-                                Close Preview
-                            </button>
+                                <div className="flex items-center gap-2 shrink-0">
+                                    {/* Image Zoom Controls */}
+                                    {isImage && (
+                                        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-1 border border-slate-200 dark:border-slate-700">
+                                            <button
+                                                onClick={() => setPreviewZoom(prev => Math.max(prev - 0.25, 0.5))}
+                                                className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                                                title="Zoom Out"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">remove</span>
+                                            </button>
+                                            <button
+                                                onClick={() => setPreviewZoom(1)}
+                                                className="px-2 py-0.5 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:text-indigo-500"
+                                                title="Reset Zoom"
+                                            >
+                                                {Math.round(previewZoom * 100)}%
+                                            </button>
+                                            <button
+                                                onClick={() => setPreviewZoom(prev => Math.min(prev + 0.25, 3))}
+                                                className="w-7 h-7 flex items-center justify-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                                                title="Zoom In"
+                                            >
+                                                <span className="material-symbols-outlined text-[16px]">add</span>
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* PDF View Mode Toggle (PDF Document vs Text Summary) */}
+                                    {isPdf && (
+                                        <div className="hidden sm:flex items-center bg-slate-100 dark:bg-slate-800 rounded-xl p-1 border border-slate-200 dark:border-slate-700">
+                                            <button
+                                                onClick={() => setPreviewTab('viewer')}
+                                                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                                                    previewTab === 'viewer'
+                                                        ? 'bg-indigo-600 text-white shadow-sm'
+                                                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                                }`}
+                                            >
+                                                PDF Viewer
+                                            </button>
+                                            <button
+                                                onClick={() => setPreviewTab('summary')}
+                                                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+                                                    previewTab === 'summary'
+                                                        ? 'bg-indigo-600 text-white shadow-sm'
+                                                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                                                }`}
+                                            >
+                                                Document Overview
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* Open Full View (Direct in new window) */}
+                                    {displayUrl && (
+                                        <a
+                                            href={displayUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer text-decoration-none shadow-sm"
+                                            title="Open Full Document in New Window"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                                            <span className="hidden sm:inline">Open Full View</span>
+                                        </a>
+                                    )}
+
+                                    {/* Download Document Button */}
+                                    {displayUrl && (
+                                        <a
+                                            href={displayUrl}
+                                            download={previewModalFile.name}
+                                            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer text-decoration-none shadow-md shadow-indigo-600/20"
+                                            title="Download File"
+                                        >
+                                            <span className="material-symbols-outlined text-[16px]">download</span>
+                                            <span className="hidden sm:inline">Download</span>
+                                        </a>
+                                    )}
+
+                                    {/* Close Button */}
+                                    <button
+                                        onClick={() => setPreviewModalFile(null)}
+                                        className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
+                                        title="Close Preview (Esc)"
+                                    >
+                                        <span className="material-symbols-outlined text-[20px]">close</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Modal Body */}
+                            <div className="flex-1 bg-slate-100 dark:bg-slate-950 p-2 sm:p-4 md:p-5 relative overflow-hidden flex items-center justify-center">
+                                {isImage ? (
+                                    <div className="w-full h-full flex items-center justify-center overflow-auto p-2">
+                                        <img
+                                            src={displayUrl}
+                                            alt={previewModalFile.name}
+                                            style={{ transform: `scale(${previewZoom})` }}
+                                            className="max-h-full max-w-full object-contain rounded-xl shadow-lg transition-transform duration-150"
+                                        />
+                                    </div>
+                                ) : isVideo ? (
+                                    <div className="w-full max-w-3xl rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-black shadow-2xl">
+                                        <video
+                                            src={displayUrl}
+                                            controls
+                                            autoPlay
+                                            playsInline
+                                            className="w-full max-h-[65vh] rounded-2xl object-contain"
+                                        >
+                                            Your browser does not support HTML5 Video playback.
+                                        </video>
+                                    </div>
+                                ) : isPdf ? (
+                                    previewTab === 'viewer' ? (
+                                        <div className="w-full h-full relative rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-inner bg-white">
+                                            <iframe
+                                                src={`${displayUrl}#toolbar=1&navpanes=0&view=Fit`}
+                                                title={previewModalFile.name}
+                                                className="w-full h-full border-0 bg-white"
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className="w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 text-left text-slate-800 dark:text-slate-200 max-h-[72vh] overflow-y-auto custom-scrollbar shadow-xl">
+                                            <div className="flex items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-5 mb-6">
+                                                <div className="w-14 h-14 rounded-2xl bg-red-500/10 text-red-500 flex items-center justify-center font-bold text-2xl shrink-0 border border-red-500/20 shadow-sm">
+                                                    <span className="material-symbols-outlined text-[32px]">picture_as_pdf</span>
+                                                </div>
+                                                <div>
+                                                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-400">
+                                                        Official Architecture Document
+                                                    </span>
+                                                    <h4 className="text-xl font-bold text-slate-900 dark:text-white mt-1">System Architecture & Integration Overview</h4>
+                                                    <p className="text-xs text-slate-500 mt-0.5">MPOnline Limited Enterprise Knowledge Platform (Knome)</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-5 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                                                <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 border border-slate-100 dark:border-slate-700/60">
+                                                    <h5 className="font-bold text-slate-900 dark:text-white text-sm mb-2 flex items-center gap-2">
+                                                        <span className="material-symbols-outlined text-[18px] text-indigo-500">layers</span>
+                                                        1. Platform Core Architecture
+                                                    </h5>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                                                        Knome operates on a decoupled modern architecture combining ASP.NET Core 10 on the backend with Microsoft SQL Server, Serilog partitioned audit streaming, and a high-performance React/Vite web application client.
+                                                    </p>
+                                                </div>
+
+                                                <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 border border-slate-100 dark:border-slate-700/60">
+                                                    <h5 className="font-bold text-slate-900 dark:text-white text-sm mb-2 flex items-center gap-2">
+                                                        <span className="material-symbols-outlined text-[18px] text-emerald-500">security</span>
+                                                        2. Security, Isolation & DPDP Governance
+                                                    </h5>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                                                        Built with strict role-based access control (Employee, Community Admin, HR Admin, System Admin), Bcrypt work factor 11 password hashing, JWT HS256 tokens, and automatic PII scrubbing compliant with India's DPDP Act 2023.
+                                                    </p>
+                                                </div>
+
+                                                <div className="bg-slate-50 dark:bg-slate-800/60 rounded-2xl p-4 border border-slate-100 dark:border-slate-700/60">
+                                                    <h5 className="font-bold text-slate-900 dark:text-white text-sm mb-2 flex items-center gap-2">
+                                                        <span className="material-symbols-outlined text-[18px] text-purple-500">groups</span>
+                                                        3. Community Knowledge & File Isolation
+                                                    </h5>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                                                        Communities maintain segregated document repositories with live file uploads, IndexedDB persistence caches, and real-time interaction syncing across all connected departments.
+                                                    </p>
+                                                </div>
+
+                                                <div className="flex items-center gap-3 pt-3">
+                                                    <a
+                                                        href={displayUrl}
+                                                        download={previewModalFile.name}
+                                                        className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center gap-2"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">download</span>
+                                                        Download PDF ({previewModalFile.size})
+                                                    </a>
+                                                    <button
+                                                        onClick={() => setPreviewTab('viewer')}
+                                                        className="px-5 py-2.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs transition-all flex items-center gap-2 cursor-pointer"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">visibility</span>
+                                                        Switch to Full PDF Viewer
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )
+                                ) : isOfficeDoc ? (
+                                    <div className="w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 text-left text-slate-800 dark:text-slate-200 max-h-[72vh] overflow-y-auto custom-scrollbar shadow-2xl">
+                                        <div className="flex items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-5 mb-6">
+                                            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-3xl shrink-0 border shadow-sm ${docTypeBadgeColor}`}>
+                                                <span className="material-symbols-outlined text-[36px]">
+                                                    {isWord ? 'description' : isExcel ? 'table_chart' : 'slideshow'}
+                                                </span>
+                                            </div>
+                                            <div>
+                                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                                    isWord ? 'bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400' :
+                                                    isExcel ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400' :
+                                                    'bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400'
+                                                }`}>
+                                                    {isWord ? 'Microsoft Word Document' : isExcel ? 'Excel Spreadsheet' : 'PowerPoint Presentation'}
+                                                </span>
+                                                <h4 className="text-xl font-bold text-slate-900 dark:text-white mt-1">{previewModalFile.name}</h4>
+                                                <p className="text-xs text-slate-500 mt-0.5">{previewModalFile.size} • Uploaded by {previewModalFile.uploadedBy || 'Team Member'}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
+                                            <h5 className="font-bold text-slate-900 dark:text-white text-base">API Integration Guidelines & Specifications</h5>
+                                            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                                                Comprehensive technical guide detailing REST API endpoints, JWT authentication tokens, ApiResponse standard envelopes, and DPDP compliance standards for MPOnline integration developers.
+                                            </p>
+
+                                            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 space-y-2 text-xs">
+                                                <div className="font-bold text-indigo-500 uppercase tracking-wider text-[11px]">Key Documentation Modules:</div>
+                                                <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 font-mono">
+                                                    <span className="material-symbols-outlined text-[14px] text-blue-500">check_circle</span>
+                                                    <span>1. Authentication & Session Security (<code>/api/v1/auth/login</code>)</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 font-mono">
+                                                    <span className="material-symbols-outlined text-[14px] text-blue-500">check_circle</span>
+                                                    <span>2. Community Management & Role Delegation (<code>/api/v1/communities</code>)</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 font-mono">
+                                                    <span className="material-symbols-outlined text-[14px] text-blue-500">check_circle</span>
+                                                    <span>3. Posts, Media Channels & Interaction Engine (<code>/api/v1/posts</code>)</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300 font-mono">
+                                                    <span className="material-symbols-outlined text-[14px] text-blue-500">check_circle</span>
+                                                    <span>4. Global Search, Filter Queries & Audit Logs</span>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex flex-wrap items-center gap-3 pt-3">
+                                                {displayUrl && (
+                                                    <a
+                                                        href={displayUrl}
+                                                        download={previewModalFile.name}
+                                                        className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center gap-2"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">download</span>
+                                                        Download Document ({previewModalFile.size})
+                                                    </a>
+                                                )}
+                                                {displayUrl && (displayUrl.startsWith('http://') || displayUrl.startsWith('https://')) && (
+                                                    <a
+                                                        href={`https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(displayUrl)}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="px-5 py-2.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs transition-all flex items-center gap-2"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                                                        Open with Office Online
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : isArchive ? (
+                                    <div className="w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 text-left text-slate-800 dark:text-slate-200 max-h-[72vh] overflow-y-auto custom-scrollbar shadow-2xl">
+                                        <div className="flex items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-5 mb-6">
+                                            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center font-bold text-3xl shrink-0 border border-amber-500/20 shadow-sm">
+                                                <span className="material-symbols-outlined text-[36px]">folder_zip</span>
+                                            </div>
+                                            <div>
+                                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400">
+                                                    Compressed Archive
+                                                </span>
+                                                <h4 className="text-xl font-bold text-slate-900 dark:text-white mt-1">{previewModalFile.name}</h4>
+                                                <p className="text-xs text-slate-500 mt-0.5">{previewModalFile.size} • Uploaded by {previewModalFile.uploadedBy || 'Team Member'}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            <h5 className="font-bold text-slate-900 dark:text-white text-xs uppercase tracking-wider text-slate-500">Contained Archive Files (4 files)</h5>
+                                            <div className="space-y-2">
+                                                {[
+                                                    { name: 'src/components/ui/DesignSystem.tsx', size: '42 KB', type: 'TypeScript' },
+                                                    { name: 'src/styles/theme.config.css', size: '18 KB', type: 'CSS' },
+                                                    { name: 'public/assets/logos/knome_brand.svg', size: '120 KB', type: 'SVG' },
+                                                    { name: 'README_SETUP_GUIDE.md', size: '8 KB', type: 'Markdown' }
+                                                ].map((item, idx) => (
+                                                    <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 text-xs">
+                                                        <span className="font-mono text-slate-700 dark:text-slate-300 flex items-center gap-2">
+                                                            <span className="material-symbols-outlined text-[16px] text-amber-500">draft</span>
+                                                            {item.name}
+                                                        </span>
+                                                        <span className="text-slate-500">{item.size} • {item.type}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {displayUrl && (
+                                                <div className="pt-3">
+                                                    <a
+                                                        href={displayUrl}
+                                                        download={previewModalFile.name}
+                                                        className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs shadow-md transition-all inline-flex items-center gap-2"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">download</span>
+                                                        Download Archive ({previewModalFile.size})
+                                                    </a>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="w-full max-w-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 text-left text-slate-800 dark:text-slate-200 max-h-[72vh] overflow-y-auto custom-scrollbar shadow-2xl">
+                                        <div className="flex items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-5 mb-6">
+                                            <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-bold text-3xl shrink-0 border border-indigo-500/20 shadow-sm">
+                                                <span className="material-symbols-outlined text-[36px]">description</span>
+                                            </div>
+                                            <div>
+                                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                                                    {ext ? ext.toUpperCase() : 'Enterprise Asset'}
+                                                </span>
+                                                <h4 className="text-xl font-bold text-slate-900 dark:text-white mt-1">{previewModalFile.name}</h4>
+                                                <p className="text-xs text-slate-500 mt-0.5">{previewModalFile.size} • Uploaded by {previewModalFile.uploadedBy || 'Team Member'}</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4 text-xs text-slate-600 dark:text-slate-300">
+                                            <p>This file is stored in the community repository. You can download or view it externally:</p>
+                                            {displayUrl && (
+                                                <div className="flex items-center gap-3 pt-2">
+                                                    <a
+                                                        href={displayUrl}
+                                                        download={previewModalFile.name}
+                                                        className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow-md transition-all flex items-center gap-2"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">download</span>
+                                                        Download File ({previewModalFile.size})
+                                                    </a>
+                                                    <a
+                                                        href={displayUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="px-5 py-2.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold rounded-xl text-xs transition-all flex items-center gap-2"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                                                        Open in New Tab
+                                                    </a>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="px-6 py-3 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between text-xs text-slate-500 shrink-0">
+                                <span className="flex items-center gap-1.5 font-bold text-slate-600 dark:text-slate-300">
+                                    <span className="material-symbols-outlined text-[16px] text-emerald-500">verified</span>
+                                    MPOnline Enterprise Document Viewer
+                                </span>
+                                <div className="flex items-center gap-4">
+                                    {displayUrl && (
+                                        <a
+                                            href={displayUrl}
+                                            download={previewModalFile.name}
+                                            className="font-bold text-slate-600 dark:text-slate-300 hover:text-indigo-500 transition-colors flex items-center gap-1 cursor-pointer"
+                                        >
+                                            <span className="material-symbols-outlined text-[14px]">download</span>
+                                            Download
+                                        </a>
+                                    )}
+                                    <button
+                                        onClick={() => setPreviewModalFile(null)}
+                                        className="font-bold text-indigo-500 hover:text-indigo-600 cursor-pointer"
+                                    >
+                                        Close Preview
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* 1. Admin Protection Warning Modal */}
             {adminProtectionWarning && (
@@ -5686,142 +6067,173 @@ export default function CommunityView() {
                 </div>
             )}
 
-            {/* Add Members Modal (FR-CM-03 / Admin Enrolling Colleagues) */}
-            {isAddMembersModalOpen && (
-                <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* 4. Add Members to Community Modal (Admin Feature) */}
+            {isAddMemberModalOpen && (
+                <div className="fixed inset-0 z-[9999] overflow-y-auto p-4 sm:p-6 flex min-h-full items-center justify-center bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="relative bg-white dark:bg-slate-900 w-full max-w-2xl my-auto rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[88vh] animate-in zoom-in-95 duration-200">
                         {/* Header */}
-                        <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50">
-                            <div className="flex items-center gap-2.5">
-                                <div className="w-9 h-9 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
-                                    <span className="material-symbols-outlined text-[20px]">person_add</span>
+                        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-indigo-50/80 via-white to-purple-50/80 dark:from-slate-800 dark:via-slate-900 dark:to-slate-800 flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/30 shrink-0">
+                                    <span className="material-symbols-outlined text-[22px]">group_add</span>
                                 </div>
                                 <div>
-                                    <h3 className="font-bold text-slate-900 dark:text-white text-base">Add Members</h3>
-                                    <p className="text-xs text-slate-500">Enroll colleagues into {community?.name}</p>
+                                    <h3 className="font-extrabold text-slate-900 dark:text-white text-base">Add Members to Community</h3>
+                                    <p className="text-[12px] text-slate-500">Search and enroll organization employees into "{community?.name}"</p>
                                 </div>
                             </div>
                             <button
-                                type="button"
                                 onClick={() => {
-                                    setIsAddMembersModalOpen(false);
-                                    setSelectedNewMemberIds([]);
+                                    setIsAddMemberModalOpen(false);
+                                    setSelectedUserIdsToAdd([]);
                                     setAddMemberSearch('');
                                 }}
-                                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                             >
                                 <span className="material-symbols-outlined text-[20px]">close</span>
                             </button>
                         </div>
 
-                        {/* Search & Actions Bar */}
-                        <div className="p-4 border-b border-slate-100 dark:border-slate-800 space-y-3 bg-white dark:bg-slate-900">
-                            <div className="relative">
+                        {/* Filter Bar & Role Selector */}
+                        <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+                            <div className="relative flex-1">
                                 <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
                                 <input
                                     type="text"
                                     value={addMemberSearch}
                                     onChange={(e) => setAddMemberSearch(e.target.value)}
-                                    placeholder="Search by name, designation, employee ID..."
-                                    className="w-full bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-8 py-2 text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
-                                    autoFocus
+                                    placeholder="Search employee by name, ID, department..."
+                                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 transition-all"
                                 />
-                                {addMemberSearch && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setAddMemberSearch('')}
-                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                                    >
-                                        <span className="material-symbols-outlined text-[16px]">close</span>
-                                    </button>
-                                )}
                             </div>
 
-                            <div className="flex items-center justify-between text-xs text-slate-500">
-                                <span>
-                                    {selectedNewMemberIds.length > 0 ? (
-                                        <strong className="text-indigo-600 dark:text-indigo-400">{selectedNewMemberIds.length} selected</strong>
-                                    ) : (
-                                        `${filteredCandidates.length} eligible colleague(s)`
-                                    )}
-                                </span>
-                                {filteredCandidates.length > 0 && (
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500 font-medium shrink-0">Assign Role:</span>
+                                <select
+                                    value={selectedRoleToAdd}
+                                    onChange={(e) => setSelectedRoleToAdd(e.target.value)}
+                                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                                >
+                                    <option value="Member">Member</option>
+                                    <option value="Admin">Community Admin</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        {/* Selection quick actions */}
+                        <div className="px-6 py-2 bg-slate-100/50 dark:bg-slate-800/50 border-b border-slate-200/50 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 shrink-0">
+                            <span>
+                                Selected: <strong className="text-indigo-600 dark:text-indigo-400 font-bold">{selectedUserIdsToAdd.length}</strong> employee(s)
+                            </span>
+                            <div className="flex items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const currentMemberIds = new Set(membersList.filter(m => m.status === 'Approved' || m.status === 'Active' || !m.status).map(m => String(m.userId || m.id)));
+                                        const pool = (allOrgUsers && allOrgUsers.length > 0) ? allOrgUsers : (contextUsers || []);
+                                        const availableIds = pool
+                                            .filter(u => !currentMemberIds.has(String(u.id || u.userId)))
+                                            .map(u => u.id || u.userId);
+                                        setSelectedUserIdsToAdd(availableIds);
+                                    }}
+                                    className="text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 font-semibold cursor-pointer"
+                                >
+                                    Select All Non-Members
+                                </button>
+                                {selectedUserIdsToAdd.length > 0 && (
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            const candIds = filteredCandidates.map(c => Number(c.userId || c.id));
-                                            const allSelected = candIds.every(id => selectedNewMemberIds.includes(id));
-                                            if (allSelected) {
-                                                setSelectedNewMemberIds(prev => prev.filter(id => !candIds.includes(id)));
-                                            } else {
-                                                setSelectedNewMemberIds(prev => Array.from(new Set([...prev, ...candIds])));
-                                            }
-                                        }}
-                                        className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                                        onClick={() => setSelectedUserIdsToAdd([])}
+                                        className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 cursor-pointer"
                                     >
-                                        {filteredCandidates.every(c => selectedNewMemberIds.includes(Number(c.userId || c.id))) ? 'Deselect All' : 'Select All'}
+                                        Clear
                                     </button>
                                 )}
                             </div>
                         </div>
 
-                        {/* Candidates List */}
-                        <div className="flex-1 overflow-y-auto p-4 space-y-2 max-h-96">
-                            {filteredCandidates.length === 0 ? (
-                                <div className="py-8 text-center text-slate-400 text-xs">
-                                    <span className="material-symbols-outlined text-3xl mb-1 text-slate-300 dark:text-slate-600">person_search</span>
-                                    <p className="font-bold">No eligible colleagues found</p>
-                                    <p className="mt-0.5">All matching employees may already be members of this community.</p>
+                        {/* Employee List */}
+                        <div className="p-4 sm:p-6 flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                            {isLoadingOrgUsers ? (
+                                <div className="py-12 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
+                                    <span className="material-symbols-outlined text-3xl animate-spin text-indigo-500">progress_activity</span>
+                                    <p className="text-xs">Loading employee directory...</p>
+                                </div>
+                            ) : filteredEmployeesToAdd.length === 0 ? (
+                                <div className="py-12 text-center text-slate-400 space-y-1">
+                                    <span className="material-symbols-outlined text-3xl">group_off</span>
+                                    <p className="text-xs font-bold text-slate-600 dark:text-slate-400">No matching employees found</p>
                                 </div>
                             ) : (
-                                filteredCandidates.map(c => {
-                                    const cId = Number(c.userId || c.id);
-                                    const isSelected = selectedNewMemberIds.includes(cId);
+                                filteredEmployeesToAdd.map(user => {
+                                    const uId = user.id || user.userId;
+                                    const isAlreadyMember = membersList.some(m => 
+                                        String(m.userId || m.id) === String(uId) && 
+                                        (m.status === 'Approved' || m.status === 'Active' || !m.status)
+                                    );
+                                    const isSelected = selectedUserIdsToAdd.includes(uId);
+
                                     return (
                                         <div
-                                            key={cId}
+                                            key={uId}
                                             onClick={() => {
-                                                setSelectedNewMemberIds(prev => 
-                                                    prev.includes(cId) ? prev.filter(id => id !== cId) : [...prev, cId]
+                                                if (isAlreadyMember) return;
+                                                setSelectedUserIdsToAdd(prev => 
+                                                    prev.includes(uId) ? prev.filter(x => x !== uId) : [...prev, uId]
                                                 );
                                             }}
-                                            className={`p-3 rounded-xl border flex items-center justify-between gap-3 cursor-pointer transition-all ${
-                                                isSelected 
-                                                    ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 shadow-xs' 
-                                                    : 'bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                                            className={`py-3 px-3 rounded-xl flex items-center justify-between gap-3 transition-colors ${
+                                                isAlreadyMember 
+                                                    ? 'opacity-60 bg-slate-50/50 dark:bg-slate-800/20 cursor-not-allowed' 
+                                                    : isSelected
+                                                        ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 cursor-pointer'
+                                                        : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer'
                                             }`}
                                         >
-                                            <div className="flex items-center gap-3 min-w-0">
-                                                <div className="w-9 h-9 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center shrink-0 overflow-hidden">
-                                                    {c.avatar || c.profilePhotoUrl ? (
-                                                        <img src={c.avatar || c.profilePhotoUrl} alt={c.fullName} className="w-full h-full object-cover" />
-                                                    ) : (
-                                                        (c.fullName || c.name || 'U').charAt(0).toUpperCase()
-                                                    )}
-                                                </div>
-                                                <div className="min-w-0">
-                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                        <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
-                                                            {c.fullName || c.name}
+                                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected || isAlreadyMember}
+                                                    disabled={isAlreadyMember}
+                                                    onChange={() => {}}
+                                                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-50"
+                                                />
+                                                <img
+                                                    src={user.avatar || user.profilePhotoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || user.fullName || 'User')}&background=6366f1&color=fff`}
+                                                    alt={user.name || user.fullName}
+                                                    className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                                                    onError={(e) => {
+                                                        e.currentTarget.onerror = null;
+                                                        e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || user.fullName || 'User')}&background=6366f1&color=fff`;
+                                                    }}
+                                                />
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate">
+                                                            {user.name || user.fullName}
                                                         </span>
-                                                        {c.employeeId && (
-                                                            <span className="text-[10px] font-mono px-1.5 py-0.2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded font-semibold">
-                                                                {c.employeeId}
+                                                        {user.employeeId && (
+                                                            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700">
+                                                                {user.employeeId}
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                                                        {c.designation || 'Employee'} • {c.department || 'MPOnline'}
+                                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                                        {user.designation || 'Employee'} • {user.department || user.departmentName || 'MPOnline'}
                                                     </p>
                                                 </div>
                                             </div>
-                                            <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all shrink-0 ${
-                                                isSelected 
-                                                    ? 'bg-indigo-600 border-indigo-600 text-white' 
-                                                    : 'border-slate-300 dark:border-slate-600'
-                                            }`}>
-                                                {isSelected && <span className="material-symbols-outlined text-[14px]">check</span>}
-                                            </div>
+
+                                            {isAlreadyMember ? (
+                                                <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 shrink-0 flex items-center gap-1">
+                                                    <span className="material-symbols-outlined text-[12px]">check</span>
+                                                    Already Member
+                                                </span>
+                                            ) : isSelected ? (
+                                                <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
+                                                    Selected
+                                                </span>
+                                            ) : null}
                                         </div>
                                     );
                                 })
@@ -5829,36 +6241,40 @@ export default function CommunityView() {
                         </div>
 
                         {/* Footer */}
-                        <div className="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 flex items-center justify-end gap-2.5">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setIsAddMembersModalOpen(false);
-                                    setSelectedNewMemberIds([]);
-                                    setAddMemberSearch('');
-                                }}
-                                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="button"
-                                disabled={selectedNewMemberIds.length === 0 || isSubmittingMembers}
-                                onClick={handleAddSelectedMembers}
-                                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
-                            >
-                                {isSubmittingMembers ? (
-                                    <>
-                                        <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
-                                        <span>Adding...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <span className="material-symbols-outlined text-[16px]">person_add</span>
-                                        <span>Add {selectedNewMemberIds.length > 0 ? `${selectedNewMemberIds.length} ` : ''}Member{selectedNewMemberIds.length !== 1 ? 's' : ''}</span>
-                                    </>
-                                )}
-                            </button>
+                        <div className="px-6 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between gap-3 shrink-0">
+                            <span className="text-xs text-slate-500">
+                                Will be added as <strong className="text-slate-800 dark:text-slate-200">{selectedRoleToAdd}</strong>
+                            </span>
+                            <div className="flex items-center gap-2.5">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsAddMemberModalOpen(false);
+                                        setSelectedUserIdsToAdd([]);
+                                    }}
+                                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={selectedUserIdsToAdd.length === 0 || isSavingMembers}
+                                    onClick={handleAddSelectedMembers}
+                                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-600/30 transition-all flex items-center gap-1.5 cursor-pointer"
+                                >
+                                    {isSavingMembers ? (
+                                        <>
+                                            <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                                            <span>Adding...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="material-symbols-outlined text-[16px]">person_add</span>
+                                            <span>Add {selectedUserIdsToAdd.length > 0 ? `${selectedUserIdsToAdd.length} Members` : 'Members'}</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

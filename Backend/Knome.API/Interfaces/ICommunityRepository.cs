@@ -8,6 +8,8 @@ public interface ICommunityRepository
 {
     // Community CRUD & Discovery
     Task<Community?> GetCommunityByIdAsync(int communityId);
+    Task<Community?> GetCommunityByIdAnyStatusAsync(int communityId);
+    Task<List<Community>> GetPendingCommunitiesAsync();
     Task<List<Community>> GetCommunitiesAsync(int? categoryId, string? type, string? search, int pageNumber, int pageSize);
     Task<List<Community>> GetUserCommunitiesAsync(int userId);
     Task<Community> AddCommunityAsync(Community community);

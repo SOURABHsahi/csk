@@ -108,7 +108,7 @@ public class AnalyticsController : KnomeControllerBase
         var postsCount = await _context.Posts.CountAsync();
         var articlesCount = await _context.Articles.CountAsync();
         var videosCount = await _context.Videos.CountAsync();
-        var podcastsCount = await _context.Podcasts.CountAsync();
+        var podcastsCount = await _context.Podcasts.CountAsync(p => p.IsActive);
         var reactionsCount = await _context.Reactions.CountAsync();
         var commentsCount = await _context.Comments.CountAsync();
 

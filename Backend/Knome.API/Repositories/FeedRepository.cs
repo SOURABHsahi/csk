@@ -90,9 +90,9 @@ public class FeedRepository : IFeedRepository
     {
         return await _db.Podcasts
             .Include(p => p.UploaderUser)
-            .Where(p => followedUserIds.Contains(p.UploaderUserId) ||
+            .Where(p => p.IsActive && (followedUserIds.Contains(p.UploaderUserId) ||
                         p.UploaderUserId == currentUserId ||
-                        true) // Podcasts default to public enterprise sharing
+                        true)) // Podcasts default to public enterprise sharing
             .OrderByDescending(p => p.UploadedDate)
             .Take(limit)
             .ToListAsync();

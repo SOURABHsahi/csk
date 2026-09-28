@@ -29,10 +29,32 @@ public class CommunityRepository : ICommunityRepository
             .FirstOrDefaultAsync(c => c.CommunityId == communityId && c.IsActive);
     }
 
+    public async Task<Community?> GetCommunityByIdAnyStatusAsync(int communityId)
+    {
+        return await _db.Communities
+            .Include(c => c.Category)
+            .Include(c => c.CreatedByUser)
+            .Include(c => c.Users) // Admins
+            .Include(c => c.CommunityMembers)
+            .FirstOrDefaultAsync(c => c.CommunityId == communityId);
+    }
+
+    public async Task<List<Community>> GetPendingCommunitiesAsync()
+    {
+        return await _db.Communities
+            .Where(c => !c.IsActive && c.ApprovalStatus == "Pending")
+            .Include(c => c.Category)
+            .Include(c => c.CreatedByUser)
+                .ThenInclude(u => u.Department)
+            .Include(c => c.CommunityMembers)
+            .OrderByDescending(c => c.CreatedDate)
+            .ToListAsync();
+    }
+
     public async Task<List<Community>> GetCommunitiesAsync(int? categoryId, string? type, string? search, int pageNumber, int pageSize)
     {
         var query = _db.Communities
-            .Where(c => c.IsActive)
+            .Where(c => c.IsActive && (c.ApprovalStatus == null || c.ApprovalStatus == "Approved"))
             .Include(c => c.Category)
             .Include(c => c.CreatedByUser)
             .Include(c => c.CommunityMembers)
@@ -57,7 +79,8 @@ public class CommunityRepository : ICommunityRepository
     public async Task<List<Community>> GetUserCommunitiesAsync(int userId)
     {
         return await _db.Communities
-            .Where(c => c.IsActive)
+            .Where(c => (c.IsActive && (c.ApprovalStatus == null || c.ApprovalStatus == "Approved")) || 
+                        (c.CreatedByUserId == userId && c.ApprovalStatus == "Pending"))
             .Include(c => c.Category)
             .Include(c => c.CreatedByUser)
             .Include(c => c.CommunityMembers)

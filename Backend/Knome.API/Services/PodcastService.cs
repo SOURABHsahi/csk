@@ -130,7 +130,7 @@ public class PodcastService : IPodcastService
     public async Task<PodcastDto> GetPodcastAsync(long podcastId, int currentUserId)
     {
         var podcast = await _repo.GetPodcastByIdAsync(podcastId);
-        if (podcast == null)
+        if (podcast == null || !podcast.IsActive)
             throw new NotFoundException($"Podcast ID {podcastId} not found.");
 
         var dto = _mapper.Map<PodcastDto>(podcast);
@@ -243,7 +243,8 @@ public class PodcastService : IPodcastService
             CategoryId = dto.CategoryId,
             SeriesId = dto.SeriesId,
             FileSizeMb = dto.FileSizeMb,
-            UploadedDate = Knome.API.Common.KnomeTime.Now
+            UploadedDate = Knome.API.Common.KnomeTime.Now,
+            IsActive = true
         };
 
         var saved = await _repo.AddPodcastAsync(podcast);
@@ -257,7 +258,7 @@ public class PodcastService : IPodcastService
     public async Task<PodcastDto> UpdatePodcastAsync(long podcastId, int currentUserId, UpdatePodcastDto dto)
     {
         var podcast = await _repo.GetPodcastByIdAsync(podcastId);
-        if (podcast == null)
+        if (podcast == null || !podcast.IsActive)
             throw new NotFoundException($"Podcast ID {podcastId} not found.");
 
         await CheckIsUploaderOrAdminAsync(podcast, currentUserId);
@@ -303,7 +304,7 @@ public class PodcastService : IPodcastService
     public async Task DeletePodcastAsync(long podcastId, int currentUserId)
     {
         var podcast = await _repo.GetPodcastByIdAsync(podcastId);
-        if (podcast == null)
+        if (podcast == null || !podcast.IsActive)
             throw new NotFoundException($"Podcast ID {podcastId} not found.");
 
         await CheckIsUploaderOrAdminAsync(podcast, currentUserId);
@@ -313,7 +314,7 @@ public class PodcastService : IPodcastService
     public async Task<int> IncrementViewCountAsync(long podcastId, int currentUserId = 0)
     {
         var exists = await _repo.GetPodcastByIdAsync(podcastId);
-        if (exists == null)
+        if (exists == null || !exists.IsActive)
             throw new NotFoundException($"Podcast ID {podcastId} not found.");
 
         var count = await _interactionService.RecordViewAsync(ContentTypes.Podcast, podcastId, currentUserId);

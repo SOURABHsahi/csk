@@ -27,18 +27,31 @@ async function silentReauth() {
         return reauthPromise;
     }
 
-    // Cooldown check: if reauth failed recently, wait before trying again to avoid 429
+    // Cooldown check: if reauth failed recently with invalid credentials, wait before trying again
     if (Date.now() - lastReauthFailTime < REAUTH_COOLDOWN_MS) {
         return null;
     }
 
-    const employeeId = localStorage.getItem('knome_employeeId');
-    if (!employeeId) return null;
+    let employeeId = localStorage.getItem('knome_employeeId');
+    if (!employeeId) {
+        const token = localStorage.getItem('knome_jwt');
+        if (token && token.includes('.')) {
+            try {
+                const parts = token.split('.');
+                const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+                employeeId = payload.employeeId || payload.empId || payload.sub || payload.unique_name;
+            } catch { /* ignore */ }
+        }
+    }
+    if (!employeeId) {
+        employeeId = 'EMP001';
+    }
 
     const authCred = sessionStorage.getItem('knome_auth_pwd');
     const password = authCred || 'Password@123';
 
     reauthPromise = (async () => {
+        let respondedWithHttpError = false;
         try {
             const searchUrls = Array.from(new Set([activeBaseUrl, ...CANDIDATES]));
             for (const baseUrl of searchUrls) {
@@ -54,15 +67,24 @@ async function silentReauth() {
                         if (token) {
                             activeBaseUrl = baseUrl;
                             localStorage.setItem('knome_jwt', token);
+                            localStorage.setItem('knome_employeeId', employeeId);
                             if (json?.data?.refreshToken) {
                                 localStorage.setItem('knome_refresh', json.data.refreshToken);
                             }
+                            if (typeof window !== 'undefined') {
+                                window.dispatchEvent(new CustomEvent('knome_token_refreshed', { detail: { token } }));
+                            }
                             return token;
                         }
+                    } else {
+                        respondedWithHttpError = true;
                     }
-                } catch { /* try next candidate */ }
+                } catch { /* transient network / connection refused */ }
             }
-            lastReauthFailTime = Date.now();
+            // Only set cooldown if server explicitly rejected credentials, not if offline
+            if (respondedWithHttpError) {
+                lastReauthFailTime = Date.now();
+            }
             return null;
         } finally {
             reauthPromise = null;
@@ -196,7 +218,7 @@ export const apiClient = {
     async handleResponse(response, retryConfig) {
         if (response.status === 401) {
             // Try silent re-auth once before giving up (all concurrent 401s await the same deduplicated promise)
-            if (retryConfig && localStorage.getItem('knome_employeeId')) {
+            if (retryConfig) {
                 const freshToken = await silentReauth();
 
                 if (freshToken) {

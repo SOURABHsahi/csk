@@ -10,14 +10,24 @@ public class ShareDto
     public int UserId { get; set; }
     public string UserFullName { get; set; } = null!;
     public string SharedToType { get; set; } = null!;
-    public long? SharedToId { get; set; }
+    public long? TargetId { get; set; }
+    public long? SharedToId
+    {
+        get => TargetId;
+        set => TargetId = value;
+    }
     public DateTime CreatedDate { get; set; }
 }
 
 public class CreateShareDto
 {
     public string SharedToType { get; set; } = null!;
-    public long? SharedToId { get; set; }
+    public long? TargetId { get; set; }
+    public long? SharedToId
+    {
+        get => TargetId;
+        set => TargetId = value;
+    }
 }
 
 public class BookmarkDto
