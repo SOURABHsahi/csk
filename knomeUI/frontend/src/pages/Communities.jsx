@@ -387,6 +387,72 @@ export default function Communities() {
         }
     };
 
+    const handleCancelPendingCommunity = async (e, community) => {
+        if (e && e.stopPropagation) e.stopPropagation();
+        const commName = community?.name || community?.communityName || 'this community';
+        const commId = community?.id || community?.communityId;
+
+        const ok = await confirm({
+            title: 'Cancel Community Request',
+            message: `Are you sure you want to cancel and revert your request for "${commName}"? This community creation proposal will be withdrawn and removed.`,
+            confirmText: 'Yes, Cancel Request',
+            cancelText: 'Keep Request',
+            variant: 'danger'
+        });
+        if (!ok) return;
+
+        // 1. Immediately track as deleted in localStorage so it never resurrects
+        const deletedIds = JSON.parse(localStorage.getItem('knome_deleted_community_ids') || '[]');
+        if (commId && !deletedIds.includes(String(commId))) {
+            deletedIds.push(String(commId));
+            localStorage.setItem('knome_deleted_community_ids', JSON.stringify(deletedIds));
+        }
+
+        // 2. Remove from pending approvals storage
+        const pendingList = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+        const updatedPending = pendingList.filter(c => 
+            String(c.id) !== String(commId) && 
+            (c.name || '').toLowerCase().trim() !== commName.toLowerCase().trim()
+        );
+        localStorage.setItem('knome_pending_community_approvals', JSON.stringify(updatedPending));
+
+        // 3. Remove from custom communities
+        const customList = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+        const updatedCustom = customList.filter(c => 
+            String(c.id) !== String(commId) && 
+            (c.name || '').toLowerCase().trim() !== commName.toLowerCase().trim()
+        );
+        localStorage.setItem('knome_custom_communities', JSON.stringify(updatedCustom));
+
+        // 4. Update component state immediately
+        setPendingApprovals(prev => prev.filter(p => 
+            String(p.id) !== String(commId) && 
+            (p.name || '').toLowerCase().trim() !== commName.toLowerCase().trim()
+        ));
+        setCommunities(prev => prev.filter(c => 
+            String(c.id) !== String(commId) && 
+            (c.name || '').toLowerCase().trim() !== commName.toLowerCase().trim()
+        ));
+
+        // Close successPopup if it matches
+        setSuccessPopup(prev => (prev && (String(prev.id) === String(commId) || prev.communityName === commName) ? null : prev));
+
+        addToast(`Community request for "${commName}" has been cancelled.`, 'info');
+
+        // 5. Notify backend to deactivate / mark as deleted in database
+        if (commId) {
+            try {
+                await communitiesApi.delete(commId);
+            } catch (err) {
+                console.warn('Backend cancel community request error:', err);
+            }
+        }
+
+        // 6. Broadcast event across tabs/windows
+        window.dispatchEvent(new CustomEvent('community-created'));
+        window.dispatchEvent(new CustomEvent('community-approval-requested'));
+    };
+
     const compressImage = (file, maxWidth = 1200, maxHeight = 600, quality = 0.85) => {
         return new Promise((resolve) => {
             const reader = new FileReader();
@@ -1042,9 +1108,19 @@ export default function Communities() {
                                                 <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed mb-2 flex-1">
                                                     <HighlightText text={c.description} query={searchQuery} />
                                                 </p>
-                                                <div className="pt-2 mt-auto border-t border-slate-100 dark:border-slate-800 text-[10px] text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1 whitespace-nowrap">
-                                                    <span className="material-symbols-outlined text-[13px]">schedule</span>
-                                                    Awaiting HR clearance
+                                                <div className="pt-2 mt-auto border-t border-slate-100 dark:border-slate-800 text-[10px] text-amber-600 dark:text-amber-400 font-bold flex items-center justify-between gap-1 whitespace-nowrap">
+                                                    <div className="flex items-center gap-1">
+                                                        <span className="material-symbols-outlined text-[13px]">schedule</span>
+                                                        <span>Awaiting clearance</span>
+                                                    </div>
+                                                    <button
+                                                        onClick={(e) => handleCancelPendingCommunity(e, c)}
+                                                        className="px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 dark:bg-rose-950/40 dark:hover:bg-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 rounded-lg flex items-center gap-1 transition-all cursor-pointer shadow-xs active:scale-95"
+                                                        title="Cancel & revert this community request"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[13px]">close</span>
+                                                        <span>Cancel</span>
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
@@ -1369,6 +1445,13 @@ export default function Communities() {
                                         Done
                                     </button>
                                 </div>
+                                <button
+                                    onClick={(e) => handleCancelPendingCommunity(e, { id: successPopup.id, name: successPopup.communityName })}
+                                    className="w-full mt-2.5 py-1.5 text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 font-semibold text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                                >
+                                    <span className="material-symbols-outlined text-[14px]">undo</span>
+                                    <span>Cancel / Revert this request</span>
+                                </button>
                             </div>
                         )}
                     </div>

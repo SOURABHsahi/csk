@@ -2987,6 +2987,56 @@ export default function CommunityView() {
         }
     };
 
+    const handleCancelCommunityRequest = async () => {
+        const targetId = communityId || community?.id;
+        const commName = community?.name || 'this community';
+        const ok = await confirm({
+            title: 'Cancel Community Request',
+            message: `Are you sure you want to cancel and revert your request for "${commName}"? This community creation proposal will be withdrawn and removed.`,
+            confirmText: 'Yes, Cancel Request',
+            cancelText: 'Keep Request',
+            variant: 'danger'
+        });
+        if (!ok) return;
+
+        // 1. Immediately track as deleted in localStorage
+        const deletedIds = JSON.parse(localStorage.getItem('knome_deleted_community_ids') || '[]');
+        if (targetId && !deletedIds.includes(String(targetId))) {
+            deletedIds.push(String(targetId));
+            localStorage.setItem('knome_deleted_community_ids', JSON.stringify(deletedIds));
+        }
+
+        // 2. Remove from custom list and pending approvals list
+        const customList = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+        const updatedCustom = customList.filter(c => 
+            String(c.id) !== String(targetId) && 
+            (c.name || '').toLowerCase().trim() !== commName.toLowerCase().trim()
+        );
+        localStorage.setItem('knome_custom_communities', JSON.stringify(updatedCustom));
+
+        const pendingList = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+        const updatedPending = pendingList.filter(c => 
+            String(c.id) !== String(targetId) && 
+            (c.name || '').toLowerCase().trim() !== commName.toLowerCase().trim()
+        );
+        localStorage.setItem('knome_pending_community_approvals', JSON.stringify(updatedPending));
+
+        showToast(`Community request for "${commName}" has been cancelled.`, 'info');
+        navigate('/community');
+
+        // 3. Send delete to backend to set IsActive = 0 in database
+        try {
+            if (targetId) {
+                await communitiesApi.delete(targetId);
+            }
+        } catch (err) {
+            console.warn('Backend delete notification error:', err);
+        }
+
+        window.dispatchEvent(new CustomEvent('community-created'));
+        window.dispatchEvent(new CustomEvent('community-approval-requested'));
+    };
+
     // ─────────────────────────────────────────
     // Files & Media Handlers
     // ─────────────────────────────────────────
@@ -3388,17 +3438,27 @@ export default function CommunityView() {
                             </div>
                         </div>
                     ) : (
-                        <div className="bg-amber-500/10 dark:bg-amber-950/40 border-2 border-amber-500/30 rounded-2xl p-4 sm:p-5 flex items-center gap-3.5 shadow-sm">
-                            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                                <span className="material-symbols-outlined text-2xl">hourglass_top</span>
+                        <div className="bg-amber-500/10 dark:bg-amber-950/40 border-2 border-amber-500/30 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 shadow-sm">
+                            <div className="flex items-center gap-3.5">
+                                <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                    <span className="material-symbols-outlined text-2xl">hourglass_top</span>
+                                </div>
+                                <div>
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white">Under Administration Review</span>
+                                    <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white mt-1">Your Community is Awaiting Administrator Clearance</h4>
+                                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                                        You have submitted this community for approval. It will become publicly visible and open for team members once approved by the Administration.
+                                    </p>
+                                </div>
                             </div>
-                            <div>
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white">Under Administration Review</span>
-                                <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white mt-1">Your Community is Awaiting Administrator Clearance</h4>
-                                <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
-                                    You have submitted this community for approval. It will become publicly visible and open for team members once approved by the Administration.
-                                </p>
-                            </div>
+                            <button
+                                onClick={handleCancelCommunityRequest}
+                                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 self-start sm:self-center"
+                                title="Cancel & withdraw this community proposal"
+                            >
+                                <span className="material-symbols-outlined text-[16px]">close</span>
+                                <span>Cancel Request</span>
+                            </button>
                         </div>
                     )}
                 </div>
