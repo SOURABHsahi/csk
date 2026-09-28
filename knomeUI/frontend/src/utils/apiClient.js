@@ -252,7 +252,17 @@ export const apiClient = {
         const data = text ? JSON.parse(text) : null;
         
         if (!response.ok) {
-            const errMessage = (data && (data.message || data.title)) || `API request failed with status ${response.status}`;
+            let errMessage = (data && (data.message || data.title)) || `API request failed with status ${response.status}`;
+            if (data?.errors) {
+                if (Array.isArray(data.errors) && data.errors.length > 0) {
+                    errMessage = data.errors.join('; ');
+                } else if (typeof data.errors === 'object') {
+                    const errorList = Object.values(data.errors).flat().filter(Boolean);
+                    if (errorList.length > 0) {
+                        errMessage = errorList.join('; ');
+                    }
+                }
+            }
             const err = new Error(errMessage);
             err.isApiError = true;
             err.status = response.status;

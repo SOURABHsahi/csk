@@ -5,6 +5,25 @@ import { useUser } from '../contexts/UserContext';
 import { useToast } from '../contexts/ToastContext';
 import { checkRestrictedContent } from '../../utils/restrictedWords';
 
+// Helper to convert base64 data URLs to real File objects
+const dataUrlToFile = (dataUrl, filename = 'thumbnail.jpg') => {
+    try {
+        if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) return null;
+        const arr = dataUrl.split(',');
+        const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+            u8arr[n] = bstr.charCodeAt(n);
+        }
+        return new File([u8arr], filename, { type: mime });
+    } catch (e) {
+        console.warn("Failed to convert dataUrl to File:", e);
+        return null;
+    }
+};
+
 export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
     const { currentUser } = useUser();
     const { addToast } = useToast();
@@ -42,6 +61,7 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
             const objectUrl = URL.createObjectURL(file);
             video.src = objectUrl;
 
+            let isResolved = false;
             const cleanup = () => {
                 try {
                     video.pause();
@@ -55,12 +75,23 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                 }, 2000);
             };
 
+            const timer = setTimeout(() => {
+                if (!isResolved) {
+                    isResolved = true;
+                    cleanup();
+                    resolve(null);
+                }
+            }, 3500);
+
             video.onloadeddata = () => {
-                const targetTime = Math.min(1.5, (video.duration || 0) * 0.15);
+                const targetTime = Math.max(0.5, Math.min(2, (video.duration || 0) * 0.15));
                 video.currentTime = targetTime;
             };
 
             video.onseeked = () => {
+                if (isResolved) return;
+                isResolved = true;
+                clearTimeout(timer);
                 try {
                     const canvas = document.createElement('canvas');
                     canvas.width = video.videoWidth || 640;
@@ -85,6 +116,9 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
             };
 
             video.onerror = () => {
+                if (isResolved) return;
+                isResolved = true;
+                clearTimeout(timer);
                 cleanup();
                 resolve(null);
             };
@@ -191,10 +225,13 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
     };
 
     const handleUrlInputChange = async (val) => {
-        setSourceUrlInput(val);
-        if (!val || !val.trim()) return;
-
-        const cleanUrl = val.trim();
+        let cleanUrl = (val || '').trim();
+        const iframeMatch = cleanUrl.match(/src=["'](.*?)["']/i);
+        if (iframeMatch && iframeMatch[1]) {
+            cleanUrl = iframeMatch[1].trim();
+        }
+        setSourceUrlInput(cleanUrl);
+        if (!cleanUrl) return;
 
         // 1. YouTube Video Match
         let ytMatch = cleanUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))((\w|-){11})/);
@@ -202,6 +239,7 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
             const vId = ytMatch[1];
             const ytThumb = `https://img.youtube.com/vi/${vId}/hqdefault.jpg`;
             setThumbnailPreview(ytThumb);
+            setThumbnailFile(null);
             setIsAutoThumbnail(true);
             setVideoDuration('05:30');
             setDurationSeconds(330);
@@ -212,9 +250,9 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                 if (res.ok) {
                     const data = await res.json();
                     if (data.title) {
-                        setTitle(data.title);
+                        setTitle(data.title.slice(0, 200));
                         if (!description) {
-                            setDescription(`${data.title}\n\nUploaded via Enterprise Video Portal. Channel: ${data.author_name || 'YouTube'}`);
+                            setDescription(`${data.title}\n\nUploaded via Enterprise Video Portal. Channel: ${data.author_name || 'YouTube'}`.slice(0, 1000));
                         }
                     }
                     if (data.thumbnail_url) {
@@ -255,6 +293,12 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                     canvas.height = tempVid.videoHeight || 360;
                     const ctx = canvas.getContext('2d');
                     ctx.drawImage(tempVid, 0, 0, canvas.width, canvas.height);
+                    canvas.toBlob((blob) => {
+                        if (blob) {
+                            const thumbFile = new File([blob], `auto_thumb_${Date.now()}.jpg`, { type: 'image/jpeg' });
+                            setThumbnailFile(thumbFile);
+                        }
+                    }, 'image/jpeg', 0.85);
                     const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
                     setThumbnailPreview(dataUrl);
                     setIsAutoThumbnail(true);
@@ -270,18 +314,21 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
 
         // 3. Fallback for OneDrive / MS Stream / General Embed Links
         setThumbnailPreview('https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&auto=format&fit=crop&q=80');
+        setThumbnailFile(null);
         setIsAutoThumbnail(true);
         setVideoDuration('04:45');
         setDurationSeconds(285);
     };
 
     const handleUpload = async () => {
-        if (!title.trim()) {
+        const safeTitle = title.trim().slice(0, 200);
+        if (!safeTitle) {
             addToast("Please enter a video title.", 'warning');
             return;
         }
 
-        const textToScan = `${title} ${description} ${tagInput} ${tags.join(' ')}`;
+        const safeDescription = description.trim().slice(0, 1000);
+        const textToScan = `${safeTitle} ${safeDescription} ${tagInput} ${tags.join(' ')}`;
         const foundKeyword = checkRestrictedContent(textToScan);
         if (foundKeyword) {
             addToast(`Video cannot be uploaded. It contains the restricted term: "${foundKeyword}".`, 'warning');
@@ -306,56 +353,98 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
         setIsUploading(true);
 
         try {
-            let finalVideoUrl = sourceUrlInput;
+            let finalVideoUrl = sourceUrlInput.trim();
             let fileSizeMb = null;
+
+            // Extract src from iframe if user pasted raw embed code
+            const iframeMatch = finalVideoUrl.match(/src=["'](.*?)["']/i);
+            if (iframeMatch && iframeMatch[1]) {
+                finalVideoUrl = iframeMatch[1].trim();
+            }
 
             // 1. Upload Video if Direct
             if (sourceTab === 'direct' && videoFile) {
+                if (videoFile.size > 500 * 1024 * 1024) {
+                    addToast("Video file exceeds the maximum allowed size of 500 MB.", 'warning');
+                    setIsUploading(false);
+                    return;
+                }
                 const videoResult = await apiClient.uploadFile('/Media/upload', videoFile, 'video');
-                finalVideoUrl = videoResult.url;
+                if (videoResult && videoResult.url) {
+                    finalVideoUrl = videoResult.url;
+                }
                 fileSizeMb = Math.round(videoFile.size / (1024 * 1024));
+            }
+
+            if (!finalVideoUrl) {
+                addToast("Video source URL is required.", 'warning');
+                setIsUploading(false);
+                return;
+            }
+
+            if (finalVideoUrl.length > 400) {
+                addToast("Video source URL is too long (maximum 400 characters). Please provide a direct or shorter link.", 'warning');
+                setIsUploading(false);
+                return;
             }
 
             // 2. Upload Thumbnail if provided, or use auto-extracted preview thumbnail
             let finalThumbnailUrl = null;
-            if (thumbnailFile) {
+            let fileToUpload = thumbnailFile;
+
+            // If thumbnailFile is missing but we have a data: URL preview, convert to File
+            if (!fileToUpload && thumbnailPreview && thumbnailPreview.startsWith('data:')) {
+                fileToUpload = dataUrlToFile(thumbnailPreview, `auto_thumb_${Date.now()}.jpg`);
+            }
+
+            if (fileToUpload) {
                 try {
-                    const thumbResult = await apiClient.uploadFile('/Media/upload', thumbnailFile, 'image');
-                    finalThumbnailUrl = thumbResult.url;
+                    const thumbResult = await apiClient.uploadFile('/Media/upload', fileToUpload, 'image');
+                    if (thumbResult && thumbResult.url) {
+                        finalThumbnailUrl = thumbResult.url;
+                    }
                 } catch (e) {
+                    console.warn("Thumbnail upload to /Media/upload failed:", e);
+                }
+            }
+
+            // If we have a regular HTTP/HTTPS URL preview (like YouTube or Unsplash), use it directly if <= 400 chars
+            if (!finalThumbnailUrl && thumbnailPreview && (thumbnailPreview.startsWith('http://') || thumbnailPreview.startsWith('https://') || thumbnailPreview.startsWith('/'))) {
+                if (thumbnailPreview.length <= 400) {
                     finalThumbnailUrl = thumbnailPreview;
                 }
             }
-            if (!finalThumbnailUrl && thumbnailPreview) {
-                finalThumbnailUrl = thumbnailPreview;
+
+            // Safe fallback: never let finalThumbnailUrl be a data: URL or exceed 400 characters
+            if (!finalThumbnailUrl || finalThumbnailUrl.startsWith('data:') || finalThumbnailUrl.length > 400) {
+                finalThumbnailUrl = 'https://images.unsplash.com/photo-1540317580384-e5d43616b9aa?w=600';
             }
 
             // 3. Map SourceType
             let sourceType = 'LocalUpload';
             if (sourceTab === 'onedrive') sourceType = 'OneDrive';
             if (sourceTab === 'stream') sourceType = 'Stream';
-            if (sourceTab === 'embed') sourceType = 'Stream'; // Map embed to Stream to pass backend validation if Embed isn't supported
+            if (sourceTab === 'embed') sourceType = 'Stream';
 
             // 4. Submit to Backend
             let finalTags = [...tags];
             if (tagInput.trim()) {
                 const inputTags = tagInput.trim().split(/[\s,]+/).filter(Boolean).map(t => t.startsWith('#') ? t : '#' + t);
                 finalTags = [...finalTags, ...inputTags];
-                // ensure unique
-                finalTags = [...new Set(finalTags)];
             }
+            finalTags = [...new Set(finalTags.map(t => t.trim().slice(0, 50)).filter(Boolean))];
 
             const dto = {
-                title: title.trim(),
-                description: description.trim(),
-                categoryId: parseInt(category) || null,
+                title: safeTitle,
+                description: safeDescription,
+                categoryId: parseInt(category) || 13,
                 thumbnailUrl: finalThumbnailUrl,
                 sourceType: sourceType,
                 sourceUrl: finalVideoUrl,
                 fileSizeMb: fileSizeMb,
                 durationSeconds: durationSeconds || null,
                 tags: finalTags,
-                uploaderUserId: currentUser?.id
+                uploaderUserId: currentUser?.id || currentUser?.userId || null
             };
 
             if (isCurrentUserAdmin) {
@@ -366,17 +455,17 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                 const pendingItem = {
                     id: `pending_video_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
                     mediaType: 'Video',
-                    title: title.trim(),
-                    description: description.trim(),
-                    thumbnail: finalThumbnailUrl || 'https://images.unsplash.com/photo-1540317580384-e5d43616b9aa?auto=format&fit=crop&q=90&w=1600&h=900',
+                    title: safeTitle,
+                    description: safeDescription,
+                    thumbnail: finalThumbnailUrl,
                     sourceUrl: finalVideoUrl,
                     sourceType: sourceType,
                     duration: videoDuration || 'Video',
                     category: categoryLabel,
                     tags: finalTags,
-                    authorName: currentUser?.name || 'Employee',
-                    authorId: currentUser?.id,
-                    authorAvatar: currentUser?.avatar,
+                    authorName: currentUser?.name || currentUser?.fullName || 'Employee',
+                    authorId: currentUser?.id || currentUser?.userId,
+                    authorAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl,
                     submittedDate: new Date().toISOString(),
                     status: 'PendingApproval',
                     dto: dto
@@ -396,7 +485,7 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                     id: `notif_approval_${Date.now()}`,
                     type: 'media_approval',
                     category: 'System',
-                    text: `${currentUser?.name || currentUser?.fullName || 'Employee'} uploaded video "${title.trim()}" awaiting your admin approval.`,
+                    text: `${currentUser?.name || currentUser?.fullName || 'Employee'} uploaded video "${safeTitle}" awaiting your admin approval.`,
                     senderName: currentUser?.name || currentUser?.fullName || 'Employee',
                     senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
                     senderUserId: currentUser?.userId || currentUser?.id,
@@ -411,7 +500,7 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                 const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
                 localStorage.setItem('knome_notifications', JSON.stringify([adminNotif, ...existingNotifs]));
 
-                addToast(`Video "${title.trim()}" submitted successfully! It has been sent to the Admin for approval before going live.`, 'success');
+                addToast(`Video "${safeTitle}" submitted successfully! It has been sent to the Admin for approval before going live.`, 'success');
             }
             
             // Success
@@ -430,8 +519,13 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
             setThumbnailPreview('');
             setSourceUrlInput('');
         } catch (error) {
-            console.error("Video upload failed:", error);
-            addToast("Failed to upload video: " + (error.message || "Please try again."), 'error');
+            console.error("Video upload failed:", error, error?.data);
+            const detailedMsg = (error.data?.errors && Array.isArray(error.data.errors))
+                ? error.data.errors.join('; ')
+                : (error.data?.errors && typeof error.data.errors === 'object')
+                    ? Object.values(error.data.errors).flat().filter(Boolean).join('; ')
+                    : (error.message || "Please try again.");
+            addToast("Failed to upload video: " + detailedMsg, 'error');
             setIsUploading(false);
         }
     };
@@ -615,6 +709,7 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                                 <input 
                                     type="text" 
                                     value={sourceUrlInput} 
+                                    maxLength={400}
                                     onChange={e => handleUrlInputChange(e.target.value)} 
                                     placeholder="https://onedrive.live.com/..." 
                                     className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs focus:ring-2 focus:ring-blue-500 outline-none" 
@@ -631,6 +726,7 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                                 <input 
                                     type="text" 
                                     value={sourceUrlInput} 
+                                    maxLength={400}
                                     onChange={e => handleUrlInputChange(e.target.value)} 
                                     placeholder="https://web.microsoftstream.com/video/..." 
                                     className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs focus:ring-2 focus:ring-pink-500 outline-none" 
@@ -647,6 +743,7 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                                 <input 
                                     type="text" 
                                     value={sourceUrlInput} 
+                                    maxLength={400}
                                     onChange={e => handleUrlInputChange(e.target.value)} 
                                     placeholder="https://www.youtube.com/watch?v=... or <iframe src=..." 
                                     className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs focus:ring-2 focus:ring-cyan-500 outline-none" 
@@ -666,6 +763,7 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                                 <input 
                                     type="text" 
                                     value={title} 
+                                    maxLength={200}
                                     onChange={e => setTitle(e.target.value)} 
                                     placeholder="Enter video title" 
                                     className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/80 rounded-xl px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-cyan-500 outline-none text-slate-900 dark:text-white font-medium" 
@@ -692,6 +790,7 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
                                 </label>
                                 <textarea 
                                     value={description} 
+                                    maxLength={1000}
                                     onChange={e => setDescription(e.target.value)} 
                                     placeholder="What is this video about?" 
                                     rows="3" 
