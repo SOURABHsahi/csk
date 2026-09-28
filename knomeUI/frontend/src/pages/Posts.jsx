@@ -2,16 +2,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import PostCard from '../components/widgets/PostCard';
+import DraftCard from '../components/widgets/DraftCard';
 import CreatePostModal from '../components/modals/CreatePostModal';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 import { useScrollLoading } from '../hooks/useScrollLoading';
 import HotPostsWidget from '../components/widgets/HotPostsWidget';
 import TrendingTagsWidget from '../components/widgets/TrendingTagsWidget';
-import HighlightText from '../components/ui/HighlightText';
 import { postsApi, mapPost, getPersonalizedRecommendations } from '../utils/apiService';
+import { deleteDraft, clearUserDraft, getUserDraft, removeDraftFromLocalPosts } from '../utils/draftManager';
+import { useToast } from '../components/contexts/ToastContext';
 
 export default function Posts() {
     const { currentUser } = useUser();
+    const { addToast } = useToast();
     const location = useLocation();
     const queryParams = new URLSearchParams(location.search);
     const targetPostId = queryParams.get('id') || queryParams.get('postId') || queryParams.get('highlight');
@@ -24,6 +27,7 @@ export default function Posts() {
     const [searchQuery, setSearchQuery] = useState(initialSearch);
     const [selectedTag, setSelectedTag] = useState(initialTag ? initialTag.replace('#', '') : 'All');
     const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
+    const [draftToEdit, setDraftToEdit] = useState(null);
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);
@@ -53,6 +57,32 @@ export default function Posts() {
                         mapped.unshift(mapPost(lp));
                     }
                 });
+            } catch (e) {}
+
+            // Ensure current active user draft is fresh and synced in mapped posts
+            try {
+                const currentUid = currentUser?.userId || currentUser?.id;
+                const activeDraft = getUserDraft(currentUid);
+                if (activeDraft) {
+                    const draftIdStr = String(activeDraft.id || activeDraft.postId || '');
+                    const deletedIds = JSON.parse(localStorage.getItem('knome_deleted_post_ids') || '[]').map(String);
+                    if (!deletedIds.includes(draftIdStr)) {
+                        const mappedDraft = mapPost({
+                            ...activeDraft,
+                            authorId: currentUid,
+                            authorName: currentUser?.fullName || currentUser?.name || 'You',
+                            authorAvatar: currentUser?.profilePhotoUrl || currentUser?.avatar,
+                            authorRole: currentUser?.designation || currentUser?.roleName || 'Employee',
+                            status: 'Draft'
+                        });
+                        const existingIdx = mapped.findIndex(m => String(m.id || m.postId) === draftIdStr);
+                        if (existingIdx >= 0) {
+                            mapped[existingIdx] = mappedDraft;
+                        } else {
+                            mapped.unshift(mappedDraft);
+                        }
+                    }
+                }
             } catch (e) {}
 
             // Filter out any posts present in deleted IDs blacklist
@@ -131,10 +161,12 @@ export default function Posts() {
 
         window.addEventListener('post-deleted', handlePostDeleted);
         window.addEventListener('post-created', handlePostCreated);
+        window.addEventListener('knome_drafts_updated', handlePostCreated);
         return () => {
             clearInterval(interval);
             window.removeEventListener('post-deleted', handlePostDeleted);
             window.removeEventListener('post-created', handlePostCreated);
+            window.removeEventListener('knome_drafts_updated', handlePostCreated);
         };
     }, [targetPostId, currentUser?.id]);
 
@@ -319,12 +351,70 @@ export default function Posts() {
                         </div>
                     ) : filteredPosts.length > 0 ? (
                         <>
-                            {filteredPosts.slice(0, visibleCount).map(post => (
-                                <PostCard key={post.id} post={post} searchQuery={searchQuery} onPostDeleted={(deletedId) => {
-                                    if (deletedId) setPosts(prev => prev.filter(p => p.id !== deletedId && p.postId !== deletedId));
-                                    loadPosts();
-                                }} />
-                            ))}
+                            {selectedTag === '📝 Drafts' ? (
+                                filteredPosts.slice(0, visibleCount).map(draft => (
+                                    <DraftCard
+                                        key={draft.id || draft.postId}
+                                        draft={draft}
+                                        onEditDraft={(d) => {
+                                            setDraftToEdit(d);
+                                            setIsCreatePostOpen(true);
+                                        }}
+                                        onDeleteDraft={async (dId) => {
+                                            try {
+                                                await deleteDraft(currentUser?.userId || currentUser?.id, dId, postsApi);
+                                                addToast("Draft deleted successfully", "success");
+                                                loadPosts();
+                                            } catch (e) {
+                                                console.error("Failed to delete draft:", e);
+                                                addToast("Failed to delete draft", "error");
+                                            }
+                                        }}
+                                        onPublishDraft={async (d) => {
+                                            const targetPostId = d.id || d.postId;
+                                            const isNumeric = /^\d+$/.test(String(targetPostId));
+                                            try {
+                                                if (isNumeric) {
+                                                    await postsApi.update(targetPostId, {
+                                                        contentText: d.text || d.content,
+                                                        audienceType: d.audience || d.audienceType || 'Everyone',
+                                                        status: 'Published',
+                                                        scheduledDate: null,
+                                                        attachmentUrls: (d.attachments || []).map(a => a.backendUrl || a.url),
+                                                        attachmentTypes: (d.attachments || []).map(a => a.type === 'doc' ? 'Document' : a.type === 'image' ? 'Image' : a.type === 'video' ? 'Video' : 'Audio'),
+                                                        mentionedUserIds: []
+                                                    });
+                                                } else {
+                                                    await postsApi.create({
+                                                        contentText: d.text || d.content,
+                                                        audienceType: d.audience || d.audienceType || 'Everyone',
+                                                        status: 'Published',
+                                                        scheduledDate: null,
+                                                        attachmentUrls: (d.attachments || []).map(a => a.backendUrl || a.url),
+                                                        attachmentTypes: (d.attachments || []).map(a => a.type === 'doc' ? 'Document' : a.type === 'image' ? 'Image' : a.type === 'video' ? 'Video' : 'Audio'),
+                                                        mentionedUserIds: []
+                                                    });
+                                                }
+                                                clearUserDraft(currentUser?.userId || currentUser?.id);
+                                                removeDraftFromLocalPosts(targetPostId);
+                                                addToast("Draft published successfully! 🚀", "success");
+                                                loadPosts();
+                                                window.dispatchEvent(new CustomEvent('post-created'));
+                                            } catch (e) {
+                                                console.error("Failed to publish draft:", e);
+                                                addToast(e?.message || "Failed to publish draft", "error");
+                                            }
+                                        }}
+                                    />
+                                ))
+                            ) : (
+                                filteredPosts.slice(0, visibleCount).map(post => (
+                                    <PostCard key={post.id} post={post} searchQuery={searchQuery} onPostDeleted={(deletedId) => {
+                                        if (deletedId) setPosts(prev => prev.filter(p => p.id !== deletedId && p.postId !== deletedId));
+                                        loadPosts();
+                                    }} />
+                                ))
+                            )}
 
                             {/* Infinite Scroll Progress Indicator */}
                             <ScrollLoadingIndicator isVisible={visibleCount < filteredPosts.length} text="Loading more posts on scroll..." />
@@ -346,8 +436,11 @@ export default function Posts() {
                             </p>
                             {currentUser.role !== 'SYSADM' && (
                                 <button
-                                    onClick={() => setIsCreatePostOpen(true)}
-                                    className="mt-2 px-5 py-2 font-bold text-xs rounded-xl bg-indigo-500 text-white hover:bg-indigo-600 transition-all shadow-sm flex items-center gap-2"
+                                    onClick={() => {
+                                        setDraftToEdit(null);
+                                        setIsCreatePostOpen(true);
+                                    }}
+                                    className="mt-2 px-5 py-2 font-bold text-xs rounded-xl bg-indigo-500 text-white hover:bg-indigo-600 transition-all shadow-sm flex items-center gap-2 cursor-pointer"
                                 >
                                     <span className="material-symbols-outlined text-[16px]">add</span>
                                     {selectedTag === '⏰ Scheduled' ? 'Schedule a Post' : 'Create First Post'}
@@ -367,8 +460,15 @@ export default function Posts() {
             {/* Create Post Modal — supports image, video, audio, document upload */}
             <CreatePostModal
                 isOpen={isCreatePostOpen}
-                onClose={() => setIsCreatePostOpen(false)}
-                onPostCreated={handlePostCreated}
+                onClose={() => {
+                    setIsCreatePostOpen(false);
+                    setDraftToEdit(null);
+                }}
+                onPostCreated={() => {
+                    setDraftToEdit(null);
+                    handlePostCreated();
+                }}
+                draftToEdit={draftToEdit}
             />
         </div>
     );

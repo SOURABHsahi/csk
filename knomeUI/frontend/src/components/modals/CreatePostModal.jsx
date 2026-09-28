@@ -4,6 +4,7 @@ import { useToast } from '../contexts/ToastContext';
 import { postsApi, mediaApi, communitiesApi, profileApi, notificationsApi, formatToDDMMYYYY } from '../../utils/apiService';
 import { apiClient } from '../../utils/apiClient';
 import { checkRestrictedContent, syncRestrictedWordsFromBackend, addRestrictedWord } from '../../utils/restrictedWords';
+import { getUserDraft, saveUserDraft, clearUserDraft, deleteDraft, formatDraftTimeAgo } from '../../utils/draftManager';
 import ImageCropModal from './ImageCropModal';
 import CustomDateTimePicker from '../widgets/CustomDateTimePicker';
 import HighlightText from '../ui/HighlightText';
@@ -41,10 +42,12 @@ export const formatScheduleDisplay = (dateInput) => {
     return `${day} ${month} ${year}, ${pad(hours)}:${minutes} ${ampm}`;
 };
 
-export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
+export default function CreatePostModal({ isOpen, onClose, onPostCreated, draftToEdit = null }) {
     const { currentUser, users, awardRuleKarma, refreshKarma } = useUser();
     const { addToast } = useToast();
+    const currentUserId = currentUser?.userId || currentUser?.id;
     
+    // Core post form state
     const [text, setText] = useState('');
     const [attachments, setAttachments] = useState([]);
     const [audience, setAudience] = useState('Everyone');
@@ -57,18 +60,66 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
     const [allColleagues, setAllColleagues] = useState(users || []);
     const audienceMenuRef = useRef(null);
 
+    // LinkedIn-Style Draft State
+    const [activeDraftId, setActiveDraftId] = useState(null);
+    const [isDraftMode, setIsDraftMode] = useState(false);
+    const [autoSaveStatus, setAutoSaveStatus] = useState(null); // null | 'saving' | 'saved'
+    const [lastSavedTime, setLastSavedTime] = useState(null);
+    const [isDiscarding, setIsDiscarding] = useState(false);
+    const isDirtyRef = useRef(false);
+    const autoSaveTimerRef = useRef(null);
+
+    // Debounced Auto-Save
+    const triggerAutoSave = (newText, newAttachments, newAudience, newCommunity, newConnections, newSchedTime) => {
+        if (!isOpen || isPublishing || !currentUserId) return;
+        
+        const hasContent = (newText && newText.trim().length > 0) || (newAttachments && newAttachments.length > 0);
+        if (!hasContent) {
+            setAutoSaveStatus(null);
+            return;
+        }
+
+        isDirtyRef.current = true;
+        setAutoSaveStatus('saving');
+        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+        autoSaveTimerRef.current = setTimeout(() => {
+            const saved = saveUserDraft(currentUserId, {
+                id: activeDraftId,
+                text: newText,
+                attachments: newAttachments,
+                audience: newAudience,
+                selectedCommunity: newCommunity,
+                selectedConnections: newConnections,
+                scheduledTime: newSchedTime
+            });
+
+            if (saved) {
+                if (!activeDraftId && saved.id) setActiveDraftId(saved.id);
+                setIsDraftMode(true);
+                setLastSavedTime(saved.updatedAt || new Date().toISOString());
+                setAutoSaveStatus('saved');
+                isDirtyRef.current = false;
+            }
+        }, 1500);
+    };
+
     const toggleConnection = (userObj) => {
         setSelectedConnections(prev => {
             const exists = prev.some(c => String(c.id) === String(userObj.id));
+            let next;
+            let nextAudience = audience;
             if (exists) {
-                const next = prev.filter(c => String(c.id) !== String(userObj.id));
-                if (next.length === 0) setAudience('Everyone');
-                return next;
+                next = prev.filter(c => String(c.id) !== String(userObj.id));
+                if (next.length === 0) nextAudience = 'Everyone';
             } else {
-                setSelectedCommunity(null);
-                setAudience('Connections');
-                return [...prev, userObj];
+                nextAudience = 'Connections';
+                next = [...prev, userObj];
             }
+            if (nextAudience !== audience) setAudience(nextAudience);
+            if (!exists) setSelectedCommunity(null);
+            triggerAutoSave(text, attachments, nextAudience, null, next, scheduledTime);
+            return next;
         });
     };
 
@@ -80,21 +131,25 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
 
     const handleCropSave = (newBlob, newUrl, newFile) => {
         if (!cropModalTarget) return;
-        setAttachments(prev => prev.map(a => {
-            if (a.id === cropModalTarget.id) {
-                if (a.url && a.url.startsWith('blob:') && a.url !== newUrl) {
-                    try { URL.revokeObjectURL(a.url); } catch (e) {}
+        setAttachments(prev => {
+            const nextAtts = prev.map(a => {
+                if (a.id === cropModalTarget.id) {
+                    if (a.url && a.url.startsWith('blob:') && a.url !== newUrl) {
+                        try { URL.revokeObjectURL(a.url); } catch (e) {}
+                    }
+                    return {
+                        ...a,
+                        url: newUrl,
+                        file: newFile,
+                        size: newBlob.size,
+                        backendUrl: null
+                    };
                 }
-                return {
-                    ...a,
-                    url: newUrl,
-                    file: newFile,
-                    size: newBlob.size,
-                    backendUrl: null
-                };
-            }
-            return a;
-        }));
+                return a;
+            });
+            triggerAutoSave(text, nextAtts, audience, selectedCommunity, selectedConnections, scheduledTime);
+            return nextAtts;
+        });
         setCropModalTarget(null);
         addToast('Image cropped and rotated successfully!', 'success');
     };
@@ -277,32 +332,91 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
         setSecurityWarning(null);
         setScanComplete(false);
         setFileError(null);
-        try {
-            localStorage.removeItem('create_post_draft');
-        } catch (e) {}
+        setActiveDraftId(null);
+        setIsDraftMode(false);
+        setAutoSaveStatus(null);
+        setLastSavedTime(null);
+        isDirtyRef.current = false;
+        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
 
-    // Reset all form state whenever modal is closed or active user changes, ensuring fresh blank state on new post
+    // Load active draft on open, or clear state on close
     useEffect(() => {
         if (!isOpen) {
             resetForm();
-        } else {
-            // Live sync restricted keywords directly from SQL Server database table RestrictedKeywords
-            syncRestrictedWordsFromBackend().then(() => {
-                if (text) {
-                    const found = checkRestrictedContent(text);
-                    if (found) {
-                        setSecurityWarning(`Security Alert: Please don't use this word - "${found}". It is restricted and cannot be published.`);
-                    }
-                }
-            });
+            return;
         }
-    }, [isOpen, currentUser?.userId, currentUser?.id]);
+
+        const targetDraft = draftToEdit || (currentUserId ? getUserDraft(currentUserId) : null);
+        if (targetDraft) {
+            setText(targetDraft.text || targetDraft.content || targetDraft.contentText || '');
+            setAttachments(targetDraft.attachments || targetDraft.postAttachments || []);
+            setAudience(targetDraft.audience || targetDraft.audienceType || 'Everyone');
+            setSelectedCommunity(targetDraft.selectedCommunity || (targetDraft.communityId ? { id: targetDraft.communityId, name: targetDraft.communityName } : null));
+            setSelectedConnections(targetDraft.selectedConnections || targetDraft.sharedUsers || []);
+            setScheduledTime(targetDraft.scheduledTime || targetDraft.scheduledDate || '');
+            setActiveDraftId(targetDraft.id || targetDraft.postId || null);
+            setIsDraftMode(true);
+            setLastSavedTime(targetDraft.updatedAt || targetDraft.savedAt || targetDraft.createdDate || new Date().toISOString());
+            setAutoSaveStatus('saved');
+            isDirtyRef.current = false;
+        } else {
+            resetForm();
+        }
+
+        // Live sync restricted keywords directly from SQL Server database table RestrictedKeywords
+        syncRestrictedWordsFromBackend().then(() => {
+            if (text) {
+                const found = checkRestrictedContent(text);
+                if (found) {
+                    setSecurityWarning(`Security Alert: Please don't use this word - "${found}". It is restricted and cannot be published.`);
+                }
+            }
+        });
+    }, [isOpen, draftToEdit, currentUserId]);
 
     const handleClose = () => {
         if (isPublishing) return;
+        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+        const hasContent = text.trim().length > 0 || attachments.length > 0;
+        if (hasContent && currentUserId) {
+            saveUserDraft(currentUserId, {
+                id: activeDraftId,
+                text,
+                attachments,
+                audience,
+                selectedCommunity,
+                selectedConnections,
+                scheduledTime
+            });
+            addToast('Draft auto-saved', 'info');
+        } else if (!hasContent && activeDraftId && currentUserId) {
+            deleteDraft(currentUserId, activeDraftId, postsApi);
+        }
+
         resetForm();
         onClose();
+    };
+
+    const handleDiscardDraft = async () => {
+        if (!window.confirm('Discard this draft? All progress will be removed.')) return;
+        setIsDiscarding(true);
+        try {
+            if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+            if (currentUserId) {
+                if (activeDraftId) {
+                    await deleteDraft(currentUserId, activeDraftId, postsApi);
+                } else {
+                    clearUserDraft(currentUserId);
+                }
+            }
+            resetForm();
+            addToast('Draft discarded', 'info');
+            onClose();
+        } finally {
+            setIsDiscarding(false);
+        }
     };
 
     // Handle Text Change & Features
@@ -310,6 +424,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
         const val = e.target.value;
         if (val.length <= MAX_CHARS) {
             setText(val);
+            triggerAutoSave(val, attachments, audience, selectedCommunity, selectedConnections, scheduledTime);
         }
 
         // Mention & Hashtag Logic Trigger
@@ -368,7 +483,10 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
         const nonWhitespaceWords = words.filter(w => w.trim().length > 0);
         const lastIndex = text.lastIndexOf(nonWhitespaceWords[nonWhitespaceWords.length - 1]);
         const newText = text.substring(0, lastIndex) + `@${user.name} `;
-        if (newText.length <= MAX_CHARS) setText(newText);
+        if (newText.length <= MAX_CHARS) {
+            setText(newText);
+            triggerAutoSave(newText, attachments, audience, selectedCommunity, selectedConnections, scheduledTime);
+        }
         setShowMentionDropdown(false);
         textareaRef.current?.focus();
     };
@@ -378,7 +496,10 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
         const nonWhitespaceWords = words.filter(w => w.trim().length > 0);
         const lastIndex = text.lastIndexOf(nonWhitespaceWords[nonWhitespaceWords.length - 1]);
         const newText = text.substring(0, lastIndex) + `#${tag} `;
-        if (newText.length <= MAX_CHARS) setText(newText);
+        if (newText.length <= MAX_CHARS) {
+            setText(newText);
+            triggerAutoSave(newText, attachments, audience, selectedCommunity, selectedConnections, scheduledTime);
+        }
         setShowHashtagDropdown(false);
         textareaRef.current?.focus();
     };
@@ -452,7 +573,11 @@ const FILE_LIMITS = {
         });
         
         if (newAttachments.length > 0) {
-            setAttachments(prev => [...prev, ...newAttachments]);
+            setAttachments(prev => {
+                const combined = [...prev, ...newAttachments];
+                triggerAutoSave(text, combined, audience, selectedCommunity, selectedConnections, scheduledTime);
+                return combined;
+            });
         }
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
@@ -485,11 +610,85 @@ const FILE_LIMITS = {
                     try { URL.revokeObjectURL(att.url); } catch (e) {}
                 }, 3000);
             }
-            return prev.filter(a => a.id !== id);
+            const remaining = prev.filter(a => a.id !== id);
+            triggerAutoSave(text, remaining, audience, selectedCommunity, selectedConnections, scheduledTime);
+            return remaining;
         });
     };
 
     const handleSubmit = async (status = 'Published') => {
+        // Fast path for explicit Save as Draft
+        if (status === 'Draft') {
+            if (securityWarning || isPublishing) return;
+            const hasContent = text.trim().length > 0 || attachments.length > 0;
+            if (!hasContent) {
+                addToast('Cannot save an empty draft.', 'warning');
+                return;
+            }
+
+            setIsPublishing(true);
+            if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+            try {
+                let savedId = activeDraftId;
+                const isNumericId = /^\d+$/.test(String(activeDraftId));
+                
+                const payload = {
+                    contentText: text,
+                    audienceType: selectedCommunity ? 'Community' : (selectedConnections.length > 0 ? 'Connections' : 'Everyone'),
+                    status: 'Draft',
+                    scheduledDate: null,
+                    attachmentUrls: attachments.map(a => a.backendUrl || a.url),
+                    attachmentTypes: attachments.map(a => a.type === 'doc' ? 'Document' : a.type === 'image' ? 'Image' : a.type === 'video' ? 'Video' : 'Audio'),
+                    mentionedUserIds: [],
+                    audienceUserIds: selectedConnections.map(c => c.id),
+                    audienceCommunityIds: selectedCommunity ? [selectedCommunity.id] : []
+                };
+
+                if (isNumericId) {
+                    try {
+                        await postsApi.update(activeDraftId, payload);
+                    } catch (e) {
+                        console.warn('Backend draft update notice:', e);
+                    }
+                } else {
+                    try {
+                        const apiRes = await postsApi.create(payload);
+                        const created = apiRes?.data || apiRes;
+                        if (created?.postId || created?.id) {
+                            savedId = created.postId || created.id;
+                        }
+                    } catch (e) {
+                        console.warn('Backend draft create notice, saved locally:', e);
+                    }
+                }
+
+                saveUserDraft(currentUserId, {
+                    id: savedId,
+                    postId: typeof savedId === 'number' ? savedId : null,
+                    text,
+                    attachments,
+                    audience,
+                    selectedCommunity,
+                    selectedConnections,
+                    scheduledTime
+                });
+
+                addToast('Draft saved successfully. 📝', 'success');
+                window.dispatchEvent(new CustomEvent('knome_drafts_updated'));
+                window.dispatchEvent(new CustomEvent('post-created'));
+                resetForm();
+                if (onPostCreated) onPostCreated();
+                onClose();
+            } catch (err) {
+                console.error('Failed to save draft:', err);
+                addToast(err?.message || 'Failed to save draft', 'error');
+            } finally {
+                setIsPublishing(false);
+            }
+            return;
+        }
+
         // 1. Check synchronous restricted words
         const foundKeyword = checkRestrictedContent(text);
         if (foundKeyword) {
@@ -582,49 +781,75 @@ const FILE_LIMITS = {
                     : (selectedConnections.length > 2 ? `${selectedConnections[0].name} +${selectedConnections.length - 1} others` : null))
             };
 
-            let createdPostId = null;
-            try {
-                const apiRes = await postsApi.create(payload);
-                const createdPost = apiRes?.data || apiRes;
-                createdPostId = createdPost?.postId || createdPost?.id;
-            } catch (err) {
-                const errMsg = err?.response?.data?.message || err?.message || '';
-                if (errMsg.toLowerCase().includes('restricted') || errMsg.toLowerCase().includes('blocked') || (err?.response?.status === 400 && errMsg)) {
-                    setSecurityWarning(`Security Alert: ${errMsg}`);
-                    addToast(`Security Alert: ${errMsg}`, 'error');
-                    setIsPublishing(false);
-                    return;
-                }
-                console.warn('API post creation notice, using local post fallback:', err);
-                createdPostId = `post_local_${Date.now()}`;
-                const localPost = {
-                    id: createdPostId,
-                    userId: currentUser?.userId || currentUser?.id || 1,
-                    authorName: currentUser?.name || currentUser?.fullName || 'Employee',
-                    authorAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
-                    authorRole: currentUser?.roleName || 'Employee',
-                    content: text,
-                    status: status,
-                    scheduledDate: isoScheduledDate,
-                    publishedDate: status === 'Published' ? new Date().toISOString() : null,
-                    createdDate: new Date().toISOString(),
-                    likesCount: 0,
-                    commentsCount: 0,
-                    attachments: attachments,
-                    audienceType: payload.audienceType,
-                    communityId: selectedCommunity?.id || null,
-                    communityName: selectedCommunity?.name || null,
-                    sharedCommunity: selectedCommunity,
-                    sharedCommunityName: selectedCommunity?.name,
-                    sharedUsers: selectedConnections,
-                    sharedWithNames: selectedConnections.map(c => c.name || c.fullName),
-                    sharedWithName: payload.sharedWithName
-                };
+            let createdPostId = activeDraftId;
+            const isNumericActiveDraft = /^\d+$/.test(String(activeDraftId));
+
+            if (isNumericActiveDraft) {
                 try {
-                    const existing = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
-                    localStorage.setItem('knome_local_posts', JSON.stringify([localPost, ...existing]));
-                } catch (e) {}
+                    const apiRes = await postsApi.update(activeDraftId, payload);
+                    const updatedPost = apiRes?.data || apiRes;
+                    createdPostId = updatedPost?.postId || updatedPost?.id || activeDraftId;
+                } catch (err) {
+                    const errMsg = err?.response?.data?.message || err?.message || '';
+                    if (errMsg.toLowerCase().includes('restricted') || errMsg.toLowerCase().includes('blocked') || (err?.response?.status === 400 && errMsg)) {
+                        setSecurityWarning(`Security Alert: ${errMsg}`);
+                        addToast(`Security Alert: ${errMsg}`, 'error');
+                        setIsPublishing(false);
+                        return;
+                    }
+                    console.warn('API post update notice, using fallback:', err);
+                }
+            } else {
+                try {
+                    const apiRes = await postsApi.create(payload);
+                    const createdPost = apiRes?.data || apiRes;
+                    createdPostId = createdPost?.postId || createdPost?.id;
+                } catch (err) {
+                    const errMsg = err?.response?.data?.message || err?.message || '';
+                    if (errMsg.toLowerCase().includes('restricted') || errMsg.toLowerCase().includes('blocked') || (err?.response?.status === 400 && errMsg)) {
+                        setSecurityWarning(`Security Alert: ${errMsg}`);
+                        addToast(`Security Alert: ${errMsg}`, 'error');
+                        setIsPublishing(false);
+                        return;
+                    }
+                    console.warn('API post creation notice, using local post fallback:', err);
+                    createdPostId = `post_local_${Date.now()}`;
+                    const localPost = {
+                        id: createdPostId,
+                        userId: currentUser?.userId || currentUser?.id || 1,
+                        authorName: currentUser?.name || currentUser?.fullName || 'Employee',
+                        authorAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
+                        authorRole: currentUser?.roleName || 'Employee',
+                        content: text,
+                        status: status,
+                        scheduledDate: isoScheduledDate,
+                        publishedDate: status === 'Published' ? new Date().toISOString() : null,
+                        createdDate: new Date().toISOString(),
+                        likesCount: 0,
+                        commentsCount: 0,
+                        attachments: attachments,
+                        audienceType: payload.audienceType,
+                        communityId: selectedCommunity?.id || null,
+                        communityName: selectedCommunity?.name || null,
+                        sharedCommunity: selectedCommunity,
+                        sharedCommunityName: selectedCommunity?.name,
+                        sharedUsers: selectedConnections,
+                        sharedWithNames: selectedConnections.map(c => c.name || c.fullName),
+                        sharedWithName: payload.sharedWithName
+                    };
+                    try {
+                        const existing = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
+                        localStorage.setItem('knome_local_posts', JSON.stringify([localPost, ...existing]));
+                    } catch (e) {}
+                }
             }
+
+            // Post published or scheduled: clean up user draft
+            clearUserDraft(currentUserId);
+            if (activeDraftId) {
+                removeDraftFromLocalPosts(activeDraftId);
+            }
+            window.dispatchEvent(new CustomEvent('knome_drafts_updated'));
 
             // Also persist directly to community feed so it is immediately visible and stays visible on refresh (only if not a draft)
             if (selectedCommunity?.id && status !== 'Draft') {
@@ -831,13 +1056,61 @@ const FILE_LIMITS = {
                 
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 z-10">
-                    <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <span className="material-symbols-outlined text-indigo-500">edit_square</span>
-                        Create Post
-                    </h2>
-                    <button onClick={handleClose} disabled={isPublishing} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-full p-1 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50">
-                        <span className="material-symbols-outlined">close</span>
-                    </button>
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                        <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <span className="material-symbols-outlined text-indigo-500">edit_square</span>
+                            <span>Create Post</span>
+                        </h2>
+                        {isDraftMode && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shadow-xs">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                <span>Editing Draft</span>
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        {/* Auto-save status indicator */}
+                        {autoSaveStatus && (
+                            <div className="text-[11px] font-medium text-slate-400 dark:text-slate-500 flex items-center gap-1 mr-1 select-none">
+                                {autoSaveStatus === 'saving' ? (
+                                    <>
+                                        <span className="material-symbols-outlined text-[14px] animate-spin text-indigo-500">sync</span>
+                                        <span className="text-indigo-600 dark:text-indigo-400 font-semibold">Auto-saving...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="material-symbols-outlined text-[14px] text-emerald-500">cloud_done</span>
+                                        <span>{formatDraftTimeAgo(lastSavedTime)}</span>
+                                    </>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Discard Draft Button (shown when editing a saved draft) */}
+                        {isDraftMode && (
+                            <button
+                                type="button"
+                                onClick={handleDiscardDraft}
+                                disabled={isPublishing || isDiscarding}
+                                className="text-xs font-semibold text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                                title="Discard this draft and start fresh"
+                            >
+                                <span className="material-symbols-outlined text-[15px]">delete_sweep</span>
+                                <span className="hidden sm:inline">Discard</span>
+                            </button>
+                        )}
+
+                        <button 
+                            type="button"
+                            onClick={handleClose} 
+                            disabled={isPublishing} 
+                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-full p-1 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+                            title="Close"
+                        >
+                            <span className="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div className="p-4 sm:p-5 flex flex-col gap-4 overflow-y-auto custom-scrollbar flex-1 min-h-0">
@@ -1427,12 +1700,12 @@ const FILE_LIMITS = {
                                     <button
                                         type="button"
                                         onClick={() => handleSubmit('Draft')}
-                                        disabled={!text.trim() || securityWarning || isPublishing}
-                                        className="px-3.5 py-2 rounded-xl text-[13px] font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0 whitespace-nowrap"
-                                        title="Save as private draft"
+                                        disabled={(!text.trim() && attachments.length === 0) || securityWarning || isPublishing}
+                                        className="px-3.5 py-2 rounded-xl text-[13px] font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0 whitespace-nowrap active:scale-95"
+                                        title={isDraftMode ? "Update draft" : "Save as private draft"}
                                     >
                                         <span className="material-symbols-outlined text-[17px] text-slate-500">draft</span>
-                                        <span>Save as Draft</span>
+                                        <span>{isDraftMode ? 'Update Draft' : 'Save as Draft'}</span>
                                     </button>
                                     <button 
                                         data-schedule-trigger="true"
@@ -1467,7 +1740,7 @@ const FILE_LIMITS = {
                                         type="button"
                                         onClick={() => handleSubmit(scheduledTime ? 'Scheduled' : 'Published')}
                                         disabled={!text.trim() || securityWarning || isPublishing}
-                                        className={`px-5 py-2 rounded-xl text-[13px] font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer shrink-0 whitespace-nowrap
+                                        className={`px-5 py-2 rounded-xl text-[13px] font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer shrink-0 whitespace-nowrap active:scale-95
                                             ${(!text.trim() || securityWarning || isPublishing)
                                                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed dark:bg-slate-800 dark:text-slate-500' 
                                                 : (scheduledTime 
@@ -1480,18 +1753,18 @@ const FILE_LIMITS = {
                                         {isPublishing ? (
                                             <>
                                                 <span className="material-symbols-outlined text-[16px] animate-spin">refresh</span>
-                                                {scheduledTime ? 'Scheduling...' : 'Publishing...'}
+                                                {scheduledTime ? 'Scheduling...' : (isDraftMode ? 'Publishing Draft...' : 'Publishing...')}
                                             </>
                                         ) : (
                                             scheduledTime ? (
                                                 <>
                                                     <span className="material-symbols-outlined text-[17px]">event_available</span>
-                                                    Schedule Post
+                                                    <span>{isDraftMode ? 'Schedule Draft' : 'Schedule Post'}</span>
                                                 </>
                                             ) : (
                                                 <>
                                                     <span className="material-symbols-outlined text-[16px]">send</span>
-                                                    Publish
+                                                    <span>{isDraftMode ? 'Publish Draft' : 'Publish'}</span>
                                                 </>
                                             )
                                         )}

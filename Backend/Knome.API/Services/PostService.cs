@@ -149,7 +149,10 @@ public class PostService : IPostService
             .ToList();
 
         var savedPost = await _repo.AddPostAsync(post, dto.AttachmentUrls, dto.AttachmentTypes, allTargetedUserIds);
-        await _karmaService.AwardKarmaAsync(currentUserId, KarmaActivityTypes.CreatePost, KarmaPoints.CreatePostPoints, ContentTypes.Post, savedPost.PostId, KarmaCaps.CreatePostDailyCap);
+        if (finalStatus == PostStatuses.Published)
+        {
+            await _karmaService.AwardKarmaAsync(currentUserId, KarmaActivityTypes.CreatePost, KarmaPoints.CreatePostPoints, ContentTypes.Post, savedPost.PostId, KarmaCaps.CreatePostDailyCap);
+        }
         var authorUser = await _db.Users.FindAsync(currentUserId);
         var authorName = authorUser?.FullName ?? "Someone";
         var snippet = post.ContentText?.Length > 60 ? post.ContentText.Substring(0, 57) + "..." : (post.ContentText ?? string.Empty);
@@ -279,6 +282,7 @@ public class PostService : IPostService
         if (!secCheck.IsValid)
             throw new BadRequestException("Updated post content or attachments contain blocked URLs or restricted keywords.");
 
+        var previousStatus = post.Status;
         post.ContentText = dto.ContentText;
         post.AudienceType = dto.AudienceType;
 
@@ -306,6 +310,71 @@ public class PostService : IPostService
         }
         
         await _repo.UpdatePostAsync(post, dto.AttachmentUrls, dto.AttachmentTypes, dto.MentionedUserIds);
+
+        // If post just transitioned from Draft/Scheduled to Published, award karma and notify
+        if (previousStatus != PostStatuses.Published && post.Status == PostStatuses.Published)
+        {
+            await _karmaService.AwardKarmaAsync(currentUserId, KarmaActivityTypes.CreatePost, KarmaPoints.CreatePostPoints, ContentTypes.Post, post.PostId, KarmaCaps.CreatePostDailyCap);
+
+            var authorUser = await _db.Users.FindAsync(currentUserId);
+            var authorName = authorUser?.FullName ?? "Someone";
+            var snippet = post.ContentText?.Length > 60 ? post.ContentText.Substring(0, 57) + "..." : (post.ContentText ?? string.Empty);
+
+            if (dto.AudienceCommunityIds != null && dto.AudienceCommunityIds.Any())
+            {
+                foreach (var commId in dto.AudienceCommunityIds.Distinct())
+                {
+                    var comm = await _db.Communities.FindAsync(commId);
+                    if (comm != null)
+                    {
+                        var memberUserIds = await _db.CommunityMembers
+                            .Where(cm => cm.CommunityId == commId && (cm.Status == "Approved" || cm.Status == "Active" || string.IsNullOrEmpty(cm.Status)) && cm.UserId != currentUserId)
+                            .Select(cm => cm.UserId)
+                            .ToListAsync();
+
+                        if (comm.CreatedByUserId != currentUserId && !memberUserIds.Contains(comm.CreatedByUserId))
+                        {
+                            memberUserIds.Add(comm.CreatedByUserId);
+                        }
+
+                        foreach (var memberId in memberUserIds)
+                        {
+                            await _notificationService.PublishAsync(
+                                memberId,
+                                NotificationTypes.Community,
+                                $"{authorName} posted in {comm.Name}: \"{snippet}\"",
+                                relatedContentType: ContentTypes.Post,
+                                relatedContentId: post.PostId);
+                        }
+                    }
+                }
+            }
+
+            if (dto.AudienceType == "Everyone" || string.IsNullOrEmpty(dto.AudienceType))
+            {
+                var followerUserIds = await _db.Followers
+                    .Where(f => f.FollowingUserId == currentUserId)
+                    .Select(f => f.FollowerUserId)
+                    .ToListAsync();
+
+                var otherActiveUsers = await _db.Users
+                    .Where(u => u.UserId != currentUserId && u.IsActive && !u.IsPermanentlySuspended)
+                    .Select(u => u.UserId)
+                    .Take(50)
+                    .ToListAsync();
+
+                var everyoneRecipients = followerUserIds.Concat(otherActiveUsers).Distinct().ToList();
+                foreach (var recipientId in everyoneRecipients)
+                {
+                    await _notificationService.PublishAsync(
+                        recipientId,
+                        NotificationTypes.HrAnnouncement,
+                        $"{authorName} published a new post: \"{snippet}\"",
+                        relatedContentType: ContentTypes.Post,
+                        relatedContentId: post.PostId);
+                }
+            }
+        }
 
         var updated = await _repo.GetPostByIdAsync(postId);
         var resDto = _mapper.Map<PostDto>(updated!);

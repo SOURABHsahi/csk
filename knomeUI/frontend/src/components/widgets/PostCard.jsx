@@ -1483,40 +1483,6 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
                 </div>
             )}
 
-            {/* Draft Notice Banner for Author */}
-            {isDraft && (
-                <div className="mx-5 mt-4 p-3 bg-gradient-to-r from-slate-500/10 via-indigo-500/10 to-blue-500/10 border border-slate-300 dark:border-slate-700 rounded-xl flex items-center justify-between gap-3 text-xs">
-                    <div className="flex items-center gap-2.5 text-slate-700 dark:text-slate-300 font-bold">
-                        <span className="material-symbols-outlined text-[20px] text-slate-500">draft</span>
-                        <div>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-[10px] font-extrabold uppercase tracking-wider">Draft</span>
-                                <span>Saved Draft</span>
-                            </div>
-                            <span className="block text-[10.5px] text-slate-500 dark:text-slate-400 font-normal">
-                                Only visible to you. Not published to the feed.
-                            </span>
-                        </div>
-                    </div>
-                    {isAuthor && (
-                        <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                                onClick={handlePublishNow}
-                                disabled={isPublishingNow}
-                                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] flex items-center gap-1 shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer disabled:opacity-50"
-                                title="Publish this draft to network feed immediately"
-                            >
-                                {isPublishingNow ? (
-                                    <span className="material-symbols-outlined text-[13px] animate-spin">refresh</span>
-                                ) : (
-                                    <span className="material-symbols-outlined text-[13px]">send</span>
-                                )}
-                                Publish Now
-                            </button>
-                        </div>
-                    )}
-                </div>
-            )}
 
             {/* Header */}
             <div className="p-5 pb-3 flex gap-4">
