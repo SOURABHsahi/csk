@@ -70,14 +70,25 @@ export default function Communities() {
                     createdDate: c.createdDate || c.createdAt,
                     status: c.approvalStatus || 'Pending'
                 }));
-                const localList = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
-                const combined = [...mapped];
-                localList.forEach(l => {
-                    if (!combined.some(c => String(c.id) === String(l.id) || (c.name || '').toLowerCase() === (l.name || '').toLowerCase())) {
-                        combined.push(l);
-                    }
-                });
-                setPendingApprovals(combined);
+
+                // Server DB is authoritative: prune decided communities (approved or rejected) from local pending storage
+                try {
+                    const localList = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+                    const activeApiIds = new Set(mapped.map(m => String(m.id)));
+                    const activeApiNames = new Set(mapped.map(m => (m.name || '').toLowerCase().trim()));
+
+                    const prunedLocal = localList.filter(l => {
+                        const numId = Number(l.id);
+                        // Any numeric DB ID not returned by backend is no longer pending (approved or rejected)
+                        if (!isNaN(numId) && numId > 0 && numId < 1000000000) {
+                            return false;
+                        }
+                        return !activeApiIds.has(String(l.id)) && !activeApiNames.has((l.name || '').toLowerCase().trim());
+                    });
+                    localStorage.setItem('knome_pending_community_approvals', JSON.stringify(prunedLocal));
+                } catch (_) {}
+
+                setPendingApprovals(mapped);
                 return;
             }
         } catch (e) {
@@ -99,7 +110,7 @@ export default function Communities() {
             const currentEmpId = (currentUser?.employeeId || '').toUpperCase();
             const currentEmail = (currentUser?.email || '').toLowerCase();
             const userJoinedList = JSON.parse(localStorage.getItem(`knome_joined_communities_${currentUid || 'guest'}`) || '[]');
-            const getStatus = (id, apiStatus, type) => {
+            const getStatus = (id, apiStatus, type, createdByUserId, isCurrentUserAdmin) => {
                 // Check if user is suspended in this community
                 try {
                     const commSusp = JSON.parse(localStorage.getItem(`knome_community_suspended_${id}`) || '[]');
@@ -114,12 +125,21 @@ export default function Communities() {
                     if (isSusp) return 'Banned';
                 } catch (_) {}
 
-                const entry = userJoinedList.find(c => String(c.id) === String(id));
-                if (entry) return entry.status === 'joined' ? 'Approved' : 'Subscribed';
-                if (type?.toLowerCase().includes('default') || type?.toLowerCase().includes('org')) return 'Approved';
+                // If user is creator or admin of this community, they are Approved!
+                if (isCurrentUserAdmin) return 'Approved';
+                if (currentUid && createdByUserId && String(currentUid) === String(createdByUserId)) return 'Approved';
+
                 const s = (apiStatus || '').toLowerCase();
                 if (s === 'approved' || s === 'joined') return 'Approved';
                 if (s === 'pending') return 'Pending';
+
+                const entry = userJoinedList.find(c => String(c.id) === String(id));
+                if (entry) {
+                    if (entry.status === 'joined' || entry.status === 'approved' || entry.status === 'Approved') return 'Approved';
+                    if (entry.status === 'pending_approval' || entry.status === 'pending') return 'Pending';
+                    return 'Subscribed';
+                }
+                if (type?.toLowerCase().includes('default') || type?.toLowerCase().includes('org')) return 'Approved';
                 const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${id}`) || '[]');
                 if (currentUser && localMembers.some(m => (currentUid && String(m.userId || m.id) === String(currentUid)) || (currentUser.name && (m.fullName || m.name || '').toLowerCase() === currentUser.name.toLowerCase()))) return 'Approved';
                 return 'none';
@@ -133,11 +153,38 @@ export default function Communities() {
             if (data && Array.isArray(data) && data.length > 0) {
                 // Remove any active database community IDs from stale local deletion tombstone
                 const activeDbIds = new Set(data.filter(c => c.isActive === undefined || c.isActive === true || c.isActive === 1).map(c => String(c.communityId)));
+                const activeDbNames = new Set(data.filter(c => c.isActive === undefined || c.isActive === true || c.isActive === 1).map(c => (c.name || '').toLowerCase().trim()));
                 const remainingDeleted = Array.from(deletedIds).filter(id => !activeDbIds.has(id));
                 if (remainingDeleted.length !== deletedIds.size) {
                     localStorage.setItem('knome_deleted_community_ids', JSON.stringify(remainingDeleted));
                     deletedIds.clear();
                     remainingDeleted.forEach(id => deletedIds.add(id));
+                }
+
+                // Prune active approved communities from pending approvals & promote in joined communities
+                try {
+                    const pending = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+                    const cleanedPending = pending.filter(p => !activeDbIds.has(String(p.id)) && !activeDbNames.has((p.name || '').toLowerCase().trim()));
+                    if (cleanedPending.length !== pending.length) {
+                        localStorage.setItem('knome_pending_community_approvals', JSON.stringify(cleanedPending));
+                        setPendingApprovals(prev => prev.filter(p => !activeDbIds.has(String(p.id)) && !activeDbNames.has((p.name || '').toLowerCase().trim())));
+                    }
+
+                    const userKey = `knome_joined_communities_${currentUid || 'guest'}`;
+                    const userJoined = JSON.parse(localStorage.getItem(userKey) || '[]');
+                    let userJoinedUpdated = false;
+                    const syncedUserJoined = userJoined.map(uj => {
+                        if ((uj.status === 'pending_approval' || uj.status === 'pending') && (activeDbIds.has(String(uj.id)) || activeDbNames.has((uj.name || '').toLowerCase().trim()))) {
+                            userJoinedUpdated = true;
+                            return { ...uj, status: 'joined' };
+                        }
+                        return uj;
+                    });
+                    if (userJoinedUpdated) {
+                        localStorage.setItem(userKey, JSON.stringify(syncedUserJoined));
+                    }
+                } catch (syncErr) {
+                    console.warn('Community pending approval sync error:', syncErr);
                 }
 
                 const apiMapped = data
@@ -160,7 +207,9 @@ export default function Communities() {
                             description: c.description || 'No description provided.',
                             banner: bannerResolved,
                             thumbnail: thumbResolved,
-                            membershipStatus: getStatus(c.communityId, c.currentUserMembershipStatus, c.communityType)
+                            createdByUserId: c.createdByUserId,
+                            isCurrentUserAdmin: c.isCurrentUserAdmin,
+                            membershipStatus: getStatus(c.communityId, c.currentUserMembershipStatus, c.communityType, c.createdByUserId, c.isCurrentUserAdmin)
                         };
                     });
                 combinedList.push(...apiMapped);
@@ -246,12 +295,25 @@ export default function Communities() {
             loadPendingApprovals();
         };
 
+        const handleWindowFocus = () => {
+            loadCommunities();
+            loadPendingApprovals();
+        };
+
+        // Real-time polling every 6 seconds to synchronize cross-window admin approvals automatically
+        const pollInterval = setInterval(() => {
+            loadCommunities();
+        }, 6000);
+
+        window.addEventListener('focus', handleWindowFocus);
         window.addEventListener('community-created', handleCommunityUpdate);
         window.addEventListener('community-joined-change', handleCommunityUpdate);
         window.addEventListener('community-suspended-change', handleCommunityUpdate);
         window.addEventListener('community-approval-requested', handleApprovalRequested);
         window.addEventListener('storage', handleApprovalRequested);
         return () => {
+            clearInterval(pollInterval);
+            window.removeEventListener('focus', handleWindowFocus);
             window.removeEventListener('community-created', handleCommunityUpdate);
             window.removeEventListener('community-joined-change', handleCommunityUpdate);
             window.removeEventListener('community-suspended-change', handleCommunityUpdate);
@@ -657,8 +719,11 @@ export default function Communities() {
         resetScrollLoading();
     }, [activeTab, filterType, filterCategory, searchQuery, resetScrollLoading]);
 
-    // Employee's own pending communities for "My Communities" tab
-    const myPendingCommunities = pendingApprovals.filter(p => String(p.creatorUserId) === String(currentUser?.id));
+    // Employee's own pending communities for "My Communities" tab (exclude any that are already active/approved)
+    const myPendingCommunities = pendingApprovals.filter(p => 
+        String(p.creatorUserId) === String(currentUser?.id) &&
+        !communities.some(c => String(c.id) === String(p.id) || (c.name || '').toLowerCase().trim() === (p.name || '').toLowerCase().trim())
+    );
 
     return (
         <>

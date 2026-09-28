@@ -1588,12 +1588,29 @@ export default function CommunityView() {
                 return { ...f, url: currentUrl };
             }));
 
-            if (hydratedFiles.length > 0) {
-                setFilesList(hydratedFiles);
-                safeSetStorage(savedFilesKey, hydratedFiles);
+            const isInitialDemoComm = String(resolvedTargetId) === '101' || String(resolvedTargetId) === '1';
+
+            if (!isInitialDemoComm) {
+                // User-created community (any ID other than 101/1): mock demo seed files must NEVER appear!
+                const MOCK_SEED_NAMES = new Set([
+                    'Project_Walkthrough_Demo.mp4',
+                    'Database_Schema_Architecture.png',
+                    'API_Integration_Guild_v2.docx',
+                    'System_Architecture_Overview.pdf'
+                ]);
+                const cleanedFiles = hydratedFiles.filter(f => !MOCK_SEED_NAMES.has(f.name));
+                setFilesList(cleanedFiles);
+                if (cleanedFiles.length > 0) {
+                    safeSetStorage(savedFilesKey, cleanedFiles);
+                } else {
+                    try { localStorage.removeItem(savedFilesKey); } catch (_) {}
+                }
             } else {
-                const isCustom = (JSON.parse(localStorage.getItem('knome_custom_communities') || '[]')).some(c => String(c.id) === String(resolvedTargetId));
-                if (!isCustom) {
+                // ONLY root demo space (101/1) gets sample seed files if empty
+                if (hydratedFiles.length > 0) {
+                    setFilesList(hydratedFiles);
+                    safeSetStorage(savedFilesKey, hydratedFiles);
+                } else {
                     const seedFiles = [
                         { id: 1, name: 'System_Architecture_Overview.pdf', category: 'Document', extension: 'pdf', size: '3.4 MB', uploadedBy: 'Loveneesh Sharma', uploadedAt: '2026-07-25T10:30:00.000Z', url: SAMPLE_PDF_DATA_URL, downloadCount: 14 },
                         { id: 2, name: 'API_Integration_Guild_v2.docx', category: 'Document', extension: 'docx', size: '1.2 MB', uploadedBy: 'Vishendra Sharma', uploadedAt: '2026-07-26T14:15:00.000Z', url: 'https://filesamples.com/samples/document/docx/sample3.docx', downloadCount: 9 },
@@ -1602,8 +1619,6 @@ export default function CommunityView() {
                     ];
                     setFilesList(seedFiles);
                     safeSetStorage(savedFilesKey, seedFiles);
-                } else {
-                    setFilesList([]);
                 }
             }
 
@@ -1836,7 +1851,19 @@ export default function CommunityView() {
             const savedRequests = JSON.parse(localStorage.getItem(`knome_join_requests_${targetId}`) || '[]');
             setJoinRequests(savedRequests);
             const savedFiles = JSON.parse(localStorage.getItem(`knome_community_files_${targetId}`) || '[]');
-            if (savedFiles.length > 0) setFilesList(savedFiles);
+            const isInitialDemoCommTarget = String(targetId) === '101' || String(targetId) === '1';
+            if (!isInitialDemoCommTarget) {
+                const MOCK_SEED_NAMES = new Set([
+                    'Project_Walkthrough_Demo.mp4',
+                    'Database_Schema_Architecture.png',
+                    'API_Integration_Guild_v2.docx',
+                    'System_Architecture_Overview.pdf'
+                ]);
+                const cleaned = savedFiles.filter(f => !MOCK_SEED_NAMES.has(f.name));
+                setFilesList(cleaned);
+            } else if (savedFiles.length > 0) {
+                setFilesList(savedFiles);
+            }
         };
 
         const handleFeedOrPostsUpdated = (e) => {
