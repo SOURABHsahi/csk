@@ -254,76 +254,62 @@ export default function Posts() {
                 </div>
             </div>
 
-            {/* Search & Topic Filter Bar (Collapsible via Filter button) */}
-            {(showFilterBar || searchQuery || selectedTag !== 'All') && (
-                <div className={`p-4 sm:p-5 rounded-2xl border border-blue-500/30 bg-white dark:bg-slate-900 shadow-xl mb-2 animate-in fade-in slide-in-from-top-4 duration-200 flex flex-col gap-3.5 relative ${isFilterOpen ? 'z-40' : 'z-10'}`}>
-                    <div className="flex items-center gap-3">
-                        <div className="relative flex-1">
-                            <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-[18px] text-slate-400">search</span>
-                            <input
-                                type="text"
-                                placeholder="Search discussions by keyword, topic, or author..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-11 pr-10 py-2.5 sm:py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/30 outline-none text-slate-900 dark:text-white transition-all"
-                            />
-                            {searchQuery && (
-                                <button 
-                                    onClick={() => setSearchQuery('')}
-                                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 cursor-pointer"
+            {/* Topic Filter Bar (Collapsible via Filter button or active tag) */}
+            {(showFilterBar || selectedTag !== 'All') && (
+                <div className={`p-4 sm:p-5 rounded-2xl border border-blue-500/30 bg-white dark:bg-slate-900 shadow-xl mb-2 animate-in fade-in slide-in-from-top-4 duration-200 flex items-center justify-between gap-3.5 relative ${isFilterOpen ? 'z-40' : 'z-10'}`}>
+                    <div className="flex items-center gap-2 flex-wrap flex-1">
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Filter Discussions by Topic:</span>
+                        {selectedTag !== 'All' ? (
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+                                <span>#{selectedTag}</span>
+                                <button
+                                    onClick={() => setSelectedTag('All')}
+                                    className="hover:text-rose-500 transition-colors cursor-pointer"
+                                    title="Clear topic filter"
                                 >
-                                    <span className="material-symbols-outlined text-[16px]">close</span>
+                                    <span className="material-symbols-outlined text-[14px]">close</span>
                                 </button>
+                            </div>
+                        ) : (
+                            <span className="text-xs font-semibold text-slate-400">All Topics Selected</span>
+                        )}
+                    </div>
+
+                    {/* Filter Icon Button with Dropdown Popover */}
+                    <div className="relative z-50 shrink-0" ref={filterRef}>
+                        <button
+                            onClick={() => setIsFilterOpen(!isFilterOpen)}
+                            className={`flex items-center gap-2 px-4 py-2 sm:py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-xs ${
+                                isFilterOpen || selectedTag !== 'All'
+                                    ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20'
+                                    : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                            }`}
+                            title="Filter by Topic / Hashtag"
+                        >
+                            <span className="material-symbols-outlined text-[18px]">tune</span>
+                            <span className="hidden sm:inline">Select Topic</span>
+                            {selectedTag !== 'All' && (
+                                <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
                             )}
-                        </div>
+                        </button>
 
-                        {/* Filter Icon Button with Dropdown Popover */}
-                        <div className="relative z-50" ref={filterRef}>
-                            <button
-                                onClick={() => setIsFilterOpen(!isFilterOpen)}
-                                className={`flex items-center gap-2 px-4 py-2.5 sm:py-3 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-xs ${
-                                    isFilterOpen || selectedTag !== 'All'
-                                        ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20'
-                                        : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                                }`}
-                                title="Filter by Topic / Hashtag"
-                            >
-                                <span className="material-symbols-outlined text-[18px]">tune</span>
-                                <span className="hidden sm:inline">Topics</span>
-                                {selectedTag !== 'All' && (
-                                    <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
-                                )}
-                            </button>
-
-                            {/* Filter Popover Dropdown */}
-                            {isFilterOpen && (
-                                <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-150">
-                                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 mb-3">
-                                        <div className="flex items-center gap-2">
-                                            <span className="material-symbols-outlined text-[18px] text-blue-500">tune</span>
-                                            <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">Filter Topics</h4>
-                                        </div>
-                                        {selectedTag !== 'All' && (
-                                            <button 
-                                                onClick={() => { setSelectedTag('All'); setIsFilterOpen(false); }}
-                                                className="text-[11px] font-bold text-blue-500 hover:underline cursor-pointer"
-                                            >
-                                                Reset Filter
-                                            </button>
-                                        )}
+                        {/* Filter Popover Dropdown */}
+                        {isFilterOpen && (
+                            <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-150">
+                                <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 mb-3">
+                                    <div className="flex items-center gap-2">
+                                        <span className="material-symbols-outlined text-[18px] text-blue-500">tune</span>
+                                        <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">Topics & Tags</h4>
                                     </div>
-
-                                    {/* Tag Search inside filter dropdown */}
-                                    <div className="relative mb-3">
-                                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[16px] text-slate-400">search</span>
-                                        <input 
-                                            type="text"
-                                            placeholder="Search topic tags..."
-                                            value={tagSearch}
-                                            onChange={(e) => setTagSearch(e.target.value)}
-                                            className="w-full pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs outline-none text-slate-900 dark:text-white"
-                                        />
-                                    </div>
+                                    {selectedTag !== 'All' && (
+                                        <button 
+                                            onClick={() => { setSelectedTag('All'); setIsFilterOpen(false); }}
+                                            className="text-[11px] font-bold text-blue-500 hover:underline cursor-pointer"
+                                        >
+                                            Reset Filter
+                                        </button>
+                                    )}
+                                </div>
 
                                     <div className="max-h-52 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
                                         <button
@@ -368,7 +354,6 @@ export default function Posts() {
                                 </div>
                             )}
                         </div>
-                    </div>
                 </div>
             )}
 

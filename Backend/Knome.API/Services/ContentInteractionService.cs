@@ -580,7 +580,7 @@ public class ContentInteractionService : IContentInteractionService
             ContentId = contentId,
             UserId = userId,
             SharedToType = dto.SharedToType,
-            SharedToId = dto.SharedToId,
+            TargetId = dto.TargetId ?? dto.SharedToId,
             CreatedDate = KnomeTime.Now
         };
 
@@ -644,19 +644,20 @@ public class ContentInteractionService : IContentInteractionService
         }
 
         // --- Share to a specific User: notify them ---
-        if (dto.SharedToType == SharedToTypes.User && dto.SharedToId.HasValue)
+        var targetId = dto.TargetId ?? dto.SharedToId;
+        if (dto.SharedToType == SharedToTypes.User && targetId.HasValue)
         {
             await _notificationService.PublishAsync(
-                (int)dto.SharedToId.Value,
+                (int)targetId.Value,
                 NotificationTypes.Share,
                 recipientShareMsg,
                 relatedContentType: contentType,
                 relatedContentId: contentId);
         }
         // --- Share to Community: notify all members ---
-        else if (dto.SharedToType == SharedToTypes.Community && dto.SharedToId.HasValue)
+        else if (dto.SharedToType == SharedToTypes.Community && targetId.HasValue)
         {
-            var commId = dto.SharedToId.Value;
+            var commId = targetId.Value;
             var memberIds = await _db.CommunityMembers
                 .Where(m => m.CommunityId == commId && m.UserId != userId && m.Status == "Active")
                 .Select(m => m.UserId)

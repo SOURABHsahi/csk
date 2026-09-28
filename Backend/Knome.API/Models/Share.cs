@@ -15,7 +15,7 @@ public partial class Share
 
     public string SharedToType { get; set; } = null!;
 
-    public long? SharedToId { get; set; }
+    public long? TargetId { get; set; }
 
     public DateTime CreatedDate { get; set; }
 

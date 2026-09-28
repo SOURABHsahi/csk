@@ -81,13 +81,20 @@ export default function Footer() {
                     {/* Middle: Powered by MPOnline Limited (Prominent, Larger Logo) */}
                     <div className="flex items-center justify-center gap-2 shrink-0">
                         <span className="text-[12px] text-slate-300 font-medium tracking-wide">Powered by</span>
-                        <div className="bg-white px-3 py-1 rounded-md shadow-xs flex items-center justify-center hover:scale-105 transition-transform duration-200">
+                        <a 
+                            href="https://www.mponline.gov.in/" 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            aria-label="Visit official MPOnline website" 
+                            title="Visit official MPOnline website (https://www.mponline.gov.in/)"
+                            className="bg-white px-3 py-1 rounded-md shadow-xs flex items-center justify-center hover:scale-105 transition-transform duration-200 focus:outline-none focus:ring-2 focus:ring-sky-400 cursor-pointer"
+                        >
                             <img 
                                 src={mponlineLogo} 
                                 alt="MPOnline Limited" 
                                 className="h-5.5 sm:h-6 max-h-[24px] w-auto object-contain block" 
                             />
-                        </div>
+                        </a>
                     </div>
 
                     {/* Right: Headquarters Address */}

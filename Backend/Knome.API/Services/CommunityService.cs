@@ -48,16 +48,16 @@ public class CommunityService : ICommunityService
 
     private async Task CheckIsAdminOrSysAdminAsync(int communityId, int currentUserId)
     {
-        var exists = await _db.Communities.AnyAsync(c => c.CommunityId == communityId && c.IsActive);
+        var exists = await _db.Communities.AnyAsync(c => c.CommunityId == communityId);
         if (!exists)
             throw new NotFoundException($"Community ID {communityId} not found.");
 
         var isAdmin = await _repo.IsCommunityAdminAsync(communityId, currentUserId);
         if (!isAdmin)
         {
-            // Also check if user is a System Administrator or HR Administrator
+            // Also check if user is a System Administrator, HR Administrator, or Community Admin
             var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
-            if (user == null || !user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.HRAdmin))
+            if (user == null || !user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.HRAdmin || r.RoleName == Roles.CommunityAdmin))
             {
                 throw new UnauthorizedException("You must be a Community Admin, HR Administrator, or System Administrator to perform this action.");
             }
@@ -67,10 +67,22 @@ public class CommunityService : ICommunityService
     private async Task CheckCanViewCommunityAsync(int communityId, int currentUserId, Community? community = null)
     {
         if (community == null)
-            community = await _repo.GetCommunityByIdAsync(communityId);
+            community = await _repo.GetCommunityByIdAnyStatusAsync(communityId);
 
         if (community == null)
             throw new NotFoundException($"Community ID {communityId} not found.");
+
+        if (!community.IsActive || community.ApprovalStatus != "Approved")
+        {
+            var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
+            var isPrivileged = user != null && user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.HRAdmin || r.RoleName == Roles.CommunityAdmin);
+            var isCreator = community.CreatedByUserId == currentUserId;
+
+            if (!isPrivileged && !isCreator)
+            {
+                throw new UnauthorizedException("This community is currently pending HR / Administrator approval and is not yet publicly accessible.");
+            }
+        }
 
         if (community.CommunityType == CommunityTypes.Private)
         {
@@ -82,7 +94,7 @@ public class CommunityService : ICommunityService
                 {
                     // Check if System Administrator
                     var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
-                    if (user == null || !user.Roles.Any(r => r.RoleName == Roles.SystemAdmin))
+                    if (user == null || !user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.HRAdmin))
                     {
                         throw new UnauthorizedException("You must be an approved member to view or interact with this private community.");
                     }
@@ -94,9 +106,21 @@ public class CommunityService : ICommunityService
     // --- Discovery & Details ---
     public async Task<CommunityDto> GetCommunityAsync(int communityId, int currentUserId)
     {
-        var community = await _repo.GetCommunityByIdAsync(communityId);
+        var community = await _repo.GetCommunityByIdAnyStatusAsync(communityId);
         if (community == null)
             throw new NotFoundException($"Community ID {communityId} not found.");
+
+        if (!community.IsActive || community.ApprovalStatus != "Approved")
+        {
+            var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
+            var isPrivileged = user != null && user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.HRAdmin || r.RoleName == Roles.CommunityAdmin);
+            var isCreator = community.CreatedByUserId == currentUserId;
+
+            if (!isPrivileged && !isCreator)
+            {
+                throw new UnauthorizedException("This community is currently pending HR / Administrator approval and is not yet publicly accessible.");
+            }
+        }
 
         var dto = _mapper.Map<CommunityDto>(community);
         dto.IsCurrentUserAdmin = await _repo.IsCommunityAdminAsync(communityId, currentUserId);
@@ -177,6 +201,9 @@ public class CommunityService : ICommunityService
                 throw new BadRequestException($"Category ID {dto.CategoryId.Value} does not exist.");
         }
 
+        var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
+        var isHRorAdmin = user != null && user.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.HRAdmin || r.RoleName == Roles.CommunityAdmin);
+
         var community = new Community
         {
             Name = trimmedName,
@@ -189,7 +216,8 @@ public class CommunityService : ICommunityService
             CommunityType = dto.CommunityType,
             CreatedByUserId = currentUserId,
             CreatedDate = KnomeTime.Now,
-            IsActive = true
+            IsActive = isHRorAdmin,
+            ApprovalStatus = isHRorAdmin ? "Approved" : "Pending"
         };
 
         await _repo.AddCommunityAsync(community);
@@ -204,9 +232,38 @@ public class CommunityService : ICommunityService
             MemberType = CommunityMemberTypes.Admin,
             Status = CommunityMemberStatuses.Approved,
             RequestedDate = KnomeTime.Now,
-            DecidedDate = KnomeTime.Now
+            DecidedDate = KnomeTime.Now,
+            ApprovedByUserId = isHRorAdmin ? currentUserId : null
         };
         await _repo.AddMemberAsync(member);
+
+        if (!isHRorAdmin)
+        {
+            // Notify Community Admins, HR Administrators & System Administrators of pending community creation request
+            var adminUserIds = await _db.Users
+                .Where(u => u.IsActive && u.Roles.Any(r => r.RoleName == Roles.HRAdmin || r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.CommunityAdmin))
+                .Select(u => u.UserId)
+                .Distinct()
+                .ToListAsync();
+
+            var creatorName = user?.FullName ?? "An employee";
+            foreach (var adminId in adminUserIds)
+            {
+                try
+                {
+                    await _notificationService.PublishAsync(
+                        adminId,
+                        NotificationTypes.Community,
+                        $"📋 New Community Approval Request: {creatorName} created \"{community.Name}\". Awaiting HR / Admin approval.",
+                        relatedContentType: NotificationContentTypes.Community,
+                        relatedContentId: community.CommunityId);
+                }
+                catch
+                {
+                    // Non-critical notification failure
+                }
+            }
+        }
 
         return await GetCommunityAsync(community.CommunityId, currentUserId);
     }
@@ -252,13 +309,15 @@ public class CommunityService : ICommunityService
 
     public async Task DeleteCommunityAsync(int communityId, int currentUserId)
     {
-        var community = await _repo.GetCommunityByIdAsync(communityId);
+        var community = await _repo.GetCommunityByIdAnyStatusAsync(communityId);
         if (community == null)
             throw new NotFoundException($"Community ID {communityId} not found.");
 
         await CheckIsAdminOrSysAdminAsync(communityId, currentUserId);
 
-        await _repo.DeleteCommunityAsync(community);
+        community.IsActive = false;
+        community.ApprovalStatus = "Deleted";
+        await _repo.UpdateCommunityAsync(community);
     }
 
     public async Task<bool> CheckCommunityNameExistsAsync(string? name, int? excludeCommunityId = null)
@@ -267,6 +326,141 @@ public class CommunityService : ICommunityService
             return false;
 
         return await _repo.CommunityNameExistsAsync(name.Trim(), excludeCommunityId);
+    }
+
+    // --- Approval Workflow ---
+    public async Task<List<CommunityDto>> GetPendingCommunitiesAsync(int currentUserId)
+    {
+        var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
+        if (user == null)
+            throw new UnauthorizedException("User not found.");
+
+        var isPrivilegedAdmin = user.Roles.Any(r => 
+            r.RoleName == Roles.SystemAdmin || 
+            r.RoleName == Roles.HRAdmin || 
+            r.RoleName == Roles.CommunityAdmin);
+
+        var communities = await _repo.GetPendingCommunitiesAsync();
+
+        if (!isPrivilegedAdmin)
+        {
+            // Regular employees only see pending communities they personally created
+            communities = communities.Where(c => c.CreatedByUserId == currentUserId).ToList();
+        }
+
+        var dtos = new List<CommunityDto>();
+        foreach (var c in communities)
+        {
+            var dto = _mapper.Map<CommunityDto>(c);
+            dto.IsCurrentUserAdmin = isPrivilegedAdmin || c.CreatedByUserId == currentUserId;
+            dtos.Add(dto);
+        }
+        return dtos;
+    }
+
+    public async Task<CommunityDto> ApproveCommunityAsync(int communityId, int currentUserId)
+    {
+        var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
+        var isPrivilegedAdmin = user != null && user.Roles.Any(r => 
+            r.RoleName == Roles.SystemAdmin || 
+            r.RoleName == Roles.HRAdmin || 
+            r.RoleName == Roles.CommunityAdmin);
+
+        if (!isPrivilegedAdmin)
+        {
+            throw new UnauthorizedException("Only Community Admins, HR Administrators, or System Administrators can approve communities.");
+        }
+
+        var community = await _repo.GetCommunityByIdAnyStatusAsync(communityId);
+        if (community == null)
+            throw new NotFoundException($"Community ID {communityId} not found.");
+
+        community.IsActive = true;
+        community.ApprovalStatus = "Approved";
+        await _repo.UpdateCommunityAsync(community);
+
+        // Ensure creator is in CommunityAdmins and has Approved member status
+        await _repo.AddCommunityAdminAsync(communityId, community.CreatedByUserId);
+        var creatorMember = await _repo.GetMemberAsync(communityId, community.CreatedByUserId);
+        if (creatorMember == null)
+        {
+            creatorMember = new CommunityMember
+            {
+                CommunityId = communityId,
+                UserId = community.CreatedByUserId,
+                MemberType = CommunityMemberTypes.Admin,
+                Status = CommunityMemberStatuses.Approved,
+                RequestedDate = KnomeTime.Now,
+                DecidedDate = KnomeTime.Now,
+                ApprovedByUserId = currentUserId
+            };
+            await _repo.AddMemberAsync(creatorMember);
+        }
+        else
+        {
+            creatorMember.Status = CommunityMemberStatuses.Approved;
+            creatorMember.MemberType = CommunityMemberTypes.Admin;
+            creatorMember.DecidedDate = KnomeTime.Now;
+            creatorMember.ApprovedByUserId = currentUserId;
+            await _repo.UpdateMemberAsync(creatorMember);
+        }
+
+        // Notify creator that community is approved
+        try
+        {
+            var approverName = user?.FullName ?? "Administrator";
+            await _notificationService.PublishAsync(
+                community.CreatedByUserId,
+                NotificationTypes.Community,
+                $"🎉 Congratulations! Your community \"{community.Name}\" has been approved by {approverName} and is now live.",
+                relatedContentType: NotificationContentTypes.Community,
+                relatedContentId: communityId);
+        }
+        catch
+        {
+            // Non-critical notification delivery failure
+        }
+
+        return await GetCommunityAsync(communityId, currentUserId);
+    }
+
+    public async Task RejectCommunityAsync(int communityId, int currentUserId, RejectCommunityDto dto)
+    {
+        var user = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
+        var isPrivilegedAdmin = user != null && user.Roles.Any(r => 
+            r.RoleName == Roles.SystemAdmin || 
+            r.RoleName == Roles.HRAdmin || 
+            r.RoleName == Roles.CommunityAdmin);
+
+        if (!isPrivilegedAdmin)
+        {
+            throw new UnauthorizedException("Only Community Admins, HR Administrators, or System Administrators can reject community requests.");
+        }
+
+        var community = await _repo.GetCommunityByIdAnyStatusAsync(communityId);
+        if (community == null)
+            throw new NotFoundException($"Community ID {communityId} not found.");
+
+        community.IsActive = false;
+        community.ApprovalStatus = "Rejected";
+        await _repo.UpdateCommunityAsync(community);
+
+        // Notify creator that community was rejected
+        try
+        {
+            var adminName = user?.FullName ?? "Administrator";
+            var reasonPart = string.IsNullOrWhiteSpace(dto?.Reason) ? string.Empty : $" Reason: {dto.Reason.Trim()}";
+            await _notificationService.PublishAsync(
+                community.CreatedByUserId,
+                NotificationTypes.Community,
+                $"❌ Your community request for \"{community.Name}\" was not approved by {adminName}.{reasonPart}",
+                relatedContentType: NotificationContentTypes.Community,
+                relatedContentId: communityId);
+        }
+        catch
+        {
+            // Non-critical notification delivery failure
+        }
     }
 
     // --- Membership & Joining ---
@@ -384,6 +578,7 @@ public class CommunityService : ICommunityService
 
         member.Status = dto.Status;
         member.DecidedDate = KnomeTime.Now;
+        member.ApprovedByUserId = currentUserId;
 
         if (dto.Status == CommunityMemberStatuses.Banned || dto.Status == CommunityMemberStatuses.Rejected)
         {
@@ -465,6 +660,86 @@ public class CommunityService : ICommunityService
         {
             // Non-critical notification delivery failure
         }
+    }
+
+    public async Task<List<CommunityMemberDto>> AddMembersAsync(int communityId, int currentUserId, AddCommunityMembersDto dto)
+    {
+        if (dto.UserIds == null || dto.UserIds.Count == 0)
+            throw new BadRequestException("At least one user ID must be provided.");
+
+        var community = await _repo.GetCommunityByIdAnyStatusAsync(communityId);
+        if (community == null)
+            throw new NotFoundException($"Community ID {communityId} not found.");
+
+        // Check if caller is System Admin, HR Admin, or Community Admin
+        var caller = await _db.Users.Include(u => u.Roles).FirstOrDefaultAsync(u => u.UserId == currentUserId);
+        var isGlobalAdmin = caller != null && caller.Roles.Any(r => r.RoleName == Roles.SystemAdmin || r.RoleName == Roles.HRAdmin);
+        var isCommAdmin = await _repo.IsCommunityAdminAsync(communityId, currentUserId) || community.CreatedByUserId == currentUserId;
+
+        if (!isGlobalAdmin && !isCommAdmin)
+        {
+            throw new UnauthorizedException("Only System Administrators, HR Administrators, or Community Admins can add members to this community.");
+        }
+
+        var targetMemberType = string.Equals(dto.MemberType, CommunityMemberTypes.Admin, StringComparison.OrdinalIgnoreCase) 
+            ? CommunityMemberTypes.Admin 
+            : CommunityMemberTypes.Member;
+
+        var callerName = caller?.FullName ?? "Administrator";
+
+        foreach (var userId in dto.UserIds.Distinct())
+        {
+            var targetUser = await _db.Users.FindAsync(userId);
+            if (targetUser == null || !targetUser.IsActive)
+                continue;
+
+            var existingMember = await _repo.GetMemberAsync(communityId, userId);
+            if (existingMember != null)
+            {
+                existingMember.Status = CommunityMemberStatuses.Approved;
+                existingMember.MemberType = targetMemberType;
+                existingMember.DecidedDate = KnomeTime.Now;
+                existingMember.ApprovedByUserId = currentUserId;
+                await _repo.UpdateMemberAsync(existingMember);
+            }
+            else
+            {
+                var newMember = new CommunityMember
+                {
+                    CommunityId = communityId,
+                    UserId = userId,
+                    MemberType = targetMemberType,
+                    Status = CommunityMemberStatuses.Approved,
+                    RequestedDate = KnomeTime.Now,
+                    DecidedDate = KnomeTime.Now,
+                    ApprovedByUserId = currentUserId
+                };
+                await _repo.AddMemberAsync(newMember);
+            }
+
+            if (targetMemberType == CommunityMemberTypes.Admin)
+            {
+                await _repo.AddCommunityAdminAsync(communityId, userId);
+            }
+
+            // Publish in-app SignalR notification to the added user
+            try
+            {
+                await _notificationService.PublishAsync(
+                    userId,
+                    NotificationTypes.Community,
+                    $"📢 You have been added to the community \"{community.Name}\" as {targetMemberType} by {callerName}.",
+                    relatedContentType: NotificationContentTypes.Community,
+                    relatedContentId: communityId);
+            }
+            catch
+            {
+                // Non-critical notification failure
+            }
+        }
+
+        var updatedMembers = await _repo.GetMembersAsync(communityId, null, 1, 500);
+        return _mapper.Map<List<CommunityMemberDto>>(updatedMembers);
     }
 
     // --- Admin Delegation ---

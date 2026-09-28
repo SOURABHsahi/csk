@@ -824,6 +824,16 @@ export const UserProvider = ({ children }) => {
                     setCurrentUser(localUser);
                     setIsAuthenticated(true);
                     setIsAuthLoading(false);
+
+                    // If backend was offline during boot, automatically re-authenticate once backend finishes initializing
+                    if (errMsg.includes('fetch') || errMsg.includes('network') || errMsg.includes('failed to fetch')) {
+                        setTimeout(async () => {
+                            try {
+                                await authenticateUser(localUser);
+                                syncUsersList(localUser.roles || [localUser.roleName]);
+                            } catch { /* transient startup retry */ }
+                        }, 4000);
+                    }
                     return;
                 }
             }
@@ -838,6 +848,20 @@ export const UserProvider = ({ children }) => {
         // Only run on mount — usersList intentionally excluded to avoid infinite loop
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [authenticateUser, mergeProfile]);
+
+    // ── Synchronize profile whenever apiClient silently refreshes JWT token ──
+    useEffect(() => {
+        const handleTokenRefreshed = async () => {
+            try {
+                const profile = await profileApi.getMe();
+                if (profile) {
+                    setCurrentUser(prev => mergeProfile(prev, profile));
+                }
+            } catch { /* ignore transient errors */ }
+        };
+        window.addEventListener('knome_token_refreshed', handleTokenRefreshed);
+        return () => window.removeEventListener('knome_token_refreshed', handleTokenRefreshed);
+    }, [mergeProfile]);
 
     // ── Real-time Role Assignment Poller (Instantly removes Pending banner/modal when Admin assigns role) ──
     useEffect(() => {

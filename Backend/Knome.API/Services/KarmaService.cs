@@ -106,7 +106,7 @@ public class KarmaService : IKarmaService
         var balance = await _repo.GetOrCreateBalanceAsync(currentUserId);
         var dto = _mapper.Map<KarmaBalanceDto>(balance);
 
-        var recentTxs = await _repo.GetRecentTransactionsAsync(currentUserId, 20);
+        var recentTxs = await _repo.GetRecentTransactionsAsync(currentUserId, 100);
         dto.RecentTransactions = _mapper.Map<List<KarmaTransactionDto>>(recentTxs);
 
         return dto;
@@ -119,7 +119,7 @@ public class KarmaService : IKarmaService
             throw new NotFoundException($"Karma balance for user ID {targetUserId} not found.");
 
         var dto = _mapper.Map<KarmaBalanceDto>(balance);
-        var recentTxs = await _repo.GetRecentTransactionsAsync(targetUserId, 10);
+        var recentTxs = await _repo.GetRecentTransactionsAsync(targetUserId, 100);
         dto.RecentTransactions = _mapper.Map<List<KarmaTransactionDto>>(recentTxs);
 
         return dto;

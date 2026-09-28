@@ -29,6 +29,8 @@ public partial class Podcast
 
     public int ViewCount { get; set; }
 
+    public bool IsActive { get; set; }
+
     public virtual Category? Category { get; set; }
 
     public virtual PodcastSeries? Series { get; set; }

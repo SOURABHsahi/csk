@@ -79,11 +79,15 @@ public class SearchRepository : ISearchRepository
 
     public async Task RecordSearchAsync(int userId, string term)
     {
-        // SearchHistory is a keyless table (as scaffolded), so inserts are issued as raw SQL
-        // rather than through EF change-tracking.
+        var cleanTerm = term?.Trim();
+        if (string.IsNullOrWhiteSpace(cleanTerm) || cleanTerm.Length < 3) return;
+
+        // SearchHistory is a keyless table (as scaffolded), so inserts are issued as raw SQL.
+        // Delete prior instance of this term for this user so search history is clean and deduplicated,
+        // then insert with the latest timestamp.
         await _context.Database.ExecuteSqlRawAsync(
-            "INSERT INTO SearchHistory (UserId, SearchTerm) VALUES ({0}, {1})",
-            userId, term);
+            "DELETE FROM SearchHistory WHERE UserId = {0} AND SearchTerm = {1}; INSERT INTO SearchHistory (UserId, SearchTerm, SearchedDate) VALUES ({0}, {1}, GETDATE());",
+            userId, cleanTerm);
     }
 
     public async Task<List<SearchHistoryDto>> GetRecentSearchesAsync(int userId, int count = 10)
@@ -442,7 +446,7 @@ public class SearchRepository : ISearchRepository
             return new List<SearchItemDto>();
 
         var (ql, cleanQ) = GetQueryTerms(req);
-        var query = _context.Podcasts.AsQueryable();
+        var query = _context.Podcasts.Where(p => p.IsActive).AsQueryable();
 
         if (!string.IsNullOrEmpty(ql))
         {

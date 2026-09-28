@@ -60,6 +60,30 @@ public class CommunityController : KnomeControllerBase
         return Ok(ApiResponse<List<CommunityDto>>.SuccessResponse(200, "User communities retrieved successfully.", dtos));
     }
 
+    [HttpGet("pending")]
+    [ProducesResponseType(typeof(ApiResponse<List<CommunityDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetPendingCommunities()
+    {
+        var dtos = await _communityService.GetPendingCommunitiesAsync(GetCurrentUserId());
+        return Ok(ApiResponse<List<CommunityDto>>.SuccessResponse(200, "Pending communities retrieved successfully.", dtos));
+    }
+
+    [HttpPost("{communityId:int}/approve")]
+    [ProducesResponseType(typeof(ApiResponse<CommunityDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> ApproveCommunity(int communityId)
+    {
+        var result = await _communityService.ApproveCommunityAsync(communityId, GetCurrentUserId());
+        return Ok(ApiResponse<CommunityDto>.SuccessResponse(200, "Community approved successfully.", result));
+    }
+
+    [HttpPost("{communityId:int}/reject")]
+    [ProducesResponseType(typeof(ApiResponse<object>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> RejectCommunity(int communityId, [FromBody] RejectCommunityDto dto)
+    {
+        await _communityService.RejectCommunityAsync(communityId, GetCurrentUserId(), dto);
+        return Ok(ApiResponse<object>.SuccessResponse(200, "Community request rejected successfully.", null!));
+    }
+
     [HttpGet("{communityId:int}")]
     [ProducesResponseType(typeof(ApiResponse<CommunityDto>), StatusCodes.Status200OK)]
     public async Task<IActionResult> GetCommunity(int communityId)
@@ -114,6 +138,14 @@ public class CommunityController : KnomeControllerBase
     {
         var members = await _communityService.GetMembersAsync(communityId, status, pageNumber, pageSize, GetCurrentUserId());
         return Ok(ApiResponse<List<CommunityMemberDto>>.SuccessResponse(200, "Community members retrieved successfully.", members));
+    }
+
+    [HttpPost("{communityId:int}/members")]
+    [ProducesResponseType(typeof(ApiResponse<List<CommunityMemberDto>>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> AddMembers(int communityId, [FromBody] AddCommunityMembersDto dto)
+    {
+        var members = await _communityService.AddMembersAsync(communityId, GetCurrentUserId(), dto);
+        return Ok(ApiResponse<List<CommunityMemberDto>>.SuccessResponse(200, "Community members added successfully.", members));
     }
 
     [HttpPut("{communityId}/members/{targetUserId}/decide")]

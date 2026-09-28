@@ -290,7 +290,7 @@ public class ContentInteractionRepository : IContentInteractionRepository
             else if (normalizedType.Equals("Podcast", StringComparison.OrdinalIgnoreCase))
             {
                 var podcast = await _db.Podcasts.Include(p => p.UploaderUser).FirstOrDefaultAsync(p => p.PodcastId == b.ContentId);
-                if (podcast == null)
+                if (podcast == null || !podcast.IsActive)
                 {
                     item.IsAvailable = false;
                     item.UnavailabilityReason = "Podcast has been deleted or is unavailable.";

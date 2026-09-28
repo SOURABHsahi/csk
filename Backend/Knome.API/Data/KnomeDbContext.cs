@@ -16,6 +16,8 @@ public partial class KnomeDbContext : DbContext
     {
     }
 
+    public virtual DbSet<Abbreviation> Abbreviations { get; set; }
+
     public virtual DbSet<Article> Articles { get; set; }
 
     public virtual DbSet<ArticleAttachment> ArticleAttachments { get; set; }
@@ -96,10 +98,31 @@ public partial class KnomeDbContext : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
 #warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see https://go.microsoft.com/fwlink/?LinkId=723263.
-        => optionsBuilder.UseSqlServer("Server=localhost;Database=Knome;Trusted_Connection=true;TrustServerCertificate=true;");
+        => optionsBuilder.UseSqlServer("Server=LAPTOP-458;Database=Knome;User ID=sa;Password=sa@123;TrustServerCertificate=True;");
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<Abbreviation>(entity =>
+        {
+            entity.HasKey(e => e.AbbreviationId).HasName("PK__Abbrevia__FFEA4817234B41C5");
+
+            entity.HasIndex(e => e.Keyword, "IX_Abbreviations_Keyword");
+
+            entity.HasIndex(e => e.ShortCode, "IX_Abbreviations_ShortCode");
+
+            entity.HasIndex(e => new { e.ShortCode, e.Keyword }, "UQ_Abbreviations_ShortCode_Keyword").IsUnique();
+
+            entity.Property(e => e.CreatedDate).HasDefaultValueSql("(getdate())");
+            entity.Property(e => e.Description).HasMaxLength(500);
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
+            entity.Property(e => e.Keyword).HasMaxLength(100);
+            entity.Property(e => e.ShortCode).HasMaxLength(50);
+
+            entity.HasOne(d => d.CreatedByNavigation).WithMany(p => p.Abbreviations)
+                .HasForeignKey(d => d.CreatedBy)
+                .HasConstraintName("FK_Abbreviations_CreatedBy");
+        });
+
         modelBuilder.Entity<Article>(entity =>
         {
             entity.HasKey(e => e.ArticleId).HasName("PK__Articles__9C6270E8D30B170F");
@@ -259,6 +282,9 @@ public partial class KnomeDbContext : DbContext
         {
             entity.HasKey(e => e.CommunityId).HasName("PK__Communit__CCAA5B691667DC6C");
 
+            entity.Property(e => e.ApprovalStatus)
+                .HasMaxLength(50)
+                .HasDefaultValue("Approved");
             entity.Property(e => e.BannerUrl).HasMaxLength(400);
             entity.Property(e => e.CommunityType)
                 .HasMaxLength(20)
@@ -310,12 +336,16 @@ public partial class KnomeDbContext : DbContext
                 .IsUnicode(false)
                 .HasDefaultValue("Approved");
 
+            entity.HasOne(d => d.ApprovedByUser).WithMany(p => p.CommunityMemberApprovedByUsers)
+                .HasForeignKey(d => d.ApprovedByUserId)
+                .HasConstraintName("FK_CommunityMembers_ApprovedByUser");
+
             entity.HasOne(d => d.Community).WithMany(p => p.CommunityMembers)
                 .HasForeignKey(d => d.CommunityId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK__Community__Commu__18EBB532");
 
-            entity.HasOne(d => d.User).WithMany(p => p.CommunityMembers)
+            entity.HasOne(d => d.User).WithMany(p => p.CommunityMemberUsers)
                 .HasForeignKey(d => d.UserId)
                 .OnDelete(DeleteBehavior.ClientSetNull)
                 .HasConstraintName("FK__Community__UserI__19DFD96B");
@@ -554,6 +584,7 @@ public partial class KnomeDbContext : DbContext
 
             entity.Property(e => e.CoverImageUrl).HasMaxLength(400);
             entity.Property(e => e.Description).HasMaxLength(1000);
+            entity.Property(e => e.IsActive).HasDefaultValue(true);
             entity.Property(e => e.Title).HasMaxLength(200);
             entity.Property(e => e.UploadedDate).HasDefaultValueSql("(sysdatetime())");
 

@@ -18,12 +18,18 @@ public interface ICommunityService
     Task DeleteCommunityAsync(int communityId, int currentUserId);
     Task<bool> CheckCommunityNameExistsAsync(string? name, int? excludeCommunityId = null);
 
+    // Approval Workflow
+    Task<List<CommunityDto>> GetPendingCommunitiesAsync(int currentUserId);
+    Task<CommunityDto> ApproveCommunityAsync(int communityId, int currentUserId);
+    Task RejectCommunityAsync(int communityId, int currentUserId, RejectCommunityDto dto);
+
     // Membership & Joining
     Task<CommunityMemberDto> JoinCommunityAsync(int communityId, int currentUserId);
     Task LeaveCommunityAsync(int communityId, int currentUserId);
     Task<List<CommunityMemberDto>> GetMembersAsync(int communityId, string? status, int pageNumber, int pageSize, int currentUserId);
     Task<CommunityMemberDto> DecideMembershipAsync(int communityId, int targetUserId, int currentUserId, DecideMembershipDto dto);
     Task RemoveMemberAsync(int communityId, int targetUserId, int currentUserId);
+    Task<List<CommunityMemberDto>> AddMembersAsync(int communityId, int currentUserId, AddCommunityMembersDto dto);
 
     // Admin Delegation
     Task AddAdminAsync(int communityId, int targetUserId, int currentUserId);

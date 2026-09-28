@@ -511,6 +511,10 @@ public static class ServiceCollectionExtensions
         // SMTP & Email Notification Service
         services.Configure<SmtpSettings>(configuration.GetSection("SmtpSettings"));
         services.AddScoped<IEmailService, EmailService>();
+
+        // Abbreviations Module
+        services.AddScoped<IAbbreviationRepository, AbbreviationRepository>();
+        services.AddScoped<IAbbreviationService, AbbreviationService>();
     }
 
     private static void AddSwagger(IServiceCollection services)

@@ -33,12 +33,6 @@ public class SearchController : KnomeControllerBase
     public async Task<IActionResult> Search([FromQuery] GlobalSearchRequestDto request)
     {
         var result = await _searchService.SearchAsync(request);
-
-        if (!string.IsNullOrWhiteSpace(request.Query) && request.PageNumber == 1)
-        {
-            await _searchService.RecordSearchAsync(GetCurrentUserId(), request.Query.Trim());
-        }
-
         return Ok(ApiResponse<GlobalSearchResultDto>.SuccessResponse(200, "Search results retrieved successfully.", result));
     }
 
@@ -101,6 +95,20 @@ public class SearchController : KnomeControllerBase
     {
         var history = await _searchService.GetSearchHistoryAsync(GetCurrentUserId(), count);
         return Ok(ApiResponse<List<SearchHistoryDto>>.SuccessResponse(200, "Search history retrieved successfully.", history));
+    }
+
+    /// <summary>Records an executed search term for the calling user.</summary>
+    [HttpPost("history")]
+    [ProducesResponseType(typeof(ApiResponse<bool>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> SaveSearchHistory([FromBody] SaveSearchHistoryRequestDto request)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.SearchTerm) || request.SearchTerm.Trim().Length < 3)
+        {
+            return Ok(ApiResponse<bool>.SuccessResponse(200, "Search term was empty or too short; skipped.", false));
+        }
+
+        await _searchService.RecordSearchAsync(GetCurrentUserId(), request.SearchTerm.Trim());
+        return Ok(ApiResponse<bool>.SuccessResponse(200, "Search history recorded successfully.", true));
     }
 
     /// <summary>Clears search history for the calling user (or removes a single term).</summary>

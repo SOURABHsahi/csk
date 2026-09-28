@@ -44,7 +44,45 @@ export default function Communities() {
             ['SYSADM', 'HRADM', 'CADM', 'ADMIN', 'SYSTEM ADMINISTRATOR', 'HR ADMINISTRATOR', 'COMMUNITY ADMINISTRATOR', 'SYSTEM ADMIN', 'HR ADMIN', 'COMMUNITY ADMIN'].includes(String(r || '').toUpperCase())
         ));
 
-    const loadPendingApprovals = () => {
+    const loadPendingApprovals = async () => {
+        try {
+            const res = await communitiesApi.getPending({ noCache: true });
+            const apiPending = Array.isArray(res) 
+                ? res 
+                : (Array.isArray(res?.data) 
+                    ? res.data 
+                    : (Array.isArray(res?.data?.data) 
+                        ? res.data.data 
+                        : []));
+            if (Array.isArray(apiPending)) {
+                const mapped = apiPending.map(c => ({
+                    id: c.communityId || c.id,
+                    name: c.name,
+                    category: c.category || c.categoryName || 'General',
+                    type: formatCommunityType(c.communityType || c.type || (c.isPrivate ? 'Private' : 'Public')),
+                    description: c.description || 'No description provided.',
+                    creatorUserId: c.createdByUserId || c.createdById || c.creatorUserId,
+                    creatorName: c.createdByUserName || c.createdBy || c.creatorName || 'Employee',
+                    creatorEmployeeId: c.creatorEmployeeId || (c.createdByUserId || c.createdById ? `EMP${c.createdByUserId || c.createdById}` : 'MPO'),
+                    creatorDesignation: c.creatorDesignation || 'Community Creator',
+                    creatorDepartment: c.creatorDepartment || 'MPOnline',
+                    creatorAvatar: c.creatorAvatar || c.avatar,
+                    createdDate: c.createdDate || c.createdAt,
+                    status: c.approvalStatus || 'Pending'
+                }));
+                const localList = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+                const combined = [...mapped];
+                localList.forEach(l => {
+                    if (!combined.some(c => String(c.id) === String(l.id) || (c.name || '').toLowerCase() === (l.name || '').toLowerCase())) {
+                        combined.push(l);
+                    }
+                });
+                setPendingApprovals(combined);
+                return;
+            }
+        } catch (e) {
+            console.warn('Backend pending communities fetch note:', e);
+        }
         try {
             const list = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
             setPendingApprovals(list);
@@ -222,6 +260,19 @@ export default function Communities() {
         };
     }, [isHRorAdmin]);
 
+    React.useEffect(() => {
+        if (activeTab === 'Pending Approvals') {
+            loadPendingApprovals();
+        }
+    }, [activeTab]);
+
+    React.useEffect(() => {
+        if (currentUser?.id) {
+            loadPendingApprovals();
+            loadCommunities();
+        }
+    }, [currentUser?.id, currentUser?.role]);
+
     const isSysAdmin = ['SYSADM', 'CADM', 'HRADM', 'ADMIN'].includes(String(currentUser?.role || '').toUpperCase()) || 
         ['SYSTEM ADMINISTRATOR', 'HR ADMINISTRATOR', 'COMMUNITY ADMINISTRATOR', 'SYSTEM ADMIN', 'HR ADMIN', 'COMMUNITY ADMIN', 'ADMIN'].includes(String(currentUser?.roleName || '').toUpperCase()) ||
         ['SYSTEM ADMINISTRATOR', 'HR ADMINISTRATOR', 'COMMUNITY ADMINISTRATOR', 'SYSTEM ADMIN', 'HR ADMIN', 'COMMUNITY ADMIN', 'ADMIN'].includes(String(currentUser?.role || '').toUpperCase()) ||
@@ -334,14 +385,20 @@ export default function Communities() {
     };
 
     // ── HR APPROVAL HANDLERS ────────────────────────────────────
-    const handleApproveCommunity = (e, comm) => {
+    const handleApproveCommunity = async (e, comm) => {
         e.stopPropagation();
+
+        try {
+            await communitiesApi.approve(comm.id);
+        } catch (apiErr) {
+            console.warn('Backend community approve failed, continuing with fallback:', apiErr);
+        }
 
         // 1. Remove from pending approvals
         const currentPending = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
         const updatedPending = currentPending.filter(p => String(p.id) !== String(comm.id));
         localStorage.setItem('knome_pending_community_approvals', JSON.stringify(updatedPending));
-        setPendingApprovals(updatedPending);
+        setPendingApprovals(prev => prev.filter(p => String(p.id) !== String(comm.id)));
 
         // 2. Auto-join creator as admin
         const creatorKey = `knome_joined_communities_${comm.creatorUserId || 'guest'}`;
@@ -481,11 +538,17 @@ export default function Communities() {
             return;
         }
 
+        try {
+            await communitiesApi.reject(comm.id, 'Request rejected by Administrator');
+        } catch (apiErr) {
+            console.warn('Backend community reject failed, continuing with fallback:', apiErr);
+        }
+
         // 1. Remove from pending
         const currentPending = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
         const updatedPending = currentPending.filter(p => String(p.id) !== String(comm.id));
         localStorage.setItem('knome_pending_community_approvals', JSON.stringify(updatedPending));
-        setPendingApprovals(updatedPending);
+        setPendingApprovals(prev => prev.filter(p => String(p.id) !== String(comm.id)));
 
         // 2. Remove from creator's pending list
         const creatorKey = `knome_joined_communities_${comm.creatorUserId || 'guest'}`;
@@ -689,16 +752,26 @@ export default function Communities() {
                                 </div>
                                 <div>
                                     <h4 className="font-extrabold text-sm text-amber-900 dark:text-amber-300">
-                                        HR Administrator Governance Review
+                                        Community Governance &amp; Approval Review
                                     </h4>
                                     <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
-                                        Communities submitted by MPOnline employees require HR Administrator review before public launch.
+                                        Communities submitted by MPOnline employees require Community Admin, HR Admin, or System Admin clearance before public launch.
                                     </p>
                                 </div>
                             </div>
-                            <span className="text-xs font-black text-amber-600 bg-amber-100 dark:bg-amber-900/60 px-3 py-1 rounded-xl">
-                                {pendingApprovals.length} Pending
-                            </span>
+                            <div className="flex items-center gap-2.5">
+                                <button
+                                    onClick={() => loadPendingApprovals()}
+                                    className="p-1.5 px-3 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700/60 hover:bg-amber-100/60 dark:hover:bg-amber-900/40 text-amber-800 dark:text-amber-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95"
+                                    title="Refresh Pending Approvals"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">refresh</span>
+                                    <span>Refresh</span>
+                                </button>
+                                <span className="text-xs font-black text-amber-600 bg-amber-100 dark:bg-amber-900/60 px-3 py-1.5 rounded-xl">
+                                    {pendingApprovals.length} Pending
+                                </span>
+                            </div>
                         </div>
 
                         {pendingApprovals.length === 0 ? (
@@ -708,7 +781,7 @@ export default function Communities() {
                                 </div>
                                 <h3 className="text-lg font-black text-slate-800 dark:text-white">All Caught Up!</h3>
                                 <p className="text-sm text-slate-500 max-w-md mt-1">
-                                    There are currently no employee-created community requests awaiting HR approval.
+                                    There are currently no employee-created community requests awaiting administrator approval.
                                 </p>
                             </div>
                         ) : (

@@ -202,8 +202,11 @@ export default function Podcasts() {
 
             if (podcastsRes) {
                 const podcastsArray = Array.isArray(podcastsRes) ? podcastsRes : [];
-                const mappedPodcasts = podcastsArray.map(p => ({
+                const mappedPodcasts = podcastsArray
+                    .filter(p => p.isActive === undefined || p.isActive === null || p.isActive === true || p.isActive === 1 || p.isActive === 'true')
+                    .map(p => ({
                     id: p.podcastId,
+                    isActive: p.isActive !== false && p.isActive !== 0 && p.isActive !== 'false',
                     title: p.title,
                     description: p.description || '',
                     series: p.seriesTitle || 'Standalone Episode',
@@ -446,6 +449,7 @@ export default function Podcasts() {
         try {
             await podcastsApi.delete(podcastId);
             addToast('Podcast deleted successfully.', 'success');
+            setPodcastEpisodes(prev => prev.filter(ep => ep.id !== podcastId));
             fetchPodcastsData();
         } catch (error) {
             console.error('Failed to delete podcast:', error);
@@ -456,6 +460,10 @@ export default function Podcasts() {
     // Filter & Sort Logic
     const rawEpisodes = podcastEpisodes
         .filter(ep => {
+            // Active filter: hide soft-deleted / inactive podcasts
+            if (ep.isActive === false || ep.isActive === 0 || ep.isActive === 'false') {
+                return false;
+            }
             // Tab filter
             if (activeTab === 'My Podcasts') {
                 if (currentUser?.name && !ep.author?.toLowerCase().includes(currentUser.name.toLowerCase())) {

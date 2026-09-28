@@ -699,7 +699,46 @@ export default function AdminConsole() {
     const [communityApprovalSearchTerm, setCommunityApprovalSearchTerm] = useState('');
     const [communityApprovalTypeFilter, setCommunityApprovalTypeFilter] = useState('All');
 
-    const refreshPendingCommunityApprovals = () => {
+    const refreshPendingCommunityApprovals = async () => {
+        try {
+            const res = await communitiesApi.getPending({ noCache: true });
+            const apiPending = Array.isArray(res) 
+                ? res 
+                : (Array.isArray(res?.data) 
+                    ? res.data 
+                    : (Array.isArray(res?.data?.data) 
+                        ? res.data.data 
+                        : []));
+            if (Array.isArray(apiPending)) {
+                const mapped = apiPending.map(c => ({
+                    id: c.communityId || c.id,
+                    name: c.name,
+                    category: c.category || c.categoryName || 'General',
+                    type: formatCommunityType(c.communityType || c.type || (c.isPrivate ? 'Private' : 'Public')),
+                    description: c.description || 'No description provided.',
+                    creatorUserId: c.createdByUserId || c.createdById || c.creatorUserId,
+                    creatorName: c.createdByUserName || c.createdBy || c.creatorName || 'Employee',
+                    creatorEmployeeId: c.creatorEmployeeId || (c.createdByUserId || c.createdById ? `EMP${c.createdByUserId || c.createdById}` : 'MPO'),
+                    creatorDesignation: c.creatorDesignation || 'Community Creator',
+                    creatorDepartment: c.creatorDepartment || 'MPOnline',
+                    creatorAvatar: c.creatorAvatar || c.avatar,
+                    createdAt: c.createdDate || c.createdAt,
+                    createdDate: c.createdDate || c.createdAt,
+                    status: c.approvalStatus || 'Pending'
+                }));
+                const localList = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+                const combined = [...mapped];
+                localList.forEach(l => {
+                    if (!combined.some(c => String(c.id) === String(l.id) || (c.name || '').toLowerCase() === (l.name || '').toLowerCase())) {
+                        combined.push(l);
+                    }
+                });
+                setPendingCommunityApprovals(combined);
+                return;
+            }
+        } catch (e) {
+            console.warn('Backend pending communities fetch note:', e);
+        }
         try {
             const list = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
             setPendingCommunityApprovals(list);
@@ -724,8 +763,14 @@ export default function AdminConsole() {
         };
     }, []);
 
-    const handleApproveCommunity = (e, comm) => {
+    const handleApproveCommunity = async (e, comm) => {
         if (e && e.stopPropagation) e.stopPropagation();
+
+        try {
+            await communitiesApi.approve(comm.id);
+        } catch (apiErr) {
+            console.warn('Backend community approve failed, continuing with fallback:', apiErr);
+        }
 
         // 1. Remove from pending approvals
         const currentPending = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
@@ -845,6 +890,12 @@ export default function AdminConsole() {
             variant: 'warning'
         });
         if (!ok) return;
+
+        try {
+            await communitiesApi.reject(comm.id, 'Request rejected by Administrator');
+        } catch (apiErr) {
+            console.warn('Backend community reject failed, continuing with fallback:', apiErr);
+        }
 
         // 1. Remove from pending
         const currentPending = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');

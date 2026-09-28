@@ -225,6 +225,16 @@ export default function CommunityView() {
     const [isLoading, setIsLoading] = useState(true);
     const [toast, setToast] = useState(null); // { message, type }
 
+    // Admin Approval & Add Members State
+    const [isApprovingCommunity, setIsApprovingCommunity] = useState(false);
+    const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false);
+    const [addMemberSearch, setAddMemberSearch] = useState('');
+    const [selectedUserIdsToAdd, setSelectedUserIdsToAdd] = useState([]);
+    const [selectedRoleToAdd, setSelectedRoleToAdd] = useState('Member');
+    const [isSavingMembers, setIsSavingMembers] = useState(false);
+    const [allOrgUsers, setAllOrgUsers] = useState([]);
+    const [isLoadingOrgUsers, setIsLoadingOrgUsers] = useState(false);
+
     // Admin Protection & Member Management Modals
     const [adminProtectionWarning, setAdminProtectionWarning] = useState(null); // { title, message }
     const [suspendModalMember, setSuspendModalMember] = useState(null);
@@ -832,17 +842,7 @@ export default function CommunityView() {
             return { category: 'Video', ext: ext || 'mp3' };
         }
 
-        // 3. Archives
-        if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2'].includes(ext)) {
-            return { category: 'Archive', ext: ext || 'zip' };
-        }
-
-        // 4. Code & Scripts
-        if (['js', 'jsx', 'ts', 'tsx', 'cs', 'py', 'java', 'html', 'css', 'sql', 'json', 'xml', 'yaml', 'yml', 'sh', 'bat', 'ps1'].includes(ext)) {
-            return { category: 'Code', ext: ext || 'code' };
-        }
-
-        // 5. Document (PDF, Word, Excel, PowerPoint, Text, etc.)
+        // 3. Document (PDF, Word, Excel, PowerPoint, Text, Archives, Code, etc.)
         return { category: 'Document', ext: ext || 'pdf' };
     };
 
@@ -1059,11 +1059,143 @@ export default function CommunityView() {
                       (community?.createdBy && currentUser?.name && community.createdBy.toLowerCase().includes(currentUser.name.toLowerCase())) ||
                       (community?.adminContact && currentUser?.name && community.adminContact.toLowerCase().includes(currentUser.name.toLowerCase()));
 
-    // Treat SYSADM, CADM, Creator, and assigned Admins/Moderators as Community Admins
-    const isAdmin = ['SYSADM', 'CADM'].includes(currentUser?.role) ||
-                    ['System Administrator', 'HR Administrator', 'Community Administrator', 'System Admin'].includes(currentUser?.roleName) ||
+    // Treat SYSADM, CADM, HRADM, Creator, and assigned Admins/Moderators as Community Admins
+    const isAdmin = ['SYSADM', 'CADM', 'HRADM'].includes(currentUser?.role) ||
+                    ['System Administrator', 'HR Administrator', 'Community Administrator', 'System Admin', 'HR Admin'].includes(currentUser?.roleName) ||
+                    (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => ['System Administrator', 'HR Administrator', 'Community Administrator', 'SYSADM', 'HRADM'].includes(r))) ||
                     isCreator ||
                     membersList.some(m => String(m.userId || m.id) === String(currentUser?.id) && (m.memberType === 'Admin' || m.memberType === 'Moderator'));
+
+    const isSysAdmin = ['SYSADM', 'HRADM'].includes(currentUser?.role) || 
+                       ['System Administrator', 'HR Administrator', 'System Admin', 'HR Admin'].includes(currentUser?.roleName) ||
+                       (Array.isArray(currentUser?.roles) && currentUser.roles.some(r => ['SYSADM', 'HRADM', 'System Administrator', 'HR Administrator'].includes(r)));
+
+    // Load organization directory for admin member addition modal
+    useEffect(() => {
+        if (isAddMemberModalOpen) {
+            setIsLoadingOrgUsers(true);
+            adminApi.getUsers(1, 500, '').then(res => {
+                const list = res?.data?.items || res?.data || res?.items || res || [];
+                if (Array.isArray(list) && list.length > 0) {
+                    setAllOrgUsers(list);
+                } else if (Array.isArray(contextUsers) && contextUsers.length > 0) {
+                    setAllOrgUsers(contextUsers);
+                }
+            }).catch(() => {
+                if (Array.isArray(contextUsers) && contextUsers.length > 0) {
+                    setAllOrgUsers(contextUsers);
+                }
+            }).finally(() => {
+                setIsLoadingOrgUsers(false);
+            });
+        }
+    }, [isAddMemberModalOpen]);
+
+    const filteredEmployeesToAdd = useMemo(() => {
+        const pool = (allOrgUsers && allOrgUsers.length > 0) ? allOrgUsers : (contextUsers || []);
+        if (!addMemberSearch || !addMemberSearch.trim()) return pool;
+        const q = addMemberSearch.toLowerCase().trim();
+        return pool.filter(u => 
+            (u.name && u.name.toLowerCase().includes(q)) ||
+            (u.fullName && u.fullName.toLowerCase().includes(q)) ||
+            (u.employeeId && u.employeeId.toLowerCase().includes(q)) ||
+            (u.department && u.department.toLowerCase().includes(q)) ||
+            (u.departmentName && u.departmentName.toLowerCase().includes(q)) ||
+            (u.designation && u.designation.toLowerCase().includes(q))
+        );
+    }, [allOrgUsers, contextUsers, addMemberSearch]);
+
+    const handleAddSelectedMembers = async () => {
+        if (selectedUserIdsToAdd.length === 0) {
+            showToast('Please select at least one employee to add.', 'error');
+            return;
+        }
+
+        setIsSavingMembers(true);
+        try {
+            const targetId = community?.id || communityId;
+            await communitiesApi.addMembers(targetId, {
+                userIds: selectedUserIdsToAdd.map(Number),
+                memberType: selectedRoleToAdd
+            });
+
+            await loadData();
+
+            showToast(`✅ Successfully added ${selectedUserIdsToAdd.length} member(s) to "${community?.name}"!`, 'success');
+            setSelectedUserIdsToAdd([]);
+            setIsAddMemberModalOpen(false);
+            window.dispatchEvent(new CustomEvent('community-joined-change'));
+        } catch (err) {
+            console.error('Failed to add members:', err);
+            const msg = err?.data?.message || err?.message || 'Failed to add members to community.';
+            showToast(msg, 'error');
+        } finally {
+            setIsSavingMembers(false);
+        }
+    };
+
+    const handleApproveThisCommunity = async () => {
+        setIsApprovingCommunity(true);
+        try {
+            const commIdNum = Number(community?.id || communityId);
+            if (!isNaN(commIdNum) && commIdNum > 0) {
+                await communitiesApi.approve(commIdNum);
+            }
+
+            try {
+                const pending = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+                const updatedPending = pending.filter(p => String(p.id) !== String(commIdNum));
+                localStorage.setItem('knome_pending_community_approvals', JSON.stringify(updatedPending));
+            } catch (_) {}
+
+            setCommunity(prev => ({
+                ...prev,
+                isActive: true,
+                approvalStatus: 'Approved'
+            }));
+            showToast(`🎉 Community "${community?.name}" approved successfully and is now live!`, 'success');
+            window.dispatchEvent(new CustomEvent('community-created'));
+            window.dispatchEvent(new CustomEvent('community-approval-requested'));
+        } catch (err) {
+            console.error('Failed to approve community:', err);
+            showToast('Failed to approve community.', 'error');
+        } finally {
+            setIsApprovingCommunity(false);
+        }
+    };
+
+    const handleRejectThisCommunity = async () => {
+        const ok = await confirm({
+            title: 'Reject Community Request',
+            message: `Are you sure you want to reject the community creation request for "${community?.name}"?`,
+            confirmText: 'Reject Community',
+            cancelText: 'Cancel',
+            variant: 'warning'
+        });
+        if (!ok) return;
+
+        setIsApprovingCommunity(true);
+        try {
+            const commIdNum = Number(community?.id || communityId);
+            if (!isNaN(commIdNum) && commIdNum > 0) {
+                await communitiesApi.reject(commIdNum, 'Rejected by administrator');
+            }
+
+            try {
+                const pending = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+                const updatedPending = pending.filter(p => String(p.id) !== String(commIdNum));
+                localStorage.setItem('knome_pending_community_approvals', JSON.stringify(updatedPending));
+            } catch (_) {}
+
+            showToast(`Community request for "${community?.name}" was rejected.`, 'info');
+            navigate('/communities');
+        } catch (err) {
+            console.error('Failed to reject community:', err);
+            showToast('Failed to reject community.', 'error');
+        } finally {
+            setIsApprovingCommunity(false);
+        }
+    };
 
     const showToast = (message, type = 'success') => {
         setToast({ message, type });
@@ -1175,7 +1307,11 @@ export default function CommunityView() {
                     thumbnail: localMatch?.thumbnail || localMatch?.avatar || localMatch?.thumbnailUrl || resolveMediaUrl(commData.thumbnailUrl) || imgs.thumbnail,
                     description: commData.description || 'Community for MPOnline team members.',
                     rules: resolvedRules,
-                    faq: resolvedFaq
+                    faq: resolvedFaq,
+                    isActive: commData.isActive,
+                    approvalStatus: commData.approvalStatus || (commData.isActive ? 'Approved' : 'Pending'),
+                    createdByUserId: commData.createdByUserId,
+                    createdDate: commData.createdDate
                 });
 
                 const userJoinedList = JSON.parse(localStorage.getItem(`knome_joined_communities_${currentUser?.id || 'guest'}`) || '[]');
@@ -2775,8 +2911,6 @@ export default function CommunityView() {
         showToast(`${requestName}'s join request has been rejected.`, 'warning');
     };
 
-    const isSysAdmin = ['SYSADM', 'CADM'].includes(currentUser?.role) || ['System Administrator', 'HR Administrator', 'Community Administrator', 'System Admin'].includes(currentUser?.roleName);
-
     const handleDeleteCommunity = async () => {
         const ok = await confirm({
             title: 'Delete Community',
@@ -2834,10 +2968,12 @@ export default function CommunityView() {
     };
 
     const fileCategoryCounts = useMemo(() => {
-        const counts = { All: filesList.length, Document: 0, Image: 0, Video: 0, Archive: 0, Code: 0 };
+        const counts = { All: filesList.length, Document: 0, Image: 0, Video: 0 };
         filesList.forEach(f => {
-            if (counts[f.category] !== undefined) {
-                counts[f.category]++;
+            if (f.category === 'Image') {
+                counts.Image++;
+            } else if (f.category === 'Video') {
+                counts.Video++;
             } else {
                 counts.Document++;
             }
@@ -2867,7 +3003,8 @@ export default function CommunityView() {
 
     const filteredFiles = useMemo(() => {
         let list = filesList.filter(f => {
-            const matchesCat = fileCategoryFilter === 'All' || f.category === fileCategoryFilter;
+            const matchesCat = fileCategoryFilter === 'All' || 
+                (fileCategoryFilter === 'Document' ? (f.category === 'Document' || f.category === 'Archive' || f.category === 'Code') : f.category === fileCategoryFilter);
             const q = fileSearchQuery.trim().toLowerCase();
             const matchesQuery = !q || 
                 (f.name && f.name.toLowerCase().includes(q)) || 
@@ -3184,6 +3321,61 @@ export default function CommunityView() {
             })()}
         </div>
             </section>
+
+            {/* Pending Approval Notice Banner */}
+            {community && (community.approvalStatus === 'Pending' || community.isActive === false) && (
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2">
+                    {isSysAdmin ? (
+                        <div className="bg-amber-500/10 dark:bg-amber-950/40 border-2 border-amber-500/40 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+                            <div className="flex items-start sm:items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                    <span className="material-symbols-outlined text-2xl">pending_actions</span>
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white">Under HR Review</span>
+                                        <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">Community Awaiting Administrator Clearance</h4>
+                                    </div>
+                                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                                        This community was created by <strong className="text-slate-800 dark:text-slate-100">{community.adminContact || 'an employee'}</strong> and is currently inactive and hidden from the public feed.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <button 
+                                    onClick={handleApproveThisCommunity}
+                                    disabled={isApprovingCommunity}
+                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">check_circle</span>
+                                    <span>{isApprovingCommunity ? 'Approving...' : 'Approve Community'}</span>
+                                </button>
+                                <button 
+                                    onClick={handleRejectThisCommunity}
+                                    disabled={isApprovingCommunity}
+                                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+                                >
+                                    <span className="material-symbols-outlined text-[16px]">cancel</span>
+                                    <span>Reject</span>
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="bg-amber-500/10 dark:bg-amber-950/40 border-2 border-amber-500/30 rounded-2xl p-4 sm:p-5 flex items-center gap-3.5 shadow-sm">
+                            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                <span className="material-symbols-outlined text-2xl">hourglass_top</span>
+                            </div>
+                            <div>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white">Under HR Review</span>
+                                <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white mt-1">Your Community is Awaiting Administrator Clearance</h4>
+                                <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                                    You have submitted this community for approval. It will become publicly visible and open for team members once approved by the HR Administrator.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {membershipStatus === 'banned' ? (
                 <div className="max-w-3xl mx-auto px-4 py-16 text-center">
@@ -4083,15 +4275,28 @@ export default function CommunityView() {
                                         </h3>
                                         <p className="text-xs text-slate-500 mt-1">View all team members, assigned community roles, and designations.</p>
                                     </div>
-                                    <div className="relative">
-                                        <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
-                                        <input 
-                                            type="text" 
-                                            value={memberSearchQuery}
-                                            onChange={(e) => setMemberSearchQuery(e.target.value)}
-                                            placeholder="Search members..."
-                                            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
-                                        />
+                                    <div className="flex items-center gap-3">
+                                        {isAdmin && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsAddMemberModalOpen(true)}
+                                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold text-xs shadow-xs transition-all cursor-pointer shrink-0"
+                                                title="Add organization employees to this community"
+                                            >
+                                                <span className="material-symbols-outlined text-[17px]">person_add</span>
+                                                <span>Add Member</span>
+                                            </button>
+                                        )}
+                                        <div className="relative">
+                                            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
+                                            <input 
+                                                type="text" 
+                                                value={memberSearchQuery}
+                                                onChange={(e) => setMemberSearchQuery(e.target.value)}
+                                                placeholder="Search members..."
+                                                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
 
@@ -4221,8 +4426,6 @@ export default function CommunityView() {
                                             { id: 'Document', label: 'Documents', icon: 'description', count: fileCategoryCounts.Document },
                                             { id: 'Image', label: 'Images', icon: 'image', count: fileCategoryCounts.Image },
                                             { id: 'Video', label: 'Videos', icon: 'movie', count: fileCategoryCounts.Video },
-                                            { id: 'Archive', label: 'Archives', icon: 'folder_zip', count: fileCategoryCounts.Archive },
-                                            { id: 'Code', label: 'Code & Scripts', icon: 'code', count: fileCategoryCounts.Code },
                                         ].map(cat => {
                                             const isSelected = fileCategoryFilter === cat.id;
                                             return (
@@ -4960,11 +5163,11 @@ export default function CommunityView() {
                                                 Click to browse files or drag & drop here
                                             </p>
                                             <p className="text-[11px] text-slate-400 mt-0.5">
-                                                Institutional documents, presentations, archives & media up to 50 MB
+                                                Institutional documents, presentations & media up to 50 MB
                                             </p>
                                         </div>
                                         <div className="flex flex-wrap items-center justify-center gap-1.5 mt-1">
-                                            {['PDF', 'DOCX', 'XLSX', 'PPTX', 'PNG/JPG', 'MP4', 'ZIP', 'CODE'].map(tag => (
+                                            {['PDF', 'DOCX', 'XLSX', 'PPTX', 'PNG/JPG', 'MP4'].map(tag => (
                                                 <span key={tag} className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
                                                     {tag}
                                                 </span>
@@ -5859,6 +6062,219 @@ export default function CommunityView() {
                                 <span className="material-symbols-outlined text-[16px]">person_remove</span>
                                 Yes, Remove Member
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* 4. Add Members to Community Modal (Admin Feature) */}
+            {isAddMemberModalOpen && (
+                <div className="fixed inset-0 z-[9999] overflow-y-auto p-4 sm:p-6 flex min-h-full items-center justify-center bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="relative bg-white dark:bg-slate-900 w-full max-w-2xl my-auto rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col max-h-[88vh] animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-gradient-to-r from-indigo-50/80 via-white to-purple-50/80 dark:from-slate-800 dark:via-slate-900 dark:to-slate-800 flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/30 shrink-0">
+                                    <span className="material-symbols-outlined text-[22px]">group_add</span>
+                                </div>
+                                <div>
+                                    <h3 className="font-extrabold text-slate-900 dark:text-white text-base">Add Members to Community</h3>
+                                    <p className="text-[12px] text-slate-500">Search and enroll organization employees into "{community?.name}"</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setIsAddMemberModalOpen(false);
+                                    setSelectedUserIdsToAdd([]);
+                                    setAddMemberSearch('');
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-white rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                            >
+                                <span className="material-symbols-outlined text-[20px]">close</span>
+                            </button>
+                        </div>
+
+                        {/* Filter Bar & Role Selector */}
+                        <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+                            <div className="relative flex-1">
+                                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[18px]">search</span>
+                                <input
+                                    type="text"
+                                    value={addMemberSearch}
+                                    onChange={(e) => setAddMemberSearch(e.target.value)}
+                                    placeholder="Search employee by name, ID, department..."
+                                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xs outline-none text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 transition-all"
+                                />
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-slate-500 font-medium shrink-0">Assign Role:</span>
+                                <select
+                                    value={selectedRoleToAdd}
+                                    onChange={(e) => setSelectedRoleToAdd(e.target.value)}
+                                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                                >
+                                    <option value="Member">Member</option>
+                                    <option value="Admin">Community Admin</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        {/* Selection quick actions */}
+                        <div className="px-6 py-2 bg-slate-100/50 dark:bg-slate-800/50 border-b border-slate-200/50 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 shrink-0">
+                            <span>
+                                Selected: <strong className="text-indigo-600 dark:text-indigo-400 font-bold">{selectedUserIdsToAdd.length}</strong> employee(s)
+                            </span>
+                            <div className="flex items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const currentMemberIds = new Set(membersList.filter(m => m.status === 'Approved' || m.status === 'Active' || !m.status).map(m => String(m.userId || m.id)));
+                                        const pool = (allOrgUsers && allOrgUsers.length > 0) ? allOrgUsers : (contextUsers || []);
+                                        const availableIds = pool
+                                            .filter(u => !currentMemberIds.has(String(u.id || u.userId)))
+                                            .map(u => u.id || u.userId);
+                                        setSelectedUserIdsToAdd(availableIds);
+                                    }}
+                                    className="text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 font-semibold cursor-pointer"
+                                >
+                                    Select All Non-Members
+                                </button>
+                                {selectedUserIdsToAdd.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedUserIdsToAdd([])}
+                                        className="text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 cursor-pointer"
+                                    >
+                                        Clear
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Employee List */}
+                        <div className="p-4 sm:p-6 flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                            {isLoadingOrgUsers ? (
+                                <div className="py-12 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
+                                    <span className="material-symbols-outlined text-3xl animate-spin text-indigo-500">progress_activity</span>
+                                    <p className="text-xs">Loading employee directory...</p>
+                                </div>
+                            ) : filteredEmployeesToAdd.length === 0 ? (
+                                <div className="py-12 text-center text-slate-400 space-y-1">
+                                    <span className="material-symbols-outlined text-3xl">group_off</span>
+                                    <p className="text-xs font-bold text-slate-600 dark:text-slate-400">No matching employees found</p>
+                                </div>
+                            ) : (
+                                filteredEmployeesToAdd.map(user => {
+                                    const uId = user.id || user.userId;
+                                    const isAlreadyMember = membersList.some(m => 
+                                        String(m.userId || m.id) === String(uId) && 
+                                        (m.status === 'Approved' || m.status === 'Active' || !m.status)
+                                    );
+                                    const isSelected = selectedUserIdsToAdd.includes(uId);
+
+                                    return (
+                                        <div
+                                            key={uId}
+                                            onClick={() => {
+                                                if (isAlreadyMember) return;
+                                                setSelectedUserIdsToAdd(prev => 
+                                                    prev.includes(uId) ? prev.filter(x => x !== uId) : [...prev, uId]
+                                                );
+                                            }}
+                                            className={`py-3 px-3 rounded-xl flex items-center justify-between gap-3 transition-colors ${
+                                                isAlreadyMember 
+                                                    ? 'opacity-60 bg-slate-50/50 dark:bg-slate-800/20 cursor-not-allowed' 
+                                                    : isSelected
+                                                        ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 cursor-pointer'
+                                                        : 'hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected || isAlreadyMember}
+                                                    disabled={isAlreadyMember}
+                                                    onChange={() => {}}
+                                                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:opacity-50"
+                                                />
+                                                <img
+                                                    src={user.avatar || user.profilePhotoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || user.fullName || 'User')}&background=6366f1&color=fff`}
+                                                    alt={user.name || user.fullName}
+                                                    className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                                                    onError={(e) => {
+                                                        e.currentTarget.onerror = null;
+                                                        e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || user.fullName || 'User')}&background=6366f1&color=fff`;
+                                                    }}
+                                                />
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate">
+                                                            {user.name || user.fullName}
+                                                        </span>
+                                                        {user.employeeId && (
+                                                            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700">
+                                                                {user.employeeId}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                                        {user.designation || 'Employee'} • {user.department || user.departmentName || 'MPOnline'}
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {isAlreadyMember ? (
+                                                <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 shrink-0 flex items-center gap-1">
+                                                    <span className="material-symbols-outlined text-[12px]">check</span>
+                                                    Already Member
+                                                </span>
+                                            ) : isSelected ? (
+                                                <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
+                                                    Selected
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                    );
+                                })
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between gap-3 shrink-0">
+                            <span className="text-xs text-slate-500">
+                                Will be added as <strong className="text-slate-800 dark:text-slate-200">{selectedRoleToAdd}</strong>
+                            </span>
+                            <div className="flex items-center gap-2.5">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setIsAddMemberModalOpen(false);
+                                        setSelectedUserIdsToAdd([]);
+                                    }}
+                                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={selectedUserIdsToAdd.length === 0 || isSavingMembers}
+                                    onClick={handleAddSelectedMembers}
+                                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl text-xs shadow-md shadow-indigo-600/30 transition-all flex items-center gap-1.5 cursor-pointer"
+                                >
+                                    {isSavingMembers ? (
+                                        <>
+                                            <span className="material-symbols-outlined text-[16px] animate-spin">progress_activity</span>
+                                            <span>Adding...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="material-symbols-outlined text-[16px]">person_add</span>
+                                            <span>Add {selectedUserIdsToAdd.length > 0 ? `${selectedUserIdsToAdd.length} Members` : 'Members'}</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

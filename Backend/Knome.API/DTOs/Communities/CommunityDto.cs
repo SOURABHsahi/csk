@@ -22,6 +22,22 @@ public class CommunityDto
     public string? CurrentUserMembershipStatus { get; set; } // Approved, Pending, Rejected, Banned, or null if non-member
     public bool IsCurrentUserAdmin { get; set; }
     public bool IsActive { get; set; }
+    public string ApprovalStatus { get; set; } = "Approved";
+    public string? CreatorAvatar { get; set; }
+    public string? CreatorEmployeeId { get; set; }
+    public string? CreatorDesignation { get; set; }
+    public string? CreatorDepartment { get; set; }
+}
+
+public class AddCommunityMembersDto
+{
+    public List<int> UserIds { get; set; } = new();
+    public string MemberType { get; set; } = "Member";
+}
+
+public class RejectCommunityDto
+{
+    public string? Reason { get; set; }
 }
 
 public class CreateCommunityDto
