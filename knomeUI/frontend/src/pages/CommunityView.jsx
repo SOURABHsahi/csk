@@ -1588,12 +1588,29 @@ export default function CommunityView() {
                 return { ...f, url: currentUrl };
             }));
 
-            if (hydratedFiles.length > 0) {
-                setFilesList(hydratedFiles);
-                safeSetStorage(savedFilesKey, hydratedFiles);
+            const isInitialDemoComm = String(resolvedTargetId) === '101' || String(resolvedTargetId) === '1';
+
+            if (!isInitialDemoComm) {
+                // User-created community (any ID other than 101/1): mock demo seed files must NEVER appear!
+                const MOCK_SEED_NAMES = new Set([
+                    'Project_Walkthrough_Demo.mp4',
+                    'Database_Schema_Architecture.png',
+                    'API_Integration_Guild_v2.docx',
+                    'System_Architecture_Overview.pdf'
+                ]);
+                const cleanedFiles = hydratedFiles.filter(f => !MOCK_SEED_NAMES.has(f.name));
+                setFilesList(cleanedFiles);
+                if (cleanedFiles.length > 0) {
+                    safeSetStorage(savedFilesKey, cleanedFiles);
+                } else {
+                    try { localStorage.removeItem(savedFilesKey); } catch (_) {}
+                }
             } else {
-                const isCustom = (JSON.parse(localStorage.getItem('knome_custom_communities') || '[]')).some(c => String(c.id) === String(resolvedTargetId));
-                if (!isCustom) {
+                // ONLY root demo space (101/1) gets sample seed files if empty
+                if (hydratedFiles.length > 0) {
+                    setFilesList(hydratedFiles);
+                    safeSetStorage(savedFilesKey, hydratedFiles);
+                } else {
                     const seedFiles = [
                         { id: 1, name: 'System_Architecture_Overview.pdf', category: 'Document', extension: 'pdf', size: '3.4 MB', uploadedBy: 'Loveneesh Sharma', uploadedAt: '2026-07-25T10:30:00.000Z', url: SAMPLE_PDF_DATA_URL, downloadCount: 14 },
                         { id: 2, name: 'API_Integration_Guild_v2.docx', category: 'Document', extension: 'docx', size: '1.2 MB', uploadedBy: 'Vishendra Sharma', uploadedAt: '2026-07-26T14:15:00.000Z', url: 'https://filesamples.com/samples/document/docx/sample3.docx', downloadCount: 9 },
@@ -1602,8 +1619,6 @@ export default function CommunityView() {
                     ];
                     setFilesList(seedFiles);
                     safeSetStorage(savedFilesKey, seedFiles);
-                } else {
-                    setFilesList([]);
                 }
             }
 
@@ -1643,11 +1658,11 @@ export default function CommunityView() {
                     const finalComments = cached && typeof cached.commentCount === 'number' ? Math.max(cached.commentCount, sComments) : sComments;
 
                     // Detect sharedProfile from backend post if contentText has format
-                    const profileMatch = (p.contentText || '').match(/Shared Profile:\s*"([^"]+)"/i);
-                    const profileUrlMatch = (p.contentText || '').match(/(?:https?:\/\/[^\s]+)?\/profile\?id=([a-zA-Z0-9_-]+)/i);
+                    const profileMatch = (p.contentText || p.content || '').match(/Shared Profile:\s*"([^"]+)"/i);
+                    const profileUrlMatch = (p.contentText || p.content || '').match(/(?:https?:\/\/[^\s]+)?\/profile\?id=([a-zA-Z0-9_-]+)/i);
                     const backendSharedProfile = (profileMatch || profileUrlMatch) ? {
-                        id: profileUrlMatch ? profileUrlMatch[1] : (p.id || 1),
-                        userId: profileUrlMatch ? profileUrlMatch[1] : (p.id || 1),
+                        id: profileUrlMatch ? profileUrlMatch[1] : null,
+                        userId: profileUrlMatch ? profileUrlMatch[1] : null,
                         name: profileMatch ? profileMatch[1] : 'Colleague',
                         fullName: profileMatch ? profileMatch[1] : 'Colleague',
                         avatar: null,
@@ -1836,7 +1851,19 @@ export default function CommunityView() {
             const savedRequests = JSON.parse(localStorage.getItem(`knome_join_requests_${targetId}`) || '[]');
             setJoinRequests(savedRequests);
             const savedFiles = JSON.parse(localStorage.getItem(`knome_community_files_${targetId}`) || '[]');
-            if (savedFiles.length > 0) setFilesList(savedFiles);
+            const isInitialDemoCommTarget = String(targetId) === '101' || String(targetId) === '1';
+            if (!isInitialDemoCommTarget) {
+                const MOCK_SEED_NAMES = new Set([
+                    'Project_Walkthrough_Demo.mp4',
+                    'Database_Schema_Architecture.png',
+                    'API_Integration_Guild_v2.docx',
+                    'System_Architecture_Overview.pdf'
+                ]);
+                const cleaned = savedFiles.filter(f => !MOCK_SEED_NAMES.has(f.name));
+                setFilesList(cleaned);
+            } else if (savedFiles.length > 0) {
+                setFilesList(savedFiles);
+            }
         };
 
         const handleFeedOrPostsUpdated = (e) => {
@@ -2960,6 +2987,56 @@ export default function CommunityView() {
         }
     };
 
+    const handleCancelCommunityRequest = async () => {
+        const targetId = communityId || community?.id;
+        const commName = community?.name || 'this community';
+        const ok = await confirm({
+            title: 'Cancel Community Request',
+            message: `Are you sure you want to cancel and revert your request for "${commName}"? This community creation proposal will be withdrawn and removed.`,
+            confirmText: 'Yes, Cancel Request',
+            cancelText: 'Keep Request',
+            variant: 'danger'
+        });
+        if (!ok) return;
+
+        // 1. Immediately track as deleted in localStorage
+        const deletedIds = JSON.parse(localStorage.getItem('knome_deleted_community_ids') || '[]');
+        if (targetId && !deletedIds.includes(String(targetId))) {
+            deletedIds.push(String(targetId));
+            localStorage.setItem('knome_deleted_community_ids', JSON.stringify(deletedIds));
+        }
+
+        // 2. Remove from custom list and pending approvals list
+        const customList = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+        const updatedCustom = customList.filter(c => 
+            String(c.id) !== String(targetId) && 
+            (c.name || '').toLowerCase().trim() !== commName.toLowerCase().trim()
+        );
+        localStorage.setItem('knome_custom_communities', JSON.stringify(updatedCustom));
+
+        const pendingList = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+        const updatedPending = pendingList.filter(c => 
+            String(c.id) !== String(targetId) && 
+            (c.name || '').toLowerCase().trim() !== commName.toLowerCase().trim()
+        );
+        localStorage.setItem('knome_pending_community_approvals', JSON.stringify(updatedPending));
+
+        showToast(`Community request for "${commName}" has been cancelled.`, 'info');
+        navigate('/community');
+
+        // 3. Send delete to backend to set IsActive = 0 in database
+        try {
+            if (targetId) {
+                await communitiesApi.delete(targetId);
+            }
+        } catch (err) {
+            console.warn('Backend delete notification error:', err);
+        }
+
+        window.dispatchEvent(new CustomEvent('community-created'));
+        window.dispatchEvent(new CustomEvent('community-approval-requested'));
+    };
+
     // ─────────────────────────────────────────
     // Files & Media Handlers
     // ─────────────────────────────────────────
@@ -3333,7 +3410,7 @@ export default function CommunityView() {
                                 </div>
                                 <div>
                                     <div className="flex items-center gap-2">
-                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white">Under HR Review</span>
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white">Under Administration Review</span>
                                         <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">Community Awaiting Administrator Clearance</h4>
                                     </div>
                                     <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
@@ -3361,17 +3438,27 @@ export default function CommunityView() {
                             </div>
                         </div>
                     ) : (
-                        <div className="bg-amber-500/10 dark:bg-amber-950/40 border-2 border-amber-500/30 rounded-2xl p-4 sm:p-5 flex items-center gap-3.5 shadow-sm">
-                            <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                                <span className="material-symbols-outlined text-2xl">hourglass_top</span>
+                        <div className="bg-amber-500/10 dark:bg-amber-950/40 border-2 border-amber-500/30 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 shadow-sm">
+                            <div className="flex items-center gap-3.5">
+                                <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                    <span className="material-symbols-outlined text-2xl">hourglass_top</span>
+                                </div>
+                                <div>
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white">Under Administration Review</span>
+                                    <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white mt-1">Your Community is Awaiting Administrator Clearance</h4>
+                                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                                        You have submitted this community for approval. It will become publicly visible and open for team members once approved by the Administration.
+                                    </p>
+                                </div>
                             </div>
-                            <div>
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white">Under HR Review</span>
-                                <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white mt-1">Your Community is Awaiting Administrator Clearance</h4>
-                                <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
-                                    You have submitted this community for approval. It will become publicly visible and open for team members once approved by the HR Administrator.
-                                </p>
-                            </div>
+                            <button
+                                onClick={handleCancelCommunityRequest}
+                                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl text-xs font-bold shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0 self-start sm:self-center"
+                                title="Cancel & withdraw this community proposal"
+                            >
+                                <span className="material-symbols-outlined text-[16px]">close</span>
+                                <span>Cancel Request</span>
+                            </button>
                         </div>
                     )}
                 </div>
@@ -4050,7 +4137,7 @@ export default function CommunityView() {
                                                         fullName: (post.content?.match(/Shared Profile:\s*"([^"]+)"/i) || [])[1] || 'Colleague',
                                                         designation: 'MPOnline Team Member',
                                                         department: 'MPOnline',
-                                                        id: (post.content?.match(/\/profile\?id=([a-zA-Z0-9_-]+)/i) || [])[1] || 1
+                                                        id: (post.content?.match(/\/profile\?id=([a-zA-Z0-9_-]+)/i) || [])[1] || null
                                                     };
                                                     const profId = prof.userId || prof.id;
                                                     const profName = prof.fullName || prof.name || 'User';
@@ -4060,7 +4147,11 @@ export default function CommunityView() {
 
                                                     const handleOpenProfile = (e) => {
                                                         e.stopPropagation();
-                                                        navigate(profId ? `/profile?id=${profId}` : '/profile', { state: { user: prof } });
+                                                        if (profId) {
+                                                            navigate(`/profile?id=${profId}`, { state: { user: prof } });
+                                                        } else {
+                                                            navigate('/network');
+                                                        }
                                                     };
 
                                                     return (

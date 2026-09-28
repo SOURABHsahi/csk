@@ -726,14 +726,23 @@ export default function AdminConsole() {
                     createdDate: c.createdDate || c.createdAt,
                     status: c.approvalStatus || 'Pending'
                 }));
-                const localList = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
-                const combined = [...mapped];
-                localList.forEach(l => {
-                    if (!combined.some(c => String(c.id) === String(l.id) || (c.name || '').toLowerCase() === (l.name || '').toLowerCase())) {
-                        combined.push(l);
-                    }
-                });
-                setPendingCommunityApprovals(combined);
+                // Server DB is authoritative: prune decided communities (approved or rejected) from local pending storage
+                try {
+                    const localList = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+                    const activeApiIds = new Set(mapped.map(m => String(m.id)));
+                    const activeApiNames = new Set(mapped.map(m => (m.name || '').toLowerCase().trim()));
+
+                    const prunedLocal = localList.filter(l => {
+                        const numId = Number(l.id);
+                        if (!isNaN(numId) && numId > 0 && numId < 1000000000) {
+                            return false;
+                        }
+                        return !activeApiIds.has(String(l.id)) && !activeApiNames.has((l.name || '').toLowerCase().trim());
+                    });
+                    localStorage.setItem('knome_pending_community_approvals', JSON.stringify(prunedLocal));
+                } catch (_) {}
+
+                setPendingCommunityApprovals(mapped);
                 return;
             }
         } catch (e) {
@@ -753,10 +762,12 @@ export default function AdminConsole() {
             refreshPendingCommunityApprovals();
             fetchCommunities();
         };
+        window.addEventListener('focus', handleApprovalSync);
         window.addEventListener('storage', handleApprovalSync);
         window.addEventListener('community-approval-requested', handleApprovalSync);
         window.addEventListener('community-created', handleApprovalSync);
         return () => {
+            window.removeEventListener('focus', handleApprovalSync);
             window.removeEventListener('storage', handleApprovalSync);
             window.removeEventListener('community-approval-requested', handleApprovalSync);
             window.removeEventListener('community-created', handleApprovalSync);

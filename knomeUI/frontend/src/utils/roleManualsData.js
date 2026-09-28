@@ -161,7 +161,7 @@ export const ROLE_USER_MANUALS = {
                     },
                     {
                         heading: '6.2 Proposing a New Community',
-                        content: 'Employees can propose new communities by clicking "Create Community". Provide a title, description, category, and banner. Your proposal enters the HR Review Queue and is activated upon HR Administrator approval.'
+                        content: 'Employees can propose new communities by clicking "Create Community". Provide a title, description, category, and banner. Your proposal enters the Administration Review Queue and is activated upon Administration approval.'
                     }
                 ]
             },

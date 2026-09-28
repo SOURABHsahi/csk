@@ -43,13 +43,14 @@ export default function MyCommunitiesWidget() {
                 const isJoined = Boolean(
                     c.currentUserMembershipStatus === 'Approved' ||
                     c.currentUserMembershipStatus === 'joined' ||
+                    c.isCurrentUserAdmin ||
                     isOrgDefault ||
                     userJoinedList.some(j => String(j.id) === String(cId) && (j.status === 'joined' || !j.status)) ||
                     (currentUser && localMembers.some(m => 
                         (currentUid && String(m.userId || m.id) === String(currentUid)) ||
                         (currentName && (m.fullName || m.name || '').toLowerCase().trim() === currentName)
                     )) ||
-                    (c.creatorUserId && String(c.creatorUserId) === String(currentUid)) ||
+                    ((c.createdByUserId || c.creatorUserId) && String(c.createdByUserId || c.creatorUserId) === String(currentUid)) ||
                     (c.createdBy && currentName && c.createdBy.toLowerCase().includes(currentName))
                 );
 

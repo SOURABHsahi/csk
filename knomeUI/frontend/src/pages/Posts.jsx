@@ -2,16 +2,19 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useUser } from '../components/contexts/UserContext';
 import PostCard from '../components/widgets/PostCard';
+import DraftCard from '../components/widgets/DraftCard';
 import CreatePostModal from '../components/modals/CreatePostModal';
 import ScrollLoadingIndicator from '../components/ui/ScrollLoadingIndicator';
 import { useScrollLoading } from '../hooks/useScrollLoading';
 import HotPostsWidget from '../components/widgets/HotPostsWidget';
 import TrendingTagsWidget from '../components/widgets/TrendingTagsWidget';
-import HighlightText from '../components/ui/HighlightText';
 import { postsApi, mapPost, getPersonalizedRecommendations } from '../utils/apiService';
+import { deleteDraft, clearUserDraft, getUserDraft, removeDraftFromLocalPosts } from '../utils/draftManager';
+import { useToast } from '../components/contexts/ToastContext';
 
 export default function Posts() {
     const { currentUser } = useUser();
+    const { addToast } = useToast();
     const location = useLocation();
     const queryParams = new URLSearchParams(location.search);
     const targetPostId = queryParams.get('id') || queryParams.get('postId') || queryParams.get('highlight');
@@ -24,6 +27,7 @@ export default function Posts() {
     const [searchQuery, setSearchQuery] = useState(initialSearch);
     const [selectedTag, setSelectedTag] = useState(initialTag ? initialTag.replace('#', '') : 'All');
     const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
+    const [draftToEdit, setDraftToEdit] = useState(null);
 
     useEffect(() => {
         const params = new URLSearchParams(location.search);
@@ -43,16 +47,46 @@ export default function Posts() {
             const data = await postsApi.getPosts(null, null, 1, 100);
             let mapped = data ? data.map(mapPost) : [];
 
-            // Merge local fallback posts if any
+            // Merge local fallback posts if any (only include explicit drafts saved via 'Save as Draft')
             try {
                 const deletedIds = JSON.parse(localStorage.getItem('knome_deleted_post_ids') || '[]').map(String);
                 const localPosts = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
-                localPosts.forEach(lp => {
+                const cleanedLocalPosts = localPosts.filter(lp => lp.status !== 'Draft' || lp.savedAsDraft === true);
+                if (cleanedLocalPosts.length !== localPosts.length) {
+                    localStorage.setItem('knome_local_posts', JSON.stringify(cleanedLocalPosts));
+                }
+                cleanedLocalPosts.forEach(lp => {
                     const lpIdStr = String(lp.id || lp.postId || '');
                     if (!deletedIds.includes(lpIdStr) && !mapped.some(m => String(m.id || m.postId) === lpIdStr)) {
                         mapped.unshift(mapPost(lp));
                     }
                 });
+            } catch (e) {}
+
+            // Ensure current active user draft is fresh and synced in mapped posts ONLY if explicitly saved as draft
+            try {
+                const currentUid = currentUser?.userId || currentUser?.id;
+                const activeDraft = getUserDraft(currentUid);
+                if (activeDraft && activeDraft.savedAsDraft) {
+                    const draftIdStr = String(activeDraft.id || activeDraft.postId || '');
+                    const deletedIds = JSON.parse(localStorage.getItem('knome_deleted_post_ids') || '[]').map(String);
+                    if (!deletedIds.includes(draftIdStr)) {
+                        const mappedDraft = mapPost({
+                            ...activeDraft,
+                            authorId: currentUid,
+                            authorName: currentUser?.fullName || currentUser?.name || 'You',
+                            authorAvatar: currentUser?.profilePhotoUrl || currentUser?.avatar,
+                            authorRole: currentUser?.designation || currentUser?.roleName || 'Employee',
+                            status: 'Draft'
+                        });
+                        const existingIdx = mapped.findIndex(m => String(m.id || m.postId) === draftIdStr);
+                        if (existingIdx >= 0) {
+                            mapped[existingIdx] = mappedDraft;
+                        } else {
+                            mapped.unshift(mappedDraft);
+                        }
+                    }
+                }
             } catch (e) {}
 
             // Filter out any posts present in deleted IDs blacklist
@@ -83,9 +117,14 @@ export default function Posts() {
                 }
             }
 
-            // Filter posts based on publication schedule for scheduled items
+            // Filter posts based on publication schedule and draft privacy
             const currentUserIdStr = String(currentUser?.userId || currentUser?.id || '');
             const accessiblePosts = mapped.filter(p => {
+                if (p.status === 'Draft') {
+                    // Draft: author only
+                    const authorIdStr = String(p.author?.id || p.authorId || p.userId || '');
+                    return authorIdStr === currentUserIdStr;
+                }
                 if (p.status === 'Scheduled' && p.scheduledDate) {
                     const schedTime = new Date(p.scheduledDate).getTime();
                     const now = Date.now();
@@ -126,50 +165,35 @@ export default function Posts() {
 
         window.addEventListener('post-deleted', handlePostDeleted);
         window.addEventListener('post-created', handlePostCreated);
+        window.addEventListener('knome_drafts_updated', handlePostCreated);
         return () => {
             clearInterval(interval);
             window.removeEventListener('post-deleted', handlePostDeleted);
             window.removeEventListener('post-created', handlePostCreated);
+            window.removeEventListener('knome_drafts_updated', handlePostCreated);
         };
     }, [targetPostId, currentUser?.id]);
 
-    const [showFilterBar, setShowFilterBar] = useState(false);
-    const [isFilterOpen, setIsFilterOpen] = useState(false);
-    const [tagSearch, setTagSearch] = useState('');
-    const filterRef = useRef(null);
 
-    // Close filter dropdown on outside click
-    useEffect(() => {
-        const handleClickOutside = (e) => {
-            if (filterRef.current && !filterRef.current.contains(e.target)) {
-                setIsFilterOpen(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
 
-    // Get all unique tags for filter dropdown
-    const rawUniqueTags = [...new Set([
-        ...posts.flatMap(post => post.tags || []),
-        ...(selectedTag !== 'All' && selectedTag !== '⏰ Scheduled' ? [selectedTag] : [])
-    ])].filter(Boolean);
-    const filteredAvailableTags = rawUniqueTags.filter(t => t.toLowerCase().includes(tagSearch.toLowerCase()));
-
-    // Count author's upcoming scheduled posts
+    // Count author's upcoming scheduled posts and private drafts
     const authorScheduledCount = posts.filter(p => (p.status === 'Scheduled' || p.isScheduledFuture)).length;
+    const authorDraftCount = posts.filter(p => p.status === 'Draft').length;
 
     // Filter and sort logic — highlighted target post always at top
     const rawPosts = posts.filter(post => {
         const matchesSearch = !searchQuery || (post.content || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
                               (post.author?.name || '').toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesTag = selectedTag === 'All' || 
-                           selectedTag === '🔥 Hot Posts' ||
-                           (selectedTag === '⏰ Scheduled' ? (post.status === 'Scheduled' || post.isScheduledFuture) : 
+        const matchesTag = selectedTag === 'All' ? post.status !== 'Draft' : 
+                           selectedTag === '🔥 Hot Posts' ? post.status !== 'Draft' :
+                           selectedTag === '⏰ Scheduled' ? (post.status === 'Scheduled' || post.isScheduledFuture) : 
+                           selectedTag === '📝 Drafts' ? post.status === 'Draft' :
                            (
-                               (post.tags && post.tags.some(t => t.toLowerCase() === selectedTag.toLowerCase())) ||
-                               ((post.content || '').toLowerCase().includes('#' + selectedTag.toLowerCase()))
-                           ));
+                               post.status !== 'Draft' && (
+                                   (post.tags && post.tags.some(t => t.toLowerCase() === selectedTag.toLowerCase())) ||
+                                   ((post.content || '').toLowerCase().includes('#' + selectedTag.toLowerCase()))
+                               )
+                           );
         return matchesSearch && matchesTag;
     });
 
@@ -231,134 +255,56 @@ export default function Posts() {
 
                 {/* Action Right */}
                 <div className="relative z-10 shrink-0 flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto mt-4 md:mt-0">
-                    <button 
-                        onClick={() => setShowFilterBar(prev => !prev)}
-                        className={`w-full sm:w-auto px-5 py-3 font-bold rounded-xl transition-all flex items-center justify-center gap-2 border cursor-pointer ${
-                            showFilterBar || searchQuery || selectedTag !== 'All'
-                                ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700'
-                        }`}
-                    >
-                        <span className="material-symbols-outlined text-[18px]">filter_list</span>
-                        Filter { (searchQuery || selectedTag !== 'All') && '• Active' }
-                    </button>
                     {currentUser.role !== 'SYSADM' && (
-                        <button 
-                            onClick={() => setIsCreatePostOpen(true)}
-                            className="w-full sm:w-auto px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2 cursor-pointer"
-                        >
-                            <span className="material-symbols-outlined text-[20px]">edit_square</span>
-                            Write Post
-                        </button>
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setSelectedTag(selectedTag === '📝 Drafts' ? 'All' : '📝 Drafts');
+                                    setTimeout(() => {
+                                        document.getElementById('posts-feed-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                    }, 50);
+                                }}
+                                className={`w-full sm:w-auto px-5 py-3 font-bold rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer border active:scale-95 shadow-sm ${
+                                    selectedTag === '📝 Drafts'
+                                        ? 'bg-slate-900 text-white border-slate-900 shadow-md dark:bg-slate-700 dark:border-slate-600'
+                                        : 'bg-white/90 hover:bg-white dark:bg-slate-800/90 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-slate-300 backdrop-blur-xs'
+                                }`}
+                                title="View all saved drafts"
+                            >
+                                <span className={`material-symbols-outlined text-[20px] ${selectedTag === '📝 Drafts' ? 'text-amber-400' : 'text-amber-500'}`}>
+                                    draft
+                                </span>
+                                <span>Drafts</span>
+                                {authorDraftCount > 0 && (
+                                    <span className={`px-2 py-0.5 rounded-full text-xs font-black transition-colors ${
+                                        selectedTag === '📝 Drafts'
+                                            ? 'bg-amber-400 text-slate-950'
+                                            : 'bg-amber-500 text-white'
+                                    }`}>
+                                        {authorDraftCount}
+                                    </span>
+                                )}
+                            </button>
+
+                            <button 
+                                type="button"
+                                onClick={() => {
+                                    setDraftToEdit(null);
+                                    setIsCreatePostOpen(true);
+                                }}
+                                className="w-full sm:w-auto px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors shadow-lg shadow-blue-600/30 flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                            >
+                                <span className="material-symbols-outlined text-[20px]">edit_square</span>
+                                Write Post
+                            </button>
+                        </>
                     )}
                 </div>
             </div>
 
-            {/* Topic Filter Bar (Collapsible via Filter button or active tag) */}
-            {(showFilterBar || selectedTag !== 'All') && (
-                <div className={`p-4 sm:p-5 rounded-2xl border border-blue-500/30 bg-white dark:bg-slate-900 shadow-xl mb-2 animate-in fade-in slide-in-from-top-4 duration-200 flex items-center justify-between gap-3.5 relative ${isFilterOpen ? 'z-40' : 'z-10'}`}>
-                    <div className="flex items-center gap-2 flex-wrap flex-1">
-                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Filter Discussions by Topic:</span>
-                        {selectedTag !== 'All' ? (
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                                <span>#{selectedTag}</span>
-                                <button
-                                    onClick={() => setSelectedTag('All')}
-                                    className="hover:text-rose-500 transition-colors cursor-pointer"
-                                    title="Clear topic filter"
-                                >
-                                    <span className="material-symbols-outlined text-[14px]">close</span>
-                                </button>
-                            </div>
-                        ) : (
-                            <span className="text-xs font-semibold text-slate-400">All Topics Selected</span>
-                        )}
-                    </div>
-
-                    {/* Filter Icon Button with Dropdown Popover */}
-                    <div className="relative z-50 shrink-0" ref={filterRef}>
-                        <button
-                            onClick={() => setIsFilterOpen(!isFilterOpen)}
-                            className={`flex items-center gap-2 px-4 py-2 sm:py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-xs ${
-                                isFilterOpen || selectedTag !== 'All'
-                                    ? 'bg-blue-600 text-white border-blue-600 shadow-blue-500/20'
-                                    : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                            }`}
-                            title="Filter by Topic / Hashtag"
-                        >
-                            <span className="material-symbols-outlined text-[18px]">tune</span>
-                            <span className="hidden sm:inline">Select Topic</span>
-                            {selectedTag !== 'All' && (
-                                <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
-                            )}
-                        </button>
-
-                        {/* Filter Popover Dropdown */}
-                        {isFilterOpen && (
-                            <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-150">
-                                <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 mb-3">
-                                    <div className="flex items-center gap-2">
-                                        <span className="material-symbols-outlined text-[18px] text-blue-500">tune</span>
-                                        <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">Topics & Tags</h4>
-                                    </div>
-                                    {selectedTag !== 'All' && (
-                                        <button 
-                                            onClick={() => { setSelectedTag('All'); setIsFilterOpen(false); }}
-                                            className="text-[11px] font-bold text-blue-500 hover:underline cursor-pointer"
-                                        >
-                                            Reset Filter
-                                        </button>
-                                    )}
-                                </div>
-
-                                    <div className="max-h-52 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                                        <button
-                                            onClick={() => { setSelectedTag('All'); setIsFilterOpen(false); }}
-                                            className={`w-full text-left px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
-                                                selectedTag === 'All'
-                                                    ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-extrabold'
-                                                    : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
-                                            }`}
-                                        >
-                                            <span>All Topics</span>
-                                            {selectedTag === 'All' && <span className="material-symbols-outlined text-[16px]">check</span>}
-                                        </button>
-
-                                        {filteredAvailableTags.length > 0 ? (
-                                            filteredAvailableTags.map(tag => {
-                                                const isSelected = selectedTag === tag;
-                                                const count = posts.filter(p => p.tags && p.tags.includes(tag)).length;
-                                                return (
-                                                    <button
-                                                        key={tag}
-                                                        onClick={() => { setSelectedTag(tag); setIsFilterOpen(false); }}
-                                                        className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all flex items-center justify-between cursor-pointer ${
-                                                            isSelected
-                                                                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-bold'
-                                                                : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
-                                                        }`}
-                                                    >
-                                                        <span className="truncate">
-                                                            <HighlightText text={`#${tag}`} query={tagSearch} />
-                                                        </span>
-                                                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
-                                                            {count}
-                                                        </span>
-                                                    </button>
-                                                );
-                                            })
-                                        ) : (
-                                            <p className="text-center py-4 text-xs text-slate-400">No topic tags found</p>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                </div>
-            )}
-
             {/* Primary Quick Filter Pills & Active Tag Indicator */}
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+            <div id="posts-feed-section" className="flex flex-wrap items-center justify-between gap-2 mb-1">
                 <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
                     <button
                         onClick={() => setSelectedTag('All')}
@@ -399,10 +345,28 @@ export default function Posts() {
                             </span>
                         </button>
                     )}
+                    {authorDraftCount > 0 && (
+                        <button
+                            onClick={() => setSelectedTag('📝 Drafts')}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer ${
+                                selectedTag === '📝 Drafts'
+                                    ? 'bg-slate-500/15 border-slate-500/40 text-slate-700 dark:text-slate-300 shadow-xs'
+                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                            }`}
+                        >
+                            <span className="material-symbols-outlined text-[14px]">draft</span>
+                            <span>Drafts</span>
+                            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                                selectedTag === '📝 Drafts' ? 'bg-slate-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-300'
+                            }`}>
+                                {authorDraftCount}
+                            </span>
+                        </button>
+                    )}
                 </div>
 
                 {/* Active Selected Filter Badge */}
-                {selectedTag !== 'All' && selectedTag !== '⏰ Scheduled' && selectedTag !== '🔥 Hot Posts' && (
+                {selectedTag !== 'All' && selectedTag !== '⏰ Scheduled' && selectedTag !== '📝 Drafts' && selectedTag !== '🔥 Hot Posts' && (
                     <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-xl animate-in fade-in duration-150">
                         <span>Topic: #{selectedTag}</span>
                         <button 
@@ -427,12 +391,70 @@ export default function Posts() {
                         </div>
                     ) : filteredPosts.length > 0 ? (
                         <>
-                            {filteredPosts.slice(0, visibleCount).map(post => (
-                                <PostCard key={post.id} post={post} searchQuery={searchQuery} onPostDeleted={(deletedId) => {
-                                    if (deletedId) setPosts(prev => prev.filter(p => p.id !== deletedId && p.postId !== deletedId));
-                                    loadPosts();
-                                }} />
-                            ))}
+                            {selectedTag === '📝 Drafts' ? (
+                                filteredPosts.slice(0, visibleCount).map(draft => (
+                                    <DraftCard
+                                        key={draft.id || draft.postId}
+                                        draft={draft}
+                                        onEditDraft={(d) => {
+                                            setDraftToEdit(d);
+                                            setIsCreatePostOpen(true);
+                                        }}
+                                        onDeleteDraft={async (dId) => {
+                                            try {
+                                                await deleteDraft(currentUser?.userId || currentUser?.id, dId, postsApi);
+                                                addToast("Draft deleted successfully", "success");
+                                                loadPosts();
+                                            } catch (e) {
+                                                console.error("Failed to delete draft:", e);
+                                                addToast("Failed to delete draft", "error");
+                                            }
+                                        }}
+                                        onPublishDraft={async (d) => {
+                                            const targetPostId = d.id || d.postId;
+                                            const isNumeric = /^\d+$/.test(String(targetPostId));
+                                            try {
+                                                if (isNumeric) {
+                                                    await postsApi.update(targetPostId, {
+                                                        contentText: d.text || d.content,
+                                                        audienceType: d.audience || d.audienceType || 'Everyone',
+                                                        status: 'Published',
+                                                        scheduledDate: null,
+                                                        attachmentUrls: (d.attachments || []).map(a => a.backendUrl || a.url),
+                                                        attachmentTypes: (d.attachments || []).map(a => a.type === 'doc' ? 'Document' : a.type === 'image' ? 'Image' : a.type === 'video' ? 'Video' : 'Audio'),
+                                                        mentionedUserIds: []
+                                                    });
+                                                } else {
+                                                    await postsApi.create({
+                                                        contentText: d.text || d.content,
+                                                        audienceType: d.audience || d.audienceType || 'Everyone',
+                                                        status: 'Published',
+                                                        scheduledDate: null,
+                                                        attachmentUrls: (d.attachments || []).map(a => a.backendUrl || a.url),
+                                                        attachmentTypes: (d.attachments || []).map(a => a.type === 'doc' ? 'Document' : a.type === 'image' ? 'Image' : a.type === 'video' ? 'Video' : 'Audio'),
+                                                        mentionedUserIds: []
+                                                    });
+                                                }
+                                                clearUserDraft(currentUser?.userId || currentUser?.id);
+                                                removeDraftFromLocalPosts(targetPostId);
+                                                addToast("Draft published successfully! 🚀", "success");
+                                                loadPosts();
+                                                window.dispatchEvent(new CustomEvent('post-created'));
+                                            } catch (e) {
+                                                console.error("Failed to publish draft:", e);
+                                                addToast(e?.message || "Failed to publish draft", "error");
+                                            }
+                                        }}
+                                    />
+                                ))
+                            ) : (
+                                filteredPosts.slice(0, visibleCount).map(post => (
+                                    <PostCard key={post.id} post={post} searchQuery={searchQuery} onPostDeleted={(deletedId) => {
+                                        if (deletedId) setPosts(prev => prev.filter(p => p.id !== deletedId && p.postId !== deletedId));
+                                        loadPosts();
+                                    }} />
+                                ))
+                            )}
 
                             {/* Infinite Scroll Progress Indicator */}
                             <ScrollLoadingIndicator isVisible={visibleCount < filteredPosts.length} text="Loading more posts on scroll..." />
@@ -440,20 +462,25 @@ export default function Posts() {
                     ) : (
                         <div className="glass bg-white dark:bg-slate-950 p-12 rounded-2xl border border-slate-200 dark:border-slate-800 text-center flex flex-col items-center justify-center gap-3">
                             <span className="material-symbols-outlined text-4xl text-slate-300 dark:text-slate-700 animate-bounce">
-                                {selectedTag === '⏰ Scheduled' ? 'schedule' : 'feed'}
+                                {selectedTag === '📝 Drafts' ? 'draft' : (selectedTag === '⏰ Scheduled' ? 'schedule' : 'feed')}
                             </span>
                             <h3 className="font-bold text-slate-700 dark:text-slate-350 text-sm">
-                                {selectedTag === '⏰ Scheduled' ? 'No Scheduled Posts' : 'No Posts Found'}
+                                {selectedTag === '📝 Drafts' ? 'No Draft Posts' : (selectedTag === '⏰ Scheduled' ? 'No Scheduled Posts' : 'No Posts Found')}
                             </h3>
                             <p className="text-xs text-slate-500">
-                                {selectedTag === '⏰ Scheduled' 
-                                    ? 'You do not have any posts waiting to be published.'
-                                    : 'Try adjusting your search criteria or tags filter.'}
+                                {selectedTag === '📝 Drafts'
+                                    ? 'You do not have any saved draft posts.'
+                                    : (selectedTag === '⏰ Scheduled' 
+                                        ? 'You do not have any posts waiting to be published.'
+                                        : 'Try adjusting your search criteria or tags filter.')}
                             </p>
                             {currentUser.role !== 'SYSADM' && (
                                 <button
-                                    onClick={() => setIsCreatePostOpen(true)}
-                                    className="mt-2 px-5 py-2 font-bold text-xs rounded-xl bg-indigo-500 text-white hover:bg-indigo-600 transition-all shadow-sm flex items-center gap-2"
+                                    onClick={() => {
+                                        setDraftToEdit(null);
+                                        setIsCreatePostOpen(true);
+                                    }}
+                                    className="mt-2 px-5 py-2 font-bold text-xs rounded-xl bg-indigo-500 text-white hover:bg-indigo-600 transition-all shadow-sm flex items-center gap-2 cursor-pointer"
                                 >
                                     <span className="material-symbols-outlined text-[16px]">add</span>
                                     {selectedTag === '⏰ Scheduled' ? 'Schedule a Post' : 'Create First Post'}
@@ -473,8 +500,15 @@ export default function Posts() {
             {/* Create Post Modal — supports image, video, audio, document upload */}
             <CreatePostModal
                 isOpen={isCreatePostOpen}
-                onClose={() => setIsCreatePostOpen(false)}
-                onPostCreated={handlePostCreated}
+                onClose={() => {
+                    setIsCreatePostOpen(false);
+                    setDraftToEdit(null);
+                }}
+                onPostCreated={() => {
+                    setDraftToEdit(null);
+                    handlePostCreated();
+                }}
+                draftToEdit={draftToEdit}
             />
         </div>
     );

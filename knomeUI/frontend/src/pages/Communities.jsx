@@ -70,14 +70,25 @@ export default function Communities() {
                     createdDate: c.createdDate || c.createdAt,
                     status: c.approvalStatus || 'Pending'
                 }));
-                const localList = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
-                const combined = [...mapped];
-                localList.forEach(l => {
-                    if (!combined.some(c => String(c.id) === String(l.id) || (c.name || '').toLowerCase() === (l.name || '').toLowerCase())) {
-                        combined.push(l);
-                    }
-                });
-                setPendingApprovals(combined);
+
+                // Server DB is authoritative: prune decided communities (approved or rejected) from local pending storage
+                try {
+                    const localList = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+                    const activeApiIds = new Set(mapped.map(m => String(m.id)));
+                    const activeApiNames = new Set(mapped.map(m => (m.name || '').toLowerCase().trim()));
+
+                    const prunedLocal = localList.filter(l => {
+                        const numId = Number(l.id);
+                        // Any numeric DB ID not returned by backend is no longer pending (approved or rejected)
+                        if (!isNaN(numId) && numId > 0 && numId < 1000000000) {
+                            return false;
+                        }
+                        return !activeApiIds.has(String(l.id)) && !activeApiNames.has((l.name || '').toLowerCase().trim());
+                    });
+                    localStorage.setItem('knome_pending_community_approvals', JSON.stringify(prunedLocal));
+                } catch (_) {}
+
+                setPendingApprovals(mapped);
                 return;
             }
         } catch (e) {
@@ -99,7 +110,7 @@ export default function Communities() {
             const currentEmpId = (currentUser?.employeeId || '').toUpperCase();
             const currentEmail = (currentUser?.email || '').toLowerCase();
             const userJoinedList = JSON.parse(localStorage.getItem(`knome_joined_communities_${currentUid || 'guest'}`) || '[]');
-            const getStatus = (id, apiStatus, type) => {
+            const getStatus = (id, apiStatus, type, createdByUserId, isCurrentUserAdmin) => {
                 // Check if user is suspended in this community
                 try {
                     const commSusp = JSON.parse(localStorage.getItem(`knome_community_suspended_${id}`) || '[]');
@@ -114,12 +125,21 @@ export default function Communities() {
                     if (isSusp) return 'Banned';
                 } catch (_) {}
 
-                const entry = userJoinedList.find(c => String(c.id) === String(id));
-                if (entry) return entry.status === 'joined' ? 'Approved' : 'Subscribed';
-                if (type?.toLowerCase().includes('default') || type?.toLowerCase().includes('org')) return 'Approved';
+                // If user is creator or admin of this community, they are Approved!
+                if (isCurrentUserAdmin) return 'Approved';
+                if (currentUid && createdByUserId && String(currentUid) === String(createdByUserId)) return 'Approved';
+
                 const s = (apiStatus || '').toLowerCase();
                 if (s === 'approved' || s === 'joined') return 'Approved';
                 if (s === 'pending') return 'Pending';
+
+                const entry = userJoinedList.find(c => String(c.id) === String(id));
+                if (entry) {
+                    if (entry.status === 'joined' || entry.status === 'approved' || entry.status === 'Approved') return 'Approved';
+                    if (entry.status === 'pending_approval' || entry.status === 'pending') return 'Pending';
+                    return 'Subscribed';
+                }
+                if (type?.toLowerCase().includes('default') || type?.toLowerCase().includes('org')) return 'Approved';
                 const localMembers = JSON.parse(localStorage.getItem(`knome_community_members_${id}`) || '[]');
                 if (currentUser && localMembers.some(m => (currentUid && String(m.userId || m.id) === String(currentUid)) || (currentUser.name && (m.fullName || m.name || '').toLowerCase() === currentUser.name.toLowerCase()))) return 'Approved';
                 return 'none';
@@ -133,11 +153,38 @@ export default function Communities() {
             if (data && Array.isArray(data) && data.length > 0) {
                 // Remove any active database community IDs from stale local deletion tombstone
                 const activeDbIds = new Set(data.filter(c => c.isActive === undefined || c.isActive === true || c.isActive === 1).map(c => String(c.communityId)));
+                const activeDbNames = new Set(data.filter(c => c.isActive === undefined || c.isActive === true || c.isActive === 1).map(c => (c.name || '').toLowerCase().trim()));
                 const remainingDeleted = Array.from(deletedIds).filter(id => !activeDbIds.has(id));
                 if (remainingDeleted.length !== deletedIds.size) {
                     localStorage.setItem('knome_deleted_community_ids', JSON.stringify(remainingDeleted));
                     deletedIds.clear();
                     remainingDeleted.forEach(id => deletedIds.add(id));
+                }
+
+                // Prune active approved communities from pending approvals & promote in joined communities
+                try {
+                    const pending = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+                    const cleanedPending = pending.filter(p => !activeDbIds.has(String(p.id)) && !activeDbNames.has((p.name || '').toLowerCase().trim()));
+                    if (cleanedPending.length !== pending.length) {
+                        localStorage.setItem('knome_pending_community_approvals', JSON.stringify(cleanedPending));
+                        setPendingApprovals(prev => prev.filter(p => !activeDbIds.has(String(p.id)) && !activeDbNames.has((p.name || '').toLowerCase().trim())));
+                    }
+
+                    const userKey = `knome_joined_communities_${currentUid || 'guest'}`;
+                    const userJoined = JSON.parse(localStorage.getItem(userKey) || '[]');
+                    let userJoinedUpdated = false;
+                    const syncedUserJoined = userJoined.map(uj => {
+                        if ((uj.status === 'pending_approval' || uj.status === 'pending') && (activeDbIds.has(String(uj.id)) || activeDbNames.has((uj.name || '').toLowerCase().trim()))) {
+                            userJoinedUpdated = true;
+                            return { ...uj, status: 'joined' };
+                        }
+                        return uj;
+                    });
+                    if (userJoinedUpdated) {
+                        localStorage.setItem(userKey, JSON.stringify(syncedUserJoined));
+                    }
+                } catch (syncErr) {
+                    console.warn('Community pending approval sync error:', syncErr);
                 }
 
                 const apiMapped = data
@@ -160,7 +207,9 @@ export default function Communities() {
                             description: c.description || 'No description provided.',
                             banner: bannerResolved,
                             thumbnail: thumbResolved,
-                            membershipStatus: getStatus(c.communityId, c.currentUserMembershipStatus, c.communityType)
+                            createdByUserId: c.createdByUserId,
+                            isCurrentUserAdmin: c.isCurrentUserAdmin,
+                            membershipStatus: getStatus(c.communityId, c.currentUserMembershipStatus, c.communityType, c.createdByUserId, c.isCurrentUserAdmin)
                         };
                     });
                 combinedList.push(...apiMapped);
@@ -246,12 +295,25 @@ export default function Communities() {
             loadPendingApprovals();
         };
 
+        const handleWindowFocus = () => {
+            loadCommunities();
+            loadPendingApprovals();
+        };
+
+        // Real-time polling every 6 seconds to synchronize cross-window admin approvals automatically
+        const pollInterval = setInterval(() => {
+            loadCommunities();
+        }, 6000);
+
+        window.addEventListener('focus', handleWindowFocus);
         window.addEventListener('community-created', handleCommunityUpdate);
         window.addEventListener('community-joined-change', handleCommunityUpdate);
         window.addEventListener('community-suspended-change', handleCommunityUpdate);
         window.addEventListener('community-approval-requested', handleApprovalRequested);
         window.addEventListener('storage', handleApprovalRequested);
         return () => {
+            clearInterval(pollInterval);
+            window.removeEventListener('focus', handleWindowFocus);
             window.removeEventListener('community-created', handleCommunityUpdate);
             window.removeEventListener('community-joined-change', handleCommunityUpdate);
             window.removeEventListener('community-suspended-change', handleCommunityUpdate);
@@ -323,6 +385,72 @@ export default function Communities() {
         } catch (err) {
             console.warn('Backend delete notification error:', err);
         }
+    };
+
+    const handleCancelPendingCommunity = async (e, community) => {
+        if (e && e.stopPropagation) e.stopPropagation();
+        const commName = community?.name || community?.communityName || 'this community';
+        const commId = community?.id || community?.communityId;
+
+        const ok = await confirm({
+            title: 'Cancel Community Request',
+            message: `Are you sure you want to cancel and revert your request for "${commName}"? This community creation proposal will be withdrawn and removed.`,
+            confirmText: 'Yes, Cancel Request',
+            cancelText: 'Keep Request',
+            variant: 'danger'
+        });
+        if (!ok) return;
+
+        // 1. Immediately track as deleted in localStorage so it never resurrects
+        const deletedIds = JSON.parse(localStorage.getItem('knome_deleted_community_ids') || '[]');
+        if (commId && !deletedIds.includes(String(commId))) {
+            deletedIds.push(String(commId));
+            localStorage.setItem('knome_deleted_community_ids', JSON.stringify(deletedIds));
+        }
+
+        // 2. Remove from pending approvals storage
+        const pendingList = JSON.parse(localStorage.getItem('knome_pending_community_approvals') || '[]');
+        const updatedPending = pendingList.filter(c => 
+            String(c.id) !== String(commId) && 
+            (c.name || '').toLowerCase().trim() !== commName.toLowerCase().trim()
+        );
+        localStorage.setItem('knome_pending_community_approvals', JSON.stringify(updatedPending));
+
+        // 3. Remove from custom communities
+        const customList = JSON.parse(localStorage.getItem('knome_custom_communities') || '[]');
+        const updatedCustom = customList.filter(c => 
+            String(c.id) !== String(commId) && 
+            (c.name || '').toLowerCase().trim() !== commName.toLowerCase().trim()
+        );
+        localStorage.setItem('knome_custom_communities', JSON.stringify(updatedCustom));
+
+        // 4. Update component state immediately
+        setPendingApprovals(prev => prev.filter(p => 
+            String(p.id) !== String(commId) && 
+            (p.name || '').toLowerCase().trim() !== commName.toLowerCase().trim()
+        ));
+        setCommunities(prev => prev.filter(c => 
+            String(c.id) !== String(commId) && 
+            (c.name || '').toLowerCase().trim() !== commName.toLowerCase().trim()
+        ));
+
+        // Close successPopup if it matches
+        setSuccessPopup(prev => (prev && (String(prev.id) === String(commId) || prev.communityName === commName) ? null : prev));
+
+        addToast(`Community request for "${commName}" has been cancelled.`, 'info');
+
+        // 5. Notify backend to deactivate / mark as deleted in database
+        if (commId) {
+            try {
+                await communitiesApi.delete(commId);
+            } catch (err) {
+                console.warn('Backend cancel community request error:', err);
+            }
+        }
+
+        // 6. Broadcast event across tabs/windows
+        window.dispatchEvent(new CustomEvent('community-created'));
+        window.dispatchEvent(new CustomEvent('community-approval-requested'));
     };
 
     const compressImage = (file, maxWidth = 1200, maxHeight = 600, quality = 0.85) => {
@@ -565,9 +693,9 @@ export default function Communities() {
             icon: 'cancel',
             color: 'text-red-500',
             bg: 'bg-red-500/10',
-            text: `❌ Your community creation request for "${comm.name}" was not approved by HR Administrator (${currentUser?.name || 'HR Admin'}).`,
-            message: `❌ Your community creation request for "${comm.name}" was not approved by HR Administrator (${currentUser?.name || 'HR Admin'}).`,
-            senderName: currentUser?.name || 'HR Administrator',
+            text: `❌ Your community creation request for "${comm.name}" was not approved by Administration (${currentUser?.name || 'Admin'}).`,
+            message: `❌ Your community creation request for "${comm.name}" was not approved by Administration (${currentUser?.name || 'Admin'}).`,
+            senderName: currentUser?.name || 'Administration',
             senderAvatar: currentUser?.avatar || null,
             senderUserId: currentUser?.userId || currentUser?.id,
             createdDate: new Date().toISOString(),
@@ -657,8 +785,11 @@ export default function Communities() {
         resetScrollLoading();
     }, [activeTab, filterType, filterCategory, searchQuery, resetScrollLoading]);
 
-    // Employee's own pending communities for "My Communities" tab
-    const myPendingCommunities = pendingApprovals.filter(p => String(p.creatorUserId) === String(currentUser?.id));
+    // Employee's own pending communities for "My Communities" tab (exclude any that are already active/approved)
+    const myPendingCommunities = pendingApprovals.filter(p => 
+        String(p.creatorUserId) === String(currentUser?.id) &&
+        !communities.some(c => String(c.id) === String(p.id) || (c.name || '').toLowerCase().trim() === (p.name || '').toLowerCase().trim())
+    );
 
     return (
         <>
@@ -942,10 +1073,10 @@ export default function Communities() {
                                     </div>
                                     <div>
                                         <h4 className="font-extrabold text-xs text-amber-800 dark:text-amber-300">
-                                            Communities Submitted for HR Approval ({myPendingCommunities.length})
+                                            Communities Submitted for Administration Approval ({myPendingCommunities.length})
                                         </h4>
                                         <p className="text-[12px] text-amber-600 dark:text-amber-400 mt-0.5">
-                                            The communities below are currently being reviewed by the HR Administrator. You will receive an instant notification once approved.
+                                            The communities below are currently being reviewed by the Administration. You will receive an instant notification once approved.
                                         </p>
                                     </div>
                                 </div>
@@ -966,7 +1097,7 @@ export default function Communities() {
                                                 <div className="absolute inset-0 bg-slate-900/40"></div>
                                                 <div className="absolute top-2 left-2">
                                                     <span className="px-2 py-0.5 backdrop-blur-md rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-500 text-white shadow-xs">
-                                                        Under HR Review
+                                                        Under Administration Review
                                                     </span>
                                                 </div>
                                             </div>
@@ -977,9 +1108,19 @@ export default function Communities() {
                                                 <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed mb-2 flex-1">
                                                     <HighlightText text={c.description} query={searchQuery} />
                                                 </p>
-                                                <div className="pt-2 mt-auto border-t border-slate-100 dark:border-slate-800 text-[10px] text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1 whitespace-nowrap">
-                                                    <span className="material-symbols-outlined text-[13px]">schedule</span>
-                                                    Awaiting HR clearance
+                                                <div className="pt-2 mt-auto border-t border-slate-100 dark:border-slate-800 text-[10px] text-amber-600 dark:text-amber-400 font-bold flex items-center justify-between gap-1 whitespace-nowrap">
+                                                    <div className="flex items-center gap-1">
+                                                        <span className="material-symbols-outlined text-[13px]">schedule</span>
+                                                        <span>Awaiting clearance</span>
+                                                    </div>
+                                                    <button
+                                                        onClick={(e) => handleCancelPendingCommunity(e, c)}
+                                                        className="px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 dark:bg-rose-950/40 dark:hover:bg-rose-600 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60 rounded-lg flex items-center gap-1 transition-all cursor-pointer shadow-xs active:scale-95"
+                                                        title="Cancel & revert this community request"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[13px]">close</span>
+                                                        <span>Cancel</span>
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
@@ -1255,7 +1396,7 @@ export default function Communities() {
                                 </div>
 
                                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-xs font-black uppercase tracking-wider mb-2">
-                                    ⏳ Awaiting HR Approval
+                                    ⏳ Awaiting Administration Approval
                                 </div>
 
                                 <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-2">
@@ -1263,7 +1404,7 @@ export default function Communities() {
                                 </h3>
 
                                 <p className="text-sm text-slate-600 dark:text-slate-300 max-w-sm mb-5 leading-relaxed">
-                                    Your request to create <strong className="text-amber-600 dark:text-amber-400 font-extrabold">"{successPopup.communityName}"</strong> has been successfully sent to the <strong>HR Administrator</strong> for review.
+                                    Your request to create <strong className="text-amber-600 dark:text-amber-400 font-extrabold">"{successPopup.communityName}"</strong> has been successfully sent to the <strong>Administration</strong> for review.
                                 </p>
 
                                 <div className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 mb-5 text-left space-y-2 text-xs">
@@ -1279,12 +1420,12 @@ export default function Communities() {
                                     )}
                                     <div className="flex justify-between">
                                         <span className="text-slate-400">Status:</span>
-                                        <span className="font-bold text-amber-500">Pending HR Approval</span>
+                                        <span className="font-bold text-amber-500">Pending Administration Approval</span>
                                     </div>
                                 </div>
 
                                 <p className="text-[11px] text-slate-400 dark:text-slate-500 mb-5">
-                                    🔔 You will receive a notification as soon as the HR Administrator approves your request.
+                                    🔔 You will receive a notification as soon as the Administration approves your request.
                                 </p>
 
                                 <div className="flex items-center gap-3 w-full">
@@ -1304,6 +1445,13 @@ export default function Communities() {
                                         Done
                                     </button>
                                 </div>
+                                <button
+                                    onClick={(e) => handleCancelPendingCommunity(e, { id: successPopup.id, name: successPopup.communityName })}
+                                    className="w-full mt-2.5 py-1.5 text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 font-semibold text-xs flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                                >
+                                    <span className="material-symbols-outlined text-[14px]">undo</span>
+                                    <span>Cancel / Revert this request</span>
+                                </button>
                             </div>
                         )}
                     </div>

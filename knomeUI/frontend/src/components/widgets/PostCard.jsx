@@ -580,6 +580,7 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
     const [isReactionsModalOpen, setIsReactionsModalOpen] = useState(false);
     const [isPublishingNow, setIsPublishingNow] = useState(false);
     const isScheduled = Boolean(post.isScheduledFuture || post.status === 'Scheduled');
+    const isDraft = Boolean(post.status === 'Draft');
     const [isContentExpanded, setIsContentExpanded] = useState(false);
 
     // Distinct reaction types currently active on this post
@@ -1442,7 +1443,7 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
             className={`w-full min-w-0 rounded-2xl overflow-hidden flex flex-col transition-all hover:-translate-y-1 ${post.isHighlighted ? 'ring-2 ring-indigo-500 shadow-2xl' : ''}`}
             style={{
                 background: 'var(--bg-card)',
-                border: isScheduled ? '1.5px dashed #f59e0b' : (post.isHighlighted ? '1px solid #6366f1' : '1px solid var(--border-subtle)'),
+                border: isScheduled ? '1.5px dashed #f59e0b' : (isDraft ? '1.5px dashed #64748b' : (post.isHighlighted ? '1px solid #6366f1' : '1px solid var(--border-subtle)')),
                 boxShadow: 'var(--shadow-premium)',
             }}>
             {/* Scheduled Notice Banner for Author */}
@@ -1481,6 +1482,7 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
                     )}
                 </div>
             )}
+
 
             {/* Header */}
             <div className="p-5 pb-3 flex gap-4">
@@ -1579,7 +1581,7 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
                                         >
                                             <span className="material-symbols-outlined text-[16px]">report</span> Report Post
                                         </button>
-                                        {isAuthor && isScheduled && (
+                                        {isAuthor && (isScheduled || isDraft) && (
                                             <>
                                                 <button 
                                                     onClick={() => { setIsMenuOpen(false); handlePublishNow(); }}
@@ -1587,12 +1589,14 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
                                                 >
                                                     <span className="material-symbols-outlined text-[16px]">send</span> Publish Now
                                                 </button>
-                                                <button 
-                                                    onClick={() => { setIsMenuOpen(false); handleCancelSchedule(); }}
-                                                    className="w-full text-left px-4 py-2 font-source-sans text-[13px] font-bold text-amber-600 dark:text-amber-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
-                                                >
-                                                    <span className="material-symbols-outlined text-[16px]">event_busy</span> Cancel Schedule
-                                                </button>
+                                                {isScheduled && (
+                                                    <button 
+                                                        onClick={() => { setIsMenuOpen(false); handleCancelSchedule(); }}
+                                                        className="w-full text-left px-4 py-2 font-source-sans text-[13px] font-bold text-amber-600 dark:text-amber-400 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2"
+                                                    >
+                                                        <span className="material-symbols-outlined text-[16px]">event_busy</span> Cancel Schedule
+                                                    </button>
+                                                )}
                                             </>
                                         )}
                                         {canDeletePost && (
@@ -1613,6 +1617,12 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
                         <p className="font-arial text-[11px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider flex items-center gap-1">
                             {post.time}
                         </p>
+                        {isDraft && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-500/10 text-slate-600 dark:text-slate-400 font-arial text-[10px] font-bold border border-slate-500/20 shadow-xs">
+                                <span className="material-symbols-outlined text-[12px]">draft</span>
+                                Draft
+                            </span>
+                        )}
                         {post.isScheduledFuture && (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 font-arial text-[10px] font-bold border border-amber-500/20 shadow-xs animate-pulse">
                                 <span className="material-symbols-outlined text-[12px]">schedule</span>
@@ -1925,7 +1935,7 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
                         fullName: (post.content?.match(/Shared Profile:\s*"([^"]+)"/i) || [])[1] || 'Colleague',
                         designation: 'MPOnline Team Member',
                         department: 'MPOnline',
-                        id: (post.content?.match(/\/profile\?id=([a-zA-Z0-9_-]+)/i) || [])[1] || 1
+                        id: (post.content?.match(/\/profile\?id=([a-zA-Z0-9_-]+)/i) || [])[1] || null
                     };
                     const profId = prof.userId || prof.id;
                     const profName = prof.fullName || prof.name || 'User';
@@ -1935,7 +1945,11 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
 
                     const handleOpenProfile = (e) => {
                         e.stopPropagation();
-                        navigate(profId ? `/profile?id=${profId}` : '/profile', { state: { user: prof } });
+                        if (profId) {
+                            navigate(`/profile?id=${profId}`, { state: { user: prof } });
+                        } else {
+                            navigate('/network');
+                        }
                     };
 
                     return (

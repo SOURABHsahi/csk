@@ -313,7 +313,11 @@ public class CommunityService : ICommunityService
         if (community == null)
             throw new NotFoundException($"Community ID {communityId} not found.");
 
-        await CheckIsAdminOrSysAdminAsync(communityId, currentUserId);
+        var isCreator = community.CreatedByUserId == currentUserId;
+        if (!isCreator)
+        {
+            await CheckIsAdminOrSysAdminAsync(communityId, currentUserId);
+        }
 
         community.IsActive = false;
         community.ApprovalStatus = "Deleted";

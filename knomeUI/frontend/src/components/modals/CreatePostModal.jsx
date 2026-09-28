@@ -4,6 +4,16 @@ import { useToast } from '../contexts/ToastContext';
 import { postsApi, mediaApi, communitiesApi, profileApi, notificationsApi, formatToDDMMYYYY } from '../../utils/apiService';
 import { apiClient } from '../../utils/apiClient';
 import { checkRestrictedContent, syncRestrictedWordsFromBackend, addRestrictedWord } from '../../utils/restrictedWords';
+import { 
+    getUserDraft, 
+    saveUserDraft, 
+    clearUserDraft, 
+    deleteDraft, 
+    formatDraftTimeAgo,
+    getActiveComposerScratchpad,
+    saveActiveComposerScratchpad,
+    clearActiveComposerScratchpad
+} from '../../utils/draftManager';
 import ImageCropModal from './ImageCropModal';
 import CustomDateTimePicker from '../widgets/CustomDateTimePicker';
 import HighlightText from '../ui/HighlightText';
@@ -41,10 +51,12 @@ export const formatScheduleDisplay = (dateInput) => {
     return `${day} ${month} ${year}, ${pad(hours)}:${minutes} ${ampm}`;
 };
 
-export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
+export default function CreatePostModal({ isOpen, onClose, onPostCreated, draftToEdit = null }) {
     const { currentUser, users, awardRuleKarma, refreshKarma } = useUser();
     const { addToast } = useToast();
+    const currentUserId = currentUser?.userId || currentUser?.id;
     
+    // Core post form state
     const [text, setText] = useState('');
     const [attachments, setAttachments] = useState([]);
     const [audience, setAudience] = useState('Everyone');
@@ -57,18 +69,84 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
     const [allColleagues, setAllColleagues] = useState(users || []);
     const audienceMenuRef = useRef(null);
 
+    // LinkedIn-Style Draft State
+    const [activeDraftId, setActiveDraftId] = useState(null);
+    const [isDraftMode, setIsDraftMode] = useState(false);
+    const [autoSaveStatus, setAutoSaveStatus] = useState(null); // null | 'saving' | 'saved'
+    const [lastSavedTime, setLastSavedTime] = useState(null);
+    const [isDiscarding, setIsDiscarding] = useState(false);
+    const isDirtyRef = useRef(false);
+    const autoSaveTimerRef = useRef(null);
+
+    // Debounced Auto-Save
+    const triggerAutoSave = (newText, newAttachments, newAudience, newCommunity, newConnections, newSchedTime) => {
+        if (!isOpen || isPublishing || !currentUserId) return;
+        
+        const hasContent = (newText && newText.trim().length > 0) || (newAttachments && newAttachments.length > 0);
+        if (!hasContent) {
+            setAutoSaveStatus(null);
+            clearActiveComposerScratchpad(currentUserId);
+            return;
+        }
+
+        isDirtyRef.current = true;
+        setAutoSaveStatus('saving');
+        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+        autoSaveTimerRef.current = setTimeout(() => {
+            if (activeDraftId) {
+                // If editing an existing official draft, update that draft
+                const saved = saveUserDraft(currentUserId, {
+                    id: activeDraftId,
+                    text: newText,
+                    attachments: newAttachments,
+                    audience: newAudience,
+                    selectedCommunity: newCommunity,
+                    selectedConnections: newConnections,
+                    scheduledTime: newSchedTime
+                });
+
+                if (saved) {
+                    setLastSavedTime(saved.updatedAt || new Date().toISOString());
+                    setAutoSaveStatus('saved');
+                    isDirtyRef.current = false;
+                }
+            } else {
+                // Composing a new post: save on Create Post ONLY (scratchpad), do NOT save into Drafts!
+                const saved = saveActiveComposerScratchpad(currentUserId, {
+                    text: newText,
+                    attachments: newAttachments,
+                    audience: newAudience,
+                    selectedCommunity: newCommunity,
+                    selectedConnections: newConnections,
+                    scheduledTime: newSchedTime
+                });
+
+                if (saved) {
+                    setLastSavedTime(saved.savedAt || new Date().toISOString());
+                    setAutoSaveStatus('saved');
+                    isDirtyRef.current = false;
+                }
+            }
+        }, 1500);
+    };
+
     const toggleConnection = (userObj) => {
         setSelectedConnections(prev => {
             const exists = prev.some(c => String(c.id) === String(userObj.id));
+            let next;
+            let nextAudience = audience;
             if (exists) {
-                const next = prev.filter(c => String(c.id) !== String(userObj.id));
-                if (next.length === 0) setAudience('Everyone');
-                return next;
+                next = prev.filter(c => String(c.id) !== String(userObj.id));
+                if (next.length === 0) nextAudience = 'Everyone';
             } else {
-                setSelectedCommunity(null);
-                setAudience('Connections');
-                return [...prev, userObj];
+                nextAudience = 'Connections';
+                next = [...prev, userObj];
             }
+            if (nextAudience !== audience) setAudience(nextAudience);
+            if (!exists) setSelectedCommunity(null);
+            triggerAutoSave(text, attachments, nextAudience, null, next, scheduledTime);
+            return next;
         });
     };
 
@@ -80,21 +158,25 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
 
     const handleCropSave = (newBlob, newUrl, newFile) => {
         if (!cropModalTarget) return;
-        setAttachments(prev => prev.map(a => {
-            if (a.id === cropModalTarget.id) {
-                if (a.url && a.url.startsWith('blob:') && a.url !== newUrl) {
-                    try { URL.revokeObjectURL(a.url); } catch (e) {}
+        setAttachments(prev => {
+            const nextAtts = prev.map(a => {
+                if (a.id === cropModalTarget.id) {
+                    if (a.url && a.url.startsWith('blob:') && a.url !== newUrl) {
+                        try { URL.revokeObjectURL(a.url); } catch (e) {}
+                    }
+                    return {
+                        ...a,
+                        url: newUrl,
+                        file: newFile,
+                        size: newBlob.size,
+                        backendUrl: null
+                    };
                 }
-                return {
-                    ...a,
-                    url: newUrl,
-                    file: newFile,
-                    size: newBlob.size,
-                    backendUrl: null
-                };
-            }
-            return a;
-        }));
+                return a;
+            });
+            triggerAutoSave(text, nextAtts, audience, selectedCommunity, selectedConnections, scheduledTime);
+            return nextAtts;
+        });
         setCropModalTarget(null);
         addToast('Image cropped and rotated successfully!', 'success');
     };
@@ -166,6 +248,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
     const [isScanning, setIsScanning] = useState(false);
     const [securityWarning, setSecurityWarning] = useState(null);
     const [scanComplete, setScanComplete] = useState(false);
+    const [fileError, setFileError] = useState(null);
 
     // Publish state
     const [isPublishing, setIsPublishing] = useState(false);
@@ -275,32 +358,124 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
         setShowHashtagDropdown(false);
         setSecurityWarning(null);
         setScanComplete(false);
-        try {
-            localStorage.removeItem('create_post_draft');
-        } catch (e) {}
+        setFileError(null);
+        setActiveDraftId(null);
+        setIsDraftMode(false);
+        setAutoSaveStatus(null);
+        setLastSavedTime(null);
+        isDirtyRef.current = false;
+        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     };
 
-    // Reset all form state whenever modal is closed or active user changes, ensuring fresh blank state on new post
+    // Load active draft or composer scratchpad on open, or clear state on close
     useEffect(() => {
         if (!isOpen) {
             resetForm();
-        } else {
-            // Live sync restricted keywords directly from SQL Server database table RestrictedKeywords
-            syncRestrictedWordsFromBackend().then(() => {
-                if (text) {
-                    const found = checkRestrictedContent(text);
-                    if (found) {
-                        setSecurityWarning(`Security Alert: Please don't use this word - "${found}". It is restricted and cannot be published.`);
-                    }
-                }
-            });
+            return;
         }
-    }, [isOpen, currentUser?.userId, currentUser?.id]);
+
+        if (draftToEdit) {
+            // Explicitly editing a draft selected from the Drafts tab
+            setText(draftToEdit.text || draftToEdit.content || draftToEdit.contentText || '');
+            setAttachments(draftToEdit.attachments || draftToEdit.postAttachments || []);
+            setAudience(draftToEdit.audience || draftToEdit.audienceType || 'Everyone');
+            setSelectedCommunity(draftToEdit.selectedCommunity || (draftToEdit.communityId ? { id: draftToEdit.communityId, name: draftToEdit.communityName } : null));
+            setSelectedConnections(draftToEdit.selectedConnections || draftToEdit.sharedUsers || []);
+            setScheduledTime(draftToEdit.scheduledTime || draftToEdit.scheduledDate || '');
+            setActiveDraftId(draftToEdit.id || draftToEdit.postId || null);
+            setIsDraftMode(true);
+            setLastSavedTime(draftToEdit.updatedAt || draftToEdit.savedAt || draftToEdit.createdDate || new Date().toISOString());
+            setAutoSaveStatus('saved');
+            isDirtyRef.current = false;
+        } else {
+            // Opened Create Post normally: restore uncommitted in-progress scratchpad if any
+            const scratchpad = currentUserId ? getActiveComposerScratchpad(currentUserId) : null;
+            if (scratchpad) {
+                setText(scratchpad.text || '');
+                setAttachments(scratchpad.attachments || []);
+                setAudience(scratchpad.audience || 'Everyone');
+                setSelectedCommunity(scratchpad.selectedCommunity || null);
+                setSelectedConnections(scratchpad.selectedConnections || []);
+                setScheduledTime(scratchpad.scheduledTime || '');
+                setActiveDraftId(null);
+                setIsDraftMode(false);
+                setLastSavedTime(scratchpad.savedAt || new Date().toISOString());
+                setAutoSaveStatus('saved');
+                isDirtyRef.current = false;
+            } else {
+                resetForm();
+            }
+        }
+
+        // Live sync restricted keywords directly from SQL Server database table RestrictedKeywords
+        syncRestrictedWordsFromBackend().then(() => {
+            if (text) {
+                const found = checkRestrictedContent(text);
+                if (found) {
+                    setSecurityWarning(`Security Alert: Please don't use this word - "${found}". It is restricted and cannot be published.`);
+                }
+            }
+        });
+    }, [isOpen, draftToEdit, currentUserId]);
 
     const handleClose = () => {
         if (isPublishing) return;
+        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+        const hasContent = text.trim().length > 0 || attachments.length > 0;
+        if (hasContent && currentUserId) {
+            if (activeDraftId) {
+                // If editing an existing official draft, update it
+                saveUserDraft(currentUserId, {
+                    id: activeDraftId,
+                    text,
+                    attachments,
+                    audience,
+                    selectedCommunity,
+                    selectedConnections,
+                    scheduledTime
+                });
+            } else {
+                // Save on Create Post ONLY - do NOT save inside official Drafts!
+                saveActiveComposerScratchpad(currentUserId, {
+                    text,
+                    attachments,
+                    audience,
+                    selectedCommunity,
+                    selectedConnections,
+                    scheduledTime
+                });
+            }
+        } else if (!hasContent) {
+            if (activeDraftId && currentUserId) {
+                deleteDraft(currentUserId, activeDraftId, postsApi);
+            }
+            clearActiveComposerScratchpad(currentUserId);
+        }
+
         resetForm();
         onClose();
+    };
+
+    const handleDiscardDraft = async () => {
+        if (!window.confirm('Discard this post? All progress will be removed.')) return;
+        setIsDiscarding(true);
+        try {
+            if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+            if (currentUserId) {
+                clearActiveComposerScratchpad(currentUserId);
+                if (activeDraftId) {
+                    await deleteDraft(currentUserId, activeDraftId, postsApi);
+                } else {
+                    clearUserDraft(currentUserId);
+                }
+            }
+            resetForm();
+            addToast('Draft discarded', 'info');
+            onClose();
+        } finally {
+            setIsDiscarding(false);
+        }
     };
 
     // Handle Text Change & Features
@@ -308,6 +483,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
         const val = e.target.value;
         if (val.length <= MAX_CHARS) {
             setText(val);
+            triggerAutoSave(val, attachments, audience, selectedCommunity, selectedConnections, scheduledTime);
         }
 
         // Mention & Hashtag Logic Trigger
@@ -366,7 +542,10 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
         const nonWhitespaceWords = words.filter(w => w.trim().length > 0);
         const lastIndex = text.lastIndexOf(nonWhitespaceWords[nonWhitespaceWords.length - 1]);
         const newText = text.substring(0, lastIndex) + `@${user.name} `;
-        if (newText.length <= MAX_CHARS) setText(newText);
+        if (newText.length <= MAX_CHARS) {
+            setText(newText);
+            triggerAutoSave(newText, attachments, audience, selectedCommunity, selectedConnections, scheduledTime);
+        }
         setShowMentionDropdown(false);
         textareaRef.current?.focus();
     };
@@ -376,7 +555,10 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
         const nonWhitespaceWords = words.filter(w => w.trim().length > 0);
         const lastIndex = text.lastIndexOf(nonWhitespaceWords[nonWhitespaceWords.length - 1]);
         const newText = text.substring(0, lastIndex) + `#${tag} `;
-        if (newText.length <= MAX_CHARS) setText(newText);
+        if (newText.length <= MAX_CHARS) {
+            setText(newText);
+            triggerAutoSave(newText, attachments, audience, selectedCommunity, selectedConnections, scheduledTime);
+        }
         setShowHashtagDropdown(false);
         textareaRef.current?.focus();
     };
@@ -403,23 +585,38 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
         return 'doc';
     };
 
+const FILE_LIMITS = {
+    image: { maxBytes: 100 * 1024 * 1024, maxDisplay: '100 MB', label: 'Image' },
+    doc: { maxBytes: 400 * 1024 * 1024, maxDisplay: '400 MB', label: 'Document' },
+    video: { maxBytes: 500 * 1024 * 1024, maxDisplay: '500 MB', label: 'Video' },
+    audio: { maxBytes: 100 * 1024 * 1024, maxDisplay: '100 MB', label: 'Audio' }
+};
+
     const processFiles = (files, overrideType) => {
         if (!files || files.length === 0) return;
+        setFileError(null);
         const newAttachments = [];
         let remainingSlots = 4 - attachments.length;
-        const MAX_DOC_SIZE = 400 * 1024 * 1024; // 400 MB for documents
-        const MAX_MEDIA_SIZE = 500 * 1024 * 1024; // 500 MB general limit
+
+        if (remainingSlots <= 0) {
+            const limitMsg = 'You can attach a maximum of 4 files per post.';
+            setFileError(limitMsg);
+            addToast(limitMsg, 'warning');
+            return;
+        }
 
         Array.from(files).slice(0, remainingSlots).forEach(file => {
             const type = overrideType || determineFileType(file);
-            if (type === 'doc' && file.size > MAX_DOC_SIZE) {
-                addToast(`Document "${file.name}" exceeds the 400 MB upload limit.`, 'error');
+            const limitConfig = FILE_LIMITS[type] || FILE_LIMITS.doc;
+
+            if (file.size > limitConfig.maxBytes) {
+                const formattedActual = formatSize(file.size);
+                const errorMsg = `File "${file.name}" (${formattedActual}) exceeds the ${limitConfig.maxDisplay} maximum size limit for ${limitConfig.label} files.`;
+                setFileError(errorMsg);
+                addToast(errorMsg, 'error');
                 return;
             }
-            if (file.size > MAX_MEDIA_SIZE) {
-                addToast(`File "${file.name}" exceeds the 500 MB upload limit.`, 'error');
-                return;
-            }
+
             const localPreviewUrl = URL.createObjectURL(file);
             newAttachments.push({
                 id: Date.now() + Math.random(),
@@ -435,7 +632,11 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
         });
         
         if (newAttachments.length > 0) {
-            setAttachments(prev => [...prev, ...newAttachments]);
+            setAttachments(prev => {
+                const combined = [...prev, ...newAttachments];
+                triggerAutoSave(text, combined, audience, selectedCommunity, selectedConnections, scheduledTime);
+                return combined;
+            });
         }
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
@@ -468,11 +669,86 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                     try { URL.revokeObjectURL(att.url); } catch (e) {}
                 }, 3000);
             }
-            return prev.filter(a => a.id !== id);
+            const remaining = prev.filter(a => a.id !== id);
+            triggerAutoSave(text, remaining, audience, selectedCommunity, selectedConnections, scheduledTime);
+            return remaining;
         });
     };
 
     const handleSubmit = async (status = 'Published') => {
+        // Fast path for explicit Save as Draft
+        if (status === 'Draft') {
+            if (securityWarning || isPublishing) return;
+            const hasContent = text.trim().length > 0 || attachments.length > 0;
+            if (!hasContent) {
+                addToast('Cannot save an empty draft.', 'warning');
+                return;
+            }
+
+            setIsPublishing(true);
+            if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+
+            try {
+                let savedId = activeDraftId;
+                const isNumericId = /^\d+$/.test(String(activeDraftId));
+                
+                const payload = {
+                    contentText: text,
+                    audienceType: selectedCommunity ? 'Community' : (selectedConnections.length > 0 ? 'Connections' : 'Everyone'),
+                    status: 'Draft',
+                    scheduledDate: null,
+                    attachmentUrls: attachments.map(a => a.backendUrl || a.url),
+                    attachmentTypes: attachments.map(a => a.type === 'doc' ? 'Document' : a.type === 'image' ? 'Image' : a.type === 'video' ? 'Video' : 'Audio'),
+                    mentionedUserIds: [],
+                    audienceUserIds: selectedConnections.map(c => c.id),
+                    audienceCommunityIds: selectedCommunity ? [selectedCommunity.id] : []
+                };
+
+                if (isNumericId) {
+                    try {
+                        await postsApi.update(activeDraftId, payload);
+                    } catch (e) {
+                        console.warn('Backend draft update notice:', e);
+                    }
+                } else {
+                    try {
+                        const apiRes = await postsApi.create(payload);
+                        const created = apiRes?.data || apiRes;
+                        if (created?.postId || created?.id) {
+                            savedId = created.postId || created.id;
+                        }
+                    } catch (e) {
+                        console.warn('Backend draft create notice, saved locally:', e);
+                    }
+                }
+
+                clearActiveComposerScratchpad(currentUserId);
+                saveUserDraft(currentUserId, {
+                    id: savedId,
+                    postId: typeof savedId === 'number' ? savedId : null,
+                    text,
+                    attachments,
+                    audience,
+                    selectedCommunity,
+                    selectedConnections,
+                    scheduledTime
+                });
+
+                addToast('Draft saved successfully. 📝', 'success');
+                window.dispatchEvent(new CustomEvent('knome_drafts_updated'));
+                window.dispatchEvent(new CustomEvent('post-created'));
+                resetForm();
+                if (onPostCreated) onPostCreated();
+                onClose();
+            } catch (err) {
+                console.error('Failed to save draft:', err);
+                addToast(err?.message || 'Failed to save draft', 'error');
+            } finally {
+                setIsPublishing(false);
+            }
+            return;
+        }
+
         // 1. Check synchronous restricted words
         const foundKeyword = checkRestrictedContent(text);
         if (foundKeyword) {
@@ -565,52 +841,79 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                     : (selectedConnections.length > 2 ? `${selectedConnections[0].name} +${selectedConnections.length - 1} others` : null))
             };
 
-            let createdPostId = null;
-            try {
-                const apiRes = await postsApi.create(payload);
-                const createdPost = apiRes?.data || apiRes;
-                createdPostId = createdPost?.postId || createdPost?.id;
-            } catch (err) {
-                const errMsg = err?.response?.data?.message || err?.message || '';
-                if (errMsg.toLowerCase().includes('restricted') || errMsg.toLowerCase().includes('blocked') || (err?.response?.status === 400 && errMsg)) {
-                    setSecurityWarning(`Security Alert: ${errMsg}`);
-                    addToast(`Security Alert: ${errMsg}`, 'error');
-                    setIsPublishing(false);
-                    return;
-                }
-                console.warn('API post creation notice, using local post fallback:', err);
-                createdPostId = `post_local_${Date.now()}`;
-                const localPost = {
-                    id: createdPostId,
-                    userId: currentUser?.userId || currentUser?.id || 1,
-                    authorName: currentUser?.name || currentUser?.fullName || 'Employee',
-                    authorAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
-                    authorRole: currentUser?.roleName || 'Employee',
-                    content: text,
-                    status: status,
-                    scheduledDate: isoScheduledDate,
-                    publishedDate: status === 'Published' ? new Date().toISOString() : null,
-                    createdDate: new Date().toISOString(),
-                    likesCount: 0,
-                    commentsCount: 0,
-                    attachments: attachments,
-                    audienceType: payload.audienceType,
-                    communityId: selectedCommunity?.id || null,
-                    communityName: selectedCommunity?.name || null,
-                    sharedCommunity: selectedCommunity,
-                    sharedCommunityName: selectedCommunity?.name,
-                    sharedUsers: selectedConnections,
-                    sharedWithNames: selectedConnections.map(c => c.name || c.fullName),
-                    sharedWithName: payload.sharedWithName
-                };
+            let createdPostId = activeDraftId;
+            const isNumericActiveDraft = /^\d+$/.test(String(activeDraftId));
+
+            if (isNumericActiveDraft) {
                 try {
-                    const existing = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
-                    localStorage.setItem('knome_local_posts', JSON.stringify([localPost, ...existing]));
-                } catch (e) {}
+                    const apiRes = await postsApi.update(activeDraftId, payload);
+                    const updatedPost = apiRes?.data || apiRes;
+                    createdPostId = updatedPost?.postId || updatedPost?.id || activeDraftId;
+                } catch (err) {
+                    const errMsg = err?.response?.data?.message || err?.message || '';
+                    if (errMsg.toLowerCase().includes('restricted') || errMsg.toLowerCase().includes('blocked') || (err?.response?.status === 400 && errMsg)) {
+                        setSecurityWarning(`Security Alert: ${errMsg}`);
+                        addToast(`Security Alert: ${errMsg}`, 'error');
+                        setIsPublishing(false);
+                        return;
+                    }
+                    console.warn('API post update notice, using fallback:', err);
+                }
+            } else {
+                try {
+                    const apiRes = await postsApi.create(payload);
+                    const createdPost = apiRes?.data || apiRes;
+                    createdPostId = createdPost?.postId || createdPost?.id;
+                } catch (err) {
+                    const errMsg = err?.response?.data?.message || err?.message || '';
+                    if (errMsg.toLowerCase().includes('restricted') || errMsg.toLowerCase().includes('blocked') || (err?.response?.status === 400 && errMsg)) {
+                        setSecurityWarning(`Security Alert: ${errMsg}`);
+                        addToast(`Security Alert: ${errMsg}`, 'error');
+                        setIsPublishing(false);
+                        return;
+                    }
+                    console.warn('API post creation notice, using local post fallback:', err);
+                    createdPostId = `post_local_${Date.now()}`;
+                    const localPost = {
+                        id: createdPostId,
+                        userId: currentUser?.userId || currentUser?.id || 1,
+                        authorName: currentUser?.name || currentUser?.fullName || 'Employee',
+                        authorAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl || null,
+                        authorRole: currentUser?.roleName || 'Employee',
+                        content: text,
+                        status: status,
+                        scheduledDate: isoScheduledDate,
+                        publishedDate: status === 'Published' ? new Date().toISOString() : null,
+                        createdDate: new Date().toISOString(),
+                        likesCount: 0,
+                        commentsCount: 0,
+                        attachments: attachments,
+                        audienceType: payload.audienceType,
+                        communityId: selectedCommunity?.id || null,
+                        communityName: selectedCommunity?.name || null,
+                        sharedCommunity: selectedCommunity,
+                        sharedCommunityName: selectedCommunity?.name,
+                        sharedUsers: selectedConnections,
+                        sharedWithNames: selectedConnections.map(c => c.name || c.fullName),
+                        sharedWithName: payload.sharedWithName
+                    };
+                    try {
+                        const existing = JSON.parse(localStorage.getItem('knome_local_posts') || '[]');
+                        localStorage.setItem('knome_local_posts', JSON.stringify([localPost, ...existing]));
+                    } catch (e) {}
+                }
             }
 
-            // Also persist directly to community feed so it is immediately visible and stays visible on refresh
-            if (selectedCommunity?.id) {
+            // Post published or scheduled: clean up user draft and composer scratchpad
+            clearActiveComposerScratchpad(currentUserId);
+            clearUserDraft(currentUserId);
+            if (activeDraftId) {
+                removeDraftFromLocalPosts(activeDraftId);
+            }
+            window.dispatchEvent(new CustomEvent('knome_drafts_updated'));
+
+            // Also persist directly to community feed so it is immediately visible and stays visible on refresh (only if not a draft)
+            if (selectedCommunity?.id && status !== 'Draft') {
                 try {
                     const commPostKey = `knome_community_posts_${selectedCommunity.id}`;
                     const existingCommPosts = JSON.parse(localStorage.getItem(commPostKey) || '[]');
@@ -631,30 +934,58 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                 } catch (e) {}
             }
 
-            // Generate real-time & persistent notifications for Everyone, Specific Community, and Specific Connections
-            const authorName = currentUser?.name || currentUser?.fullName || 'Employee';
-            const authorId = currentUser?.userId || currentUser?.id;
-            const snippet = text.length > 60 ? text.substring(0, 57) + '...' : text;
-            const nowIso = new Date().toISOString();
-            const newNotifs = [];
+            // Generate real-time & persistent notifications for Everyone, Specific Community, and Specific Connections (only if not draft)
+            if (status !== 'Draft') {
+                const authorName = currentUser?.name || currentUser?.fullName || 'Employee';
+                const authorId = currentUser?.userId || currentUser?.id;
+                const snippet = text.length > 60 ? text.substring(0, 57) + '...' : text;
+                const nowIso = new Date().toISOString();
+                const newNotifs = [];
 
-            if (selectedCommunity) {
-                // Scenario 2: Specific Community
-                const notifMsg = `${authorName} posted in ${selectedCommunity.name}: "${snippet}"`;
-                try {
-                    const commMembers = await communitiesApi.getMembers(selectedCommunity.id).catch(() => ({ data: [] }));
-                    const membersList = Array.isArray(commMembers) ? commMembers : (commMembers?.data || commMembers?.items || []);
-                    membersList.forEach(m => {
-                        const mId = m.userId || m.id;
-                        if (String(mId) !== String(authorId)) {
+                if (selectedCommunity) {
+                    // Scenario 2: Specific Community
+                    const notifMsg = `${authorName} posted in ${selectedCommunity.name}: "${snippet}"`;
+                    try {
+                        const commMembers = await communitiesApi.getMembers(selectedCommunity.id).catch(() => ({ data: [] }));
+                        const membersList = Array.isArray(commMembers) ? commMembers : (commMembers?.data || commMembers?.items || []);
+                        membersList.forEach(m => {
+                            const mId = m.userId || m.id;
+                            if (String(mId) !== String(authorId)) {
+                                newNotifs.push({
+                                    id: `comm_post_${Date.now()}_${mId}`,
+                                    type: 'community_post',
+                                    category: 'Community',
+                                    senderName: authorName,
+                                    senderUserId: authorId,
+                                    senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl,
+                                    targetUserId: mId,
+                                    communityId: selectedCommunity.id,
+                                    communityName: selectedCommunity.name,
+                                    text: notifMsg,
+                                    message: notifMsg,
+                                    createdDate: nowIso,
+                                    unread: true,
+                                    isLocalNotif: true,
+                                    targetUrl: `/community/view?id=${selectedCommunity.id}`,
+                                    relatedContentType: 'Community',
+                                    relatedContentId: selectedCommunity.id
+                                });
+                            }
+                        });
+                    } catch (e) {}
+
+                    // Fallback ensure active colleagues get it if no members returned from API
+                    if (newNotifs.length === 0) {
+                        allColleagues.filter(u => String(u.id || u.userId) !== String(authorId)).slice(0, 5).forEach(u => {
+                            const uId = u.id || u.userId;
                             newNotifs.push({
-                                id: `comm_post_${Date.now()}_${mId}`,
+                                id: `comm_post_${Date.now()}_${uId}`,
                                 type: 'community_post',
                                 category: 'Community',
                                 senderName: authorName,
                                 senderUserId: authorId,
                                 senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl,
-                                targetUserId: mId,
+                                targetUserId: uId,
                                 communityId: selectedCommunity.id,
                                 communityName: selectedCommunity.name,
                                 text: notifMsg,
@@ -666,100 +997,74 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                                 relatedContentType: 'Community',
                                 relatedContentId: selectedCommunity.id
                             });
-                        }
-                    });
-                } catch (e) {}
-
-                // Fallback ensure active colleagues get it if no members returned from API
-                if (newNotifs.length === 0) {
-                    allColleagues.filter(u => String(u.id || u.userId) !== String(authorId)).slice(0, 5).forEach(u => {
-                        const uId = u.id || u.userId;
+                        });
+                    }
+                } else if (selectedConnections.length > 0) {
+                    // Scenario 3: Specific Connections / Specific Person
+                    const notifMsg = `${authorName} shared a post with you: "${snippet}"`;
+                    selectedConnections.forEach(c => {
+                        const cId = c.id || c.userId;
                         newNotifs.push({
-                            id: `comm_post_${Date.now()}_${uId}`,
-                            type: 'community_post',
-                            category: 'Community',
+                            id: `share_post_${Date.now()}_${cId}`,
+                            type: 'post_shared',
+                            category: 'Shares',
                             senderName: authorName,
                             senderUserId: authorId,
                             senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl,
-                            targetUserId: uId,
-                            communityId: selectedCommunity.id,
-                            communityName: selectedCommunity.name,
+                            targetUserId: cId,
+                            employeeId: c.employeeId,
                             text: notifMsg,
                             message: notifMsg,
                             createdDate: nowIso,
                             unread: true,
                             isLocalNotif: true,
-                            targetUrl: `/community/view?id=${selectedCommunity.id}`,
-                            relatedContentType: 'Community',
-                            relatedContentId: selectedCommunity.id
+                            targetUrl: createdPostId ? `/posts?id=${createdPostId}` : '/posts',
+                            relatedContentType: 'Post',
+                            relatedContentId: createdPostId
+                        });
+                    });
+                } else {
+                    // Scenario 1: Everyone
+                    const notifMsg = `${authorName} published a new post: "${snippet}"`;
+                    allColleagues.filter(u => String(u.id || u.userId) !== String(authorId)).forEach(u => {
+                        const uId = u.id || u.userId;
+                        newNotifs.push({
+                            id: `post_everyone_${Date.now()}_${uId}`,
+                            type: 'post_everyone',
+                            category: 'System',
+                            senderName: authorName,
+                            senderUserId: authorId,
+                            senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl,
+                            targetUserId: uId,
+                            employeeId: u.employeeId,
+                            text: notifMsg,
+                            message: notifMsg,
+                            createdDate: nowIso,
+                            unread: true,
+                            isLocalNotif: true,
+                            targetUrl: createdPostId ? `/posts?id=${createdPostId}` : '/posts',
+                            relatedContentType: 'Post',
+                            relatedContentId: createdPostId
                         });
                     });
                 }
-            } else if (selectedConnections.length > 0) {
-                // Scenario 3: Specific Connections / Specific Person
-                const notifMsg = `${authorName} shared a post with you: "${snippet}"`;
-                selectedConnections.forEach(c => {
-                    const cId = c.id || c.userId;
-                    newNotifs.push({
-                        id: `share_post_${Date.now()}_${cId}`,
-                        type: 'post_shared',
-                        category: 'Shares',
-                        senderName: authorName,
-                        senderUserId: authorId,
-                        senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl,
-                        targetUserId: cId,
-                        employeeId: c.employeeId,
-                        text: notifMsg,
-                        message: notifMsg,
-                        createdDate: nowIso,
-                        unread: true,
-                        isLocalNotif: true,
-                        targetUrl: createdPostId ? `/posts?id=${createdPostId}` : '/posts',
-                        relatedContentType: 'Post',
-                        relatedContentId: createdPostId
+
+                if (newNotifs.length > 0) {
+                    try {
+                        const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
+                        localStorage.setItem('knome_notifications', JSON.stringify([...newNotifs, ...existingNotifs]));
+                    } catch (e) {}
+
+                    // Trigger local notification listeners across all open tabs/components
+                    window.dispatchEvent(new CustomEvent('notification-updated'));
+                    window.dispatchEvent(new CustomEvent('knome_new_notification'));
+                    newNotifs.forEach(n => {
+                        window.dispatchEvent(new CustomEvent('knome_notification_received', { detail: n }));
                     });
-                });
-            } else {
-                // Scenario 1: Everyone
-                const notifMsg = `${authorName} published a new post: "${snippet}"`;
-                allColleagues.filter(u => String(u.id || u.userId) !== String(authorId)).forEach(u => {
-                    const uId = u.id || u.userId;
-                    newNotifs.push({
-                        id: `post_everyone_${Date.now()}_${uId}`,
-                        type: 'post_everyone',
-                        category: 'System',
-                        senderName: authorName,
-                        senderUserId: authorId,
-                        senderAvatar: currentUser?.avatar || currentUser?.profilePhotoUrl,
-                        targetUserId: uId,
-                        employeeId: u.employeeId,
-                        text: notifMsg,
-                        message: notifMsg,
-                        createdDate: nowIso,
-                        unread: true,
-                        isLocalNotif: true,
-                        targetUrl: createdPostId ? `/posts?id=${createdPostId}` : '/posts',
-                        relatedContentType: 'Post',
-                        relatedContentId: createdPostId
-                    });
-                });
+                }
             }
 
-            if (newNotifs.length > 0) {
-                try {
-                    const existingNotifs = JSON.parse(localStorage.getItem('knome_notifications') || '[]');
-                    localStorage.setItem('knome_notifications', JSON.stringify([...newNotifs, ...existingNotifs]));
-                } catch (e) {}
-
-                // Trigger local notification listeners across all open tabs/components
-                window.dispatchEvent(new CustomEvent('notification-updated'));
-                window.dispatchEvent(new CustomEvent('knome_new_notification'));
-                newNotifs.forEach(n => {
-                    window.dispatchEvent(new CustomEvent('knome_notification_received', { detail: n }));
-                });
-            }
-
-            if (status !== 'Scheduled') {
+            if (status !== 'Scheduled' && status !== 'Draft') {
                 if (awardRuleKarma && (currentUser?.userId || currentUser?.id)) {
                     const targetUid = currentUser?.userId || currentUser?.id;
                     const pts = awardRuleKarma(targetUid, 'POST') || 2;
@@ -773,7 +1078,9 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
             // Success
             const savedScheduleTime = scheduledTime;
             resetForm();
-            if (status === 'Scheduled' && savedScheduleTime) {
+            if (status === 'Draft') {
+                addToast('Post saved as draft successfully! 📝', 'success');
+            } else if (status === 'Scheduled' && savedScheduleTime) {
                 const formattedTimeStr = formatScheduleDisplay(savedScheduleTime) || (typeof formatToDDMMYYYY === 'function' ? formatToDDMMYYYY(savedScheduleTime) : savedScheduleTime);
                 addToast(`Post scheduled for publication on ${formattedTimeStr}!`, 'success');
             } else {
@@ -810,13 +1117,61 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                 
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 z-10">
-                    <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <span className="material-symbols-outlined text-indigo-500">edit_square</span>
-                        Create Post
-                    </h2>
-                    <button onClick={handleClose} disabled={isPublishing} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-full p-1 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50">
-                        <span className="material-symbols-outlined">close</span>
-                    </button>
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                        <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                            <span className="material-symbols-outlined text-indigo-500">edit_square</span>
+                            <span>Create Post</span>
+                        </h2>
+                        {isDraftMode && (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 shadow-xs">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                <span>Editing Draft</span>
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        {/* Auto-save status indicator */}
+                        {autoSaveStatus && (
+                            <div className="text-[11px] font-medium text-slate-400 dark:text-slate-500 flex items-center gap-1 mr-1 select-none">
+                                {autoSaveStatus === 'saving' ? (
+                                    <>
+                                        <span className="material-symbols-outlined text-[14px] animate-spin text-indigo-500">sync</span>
+                                        <span className="text-indigo-600 dark:text-indigo-400 font-semibold">Auto-saving...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="material-symbols-outlined text-[14px] text-emerald-500">cloud_done</span>
+                                        <span>{formatDraftTimeAgo(lastSavedTime)}</span>
+                                    </>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Discard Button (shown when editing a draft or when content is present) */}
+                        {(isDraftMode || text.trim().length > 0 || attachments.length > 0) && (
+                            <button
+                                type="button"
+                                onClick={handleDiscardDraft}
+                                disabled={isPublishing || isDiscarding}
+                                className="text-xs font-semibold text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                                title="Discard this post and start fresh"
+                            >
+                                <span className="material-symbols-outlined text-[15px]">delete_sweep</span>
+                                <span className="hidden sm:inline">Discard</span>
+                            </button>
+                        )}
+
+                        <button 
+                            type="button"
+                            onClick={handleClose} 
+                            disabled={isPublishing} 
+                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors rounded-full p-1 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 cursor-pointer"
+                            title="Close"
+                        >
+                            <span className="material-symbols-outlined">close</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div className="p-4 sm:p-5 flex flex-col gap-4 overflow-y-auto custom-scrollbar flex-1 min-h-0">
@@ -1350,25 +1705,43 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                     </div>
                 )}
 
+                {/* File Size Exceeded Error Banner */}
+                {fileError && (
+                    <div className="mx-4 sm:mx-5 mb-2.5 p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-xl flex items-center justify-between gap-2.5 text-rose-600 dark:text-rose-400 text-xs font-semibold animate-in fade-in slide-in-from-bottom-2 duration-150 shrink-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <span className="material-symbols-outlined text-[18px] text-rose-500 shrink-0">error</span>
+                            <span className="break-words">{fileError}</span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setFileError(null)}
+                            className="text-rose-400 hover:text-rose-600 dark:hover:text-rose-200 p-1 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/50 cursor-pointer shrink-0 transition-colors"
+                            title="Dismiss error"
+                        >
+                            <span className="material-symbols-outlined text-[16px]">close</span>
+                        </button>
+                    </div>
+                )}
+
                 {/* Footer Tools & Actions */}
-                <div className="p-3 sm:p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0 rounded-b-2xl">
+                <div className="p-3 sm:p-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0">
                     <div className="flex items-center gap-1 shrink-0">
                         <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
-                        <button onClick={() => triggerFileInput('image')} disabled={isPublishing} className="p-2 text-indigo-500 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg transition-colors group relative disabled:opacity-50 cursor-pointer">
+                        <button onClick={() => triggerFileInput('image')} disabled={isPublishing} className="p-2 text-indigo-500 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg transition-colors group relative disabled:opacity-50 cursor-pointer" title="Add Image">
                             <span className="material-symbols-outlined text-[22px]">image</span>
-                            <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap">Image (JPG/PNG)</span>
+                            <span className="absolute -top-8 left-0 bg-slate-900 text-white text-[10.5px] font-medium px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap shadow-md z-30 transition-opacity">Image</span>
                         </button>
-                        <button onClick={() => triggerFileInput('doc')} disabled={isPublishing} className="p-2 text-emerald-500 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg transition-colors group relative disabled:opacity-50 cursor-pointer">
+                        <button onClick={() => triggerFileInput('doc')} disabled={isPublishing} className="p-2 text-emerald-500 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 rounded-lg transition-colors group relative disabled:opacity-50 cursor-pointer" title="Add Document">
                             <span className="material-symbols-outlined text-[22px]">description</span>
-                            <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap">Document (PDF/DOC/XLS/PPT/ZIP - Max 400 MB)</span>
+                            <span className="absolute -top-8 left-0 bg-slate-900 text-white text-[10.5px] font-medium px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap shadow-md z-30 transition-opacity">Document</span>
                         </button>
-                        <button onClick={() => triggerFileInput('video')} disabled={isPublishing} className="p-2 text-cyan-500 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 rounded-lg transition-colors group relative disabled:opacity-50 cursor-pointer">
+                        <button onClick={() => triggerFileInput('video')} disabled={isPublishing} className="p-2 text-cyan-500 hover:bg-cyan-100 dark:hover:bg-cyan-900/50 rounded-lg transition-colors group relative disabled:opacity-50 cursor-pointer" title="Add Video">
                             <span className="material-symbols-outlined text-[22px]">videocam</span>
-                            <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap">Video (MP4/MOV)</span>
+                            <span className="absolute -top-8 left-0 bg-slate-900 text-white text-[10.5px] font-medium px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap shadow-md z-30 transition-opacity">Video</span>
                         </button>
-                        <button onClick={() => triggerFileInput('audio')} disabled={isPublishing} className="p-2 text-purple-500 hover:bg-purple-100 dark:hover:bg-purple-900/50 rounded-lg transition-colors group relative disabled:opacity-50 cursor-pointer">
+                        <button onClick={() => triggerFileInput('audio')} disabled={isPublishing} className="p-2 text-purple-500 hover:bg-purple-100 dark:hover:bg-purple-900/50 rounded-lg transition-colors group relative disabled:opacity-50 cursor-pointer" title="Add Audio">
                             <span className="material-symbols-outlined text-[22px]">headphones</span>
-                            <span className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap">Audio (MP3/WAV)</span>
+                            <span className="absolute -top-8 left-0 bg-slate-900 text-white text-[10.5px] font-medium px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap shadow-md z-30 transition-opacity">Audio</span>
                         </button>
                     </div>
 
@@ -1385,12 +1758,15 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                             }
                             return (
                                 <>
-                                    <button 
+                                    <button
                                         type="button"
-                                        onClick={handleClose}
-                                        disabled={isPublishing}
-                                        className="px-3.5 py-2 rounded-xl text-[13px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 cursor-pointer shrink-0">
-                                        Cancel
+                                        onClick={() => handleSubmit('Draft')}
+                                        disabled={(!text.trim() && attachments.length === 0) || securityWarning || isPublishing}
+                                        className="px-3.5 py-2 rounded-xl text-[13px] font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0 whitespace-nowrap active:scale-95"
+                                        title={isDraftMode ? "Update draft" : "Save as private draft"}
+                                    >
+                                        <span className="material-symbols-outlined text-[17px] text-slate-500">draft</span>
+                                        <span>{isDraftMode ? 'Update Draft' : 'Save as Draft'}</span>
                                     </button>
                                     <button 
                                         data-schedule-trigger="true"
@@ -1425,7 +1801,7 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                                         type="button"
                                         onClick={() => handleSubmit(scheduledTime ? 'Scheduled' : 'Published')}
                                         disabled={!text.trim() || securityWarning || isPublishing}
-                                        className={`px-5 py-2 rounded-xl text-[13px] font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer shrink-0 whitespace-nowrap
+                                        className={`px-5 py-2 rounded-xl text-[13px] font-bold transition-all shadow-sm flex items-center gap-2 cursor-pointer shrink-0 whitespace-nowrap active:scale-95
                                             ${(!text.trim() || securityWarning || isPublishing)
                                                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed dark:bg-slate-800 dark:text-slate-500' 
                                                 : (scheduledTime 
@@ -1438,18 +1814,18 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                                         {isPublishing ? (
                                             <>
                                                 <span className="material-symbols-outlined text-[16px] animate-spin">refresh</span>
-                                                {scheduledTime ? 'Scheduling...' : 'Publishing...'}
+                                                {scheduledTime ? 'Scheduling...' : (isDraftMode ? 'Publishing Draft...' : 'Publishing...')}
                                             </>
                                         ) : (
                                             scheduledTime ? (
                                                 <>
                                                     <span className="material-symbols-outlined text-[17px]">event_available</span>
-                                                    Schedule Post
+                                                    <span>{isDraftMode ? 'Schedule Draft' : 'Schedule Post'}</span>
                                                 </>
                                             ) : (
                                                 <>
                                                     <span className="material-symbols-outlined text-[16px]">send</span>
-                                                    Publish
+                                                    <span>{isDraftMode ? 'Publish Draft' : 'Publish'}</span>
                                                 </>
                                             )
                                         )}
@@ -1457,6 +1833,33 @@ export default function CreatePostModal({ isOpen, onClose, onPostCreated }) {
                                 </>
                             );
                         })()}
+                    </div>
+                </div>
+
+                {/* Bottom Info Bar: Max File Sizes */}
+                <div className="px-4 py-2 bg-slate-100/90 dark:bg-slate-800/90 border-t border-slate-200/70 dark:border-slate-700/70 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 rounded-b-2xl sm:rounded-b-3xl shrink-0 select-none">
+                    <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                        <span className="material-symbols-outlined text-[15px] text-slate-400 shrink-0">info</span>
+                        <span className="font-bold text-slate-600 dark:text-slate-300">Max file size:</span>
+                        <span className="inline-flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                            <span>Images: 100 MB</span>
+                        </span>
+                        <span className="text-slate-300 dark:text-slate-600">•</span>
+                        <span className="inline-flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            <span>Documents: 400 MB</span>
+                        </span>
+                        <span className="text-slate-300 dark:text-slate-600">•</span>
+                        <span className="inline-flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-cyan-500"></span>
+                            <span>Videos: 500 MB</span>
+                        </span>
+                        <span className="text-slate-300 dark:text-slate-600">•</span>
+                        <span className="inline-flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-purple-500"></span>
+                            <span>Audio: 100 MB</span>
+                        </span>
                     </div>
                 </div>
 
