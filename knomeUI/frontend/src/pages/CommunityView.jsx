@@ -1643,11 +1643,11 @@ export default function CommunityView() {
                     const finalComments = cached && typeof cached.commentCount === 'number' ? Math.max(cached.commentCount, sComments) : sComments;
 
                     // Detect sharedProfile from backend post if contentText has format
-                    const profileMatch = (p.contentText || '').match(/Shared Profile:\s*"([^"]+)"/i);
-                    const profileUrlMatch = (p.contentText || '').match(/(?:https?:\/\/[^\s]+)?\/profile\?id=([a-zA-Z0-9_-]+)/i);
+                    const profileMatch = (p.contentText || p.content || '').match(/Shared Profile:\s*"([^"]+)"/i);
+                    const profileUrlMatch = (p.contentText || p.content || '').match(/(?:https?:\/\/[^\s]+)?\/profile\?id=([a-zA-Z0-9_-]+)/i);
                     const backendSharedProfile = (profileMatch || profileUrlMatch) ? {
-                        id: profileUrlMatch ? profileUrlMatch[1] : (p.id || 1),
-                        userId: profileUrlMatch ? profileUrlMatch[1] : (p.id || 1),
+                        id: profileUrlMatch ? profileUrlMatch[1] : null,
+                        userId: profileUrlMatch ? profileUrlMatch[1] : null,
                         name: profileMatch ? profileMatch[1] : 'Colleague',
                         fullName: profileMatch ? profileMatch[1] : 'Colleague',
                         avatar: null,
@@ -4050,7 +4050,7 @@ export default function CommunityView() {
                                                         fullName: (post.content?.match(/Shared Profile:\s*"([^"]+)"/i) || [])[1] || 'Colleague',
                                                         designation: 'MPOnline Team Member',
                                                         department: 'MPOnline',
-                                                        id: (post.content?.match(/\/profile\?id=([a-zA-Z0-9_-]+)/i) || [])[1] || 1
+                                                        id: (post.content?.match(/\/profile\?id=([a-zA-Z0-9_-]+)/i) || [])[1] || null
                                                     };
                                                     const profId = prof.userId || prof.id;
                                                     const profName = prof.fullName || prof.name || 'User';
@@ -4060,7 +4060,11 @@ export default function CommunityView() {
 
                                                     const handleOpenProfile = (e) => {
                                                         e.stopPropagation();
-                                                        navigate(profId ? `/profile?id=${profId}` : '/profile', { state: { user: prof } });
+                                                        if (profId) {
+                                                            navigate(`/profile?id=${profId}`, { state: { user: prof } });
+                                                        } else {
+                                                            navigate('/network');
+                                                        }
                                                     };
 
                                                     return (

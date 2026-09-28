@@ -80,7 +80,9 @@ export default function Profile() {
     const queryId = params.id || searchParams.get('id');
 
     const targetUserObj = location.state?.user;
-    const targetUserId = queryId || targetUserObj?.userId || targetUserObj?.id;
+    // Extract actual profile user ID if targetUserObj has an embedded profile link
+    const embeddedProfMatch = (targetUserObj?.content || targetUserObj?.contentText || '').match(/(?:https?:\/\/[^\s]+)?\/profile\?id=([a-zA-Z0-9_-]+)/i);
+    const targetUserId = embeddedProfMatch ? embeddedProfMatch[1] : (queryId || targetUserObj?.userId || targetUserObj?.id);
     
     const isOwnProfile = !targetUserId ? true : (
         (currentUser?.userId && String(targetUserId) === String(currentUser.userId)) ||
@@ -112,7 +114,12 @@ export default function Profile() {
                 })
                 .catch(err => {
                     if (isMounted) {
-                        console.error("Failed to load user profile:", err);
+                        const isNotFound = err?.status === 404 || err?.message?.includes('not found') || String(err).includes('404');
+                        if (!isNotFound) {
+                            console.error("Failed to load user profile:", err);
+                        } else {
+                            console.warn(`[Profile] User with ID ${activeUserId} was not found.`);
+                        }
                     }
                 });
         } else {

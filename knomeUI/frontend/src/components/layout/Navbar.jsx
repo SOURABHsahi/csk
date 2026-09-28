@@ -1039,26 +1039,28 @@ export default function Navbar() {
         const msg = (notif.text || notif.message || '').toLowerCase();
         const relType = (notif.relatedContentType || '').toLowerCase();
         const refId = notif.relatedContentId || notif.referenceId || notif.videoId;
-        // isProfileShare must NOT trigger on video notifications
-        const isProfileShare = (relType === 'profile' || notif.type === 'profile_share' || (msg.includes('profile') && !msg.includes('video') && !msg.includes('podcast')))
+        // Ensure post notifications are never misinterpreted as profile shares
+        const isPostNotif = relType === 'post' || notif.isPost || notif.type?.toLowerCase().includes('post') || (msg.includes('posted') && !msg.includes('podcast'));
+        const isProfileShare = !isPostNotif && (relType === 'profile' || notif.type === 'profile_share' || (notif.type === 'share' && relType === 'user'))
             && !msg.includes('video') && !msg.includes('podcast') && notif.type !== 'video_shared' && notif.type !== 'podcast_shared';
 
         if (isProfileShare) {
+            const profUrlMatch = (notif.text || notif.message || '').match(/(?:https?:\/\/[^\s]+)?\/profile\?id=([a-zA-Z0-9_-]+)/i);
+            const resolvedUserId = profUrlMatch ? profUrlMatch[1] : (notif.targetProfileUser?.userId || notif.senderUserId || refId || 1);
             const targetUser = notif.targetProfileUser || {
-                userId: refId || notif.senderUserId || 1,
-                id: refId || notif.senderUserId || 1,
+                userId: resolvedUserId,
+                id: resolvedUserId,
                 name: notif.senderName || 'Employee',
                 fullName: notif.senderName || 'Employee',
                 avatar: notif.senderAvatar || null
             };
-            navigate('/profile', { state: { user: targetUser } });
+            navigate(resolvedUserId ? `/profile?id=${resolvedUserId}` : '/profile', { state: { user: targetUser } });
             return;
         }
 
         const isVideoNotif = relType === 'video' || notif.isVideo || notif.type?.includes('video') || (msg.includes('video') && !msg.includes('podcast'));
         const isPodcastNotif = !isVideoNotif && (relType === 'podcast' || notif.isPodcast || notif.type?.includes('podcast') || msg.includes('podcast'));
         const isArticleNotif = !isVideoNotif && !isPodcastNotif && (relType === 'article' || notif.isArticle || notif.type?.includes('article') || msg.includes('article') || msg.includes('blog'));
-        const isPostNotif = !isVideoNotif && !isPodcastNotif && !isArticleNotif && (relType === 'post' || notif.isPost || notif.type?.includes('post') || (msg.includes('post') && !msg.includes('podcast')));
         const isCommNotif = !isVideoNotif && !isPodcastNotif && !isArticleNotif && !isPostNotif && (notif.isCommunity || relType === 'community' || notif.category === 'Community' || notif.type?.includes('community') || msg.includes('community') || notif.communityId || notif.communityName);
 
         if (isVideoNotif) {

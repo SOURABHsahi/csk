@@ -1925,7 +1925,7 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
                         fullName: (post.content?.match(/Shared Profile:\s*"([^"]+)"/i) || [])[1] || 'Colleague',
                         designation: 'MPOnline Team Member',
                         department: 'MPOnline',
-                        id: (post.content?.match(/\/profile\?id=([a-zA-Z0-9_-]+)/i) || [])[1] || 1
+                        id: (post.content?.match(/\/profile\?id=([a-zA-Z0-9_-]+)/i) || [])[1] || null
                     };
                     const profId = prof.userId || prof.id;
                     const profName = prof.fullName || prof.name || 'User';
@@ -1935,7 +1935,11 @@ export default function PostCard({ post, onPostDeleted, searchQuery = '' }) {
 
                     const handleOpenProfile = (e) => {
                         e.stopPropagation();
-                        navigate(profId ? `/profile?id=${profId}` : '/profile', { state: { user: prof } });
+                        if (profId) {
+                            navigate(`/profile?id=${profId}`, { state: { user: prof } });
+                        } else {
+                            navigate('/network');
+                        }
                     };
 
                     return (
