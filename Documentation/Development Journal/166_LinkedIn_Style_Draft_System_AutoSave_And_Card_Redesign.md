@@ -59,6 +59,7 @@ Transformed Knome's post drafting experience from a basic local placeholder into
   - Clears the active draft and triggers live feed synchronization.
 
 ### 4. Feed Integration & Filtering (`knomeUI/frontend/src/pages/Posts.jsx`)
+* Added a dedicated **`Drafts`** action button directly in the hero header adjacent to **`Write Post`** with live draft count badge (`authorDraftCount`), active toggle state, and smooth scroll into the drafts feed.
 * When `selectedTag === '📝 Drafts'`, renders `DraftCard` instead of `PostCard`.
 * Synchronizes the active user draft directly into `loadPosts` so updates are reflected immediately.
 * Handlers wired for `onEditDraft`, `onDeleteDraft`, and `onPublishDraft`.
