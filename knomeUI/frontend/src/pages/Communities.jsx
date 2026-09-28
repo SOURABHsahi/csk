@@ -627,9 +627,9 @@ export default function Communities() {
             icon: 'cancel',
             color: 'text-red-500',
             bg: 'bg-red-500/10',
-            text: `❌ Your community creation request for "${comm.name}" was not approved by HR Administrator (${currentUser?.name || 'HR Admin'}).`,
-            message: `❌ Your community creation request for "${comm.name}" was not approved by HR Administrator (${currentUser?.name || 'HR Admin'}).`,
-            senderName: currentUser?.name || 'HR Administrator',
+            text: `❌ Your community creation request for "${comm.name}" was not approved by Administration (${currentUser?.name || 'Admin'}).`,
+            message: `❌ Your community creation request for "${comm.name}" was not approved by Administration (${currentUser?.name || 'Admin'}).`,
+            senderName: currentUser?.name || 'Administration',
             senderAvatar: currentUser?.avatar || null,
             senderUserId: currentUser?.userId || currentUser?.id,
             createdDate: new Date().toISOString(),
@@ -1007,10 +1007,10 @@ export default function Communities() {
                                     </div>
                                     <div>
                                         <h4 className="font-extrabold text-xs text-amber-800 dark:text-amber-300">
-                                            Communities Submitted for HR Approval ({myPendingCommunities.length})
+                                            Communities Submitted for Administration Approval ({myPendingCommunities.length})
                                         </h4>
                                         <p className="text-[12px] text-amber-600 dark:text-amber-400 mt-0.5">
-                                            The communities below are currently being reviewed by the HR Administrator. You will receive an instant notification once approved.
+                                            The communities below are currently being reviewed by the Administration. You will receive an instant notification once approved.
                                         </p>
                                     </div>
                                 </div>
@@ -1031,7 +1031,7 @@ export default function Communities() {
                                                 <div className="absolute inset-0 bg-slate-900/40"></div>
                                                 <div className="absolute top-2 left-2">
                                                     <span className="px-2 py-0.5 backdrop-blur-md rounded-md text-[9px] font-black uppercase tracking-wider bg-amber-500 text-white shadow-xs">
-                                                        Under HR Review
+                                                        Under Administration Review
                                                     </span>
                                                 </div>
                                             </div>
@@ -1320,7 +1320,7 @@ export default function Communities() {
                                 </div>
 
                                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 text-xs font-black uppercase tracking-wider mb-2">
-                                    ⏳ Awaiting HR Approval
+                                    ⏳ Awaiting Administration Approval
                                 </div>
 
                                 <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-2">
@@ -1328,7 +1328,7 @@ export default function Communities() {
                                 </h3>
 
                                 <p className="text-sm text-slate-600 dark:text-slate-300 max-w-sm mb-5 leading-relaxed">
-                                    Your request to create <strong className="text-amber-600 dark:text-amber-400 font-extrabold">"{successPopup.communityName}"</strong> has been successfully sent to the <strong>HR Administrator</strong> for review.
+                                    Your request to create <strong className="text-amber-600 dark:text-amber-400 font-extrabold">"{successPopup.communityName}"</strong> has been successfully sent to the <strong>Administration</strong> for review.
                                 </p>
 
                                 <div className="w-full bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 mb-5 text-left space-y-2 text-xs">
@@ -1344,12 +1344,12 @@ export default function Communities() {
                                     )}
                                     <div className="flex justify-between">
                                         <span className="text-slate-400">Status:</span>
-                                        <span className="font-bold text-amber-500">Pending HR Approval</span>
+                                        <span className="font-bold text-amber-500">Pending Administration Approval</span>
                                     </div>
                                 </div>
 
                                 <p className="text-[11px] text-slate-400 dark:text-slate-500 mb-5">
-                                    🔔 You will receive a notification as soon as the HR Administrator approves your request.
+                                    🔔 You will receive a notification as soon as the Administration approves your request.
                                 </p>
 
                                 <div className="flex items-center gap-3 w-full">

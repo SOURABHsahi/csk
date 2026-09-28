@@ -596,8 +596,8 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                     icon: 'approval',
                     color: 'text-amber-500',
                     bg: 'bg-amber-500/10',
-                    text: `📋 New Community Approval Request: ${currentUser?.name || 'Employee'} (${currentUser?.department || currentUser?.roleName || 'MPOnline'}) created "${newCommunity.name}". Awaiting HR Approval.`,
-                    message: `📋 New Community Approval Request: ${currentUser?.name || 'Employee'} (${currentUser?.department || currentUser?.roleName || 'MPOnline'}) created "${newCommunity.name}". Awaiting HR Approval.`,
+                    text: `📋 New Community Approval Request: ${currentUser?.name || 'Employee'} (${currentUser?.department || currentUser?.roleName || 'MPOnline'}) created "${newCommunity.name}". Awaiting Administration Approval.`,
+                    message: `📋 New Community Approval Request: ${currentUser?.name || 'Employee'} (${currentUser?.department || currentUser?.roleName || 'MPOnline'}) created "${newCommunity.name}". Awaiting Administration Approval.`,
                     senderName: currentUser?.name || 'Employee',
                     senderAvatar: currentUser?.avatar || null,
                     senderUserId: currentUser?.userId || currentUser?.id,
@@ -805,7 +805,7 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                 {isSubmittedForApproval ? 'hourglass_top' : createdCommunityLink ? 'check_circle' : 'group_add'}
                             </span>
                             {isSubmittedForApproval 
-                                ? 'Submitted for HR Approval' 
+                                ? 'Submitted for Administration Approval' 
                                 : createdCommunityLink 
                                     ? 'Community Created Successfully!' 
                                     : 'Create New Community'}
@@ -839,13 +839,13 @@ export default function CreateCommunityModal({ isOpen, onClose, onCommunityCreat
                                 <span className="material-symbols-outlined text-[42px] animate-pulse">hourglass_top</span>
                             </div>
                             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-xs font-black uppercase tracking-wider mb-3">
-                                ⏳ Pending HR Admin Approval
+                                ⏳ Pending Administration Approval
                             </div>
                             <h3 className="text-2xl font-black text-slate-900 dark:text-white mb-2">
                                 "{name}" Submitted for Review!
                             </h3>
                             <p className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed mb-6">
-                                Your community request has been forwarded to the <strong>HR Admin</strong> for governance review. Once approved, it will be published live across the organization and you will receive an instant notification.
+                                Your community request has been forwarded to the <strong>Administration</strong> for governance review. Once approved, it will be published live across the organization and you will receive an instant notification.
                             </p>
 
                             {/* Summary Card */}

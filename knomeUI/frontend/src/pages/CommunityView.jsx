@@ -3360,7 +3360,7 @@ export default function CommunityView() {
                                 </div>
                                 <div>
                                     <div className="flex items-center gap-2">
-                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white">Under HR Review</span>
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white">Under Administration Review</span>
                                         <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white">Community Awaiting Administrator Clearance</h4>
                                     </div>
                                     <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
@@ -3393,10 +3393,10 @@ export default function CommunityView() {
                                 <span className="material-symbols-outlined text-2xl">hourglass_top</span>
                             </div>
                             <div>
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white">Under HR Review</span>
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white">Under Administration Review</span>
                                 <h4 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white mt-1">Your Community is Awaiting Administrator Clearance</h4>
                                 <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
-                                    You have submitted this community for approval. It will become publicly visible and open for team members once approved by the HR Administrator.
+                                    You have submitted this community for approval. It will become publicly visible and open for team members once approved by the Administration.
                                 </p>
                             </div>
                         </div>
