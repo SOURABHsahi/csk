@@ -973,11 +973,16 @@ export default function AdminConsole() {
     const handleApproveMedia = async (mediaItem) => {
         try {
             const targetAuthorId = mediaItem.authorId || mediaItem.userId || mediaItem.dto?.uploaderUserId || mediaItem.podcastData?.uploaderUserId;
+            const numericAuthorId = (typeof targetAuthorId === 'number' && Number.isInteger(targetAuthorId) && targetAuthorId > 0)
+                ? targetAuthorId
+                : (typeof targetAuthorId === 'string' && /^\d+$/.test(targetAuthorId.trim()))
+                    ? parseInt(targetAuthorId.trim(), 10)
+                    : null;
 
             if (mediaItem.mediaType === 'Video' && mediaItem.dto) {
                 const postDto = {
                     ...mediaItem.dto,
-                    uploaderUserId: targetAuthorId
+                    uploaderUserId: numericAuthorId
                 };
                 await apiClient.post('/videos', postDto).catch(() => {});
                 window.dispatchEvent(new CustomEvent('video-published'));
@@ -1109,7 +1114,13 @@ export default function AdminConsole() {
         for (const m of currentList) {
             try {
                 if (m.mediaType === 'Video' && m.dto) {
-                    const postDto = { ...m.dto, uploaderUserId: m.authorId || m.dto?.uploaderUserId };
+                    const rawAuthorId = m.authorId || m.dto?.uploaderUserId;
+                    const numericAuthorId = (typeof rawAuthorId === 'number' && Number.isInteger(rawAuthorId) && rawAuthorId > 0)
+                        ? rawAuthorId
+                        : (typeof rawAuthorId === 'string' && /^\d+$/.test(rawAuthorId.trim()))
+                            ? parseInt(rawAuthorId.trim(), 10)
+                            : null;
+                    const postDto = { ...m.dto, uploaderUserId: numericAuthorId };
                     await apiClient.post('/videos', postDto).catch(() => {});
                 }
                 await mediaApi.removePendingApproval(m.id).catch(() => {});

@@ -434,17 +434,26 @@ export default function UploadVideoModal({ isOpen, onClose, onVideoUploaded }) {
             }
             finalTags = [...new Set(finalTags.map(t => t.trim().slice(0, 50)).filter(Boolean))];
 
+            // Safely resolve numeric user ID for backend int? UploaderUserId
+            const rawUid = currentUser?.userId ?? currentUser?.id;
+            let numericUploaderId = null;
+            if (typeof rawUid === 'number' && Number.isInteger(rawUid) && rawUid > 0) {
+                numericUploaderId = rawUid;
+            } else if (typeof rawUid === 'string' && /^\d+$/.test(rawUid.trim())) {
+                const parsed = parseInt(rawUid.trim(), 10);
+                if (parsed > 0) numericUploaderId = parsed;
+            }
+
             const dto = {
                 title: safeTitle,
                 description: safeDescription,
-                categoryId: parseInt(category) || 13,
+                categoryId: parseInt(category, 10) || 13,
                 thumbnailUrl: finalThumbnailUrl,
                 sourceType: sourceType,
                 sourceUrl: finalVideoUrl,
                 fileSizeMb: fileSizeMb,
-                durationSeconds: durationSeconds || null,
                 tags: finalTags,
-                uploaderUserId: currentUser?.id || currentUser?.userId || null
+                uploaderUserId: numericUploaderId
             };
 
             if (isCurrentUserAdmin) {
